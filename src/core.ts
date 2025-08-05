@@ -4,7 +4,7 @@ export interface RpcTarget {
   [__RPC_TARGET_BRAND]: never;
 }
 
-export abstract class RpcTarget implements RpcTargetBranded {}
+abstract class UserRpcTarget {}
 
 export type PropertyPath = (string | number)[];
 
@@ -69,6 +69,18 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
       if (value instanceof Error) {
         return "error";
+      }
+
+      if (value.constructor?.name === "Fetcher") {
+        return "rpc-target";
+      }
+
+      if (value.constructor?.name === "JsRpcStub") {
+        return "rpc-target";
+      }
+
+      if (value.constructor?.name === "RpcStub") {
+        return "rpc-target";
       }
 
       return "unsupported";
@@ -821,8 +833,8 @@ function followPath(value: unknown, parent: object | undefined,
         break;
 
       case "rpc-target": {
-        // Must be prototype property, and must NOT be inherited from `Object`.
-        value = Object.getPrototypeOf(value)[part];
+        value = (<any>value)[part];
+
         if (!value || value === (<any>Object.prototype)[part]) {
           throwPathError(path, i);
         }
@@ -1162,3 +1174,18 @@ class PromiseStubHook extends StubHook {
     }
   }
 }
+
+let RpcTarget = UserRpcTarget
+// If running in a Cloudflare Workers environment, register RpcStub & RpcPromise as RpcTarget capable
+try {
+  // @ts-expect-error It's not there yet...
+  const { registerRpcTargetClass, RpcTarget: NativeRpcTarget } = await import("cloudflare:workers");
+
+  registerRpcTargetClass(RpcStub);
+  registerRpcTargetClass(RpcPromise);
+  
+  // And use the real RpcTarget class
+  RpcTarget = NativeRpcTarget
+} catch {}
+
+export { RpcTarget }

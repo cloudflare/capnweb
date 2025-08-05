@@ -26,3 +26,6 @@ export const RpcSession: {
   new <T extends Serializable<T> = undefined>(
       transport: RpcTransport, localMain?: any): RpcSession<T>;
 } = <any>RpcSessionImpl;
+
+export { receiveRpcOverHttp } from "./worker.js";
+export { rpcOverWebSocket } from "./client.js";

@@ -14,13 +14,14 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
-    "build:watch": "tsup --watch",
+    "build": "tsup src/index.ts --format esm --external \"cloudflare:workers\"",
+    "build:watch": "tsup src/index.ts --format esm --external \"cloudflare:workers\" --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250805.0",
     "tsup": "^8.4.0",
     "typescript": "^5.8.2",
     "vitest": "^3.0.8"

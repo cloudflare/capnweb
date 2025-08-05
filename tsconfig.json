@@ -7,6 +7,7 @@
     "isolatedModules": true,
     "esModuleInterop": true,
     "strict": true,
+    "types": ["@cloudflare/workers-types/experimental"],
     "skipLibCheck": true
   },
   "include": ["src/**/*.ts", "__tests__/**/*.ts"],
