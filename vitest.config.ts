@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   esbuild: {
@@ -24,6 +24,7 @@ export default defineConfig({
           pool: '@cloudflare/vitest-pool-workers',
           poolOptions: {
             workers: {
+              singleWorker: true,
               miniflare: {
                 compatibilityDate: '2025-07-01',
 
@@ -31,24 +32,52 @@ export default defineConfig({
                 // talk to it over a service binding. (Only the workerd client tests will talk
                 // to this, not Node nor browsers.)
                 serviceBindings: {
-                  testServer: "test-server-workerd",
+                  testServer: 'test-server-workerd',
+                  gatewayServer: {
+                    name: 'gateway-server-workerd',
+                    entrypoint: 'Client',
+                  },
                 },
                 workers: [
                   {
-                    name: "test-server-workerd",
+                    name: 'test-server-workerd',
                     compatibilityDate: '2025-07-01',
+                    unsafeDirectSockets: [{ port: 9897 }],
+                    serviceBindings: {
+                      TestTarget: {
+                        name: 'test-server-workerd',
+                        entrypoint: 'TestTarget',
+                      },
+                    },
                     modules: [
                       {
-                        type: "ESModule",
-                        path: "./__tests__/test-server-workerd.js",
+                        type: 'ESModule',
+                        path: './__tests__/test-server-workerd.js',
                       },
                       {
-                        type: "ESModule",
-                        path: "./dist/index.js",
+                        type: 'ESModule',
+                        path: './dist/index.js',
                       },
                     ],
-                  }
-                ]
+                  },
+                  {
+                    name: 'gateway-server-workerd',
+                    compatibilityDate: '2025-07-01',
+                    serviceBindings: {
+                      testServer: 'test-server-workerd',
+                    },
+                    modules: [
+                      {
+                        type: 'ESModule',
+                        path: './__tests__/gateway-server-workerd.js',
+                      },
+                      {
+                        type: 'ESModule',
+                        path: './dist/index.js',
+                      },
+                    ],
+                  },
+                ],
               },
             },
           },
@@ -68,7 +97,7 @@ export default defineConfig({
               { browser: 'chromium' },
             ],
             headless: true,
-            screenshotFailures: false,  // there's nothing to screenshot
+            screenshotFailures: false, // there's nothing to screenshot
           },
         },
       },
@@ -93,10 +122,10 @@ export default defineConfig({
               { browser: 'webkit' },
             ],
             headless: true,
-            screenshotFailures: false,  // there's nothing to screenshot
+            screenshotFailures: false, // there's nothing to screenshot
           },
         },
       },
     ],
   },
-})
+});

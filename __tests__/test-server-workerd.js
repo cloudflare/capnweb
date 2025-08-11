@@ -47,6 +47,9 @@ export class TestTarget extends RpcTarget {
 
 export default {
   async fetch(req, env, ctx) {
+    // Throws "RPC stub points at a non-serializable type."
+    return newWorkersRpcResponse(req, env.TestTarget);
+    // Works
     return newWorkersRpcResponse(req, new TestTarget());
-  }
-}
+  },
+};

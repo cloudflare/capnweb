@@ -176,6 +176,7 @@ describe("workerd compatibility", () => {
 
 interface Env {
   testServer: Fetcher
+  gatewayServer: TestTarget
 }
 
 describe("workerd RPC server", () => {
@@ -199,6 +200,23 @@ describe("workerd RPC server", () => {
       expect(await cap.incrementCounter(counter, 9)).toBe(13);
     }
   })
+
+  it("can proxy through gateway", async () => {
+    let cap = (<Env>env).gatewayServer;
+
+    expect(await cap.square(5)).toBe(25);
+
+    {
+      let counter = cap.makeCounter(2);
+      expect(await counter.increment(3)).toBe(5);
+    }
+
+    {
+      let counter = new Counter(4);
+      // @ts-ignore
+      expect(await cap.incrementCounter(counter, 9)).toBe(13);
+    }
+  });
 
   it("can accept HTTP batch RPC connections", async () => {
     let cap = newHttpBatchRpcSession<TestTarget>("http://foo", {fetcher: (<Env>env).testServer});
