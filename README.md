@@ -535,7 +535,7 @@ A server on Node.js is a bit more involved, due to the awkward handling of WebSo
 ```ts
 import http from "node:http";
 import { WebSocketServer } from 'ws';  // npm package
-import { RpcTarget, newWebSocketRpcSession, nodeHttpBatchRpcResponse } from "capnpweb";
+import { RpcTarget, newWebSocketRpcSession, nodeHttpBatchRpcResponse } from "capnweb";
 
 class MyApiImpl extends RpcTarget implements MyApi {
   // ... define API, same as above ...
