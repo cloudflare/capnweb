@@ -1403,3 +1403,21 @@ describe("MessagePorts", () => {
         new Error("Peer closed MessagePort connection."));
   });
 });
+
+describe("Roundtripped answer promise handling", () => {
+  it("can use a roundtripped answer promise", async () => {
+    const stub = new RpcStub(new TestTarget());
+
+    // Create a pipelined promise
+    let counterPromise = stub.makeCounter(5);
+    
+    // Echo the pipelined promise back
+    let echoedPromise = stub.echo(counterPromise);
+    
+    // Both should resolve to the same counter
+    let [counter, echoedCounter] = await Promise.all([counterPromise, echoedPromise]);
+
+    expect(await counter.increment()).toBe(6);
+    expect(await echoedCounter.increment()).toBe(7);
+  });
+});

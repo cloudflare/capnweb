@@ -62,4 +62,9 @@ export class TestTarget extends RpcTarget {
   returnNull() { return null; }
   returnUndefined() { return undefined; }
   returnNumber(i: number) { return i; }
+
+  echo(arg: any) {
+    return arg;
+  }
+
 }
