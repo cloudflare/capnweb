@@ -26,7 +26,7 @@ const NOTIFICATIONS = new Map([
   ['u_2', ['New feature: pipelining!', 'Security tips for your account']],
 ]);
 
-class Api extends RpcTarget {
+export class Api extends RpcTarget {
   constructor(private env: Env) { super(); }
 
   async authenticate(sessionToken: string) {
