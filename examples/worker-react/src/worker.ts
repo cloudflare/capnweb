@@ -1,5 +1,4 @@
-// Use local build output so this example runs without publishing to npm.
-import { newWorkersRpcResponse, RpcTarget } from '../../../dist/index.js';
+import { newWorkersRpcResponse, RpcTarget } from 'capnweb';
 
 type Env = {
   DELAY_AUTH_MS?: string;

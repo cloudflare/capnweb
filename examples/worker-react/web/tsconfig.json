@@ -13,7 +13,7 @@
     "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@cloudflare/jsrpc": ["../../../dist/index.d.ts"]
+      "capnweb": ["../../../dist/index.d.ts"]
     }
   },
   "include": ["src"]

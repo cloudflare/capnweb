@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { newHttpBatchRpcSession } from '@cloudflare/jsrpc'
+import { newHttpBatchRpcSession } from 'capnweb'
 
 type Result = {
   posts: number
