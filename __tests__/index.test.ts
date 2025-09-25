@@ -1324,7 +1324,7 @@ describe("HTTP requests", () => {
 
 describe("WebSockets", () => {
   it("can open a WebSocket connection", async () => {
-    let url = `ws://${inject("testServerHost")}`;
+    let url = `wss://${inject("testServerHost")}`;
 
     let cap = newWebSocketRpcSession<TestTarget>(url);
 
