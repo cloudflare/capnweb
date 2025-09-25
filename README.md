@@ -582,6 +582,42 @@ wsServer.on('connection', (ws) => {
 httpServer.listen(8080);
 ```
 
+### HTTP server on Deno
+```ts
+import {
+  newHttpBatchRpcResponse,
+  newWebSocketRpcSession,
+  RpcTarget,
+} from "npm:capnweb";
+
+// This is the server implementation.
+class MyApiImpl extends RpcTarget implements MyApi {
+  // ... define API, same as above ...
+}
+
+Deno.serve((req) => {
+  const url = new URL(req.url);
+  if (url.pathname === "/api") {
+    if (req.headers.get("upgrade") === "websocket") {
+      const { socket, response } = Deno.upgradeWebSocket(req);
+      socket.addEventListener("open", () => {
+        newWebSocketRpcSession(socket, new MyApiImpl());
+      });
+      return response;
+    } else {
+      return newHttpBatchRpcResponse(req, new MyApiImpl(), {
+        // If you are accepting WebSockets, then you might as well accept cross-origin HTTP, since
+        // WebSockets always permit cross-origin request anyway. But, see security considerations
+        // for further discussion.
+        // headers: { "Access-Control-Allow-Origin": "*" }, // TODO: this is a type error
+      });
+    }
+  }
+
+  return new Response("Not Found", { status: 404 });
+});
+```
+
 ### HTTP server on other runtimes
 
 Every runtime does HTTP handling and WebSockets a little differently, although most modern runtimes use the standard `Request` and `Response` types from the Fetch API, as well as the standard `WebSocket` API. You should be able to use these two functions (exported by `capnweb`) to implement both HTTP batch and WebSocket handling on all platforms:
