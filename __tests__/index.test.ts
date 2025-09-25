@@ -7,6 +7,7 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          RpcStub, newWebSocketRpcSession, newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
 import { Counter, TestTarget } from "./test-util.js";
+import { SessionManager } from "../src/core.js";
 
 let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '123': 123,
@@ -112,6 +113,10 @@ class TestTransport implements RpcTransport {
   private aborter?: (err: any) => void;
   public log = false;
 
+  getLocator(): string {
+    return `test://${this.name}`;
+  }
+
   async send(message: string): Promise<void> {
     // HACK: If the string "$remove$" appears in the message, remove it. This is used in some
     //   tests to hack the RPC protocol.
@@ -157,11 +162,12 @@ class TestHarness<T extends RpcTarget> {
 
   stub: RpcStub<T>;
 
-  constructor(target: T, serverOptions?: RpcSessionOptions) {
-    this.clientTransport = new TestTransport("client");
-    this.serverTransport = new TestTransport("server", this.clientTransport);
+  constructor(target: T, serverOptions?: RpcSessionOptions, clientOptions?: RpcSessionOptions, label?: string) {
+    const prefix = label ? `${label}:` : "";
+    this.clientTransport = new TestTransport(`${prefix}client`);
+    this.serverTransport = new TestTransport(`${prefix}server`, this.clientTransport);
 
-    this.client = new RpcSession<T>(this.clientTransport);
+    this.client = new RpcSession<T>(this.clientTransport, undefined, clientOptions);
 
     // TODO: If I remove `<undefined>` here, I get a TypeScript error about the instantiation being
     //   excessively deep and possibly infinite. Why? `<undefined>` is supposed to be the default.
@@ -1401,5 +1407,61 @@ describe("MessagePorts", () => {
     // Wait for the client to detect the broken connection
     await expect(() => brokenPromise).rejects.toThrow(
         new Error("Peer closed MessagePort connection."));
+  });
+});
+
+describe("three party handoff with SessionManager", () => {
+  it("supports three-party capability passing", async () => {
+    // Create two parallel connections: Alice and Bob
+    class AliceTarget extends RpcTarget {
+      getCounter() {
+        return new Counter(10);
+      }
+    }
+
+    class BobTarget extends RpcTarget {
+      // Bob actually uses the counter, causing calls to proxy through Bob to Alice
+      incrementCounter(counter: RpcStub<Counter>, amount: number) {
+        return counter.increment(amount);
+      }
+    }
+
+    const provideNoSession = (locator: string) => {
+      throw new Error("No session provided for locator: " + locator);
+    }
+
+    const userSessionManager = new SessionManager(provideNoSession);
+    const userOptions = { sessionManager: userSessionManager };
+    const aliceSessionManager = new SessionManager(provideNoSession);
+    const aliceOptions = { sessionManager: aliceSessionManager };
+
+    let bobDialedAlice = 0;
+
+    const provideSessionForAlice = (locator: string) => {
+      bobDialedAlice++;
+      if (locator !== "test://user-alice:client") {
+        throw new Error("Unexpected locator: " + locator);
+      }
+      const harness = new TestHarness(new BobTarget(), aliceOptions, bobOptions, "bob-alice") as TestHarness<BobTarget>;
+      return harness.client.__getInnerSession();
+    }
+
+    const bobSessionManager = new SessionManager(provideSessionForAlice);
+    const bobOptions = { sessionManager: bobSessionManager };
+
+    await using aliceHarness = new TestHarness(new AliceTarget(), aliceOptions, userOptions, "user-alice");
+    await using bobHarness = new TestHarness(new BobTarget(), bobOptions, userOptions, "user-bob");
+
+    let aliceStub = aliceHarness.stub;
+    let bobStub = bobHarness.stub;
+
+    // Get counter from Alice.
+    // TODO: remove await here
+    using counter = await aliceStub.getCounter();
+
+    // Bob increments the counter - this call proxies from Bob through the client to Alice
+    let result = await bobStub.incrementCounter(counter, 3);
+    expect(result).toBe(13);
+    expect(bobDialedAlice).toBe(1);
   });
 });
