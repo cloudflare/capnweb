@@ -595,7 +595,7 @@ class MyApiImpl extends RpcTarget implements MyApi {
   // ... define API, same as above ...
 }
 
-Deno.serve((req) => {
+Deno.serve(async (req) => {
   const url = new URL(req.url);
   if (url.pathname === "/api") {
     if (req.headers.get("upgrade") === "websocket") {
@@ -605,7 +605,7 @@ Deno.serve((req) => {
       });
       return response;
     } else {
-      let response = await newHttpBatchRpcResponse(req, new MyApiImpl());
+      const response = await newHttpBatchRpcResponse(req, new MyApiImpl());
       // If you are accepting WebSockets, then you might as well accept cross-origin HTTP, since
       // WebSockets always permit cross-origin request anyway. But, see security considerations
       // for further discussion.
