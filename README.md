@@ -605,12 +605,12 @@ Deno.serve((req) => {
       });
       return response;
     } else {
-      return newHttpBatchRpcResponse(req, new MyApiImpl(), {
-        // If you are accepting WebSockets, then you might as well accept cross-origin HTTP, since
-        // WebSockets always permit cross-origin request anyway. But, see security considerations
-        // for further discussion.
-        // headers: { "Access-Control-Allow-Origin": "*" }, // TODO: this is a type error
-      });
+      let response = await newHttpBatchRpcResponse(req, new MyApiImpl());
+      // If you are accepting WebSockets, then you might as well accept cross-origin HTTP, since
+      // WebSockets always permit cross-origin request anyway. But, see security considerations
+      // for further discussion.
+      response.headers.set("Access-Control-Allow-Origin", "*");
+      return response;
     }
   }
 
