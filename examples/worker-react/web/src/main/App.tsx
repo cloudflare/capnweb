@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { newHttpBatchRpcSession } from '@cloudflare/jsrpc'
+import type { Api } from '../../../src/worker'
 
 type Result = {
   posts: number
@@ -55,7 +56,7 @@ export function App() {
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
     const calls: CallEvent[] = []
-    const api = newHttpBatchRpcSession('/api')
+    const api = newHttpBatchRpcSession<Api>('/api')
     const userStart = 0; calls.push({ label: 'authenticate', start: userStart, end: NaN })
     const user = api.authenticate('cookie-123')
     user.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
@@ -83,19 +84,19 @@ export function App() {
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
     const calls: CallEvent[] = []
-    const api1 = newHttpBatchRpcSession('/api')
+    const api1 = newHttpBatchRpcSession<Api>('/api')
     const aStart = 0; calls.push({ label: 'authenticate', start: aStart, end: NaN })
     const uPromise = api1.authenticate('cookie-123')
     uPromise.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
     const u = await uPromise
 
-    const api2 = newHttpBatchRpcSession('/api')
+    const api2 = newHttpBatchRpcSession<Api>('/api')
     const pStart = performance.now() - t0; calls.push({ label: 'getUserProfile', start: pStart, end: NaN })
     const pPromise = api2.getUserProfile(u.id)
     pPromise.then(() => { calls.find(c => c.label==='getUserProfile')!.end = performance.now() - t0 })
     const p = await pPromise
 
-    const api3 = newHttpBatchRpcSession('/api')
+    const api3 = newHttpBatchRpcSession<Api>('/api')
     const nStart = performance.now() - t0; calls.push({ label: 'getNotifications', start: nStart, end: NaN })
     const nPromise = api3.getNotifications(u.id)
     nPromise.then(() => { calls.find(c => c.label==='getNotifications')!.end = performance.now() - t0 })
