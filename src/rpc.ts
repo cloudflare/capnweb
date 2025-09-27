@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath } from "./core.js";
+import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath, SessionManager } from "./core.js"; 
 import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize } from "./serialize.js";
 
 /**
@@ -10,6 +10,11 @@ import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serializ
  * interface if the built-in transports (e.g. for HTTP batch and WebSocket) don't meet your needs.
  */
 export interface RpcTransport {
+  /**
+   * Returns the connection locator for this transport.
+   */
+  getLocator(): string;
+
   /**
    * Sends a message to the other end.
    */
@@ -298,6 +303,10 @@ export type RpcSessionOptions = {
    * to serialize the error with the stack omitted.
    */
   onSendError?: (error: Error) => Error | void;
+  /**
+    * For 3-Party Handoff
+    */
+  sessionManager?: SessionManager;
 };
 
 class RpcSessionImpl implements Importer, Exporter {
@@ -381,6 +390,30 @@ class RpcSessionImpl implements Importer, Exporter {
     for (let id of ids) {
       this.releaseExport(id, 1);
     }
+  }
+
+  sendRegisterGift(id: ExportId): string {
+    const swissnum = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER).toString(36);
+    this.send(["registerGift", id, swissnum]);
+    return swissnum;
+  }
+
+  sendRedeemGift(swissnum: string): RpcImportHook {
+    this.send(["redeemGift", swissnum]);
+    return this.#makePipelinePromiseHook();
+  }
+
+  importGift(locator: string, swissnum: string): RpcImportHook {
+    const { sessionManager } = this.options;
+    if (!sessionManager) {
+      throw new Error("Cannot import gift without a session manager");
+    }
+    const thirdPartySession = sessionManager.provideSessionForLocator(locator) as RpcSessionImpl;
+    return thirdPartySession.sendRedeemGift(swissnum);
+  }
+
+  getLocator(): string {
+    return this.transport.getLocator();
   }
 
   private releaseExport(exportId: ExportId, refcount: number) {
@@ -527,6 +560,12 @@ class RpcSessionImpl implements Importer, Exporter {
         .catch(err => this.abort(err, false));
   }
 
+  #makePipelinePromiseHook(): RpcImportHook {
+    let entry = new ImportTableEntry(this, this.imports.length, false);
+    this.imports.push(entry);
+    return new RpcImportHook(/*isPromise=*/true, entry);
+  }
+
   sendCall(id: ImportId, path: PropertyPath, args?: RpcPayload): RpcImportHook {
     if (this.abortReason) throw this.abortReason;
 
@@ -543,9 +582,7 @@ class RpcSessionImpl implements Importer, Exporter {
     }
     this.send(["push", value]);
 
-    let entry = new ImportTableEntry(this, this.imports.length, false);
-    this.imports.push(entry);
-    return new RpcImportHook(/*isPromise=*/true, entry);
+    return this.#makePipelinePromiseHook();
   }
 
   sendMap(id: ImportId, path: PropertyPath, captures: StubHook[], instructions: unknown[])
@@ -570,9 +607,7 @@ class RpcSessionImpl implements Importer, Exporter {
 
     this.send(["push", value]);
 
-    let entry = new ImportTableEntry(this, this.imports.length, false);
-    this.imports.push(entry);
-    return new RpcImportHook(/*isPromise=*/true, entry);
+    return this.#makePipelinePromiseHook();
   }
 
   sendPull(id: ImportId) {
@@ -719,6 +754,44 @@ class RpcSessionImpl implements Importer, Exporter {
             this.abort(payload, false);
             break;
           }
+
+          case "registerGift": {
+            let exportId = msg[1];
+            let swissnum = msg[2];
+            if (typeof exportId == "number" && typeof swissnum == "string") {
+              const { sessionManager } = this.options;
+              if (!sessionManager) {
+                throw new Error("Cannot register gift without a session manager");
+              }
+              const hook = this.getExport(exportId);
+              if (!hook) {
+                throw new Error(`Unexpected: no export for import ID: ${exportId}`);
+              }
+              const target = hook.getTarget?.();
+              if (!target) {
+                throw new Error(`Unexpected: no target for export: ${exportId}`);
+              }
+              sessionManager.registerGift(swissnum, target);
+              continue;
+            }
+            break;
+          }
+
+          case "redeemGift": {
+            let swissnum = msg[1];
+            if (typeof swissnum == "string") {
+              const { sessionManager } = this.options;
+              if (!sessionManager) {
+                throw new Error("Cannot redeem gift without a session manager");
+              }
+              const gift = sessionManager.redeemGift(swissnum);
+              const payload = RpcPayload.fromAppReturn(gift);
+              const payloadHook = new PayloadStubHook(payload);
+              this.exports.push({ hook: payloadHook, refcount: 1 });
+              continue;
+            }
+            break;
+          }
         }
       }
 
@@ -766,6 +839,14 @@ export class RpcSession {
     }
     this.#session = new RpcSessionImpl(transport, mainHook, options);
     this.#mainStub = new RpcStub(this.#session.getMainImport());
+    const { sessionManager } = options;
+    if (sessionManager) {
+      sessionManager.setSessionForLocator(transport.getLocator(), this.#session);
+    }
+  }
+
+  __getInnerSession(): RpcSessionImpl {
+    return this.#session;
   }
 
   getRemoteMain(): RpcStub {

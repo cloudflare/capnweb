@@ -2,7 +2,8 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
+import { Exporter } from "./serialize.js";
+import type { __RPC_TARGET_BRAND } from "./types.js";
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
 if (!Symbol.dispose) {
@@ -25,6 +26,46 @@ export interface RpcTarget {
 export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 
 export type PropertyPath = (string | number)[];
+
+export class SessionManager {
+  private locatorSessionMap: Map<string, Exporter> = new Map();
+  private giftRegistry: Map<string, unknown> = new Map();
+
+  private connectHook: (locator: string) => Exporter;
+
+  constructor(connectHook: (locator: string) => Exporter) {
+    this.connectHook = connectHook;
+  }
+
+  provideSessionForLocator(locator: string): Exporter {
+    const session = this.locatorSessionMap.get(locator);
+    if (session) {
+      return session;
+    }
+    return this.connectHook(locator);
+  }
+
+  setSessionForLocator(locator: string, session: Exporter) {
+    this.locatorSessionMap.set(locator, session);
+  }
+
+  getSessionForLocator(locator: string): Exporter | undefined {
+    return this.locatorSessionMap.get(locator);
+  }
+
+  registerGift(swissnum: string, value: unknown) {
+    this.giftRegistry.set(swissnum, value);
+  }
+
+  redeemGift(swissnum: string): unknown {
+    const value = this.giftRegistry.get(swissnum);
+    if (!value) {
+      throw new Error(`Unexpected: no value for swissnum: ${swissnum}`);
+    }
+    this.giftRegistry.delete(swissnum);
+    return value;
+  }
+}
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
@@ -1515,7 +1556,7 @@ class TargetStubHook extends ValueStubHook {
   private parent?: object | undefined;  // `this` parameter when calling `target`
   private refcount?: BoxedRefcount;  // undefined if not needed (because target has no disposer)
 
-  private getTarget(): RpcTarget | Function {
+  getTarget(): RpcTarget | Function {
     if (this.target) {
       return this.target;
     } else {

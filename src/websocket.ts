@@ -88,6 +88,10 @@ class WebSocketTransport implements RpcTransport {
   #receiveQueue: string[] = [];
   #error?: any;
 
+  getLocator(): string {
+    return this.#webSocket.url;
+  }
+
   async send(message: string): Promise<void> {
     if (this.#sendQueue === undefined) {
       this.#webSocket.send(message);

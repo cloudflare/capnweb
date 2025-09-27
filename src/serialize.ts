@@ -18,6 +18,9 @@ export interface Exporter {
   // to roll back the exports.
   unexport(ids: Array<ExportId>): void;
 
+  sendRegisterGift(id: ExportId): string;
+  getLocator(): string;
+
   onSendError(error: Error): Error | void;
 }
 
@@ -33,6 +36,12 @@ class NullExporter implements Exporter {
   }
   unexport(ids: Array<ExportId>): void {}
 
+  sendRegisterGift(id: ExportId): string {
+    throw new Error("Cannot serialize RPC stubs without an RPC session.");
+  }
+  getLocator(): string {
+    throw new Error("Cannot serialize RPC stubs without an RPC session.");
+  }
   onSendError(error: Error): Error | void {}
 }
 
@@ -65,7 +74,9 @@ interface FromBase64 {
 // actually converting to a string. (The name is meant to be the opposite of "Evaluator", which
 // implements the opposite direction.)
 export class Devaluator {
-  private constructor(private exporter: Exporter, private source: RpcPayload | undefined) {}
+  private constructor(
+    private exporter: Exporter, 
+    private source: RpcPayload | undefined) {}
 
   // Devaluate the given value.
   // * value: The value to devaluate.
@@ -197,6 +208,20 @@ export class Devaluator {
           }
         }
 
+        // If the value is imported from a different session, send it as a gift.
+        const hookSession = hook.entry?.session;
+        const isThirdPartySession = hookSession && hookSession !== this.exporter;
+        const isRemoteOwned = isThirdPartySession && hookSession.getImport(hook) !== undefined;
+
+        if (isRemoteOwned) {
+          const thirdPartyId = hookSession.getImport(hook);
+          if (!thirdPartyId) {
+            throw new Error("Unexpected: had session but no import ID for value.");
+          }
+          const swissnum = hookSession.sendRegisterGift(thirdPartyId);
+          return ["gift", hookSession.getLocator(), swissnum];
+        }
+
         if (pathIfPromise) {
           hook = hook.get(pathIfPromise);
         } else {
@@ -265,6 +290,9 @@ class NullImporter implements Importer {
   }
   getExport(idx: ExportId): StubHook | undefined {
     return undefined;
+  }
+  importGift(locator: string, swissnum: string): unknown {
+    throw new Error("Cannot deserialize gifts without an RPC session.");
   }
 }
 
@@ -340,6 +368,15 @@ export class Evaluator {
               result.stack = value[3];
             }
             return result;
+          }
+          break;
+        case "gift":
+          if (value.length === 3 && typeof value[1] === "string" && typeof value[2] === "string") {
+            const hook = this.importer.importGift(value[1], value[2]);
+            const promise = new RpcPromise(hook, []);
+            // TODO: I don't know if this needs to be registered here
+            this.promises.push({promise, parent, property});
+            return promise;
           }
           break;
         case "undefined":
