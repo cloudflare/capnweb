@@ -1394,7 +1394,6 @@ function followPath(
       case 'rpc-thenable': {
         // Must be prototype property, and must NOT be inherited from `Object`.
         if (Object.hasOwn(<object>value, part)) {
-          // THIS IS YOUR FIX: Add a helpful warning for the developer.
           console.warn(
             `Cap'n Web Warning: Attempted to access instance property "${String(
               part
