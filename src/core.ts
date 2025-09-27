@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
+import type { RpcTargetBranded, __RPC_TARGET_BRAND } from './types.js';
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
 if (!Symbol.dispose) {
@@ -12,50 +12,63 @@ if (!Symbol.asyncDispose) {
   (Symbol as any).asyncDispose = Symbol.for('asyncDispose');
 }
 
-let workersModuleName = navigator.userAgent === "Cloudflare-Workers" ? "cloudflare:workers" : null;
+let workersModuleName =
+  navigator.userAgent === 'Cloudflare-Workers' ? 'cloudflare:workers' : null;
 let workersModule: any;
 if (workersModuleName) {
-  workersModule = await import(/* @vite-ignore */workersModuleName);
+  workersModule = await import(/* @vite-ignore */ workersModuleName);
 }
 
 export interface RpcTarget {
   [__RPC_TARGET_BRAND]: never;
-};
+}
 
 export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 
 export type PropertyPath = (string | number)[];
 
-type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
-    "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
-    "undefined";
+type TypeForRpc =
+  | 'unsupported'
+  | 'primitive'
+  | 'object'
+  | 'function'
+  | 'array'
+  | 'date'
+  | 'bigint'
+  | 'bytes'
+  | 'stub'
+  | 'rpc-promise'
+  | 'rpc-target'
+  | 'rpc-thenable'
+  | 'error'
+  | 'undefined';
 
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
-    case "boolean":
-    case "number":
-    case "string":
-      return "primitive";
+    case 'boolean':
+    case 'number':
+    case 'string':
+      return 'primitive';
 
-    case "undefined":
-      return "undefined";
+    case 'undefined':
+      return 'undefined';
 
-    case "object":
-    case "function":
+    case 'object':
+    case 'function':
       // Test by prototype, below.
       break;
 
-    case "bigint":
-      return "bigint";
+    case 'bigint':
+      return 'bigint';
 
     default:
-      return "unsupported";
+      return 'unsupported';
   }
 
   // Ugh JavaScript, why is `typeof null` equal to "object" but null isn't otherwise anything like
   // an object?
   if (value === null) {
-    return "primitive";
+    return 'primitive';
   }
 
   // Aside from RpcTarget, we generally don't support serializing *subclasses* of serializable
@@ -63,27 +76,27 @@ export function typeForRpc(value: unknown): TypeForRpc {
   let prototype = Object.getPrototypeOf(value);
   switch (prototype) {
     case Object.prototype:
-      return "object";
+      return 'object';
 
     case Function.prototype:
-      return "function";
+      return 'function';
 
     case Array.prototype:
-      return "array";
+      return 'array';
 
     case Date.prototype:
-      return "date";
+      return 'date';
 
     case Uint8Array.prototype:
-      return "bytes";
+      return 'bytes';
 
     // TODO: All other structured clone types.
 
     case RpcStub.prototype:
-      return "stub";
+      return 'stub';
 
     case RpcPromise.prototype:
-      return "rpc-promise";
+      return 'rpc-promise';
 
     // TODO: Promise<T> or thenable
 
@@ -91,31 +104,35 @@ export function typeForRpc(value: unknown): TypeForRpc {
       if (workersModule) {
         // TODO: We also need to match `RpcPromise` and `RpcProperty`, but they currently aren't
         //   exported by cloudflare:workers.
-        if (prototype == workersModule.RpcStub.prototype ||
-            value instanceof workersModule.ServiceStub) {
-          return "rpc-target";
-        } else if (prototype == workersModule.RpcPromise.prototype ||
-                   prototype == workersModule.RpcProperty.prototype) {
+        if (
+          prototype == workersModule.RpcStub.prototype ||
+          value instanceof workersModule.ServiceStub
+        ) {
+          return 'rpc-target';
+        } else if (
+          prototype == workersModule.RpcPromise.prototype ||
+          prototype == workersModule.RpcProperty.prototype
+        ) {
           // Like rpc-target, but should be wrapped in RpcPromise, so that it can be pull()ed,
           // which will await the thenable.
-          return "rpc-thenable";
+          return 'rpc-thenable';
         }
       }
 
       if (value instanceof RpcTarget) {
-        return "rpc-target";
+        return 'rpc-target';
       }
 
       if (value instanceof Error) {
-        return "error";
+        return 'error';
       }
 
-      return "unsupported";
+      return 'unsupported';
   }
 }
 
 function mapNotLoaded(): never {
-  throw new Error("RPC map() implementation was not loaded.");
+  throw new Error('RPC map() implementation was not loaded.');
 }
 
 // map() is implemented in `map.ts`. We can't import it here because it would create an import
@@ -124,14 +141,21 @@ export let mapImpl: MapImpl = { applyMap: mapNotLoaded, sendMap: mapNotLoaded };
 
 type MapImpl = {
   // Applies a map function to an input value (usually an array).
-  applyMap(input: unknown, parent: object | undefined, owner: RpcPayload | null,
-           captures: StubHook[], instructions: unknown[])
-          : StubHook;
+  applyMap(
+    input: unknown,
+    parent: object | undefined,
+    owner: RpcPayload | null,
+    captures: StubHook[],
+    instructions: unknown[]
+  ): StubHook;
 
   // Implements the .map() method of RpcStub.
-  sendMap(hook: StubHook, path: PropertyPath, func: (value: RpcPromise) => unknown)
-         : RpcPromise;
-}
+  sendMap(
+    hook: StubHook,
+    path: PropertyPath,
+    func: (value: RpcPromise) => unknown
+  ): RpcPromise;
+};
 
 // Inner interface backing an RpcStub or RpcPromise.
 //
@@ -160,7 +184,11 @@ export abstract class StubHook {
   // * Positive values are 1-based indexes into the instruction table, representing the results of
   //   previous instructions.
   // * Negative values are -1-based indexes into the capture list.
-  abstract map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook;
+  abstract map(
+    path: PropertyPath,
+    captures: StubHook[],
+    instructions: unknown[]
+  ): StubHook;
 
   // Read the property at the given path. Returns a StubHook representing a promise for that
   // property. This behaves very similarly to call(), except that no actual function is invoked
@@ -218,13 +246,29 @@ export abstract class StubHook {
 }
 
 export class ErrorStubHook extends StubHook {
-  constructor(private error: any) { super(); }
+  constructor(private error: any) {
+    super();
+  }
 
-  call(path: PropertyPath, args: RpcPayload): StubHook { return this; }
-  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook { return this; }
-  get(path: PropertyPath): StubHook { return this; }
-  dup(): StubHook { return this; }
-  pull(): RpcPayload | Promise<RpcPayload> { return Promise.reject(this.error); }
+  call(path: PropertyPath, args: RpcPayload): StubHook {
+    return this;
+  }
+  map(
+    path: PropertyPath,
+    captures: StubHook[],
+    instructions: unknown[]
+  ): StubHook {
+    return this;
+  }
+  get(path: PropertyPath): StubHook {
+    return this;
+  }
+  dup(): StubHook {
+    return this;
+  }
+  pull(): RpcPayload | Promise<RpcPayload> {
+    return Promise.reject(this.error);
+  }
   ignoreUnhandledRejections(): void {}
   dispose(): void {}
   onBroken(callback: (error: any) => void): void {
@@ -235,19 +279,31 @@ export class ErrorStubHook extends StubHook {
       Promise.resolve(err);
     }
   }
-};
+}
 
 const DISPOSED_HOOK: StubHook = new ErrorStubHook(
-    new Error("Attempted to use RPC stub after it has been disposed."));
+  new Error('Attempted to use RPC stub after it has been disposed.')
+);
 
 // A call interceptor can be used to intercept all RPC stub invocations within some synchronous
 // scope. This is used to implement record/replay
-type CallInterceptor = (hook: StubHook, path: PropertyPath, params: RpcPayload) => StubHook;
-let doCall: CallInterceptor = (hook: StubHook, path: PropertyPath, params: RpcPayload) => {
+type CallInterceptor = (
+  hook: StubHook,
+  path: PropertyPath,
+  params: RpcPayload
+) => StubHook;
+let doCall: CallInterceptor = (
+  hook: StubHook,
+  path: PropertyPath,
+  params: RpcPayload
+) => {
   return hook.call(path, params);
-}
+};
 
-export function withCallInterceptor<T>(interceptor: CallInterceptor, callback: () => T): T {
+export function withCallInterceptor<T>(
+  interceptor: CallInterceptor,
+  callback: () => T
+): T {
   let oldValue = doCall;
   doCall = interceptor;
   try {
@@ -258,21 +314,27 @@ export function withCallInterceptor<T>(interceptor: CallInterceptor, callback: (
 }
 
 // Private symbol which may be used to unwrap the real stub through the Proxy.
-let RAW_STUB = Symbol("realStub");
+let RAW_STUB = Symbol('realStub');
 
 export interface RpcStub extends Disposable {
   // Declare magic `RAW_STUB` key that unwraps the proxy.
   [RAW_STUB]: this;
 }
 
-const PROXY_HANDLERS: ProxyHandler<{raw: RpcStub}> = {
-  apply(target: {raw: RpcStub}, thisArg: any, argumentsList: any[]) {
+const PROXY_HANDLERS: ProxyHandler<{ raw: RpcStub }> = {
+  apply(target: { raw: RpcStub }, thisArg: any, argumentsList: any[]) {
     let stub = target.raw;
-    return new RpcPromise(doCall(stub.hook,
-        stub.pathIfPromise || [], RpcPayload.fromAppParams(argumentsList)), []);
+    return new RpcPromise(
+      doCall(
+        stub.hook,
+        stub.pathIfPromise || [],
+        RpcPayload.fromAppParams(argumentsList)
+      ),
+      []
+    );
   },
 
-  get(target: {raw: RpcStub}, prop: string | symbol, receiver: any) {
+  get(target: { raw: RpcStub }, prop: string | symbol, receiver: any) {
     let stub = target.raw;
     if (prop === RAW_STUB) {
       return stub;
@@ -284,12 +346,16 @@ const PROXY_HANDLERS: ProxyHandler<{raw: RpcStub}> = {
       // Note we don't just check `prop in target` because we intentionally want to hide the
       // properties `hook` and `path`.
       return (<any>stub)[prop];
-    } else if (typeof prop === "string") {
+    } else if (typeof prop === 'string') {
       // Return promise for property.
-      return new RpcPromise(stub.hook,
-          stub.pathIfPromise ? [...stub.pathIfPromise, prop] : [prop]);
-    } else if (prop === Symbol.dispose &&
-          (!stub.pathIfPromise || stub.pathIfPromise.length == 0)) {
+      return new RpcPromise(
+        stub.hook,
+        stub.pathIfPromise ? [...stub.pathIfPromise, prop] : [prop]
+      );
+    } else if (
+      prop === Symbol.dispose &&
+      (!stub.pathIfPromise || stub.pathIfPromise.length == 0)
+    ) {
       // We only advertise Symbol.dispose on stubs and root promises, not properties.
       return () => {
         stub.hook.dispose();
@@ -300,62 +366,75 @@ const PROXY_HANDLERS: ProxyHandler<{raw: RpcStub}> = {
     }
   },
 
-  has(target: {raw: RpcStub}, prop: string | symbol) {
+  has(target: { raw: RpcStub }, prop: string | symbol) {
     let stub = target.raw;
     if (prop === RAW_STUB) {
       return true;
     } else if (prop in RpcPromise.prototype) {
       return prop in stub;
-    } else if (typeof prop === "string") {
+    } else if (typeof prop === 'string') {
       return true;
-    } else if (prop === Symbol.dispose &&
-          (!stub.pathIfPromise || stub.pathIfPromise.length == 0)) {
+    } else if (
+      prop === Symbol.dispose &&
+      (!stub.pathIfPromise || stub.pathIfPromise.length == 0)
+    ) {
       return true;
     } else {
       return false;
     }
   },
 
-  construct(target: {raw: RpcStub}, args: any) {
-    throw new Error("An RPC stub cannot be used as a constructor.");
+  construct(target: { raw: RpcStub }, args: any) {
+    throw new Error('An RPC stub cannot be used as a constructor.');
   },
 
-  defineProperty(target: {raw: RpcStub}, property: string | symbol, attributes: PropertyDescriptor)
-      : boolean {
+  defineProperty(
+    target: { raw: RpcStub },
+    property: string | symbol,
+    attributes: PropertyDescriptor
+  ): boolean {
     throw new Error("Can't define properties on RPC stubs.");
   },
 
-  deleteProperty(target: {raw: RpcStub}, p: string | symbol): boolean {
+  deleteProperty(target: { raw: RpcStub }, p: string | symbol): boolean {
     throw new Error("Can't delete properties on RPC stubs.");
   },
 
-  getOwnPropertyDescriptor(target: {raw: RpcStub}, p: string | symbol): PropertyDescriptor | undefined {
+  getOwnPropertyDescriptor(
+    target: { raw: RpcStub },
+    p: string | symbol
+  ): PropertyDescriptor | undefined {
     // Treat all properties as prototype properties. That's probably fine?
     return undefined;
   },
 
-  getPrototypeOf(target: {raw: RpcStub}): object | null {
+  getPrototypeOf(target: { raw: RpcStub }): object | null {
     return Object.getPrototypeOf(target.raw);
   },
 
-  isExtensible(target: {raw: RpcStub}): boolean {
+  isExtensible(target: { raw: RpcStub }): boolean {
     return false;
   },
 
-  ownKeys(target: {raw: RpcStub}): ArrayLike<string | symbol> {
+  ownKeys(target: { raw: RpcStub }): ArrayLike<string | symbol> {
     return [];
   },
 
-  preventExtensions(target: {raw: RpcStub}): boolean {
+  preventExtensions(target: { raw: RpcStub }): boolean {
     // Extensions are not possible anyway.
     return true;
   },
 
-  set(target: {raw: RpcStub}, p: string | symbol, newValue: any, receiver: any): boolean {
+  set(
+    target: { raw: RpcStub },
+    p: string | symbol,
+    newValue: any,
+    receiver: any
+  ): boolean {
     throw new Error("Can't assign properties on RPC stubs.");
   },
 
-  setPrototypeOf(target: {raw: RpcStub}, v: object | null): boolean {
+  setPrototypeOf(target: { raw: RpcStub }, v: object | null): boolean {
     throw new Error("Can't override prototype of RPC stubs.");
   },
 };
@@ -387,7 +466,9 @@ export class RpcStub extends RpcTarget {
 
       // Don't let app set this.
       if (pathIfPromise) {
-        throw new TypeError("RpcStub constructor expected one argument, received two.");
+        throw new TypeError(
+          'RpcStub constructor expected one argument, received two.'
+        );
       }
     }
 
@@ -426,7 +507,7 @@ export class RpcStub extends RpcTarget {
   }
 
   map(func: (value: RpcPromise) => unknown): RpcPromise {
-    let {hook, pathIfPromise} = this[RAW_STUB];
+    let { hook, pathIfPromise } = this[RAW_STUB];
     return mapImpl.sendMap(hook, pathIfPromise || [], func);
   }
 }
@@ -437,13 +518,16 @@ export class RpcPromise extends RpcStub {
     super(hook, pathIfPromise);
   }
 
-  then(onfulfilled?: ((value: unknown) => unknown) | undefined | null,
-       onrejected?: ((reason: any) => unknown) | undefined | null)
-       : Promise<unknown> {
+  then(
+    onfulfilled?: ((value: unknown) => unknown) | undefined | null,
+    onrejected?: ((reason: any) => unknown) | undefined | null
+  ): Promise<unknown> {
     return pullPromise(this).then(...arguments);
   }
 
-  catch(onrejected?: ((reason: any) => unknown) | undefined | null): Promise<unknown> {
+  catch(
+    onrejected?: ((reason: any) => unknown) | undefined | null
+  ): Promise<unknown> {
     return pullPromise(this).catch(...arguments);
   }
 
@@ -463,7 +547,7 @@ export class RpcPromise extends RpcStub {
 //
 // The result is a promise (i.e. can be pull()ed) if and only if the input is a promise.
 export function unwrapStubTakingOwnership(stub: RpcStub): StubHook {
-  let {hook, pathIfPromise} = stub[RAW_STUB];
+  let { hook, pathIfPromise } = stub[RAW_STUB];
 
   if (pathIfPromise && pathIfPromise.length > 0) {
     return hook.get(pathIfPromise);
@@ -481,7 +565,7 @@ export function unwrapStubTakingOwnership(stub: RpcStub): StubHook {
 // The result is a promise (i.e. can be pull()ed) if and only if the input is a promise. Note that
 // this differs from the semantics of the actual `dup()` method.
 export function unwrapStubAndDup(stub: RpcStub): StubHook {
-  let {hook, pathIfPromise} = stub[RAW_STUB];
+  let { hook, pathIfPromise } = stub[RAW_STUB];
 
   if (pathIfPromise) {
     return hook.get(pathIfPromise);
@@ -497,7 +581,7 @@ export function unwrapStubAndDup(stub: RpcStub): StubHook {
 // eventually be disposed (unless `undefined` is returned, in which case neither need to be
 // disposed, as properties are not normally disposable).
 export function unwrapStubNoProperties(stub: RpcStub): StubHook | undefined {
-  let {hook, pathIfPromise} = stub[RAW_STUB];
+  let { hook, pathIfPromise } = stub[RAW_STUB];
 
   if (pathIfPromise && pathIfPromise.length > 0) {
     return undefined;
@@ -519,14 +603,17 @@ export function unwrapStubOrParent(stub: RpcStub): StubHook {
 //
 // This function is agnostic to ownership transfer. Exactly one of `stub` or the return `hook` must
 // eventually be disposed.
-export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise?: PropertyPath} {
+export function unwrapStubAndPath(stub: RpcStub): {
+  hook: StubHook;
+  pathIfPromise?: PropertyPath;
+} {
   return stub[RAW_STUB];
 }
 
 // Given a promise stub (still wrapped in a Proxy), pull the remote promise and deliver the
 // payload. This is a helper used to implement the then/catch/finally methods of RpcPromise.
 async function pullPromise(promise: RpcPromise): Promise<unknown> {
-  let {hook, pathIfPromise} = promise[RAW_STUB];
+  let { hook, pathIfPromise } = promise[RAW_STUB];
   if (pathIfPromise!.length > 0) {
     // If this isn't the root promise, we have to clone it and pull the clone. This is a little
     // weird in terms of disposal: There's no way for the app to dispose/cancel the promise while
@@ -541,7 +628,11 @@ async function pullPromise(promise: RpcPromise): Promise<unknown> {
 // =======================================================================================
 // RpcPayload
 
-export type LocatedPromise = {parent: object, property: string | number, promise: RpcPromise};
+export type LocatedPromise = {
+  parent: object;
+  property: string | number;
+  promise: RpcPromise;
+};
 
 // Represents the params to an RPC call, or the resolution of an RPC promise, as it passes
 // through the system.
@@ -610,7 +701,7 @@ export class RpcPayload {
   // touched again after the call returns synchronously (returns a promise) -- by that point,
   // the value has either been copied or serialized to the wire.
   public static fromAppParams(value: unknown): RpcPayload {
-    return new RpcPayload(value, "params");
+    return new RpcPayload(value, 'params');
   }
 
   // Create a payload from a value return from an RPC implementation by the app.
@@ -619,7 +710,7 @@ export class RpcPayload {
   // may hold onto `value` for an arbitrarily long time (e.g. to serve pipelined requests). It
   // will still avoid modifying `value` and will make a deep copy if it is delivered locally.
   public static fromAppReturn(value: unknown): RpcPayload {
-    return new RpcPayload(value, "return");
+    return new RpcPayload(value, 'return');
   }
 
   // Combine an array of payloads into a single payload whose value is an array. Ownership of all
@@ -643,7 +734,7 @@ export class RpcPayload {
           promise = {
             parent: resultArray,
             property: resultArray.length,
-            promise: promise.promise
+            promise: promise.promise,
           };
         }
         promises.push(promise);
@@ -651,7 +742,7 @@ export class RpcPayload {
       resultArray.push(payload.value);
     }
 
-    return new RpcPayload(resultArray, "owned", stubs, promises);
+    return new RpcPayload(resultArray, 'owned', stubs, promises);
   }
 
   // Create a payload from a value parsed off the wire using Evaluator.evaluate().
@@ -666,7 +757,7 @@ export class RpcPayload {
   // modify the value in preparation for delivery, and may deliver the value directly to the app
   // without copying.
   public static forEvaluate(stubs: RpcStub[], promises: LocatedPromise[]) {
-    return new RpcPayload(null, "owned", stubs, promises);
+    return new RpcPayload(null, 'owned', stubs, promises);
   }
 
   // Deep-copy the given value, including dup()ing all stubs.
@@ -676,9 +767,19 @@ export class RpcPayload {
   // If deep-copying from a branch of some other RpcPayload, it must be provided, to make sure
   // RpcTargets found within don't get duplicate stubs.
   public static deepCopyFrom(
-      value: unknown, oldParent: object | undefined, owner: RpcPayload | null): RpcPayload {
-    let result = new RpcPayload(null, "owned", [], []);
-    result.value = result.deepCopy(value, oldParent, "value", result, /*dupStubs=*/true, owner);
+    value: unknown,
+    oldParent: object | undefined,
+    owner: RpcPayload | null
+  ): RpcPayload {
+    let result = new RpcPayload(null, 'owned', [], []);
+    result.value = result.deepCopy(
+      value,
+      oldParent,
+      'value',
+      result,
+      /*dupStubs=*/ true,
+      owner
+    );
     return result;
   }
 
@@ -692,7 +793,7 @@ export class RpcPayload {
     // "return": It came from the app, returned from a call. We take ownership of all stubs within.
     // "owned": This value belongs fully to us, either because it was deserialized from the wire
     //   or because we deep-copied a value from the app.
-    private source: "params" | "return" | "owned",
+    private source: 'params' | 'return' | 'owned',
 
     // `stubs` and `promises` are filled in only if `value` belongs to us (`source` is "owned") and
     // so can safely be delivered to the app. If `value` came from then app in the first place,
@@ -715,11 +816,14 @@ export class RpcPayload {
   private rpcTargets?: Map<RpcTarget | Function, StubHook>;
 
   // Get the StubHook representing the given RpcTarget found inside this payload.
-  public getHookForRpcTarget(target: RpcTarget | Function, parent: object | undefined,
-                             dupStubs: boolean = true): StubHook {
-    if (this.source === "params") {
+  public getHookForRpcTarget(
+    target: RpcTarget | Function,
+    parent: object | undefined,
+    dupStubs: boolean = true
+  ): StubHook {
+    if (this.source === 'params') {
       return TargetStubHook.create(target, parent);
-    } else if (this.source === "return") {
+    } else if (this.source === 'return') {
       // If dupStubs is true, we want to both make sure the map contains the stub, and also return
       // a dup of that stub.
       //
@@ -741,7 +845,7 @@ export class RpcPayload {
         hook = TargetStubHook.create(target, parent);
         if (dupStubs) {
           if (!this.rpcTargets) {
-            this.rpcTargets = new Map;
+            this.rpcTargets = new Map();
           }
           this.rpcTargets.set(target, hook);
           return hook.dup();
@@ -755,48 +859,67 @@ export class RpcPayload {
   }
 
   private deepCopy(
-      value: unknown, oldParent: object | undefined, property: string | number, parent: object,
-      dupStubs: boolean, owner: RpcPayload | null): unknown {
+    value: unknown,
+    oldParent: object | undefined,
+    property: string | number,
+    parent: object,
+    dupStubs: boolean,
+    owner: RpcPayload | null
+  ): unknown {
     let kind = typeForRpc(value);
     switch (kind) {
-      case "unsupported":
+      case 'unsupported':
         // This will throw later on when someone tries to do something with it.
         return value;
 
-      case "primitive":
-      case "bigint":
-      case "date":
-      case "bytes":
-      case "error":
-      case "undefined":
+      case 'primitive':
+      case 'bigint':
+      case 'date':
+      case 'bytes':
+      case 'error':
+      case 'undefined':
         // immutable, no need to copy
         // TODO: Should errors be copied if they have own properties?
         return value;
 
-      case "array": {
+      case 'array': {
         // We have to construct the new array first, then fill it in, so we can pass it as the
         // parent.
         let array = <Array<unknown>>value;
         let len = array.length;
         let result = new Array(len);
         for (let i = 0; i < len; i++) {
-          result[i] = this.deepCopy(array[i], array, i, result, dupStubs, owner);
+          result[i] = this.deepCopy(
+            array[i],
+            array,
+            i,
+            result,
+            dupStubs,
+            owner
+          );
         }
         return result;
       }
 
-      case "object": {
+      case 'object': {
         // Plain object. Unfortunately there's no way to pre-allocate the right shape.
         let result: Record<string, unknown> = {};
         let object = <Record<string, unknown>>value;
         for (let i in object) {
-          result[i] = this.deepCopy(object[i], object, i, result, dupStubs, owner);
+          result[i] = this.deepCopy(
+            object[i],
+            object,
+            i,
+            result,
+            dupStubs,
+            owner
+          );
         }
         return result;
       }
 
-      case "stub":
-      case "rpc-promise": {
+      case 'stub':
+      case 'rpc-promise': {
         let stub = <RpcStub>value;
         let hook: StubHook;
         if (dupStubs) {
@@ -806,7 +929,7 @@ export class RpcPayload {
         }
         if (stub instanceof RpcPromise) {
           let promise = new RpcPromise(hook, []);
-          this.promises!.push({parent, property, promise});
+          this.promises!.push({ parent, property, promise });
           return promise;
         } else {
           let newStub = new RpcStub(hook);
@@ -815,12 +938,14 @@ export class RpcPayload {
         }
       }
 
-      case "function":
-      case "rpc-target": {
+      case 'function':
+      case 'rpc-target': {
         let target = <RpcTarget | Function>value;
         let stub: RpcStub;
         if (owner) {
-          stub = new RpcStub(owner.getHookForRpcTarget(target, oldParent, dupStubs));
+          stub = new RpcStub(
+            owner.getHookForRpcTarget(target, oldParent, dupStubs)
+          );
         } else {
           stub = new RpcStub(TargetStubHook.create(target, oldParent));
         }
@@ -828,38 +953,51 @@ export class RpcPayload {
         return stub;
       }
 
-      case "rpc-thenable": {
+      case 'rpc-thenable': {
         let target = <RpcTarget>value;
         let promise: RpcPromise;
         if (owner) {
-          promise = new RpcPromise(owner.getHookForRpcTarget(target, oldParent, dupStubs), []);
+          promise = new RpcPromise(
+            owner.getHookForRpcTarget(target, oldParent, dupStubs),
+            []
+          );
         } else {
-          promise = new RpcPromise(TargetStubHook.create(target, oldParent), []);
+          promise = new RpcPromise(
+            TargetStubHook.create(target, oldParent),
+            []
+          );
         }
-        this.promises!.push({parent, property, promise});
+        this.promises!.push({ parent, property, promise });
         return promise;
       }
 
       default:
         kind satisfies never;
-        throw new Error("unreachable");
+        throw new Error('unreachable');
     }
   }
 
   // Ensures that if the value originally came from an unowned source, we have replaced it with a
   // deep copy.
   public ensureDeepCopied() {
-    if (this.source !== "owned") {
+    if (this.source !== 'owned') {
       // If we came from call params, we need to dupe any stubs. Otherwise (we came from a return),
       // we take ownership of all stubs.
-      let dupStubs = this.source === "params";
+      let dupStubs = this.source === 'params';
 
       this.stubs = [];
       this.promises = [];
 
       // Deep-copy the value.
       try {
-        this.value = this.deepCopy(this.value, undefined, "value", this, dupStubs, this);
+        this.value = this.deepCopy(
+          this.value,
+          undefined,
+          'value',
+          this,
+          dupStubs,
+          this
+        );
       } catch (err) {
         // Roll back the change.
         this.stubs = undefined;
@@ -868,18 +1006,22 @@ export class RpcPayload {
       }
 
       // We now own the value.
-      this.source = "owned";
+      this.source = 'owned';
 
       // `rpcTargets` should have been left empty. We can throw it out.
       if (this.rpcTargets && this.rpcTargets.size > 0) {
-        throw new Error("Not all rpcTargets were accounted for in deep-copy?");
+        throw new Error('Not all rpcTargets were accounted for in deep-copy?');
       }
       this.rpcTargets = undefined;
     }
   }
 
   // Resolve all promises in this payload and then assign the final value into `parent[property]`.
-  private deliverTo(parent: object, property: string | number, promises: Promise<any>[]): void {
+  private deliverTo(
+    parent: object,
+    property: string | number,
+    promises: Promise<any>[]
+  ): void {
     this.ensureDeepCopied();
 
     if (this.value instanceof RpcPromise) {
@@ -892,18 +1034,26 @@ export class RpcPayload {
         // resolution does not interfere with disposal later on -- disposal will be based on the
         // `promises` list, so will still properly dispose each promise, which in turn disposes
         // the promise's eventual payload.
-        RpcPayload.deliverRpcPromiseTo(record.promise, record.parent, record.property, promises);
+        RpcPayload.deliverRpcPromiseTo(
+          record.promise,
+          record.parent,
+          record.property,
+          promises
+        );
       }
     }
   }
 
   private static deliverRpcPromiseTo(
-      promise: RpcPromise, parent: object, property: string | number,
-      promises: Promise<unknown>[]) {
+    promise: RpcPromise,
+    parent: object,
+    property: string | number,
+    promises: Promise<unknown>[]
+  ) {
     // deepCopy() should have replaced any property stubs with normal promise stubs.
     let hook = unwrapStubNoProperties(promise);
     if (!hook) {
-      throw new Error("property promises should have been resolved earlier");
+      throw new Error('property promises should have been resolved earlier');
     }
 
     let inner = hook.pull();
@@ -912,13 +1062,15 @@ export class RpcPayload {
       inner.deliverTo(parent, property, promises);
     } else {
       // It's a promise.
-      promises.push(inner.then(payload => {
-        let subPromises: Promise<unknown>[] = [];
-        payload.deliverTo(parent, property, subPromises);
-        if (subPromises.length > 0) {
-          return Promise.all(subPromises);
-        }
-      }));
+      promises.push(
+        inner.then((payload) => {
+          let subPromises: Promise<unknown>[] = [];
+          payload.deliverTo(parent, property, subPromises);
+          if (subPromises.length > 0) {
+            return Promise.all(subPromises);
+          }
+        })
+      );
     }
   }
 
@@ -929,10 +1081,13 @@ export class RpcPayload {
   //
   // The payload is automatically disposed after the call completes. The caller should not call
   // dispose().
-  public async deliverCall(func: Function, thisArg: object | undefined): Promise<RpcPayload> {
+  public async deliverCall(
+    func: Function,
+    thisArg: object | undefined
+  ): Promise<RpcPayload> {
     try {
       let promises: Promise<void>[] = [];
-      this.deliverTo(this, "value", promises);
+      this.deliverTo(this, 'value', promises);
 
       // WARNING: It is critical that if the promises list is empty, we do not await anything, so
       //   that the function is called immediately and synchronously. Otherwise, we might violate
@@ -967,7 +1122,7 @@ export class RpcPayload {
   public async deliverResolve(): Promise<unknown> {
     try {
       let promises: Promise<void>[] = [];
-      this.deliverTo(this, "value", promises);
+      this.deliverTo(this, 'value', promises);
 
       if (promises.length > 0) {
         await Promise.all(promises);
@@ -1005,23 +1160,25 @@ export class RpcPayload {
   }
 
   public dispose() {
-    if (this.source === "owned") {
+    if (this.source === 'owned') {
       // Oh good, we can just run through them.
-      this.stubs!.forEach(stub => stub[Symbol.dispose]());
-      this.promises!.forEach(promise => promise.promise[Symbol.dispose]());
-    } else if (this.source === "return") {
+      this.stubs!.forEach((stub) => stub[Symbol.dispose]());
+      this.promises!.forEach((promise) => promise.promise[Symbol.dispose]());
+    } else if (this.source === 'return') {
       // Value received directly from app as a return value. We take ownership of all stubs, so we
       // must recursively scan it for things to dispose.
       this.disposeImpl(this.value, undefined);
       if (this.rpcTargets && this.rpcTargets.size > 0) {
-        throw new Error("Not all rpcTargets were accounted for in disposeImpl()?");
+        throw new Error(
+          'Not all rpcTargets were accounted for in disposeImpl()?'
+        );
       }
     } else {
       // this.source is "params". We don't own the stubs within.
     }
 
     // Make dispose() idempotent.
-    this.source = "owned";
+    this.source = 'owned';
     this.stubs = [];
     this.promises = [];
   }
@@ -1030,16 +1187,16 @@ export class RpcPayload {
   private disposeImpl(value: unknown, parent: object | undefined) {
     let kind = typeForRpc(value);
     switch (kind) {
-      case "unsupported":
-      case "primitive":
-      case "bigint":
-      case "bytes":
-      case "date":
-      case "error":
-      case "undefined":
+      case 'unsupported':
+      case 'primitive':
+      case 'bigint':
+      case 'bytes':
+      case 'date':
+      case 'error':
+      case 'undefined':
         return;
 
-      case "array": {
+      case 'array': {
         let array = <Array<unknown>>value;
         let len = array.length;
         for (let i = 0; i < len; i++) {
@@ -1048,7 +1205,7 @@ export class RpcPayload {
         return;
       }
 
-      case "object": {
+      case 'object': {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
           this.disposeImpl(object[i], object);
@@ -1056,8 +1213,8 @@ export class RpcPayload {
         return;
       }
 
-      case "stub":
-      case "rpc-promise": {
+      case 'stub':
+      case 'rpc-promise': {
         let stub = <RpcStub>value;
         let hook = unwrapStubNoProperties(stub);
         if (hook) {
@@ -1066,8 +1223,8 @@ export class RpcPayload {
         return;
       }
 
-      case "function":
-      case "rpc-target": {
+      case 'function':
+      case 'rpc-target': {
         let target = <RpcTarget | Function>value;
         let hook = this.rpcTargets?.get(target);
         if (hook) {
@@ -1086,7 +1243,7 @@ export class RpcPayload {
         return;
       }
 
-      case "rpc-thenable":
+      case 'rpc-thenable':
         // Since thenables are promises, we don't own them, so we don't dispose them.
         return;
 
@@ -1102,11 +1259,12 @@ export class RpcPayload {
   ignoreUnhandledRejections(): void {
     if (this.stubs) {
       // Propagate to all stubs and promises.
-      this.stubs.forEach(stub => {
+      this.stubs.forEach((stub) => {
         unwrapStubOrParent(stub).ignoreUnhandledRejections();
       });
-      this.promises!.forEach(
-          promise => unwrapStubOrParent(promise.promise).ignoreUnhandledRejections());
+      this.promises!.forEach((promise) =>
+        unwrapStubOrParent(promise.promise).ignoreUnhandledRejections()
+      );
     } else {
       // Ugh we have to walk the tree.
       this.ignoreUnhandledRejectionsImpl(this.value);
@@ -1116,18 +1274,18 @@ export class RpcPayload {
   private ignoreUnhandledRejectionsImpl(value: unknown) {
     let kind = typeForRpc(value);
     switch (kind) {
-      case "unsupported":
-      case "primitive":
-      case "bigint":
-      case "bytes":
-      case "date":
-      case "error":
-      case "undefined":
-      case "function":
-      case "rpc-target":
+      case 'unsupported':
+      case 'primitive':
+      case 'bigint':
+      case 'bytes':
+      case 'date':
+      case 'error':
+      case 'undefined':
+      case 'function':
+      case 'rpc-target':
         return;
 
-      case "array": {
+      case 'array': {
         let array = <Array<unknown>>value;
         let len = array.length;
         for (let i = 0; i < len; i++) {
@@ -1136,7 +1294,7 @@ export class RpcPayload {
         return;
       }
 
-      case "object": {
+      case 'object': {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
           this.ignoreUnhandledRejectionsImpl(object[i]);
@@ -1144,13 +1302,16 @@ export class RpcPayload {
         return;
       }
 
-      case "stub":
-      case "rpc-promise":
+      case 'stub':
+      case 'rpc-promise':
         unwrapStubOrParent(<RpcStub>value).ignoreUnhandledRejections();
         return;
 
-      case "rpc-thenable":
-        (<any>value).then((_: any) => {}, (_: any) => {});
+      case 'rpc-thenable':
+        (<any>value).then(
+          (_: any) => {},
+          (_: any) => {}
+        );
         return;
 
       default:
@@ -1158,34 +1319,40 @@ export class RpcPayload {
         return;
     }
   }
-};
+}
 
 // =======================================================================================
 // Local StubHook implementations
 
 // Result of followPath().
-type FollowPathResult = {
-  // Path led to a regular value.
+type FollowPathResult =
+  | {
+      // Path led to a regular value.
 
-  value: unknown,              // the value
-  parent: object | undefined,  // the immediate parent (useful as `this` if making a call)
-  owner: RpcPayload | null,    // RpcPayload that owns the value, if any
+      value: unknown; // the value
+      parent: object | undefined; // the immediate parent (useful as `this` if making a call)
+      owner: RpcPayload | null; // RpcPayload that owns the value, if any
 
-  hook?: never,
-  remainingPath?: never,
-} | {
-  // Path leads into another stub, which needs to be called recursively.
+      hook?: never;
+      remainingPath?: never;
+    }
+  | {
+      // Path leads into another stub, which needs to be called recursively.
 
-  hook: StubHook,               // StubHook of the inner stub.
-  remainingPath: PropertyPath,  // Path to pass to `hook` when recursing.
+      hook: StubHook; // StubHook of the inner stub.
+      remainingPath: PropertyPath; // Path to pass to `hook` when recursing.
 
-  value?: never,
-  parent?: never,
-  owner?: never,
-};
+      value?: never;
+      parent?: never;
+      owner?: never;
+    };
 
-function followPath(value: unknown, parent: object | undefined,
-                    path: PropertyPath, owner: RpcPayload | null): FollowPathResult {
+function followPath(
+  value: unknown,
+  parent: object | undefined,
+  path: PropertyPath,
+  owner: RpcPayload | null
+): FollowPathResult {
   for (let i = 0; i < path.length; i++) {
     parent = <object>value;
 
@@ -1203,8 +1370,8 @@ function followPath(value: unknown, parent: object | undefined,
 
     let kind = typeForRpc(value);
     switch (kind) {
-      case "object":
-      case "function":
+      case 'object':
+      case 'function':
         // Must be own property, NOT inherited from a prototype.
         if (Object.hasOwn(<object>value, part)) {
           value = (<any>value)[part];
@@ -1213,7 +1380,7 @@ function followPath(value: unknown, parent: object | undefined,
         }
         break;
 
-      case "array":
+      case 'array':
         // For arrays, restrict specifically to numeric indexes, to be consistent with
         // serialization, which only sends a flat list.
         if (Number.isInteger(part) && <number>part >= 0) {
@@ -1223,10 +1390,17 @@ function followPath(value: unknown, parent: object | undefined,
         }
         break;
 
-      case "rpc-target":
-      case "rpc-thenable": {
+      case 'rpc-target':
+      case 'rpc-thenable': {
         // Must be prototype property, and must NOT be inherited from `Object`.
         if (Object.hasOwn(<object>value, part)) {
+          // THIS IS YOUR FIX: Add a helpful warning for the developer.
+          console.warn(
+            `Cap'n Web Warning: Attempted to access instance property "${String(
+              part
+            )}" on an RpcTarget. ` +
+              `Instance properties are not accessible over RPC for security. To expose this value, define a getter for it.`
+          );
           value = undefined;
         } else {
           value = (<any>value)[part];
@@ -1238,49 +1412,54 @@ function followPath(value: unknown, parent: object | undefined,
         break;
       }
 
-      case "stub":
-      case "rpc-promise": {
-        let {hook: hook, pathIfPromise} = unwrapStubAndPath(<RpcStub>value);
-        return { hook, remainingPath:
-            pathIfPromise ? pathIfPromise.concat(path.slice(i)) : path.slice(i) };
+      case 'stub':
+      case 'rpc-promise': {
+        let { hook: hook, pathIfPromise } = unwrapStubAndPath(<RpcStub>value);
+        return {
+          hook,
+          remainingPath: pathIfPromise
+            ? pathIfPromise.concat(path.slice(i))
+            : path.slice(i),
+        };
       }
 
-      case "primitive":
-      case "bigint":
-      case "bytes":
-      case "date":
-      case "error":
+      case 'primitive':
+      case 'bigint':
+      case 'bytes':
+      case 'date':
+      case 'error':
         // These have no properties that can be accessed remotely.
         value = undefined;
         break;
 
-      case "undefined":
+      case 'undefined':
         // Intentionally produce TypeError.
         value = (value as any)[part];
         break;
 
-      case "unsupported": {
+      case 'unsupported': {
         if (i === 0) {
           throw new TypeError(`RPC stub points at a non-serializable type.`);
         } else {
-          let prefix = path.slice(0, i).join(".");
-          let remainder = path.slice(0, i).join(".");
+          let prefix = path.slice(0, i).join('.');
+          let remainder = path.slice(0, i).join('.');
           throw new TypeError(
-              `'${prefix}' is not a serializable type, so property ${remainder} cannot ` +
-              `be accessed.`);
+            `'${prefix}' is not a serializable type, so property ${remainder} cannot ` +
+              `be accessed.`
+          );
         }
       }
 
       default:
         kind satisfies never;
-        throw new TypeError("unreachable");
+        throw new TypeError('unreachable');
     }
   }
 
   // If we reached a promise, we actually want the caller to forward to the promise, not return
   // the promise itself.
   if (value instanceof RpcPromise) {
-    let {hook: hook, pathIfPromise} = unwrapStubAndPath(<RpcStub>value);
+    let { hook: hook, pathIfPromise } = unwrapStubAndPath(<RpcStub>value);
     return { hook, remainingPath: pathIfPromise || [] };
   }
 
@@ -1295,11 +1474,11 @@ function followPath(value: unknown, parent: object | undefined,
 
 // Shared base class for PayloadStubHook and TargetStubHook.
 abstract class ValueStubHook extends StubHook {
-  protected abstract getValue(): {value: unknown, owner: RpcPayload | null};
+  protected abstract getValue(): { value: unknown; owner: RpcPayload | null };
 
   call(path: PropertyPath, args: RpcPayload): StubHook {
     try {
-      let {value, owner} = this.getValue();
+      let { value, owner } = this.getValue();
       let followResult = followPath(value, undefined, path, owner);
 
       if (followResult.hook) {
@@ -1307,24 +1486,30 @@ abstract class ValueStubHook extends StubHook {
       }
 
       // It's a local function.
-      if (typeof followResult.value != "function") {
+      if (typeof followResult.value != 'function') {
         throw new TypeError(`'${path.join('.')}' is not a function.`);
       }
       let promise = args.deliverCall(followResult.value, followResult.parent);
-      return new PromiseStubHook(promise.then(payload => {
-        return new PayloadStubHook(payload);
-      }));
+      return new PromiseStubHook(
+        promise.then((payload) => {
+          return new PayloadStubHook(payload);
+        })
+      );
     } catch (err) {
       return new ErrorStubHook(err);
     }
   }
 
-  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
+  map(
+    path: PropertyPath,
+    captures: StubHook[],
+    instructions: unknown[]
+  ): StubHook {
     try {
       let followResult: FollowPathResult;
       try {
-        let {value, owner} = this.getValue();
-        followResult = followPath(value, undefined, path, owner);;
+        let { value, owner } = this.getValue();
+        followResult = followPath(value, undefined, path, owner);
       } catch (err) {
         // Oops, we need to dispose the captures of which we took ownership.
         for (let cap of captures) {
@@ -1334,11 +1519,20 @@ abstract class ValueStubHook extends StubHook {
       }
 
       if (followResult.hook) {
-        return followResult.hook.map(followResult.remainingPath, captures, instructions);
+        return followResult.hook.map(
+          followResult.remainingPath,
+          captures,
+          instructions
+        );
       }
 
       return mapImpl.applyMap(
-          followResult.value, followResult.parent, followResult.owner, captures, instructions);
+        followResult.value,
+        followResult.parent,
+        followResult.owner,
+        captures,
+        instructions
+      );
     } catch (err) {
       return new ErrorStubHook(err);
     }
@@ -1346,7 +1540,7 @@ abstract class ValueStubHook extends StubHook {
 
   get(path: PropertyPath): StubHook {
     try {
-      let {value, owner} = this.getValue();
+      let { value, owner } = this.getValue();
 
       if (path.length === 0 && owner === null) {
         // The only way this happens is if someone sends "pipeline" and references a
@@ -1371,8 +1565,13 @@ abstract class ValueStubHook extends StubHook {
       // at all. Unfortunately, that's just the way it is. The application can avoid this problem by
       // wrapping the RpcTarget in an RpcStub itself, proactively, and using that as the property --
       // then, each time the property is get()ed, a dup() of that stub is returned.
-      return new PayloadStubHook(RpcPayload.deepCopyFrom(
-          followResult.value, followResult.parent, followResult.owner));
+      return new PayloadStubHook(
+        RpcPayload.deepCopyFrom(
+          followResult.value,
+          followResult.parent,
+          followResult.owner
+        )
+      );
     } catch (err) {
       return new ErrorStubHook(err);
     }
@@ -1393,19 +1592,21 @@ export class PayloadStubHook extends ValueStubHook {
     this.payload = payload;
   }
 
-  private payload?: RpcPayload;  // cleared when disposed
+  private payload?: RpcPayload; // cleared when disposed
 
   private getPayload(): RpcPayload {
     if (this.payload) {
       return this.payload;
     } else {
-      throw new Error("Attempted to use an RPC StubHook after it was disposed.");
+      throw new Error(
+        'Attempted to use an RPC StubHook after it was disposed.'
+      );
     }
   }
 
   protected getValue() {
     let payload = this.getPayload();
-    return {value: payload.value, owner: payload};
+    return { value: payload.value, owner: payload };
   }
 
   dup(): StubHook {
@@ -1417,8 +1618,9 @@ export class PayloadStubHook extends ValueStubHook {
     // TODO: Should we prohibit pull()ing from the clone? The fact that it'll be wrapped as
     //   RpcStub instead of RpcPromise should already prevent this...
     let thisPayload = this.getPayload();
-    return new PayloadStubHook(RpcPayload.deepCopyFrom(
-        thisPayload.value, undefined, thisPayload));
+    return new PayloadStubHook(
+      RpcPayload.deepCopyFrom(thisPayload.value, undefined, thisPayload)
+    );
   }
 
   pull(): RpcPayload | Promise<RpcPayload> {
@@ -1458,7 +1660,7 @@ export class PayloadStubHook extends ValueStubHook {
 function disposeRpcTarget(target: RpcTarget | Function) {
   if (Symbol.dispose in target) {
     try {
-      ((<Disposable><any>target)[Symbol.dispose])();
+      (<Disposable>(<any>target))[Symbol.dispose]();
     } catch (err) {
       // We don't actually want to throw from dispose() as this will create trouble for
       // the RPC state machine. Instead, treat the application's error as an unhandled
@@ -1485,7 +1687,7 @@ class TargetStubHook extends ValueStubHook {
   //
   // If `value` is a function, `parent` is bound as its "this".
   static create(value: RpcTarget | Function, parent: object | undefined) {
-    if (typeof value !== "function") {
+    if (typeof value !== 'function') {
       // If the target isn't callable, we don't need to pass a `this` to it, so drop `parent`.
       // NOTE: `typeof value === "function"` checks if the value is callable. This technically
       //   works even for `RpcTarget` implementations that are callable, not just plain functions.
@@ -1494,9 +1696,11 @@ class TargetStubHook extends ValueStubHook {
     return new TargetStubHook(value, parent);
   }
 
-  private constructor(target: RpcTarget | Function,
-                      parent?: object | undefined,
-                      dupFrom?: TargetStubHook) {
+  private constructor(
+    target: RpcTarget | Function,
+    parent?: object | undefined,
+    dupFrom?: TargetStubHook
+  ) {
     super();
     this.target = target;
     this.parent = parent;
@@ -1507,24 +1711,26 @@ class TargetStubHook extends ValueStubHook {
       }
     } else if (Symbol.dispose in target) {
       // Disposer present, so we need to refcount.
-      this.refcount = {count: 1};
+      this.refcount = { count: 1 };
     }
   }
 
-  private target?: RpcTarget | Function;  // cleared when disposed
-  private parent?: object | undefined;  // `this` parameter when calling `target`
-  private refcount?: BoxedRefcount;  // undefined if not needed (because target has no disposer)
+  private target?: RpcTarget | Function; // cleared when disposed
+  private parent?: object | undefined; // `this` parameter when calling `target`
+  private refcount?: BoxedRefcount; // undefined if not needed (because target has no disposer)
 
   private getTarget(): RpcTarget | Function {
     if (this.target) {
       return this.target;
     } else {
-      throw new Error("Attempted to use an RPC StubHook after it was disposed.");
+      throw new Error(
+        'Attempted to use an RPC StubHook after it was disposed.'
+      );
     }
   }
 
   protected getValue() {
-    return {value: this.getTarget(), owner: null};
+    return { value: this.getTarget(), owner: null };
   }
 
   dup(): StubHook {
@@ -1533,16 +1739,16 @@ class TargetStubHook extends ValueStubHook {
 
   pull(): RpcPayload | Promise<RpcPayload> {
     let target = this.getTarget();
-    if ("then" in target) {
+    if ('then' in target) {
       // If the target is itself thenable, we allow it to be treated as a promise. This is used
       // in particular to support wrapping a workerd-native RpcPromise or RpcProperty.
-      return Promise.resolve(target).then(resolution => {
+      return Promise.resolve(target).then((resolution) => {
         return RpcPayload.fromAppReturn(resolution);
       });
     } else {
       // This shouldn't be called since RpcTarget always becomes RpcStub, not RpcPromise, and you
       // can only pull a promise.
-      return Promise.reject(new Error("Tried to resolve a non-promise stub."));
+      return Promise.reject(new Error('Tried to resolve a non-promise stub.'));
     }
   }
 
@@ -1576,7 +1782,10 @@ class PromiseStubHook extends StubHook {
   constructor(promise: Promise<StubHook>) {
     super();
 
-    this.promise = promise.then(res => { this.resolution = res; return res; });
+    this.promise = promise.then((res) => {
+      this.resolution = res;
+      return res;
+    });
   }
 
   call(path: PropertyPath, args: RpcPayload): StubHook {
@@ -1590,30 +1799,39 @@ class PromiseStubHook extends StubHook {
     // can't serialize them yet, we have to deep-copy them now.
     args.ensureDeepCopied();
 
-    return new PromiseStubHook(this.promise.then(hook => hook.call(path, args)));
+    return new PromiseStubHook(
+      this.promise.then((hook) => hook.call(path, args))
+    );
   }
 
-  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
-    return new PromiseStubHook(this.promise.then(
-        hook => hook.map(path, captures, instructions),
-        err => {
+  map(
+    path: PropertyPath,
+    captures: StubHook[],
+    instructions: unknown[]
+  ): StubHook {
+    return new PromiseStubHook(
+      this.promise.then(
+        (hook) => hook.map(path, captures, instructions),
+        (err) => {
           for (let cap of captures) {
             cap.dispose();
           }
           throw err;
-        }));
+        }
+      )
+    );
   }
 
   get(path: PropertyPath): StubHook {
     // Note: e-order matters for get(), just like call(), in case the property has a getter.
-    return new PromiseStubHook(this.promise.then(hook => hook.get(path)));
+    return new PromiseStubHook(this.promise.then((hook) => hook.get(path)));
   }
 
   dup(): StubHook {
     if (this.resolution) {
       return this.resolution.dup();
     } else {
-      return new PromiseStubHook(this.promise.then(hook => hook.dup()));
+      return new PromiseStubHook(this.promise.then((hook) => hook.dup()));
     }
   }
 
@@ -1625,7 +1843,7 @@ class PromiseStubHook extends StubHook {
     if (this.resolution) {
       return this.resolution.pull();
     } else {
-      return this.promise.then(hook => hook.pull());
+      return this.promise.then((hook) => hook.pull());
     }
   }
 
@@ -1633,11 +1851,14 @@ class PromiseStubHook extends StubHook {
     if (this.resolution) {
       this.resolution.ignoreUnhandledRejections();
     } else {
-      this.promise.then(res => {
-        res.ignoreUnhandledRejections();
-      }, err => {
-        // Ignore the error!
-      });
+      this.promise.then(
+        (res) => {
+          res.ignoreUnhandledRejections();
+        },
+        (err) => {
+          // Ignore the error!
+        }
+      );
     }
   }
 
@@ -1645,11 +1866,14 @@ class PromiseStubHook extends StubHook {
     if (this.resolution) {
       this.resolution.dispose();
     } else {
-      this.promise.then(hook => {
-        hook.dispose();
-      }, err => {
-        // nothing to dispose
-      });
+      this.promise.then(
+        (hook) => {
+          hook.dispose();
+        },
+        (err) => {
+          // nothing to dispose
+        }
+      );
     }
   }
 
@@ -1657,7 +1881,7 @@ class PromiseStubHook extends StubHook {
     if (this.resolution) {
       this.resolution.onBroken(callback);
     } else {
-      this.promise.then(hook => {
+      this.promise.then((hook) => {
         hook.onBroken(callback);
       }, callback);
     }
