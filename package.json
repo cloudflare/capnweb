@@ -20,8 +20,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
-    "build:watch": "tsup --watch",
+    "build": "tsdown",
+    "build:watch": "tsdown --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
@@ -32,7 +32,7 @@
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.4",
     "playwright": "^1.55.0",
-    "tsup": "^8.5.0",
+    "tsdown": "^0.15.4",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4",
     "ws": "^8.18.3"

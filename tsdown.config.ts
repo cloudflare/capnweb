@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { defineConfig } from 'tsup'
+import { defineConfig } from 'tsdown'
 
 export default defineConfig({
   entry: ['src/index.ts'],
@@ -19,7 +19,6 @@ export default defineConfig({
   // Works in browsers, Node, and Cloudflare Workers
   platform: 'neutral',
 
-  splitting: false,
   treeshake: true,
   minify: false, // Keep readable for debugging
 })
