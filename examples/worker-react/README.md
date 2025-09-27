@@ -1,6 +1,6 @@
 Cloudflare Workers + React Example
 
-This example shows a Cloudflare Worker exposing a JSRPC API and a React app calling it from the browser. It demonstrates batching + promise pipelining vs sequential requests, with timing and request counts.
+This example shows a Cloudflare Worker exposing a Cap'n Web API and a React app calling it from the browser. It demonstrates batching + promise pipelining vs sequential requests, with timing and request counts.
 
 Prerequisites
 
@@ -21,7 +21,7 @@ Run locally
 1) Build the library at repo root (the example uses the local dist build):
    npm run build
 
-2) Install and build the React app (Vite aliases `@cloudflare/jsrpc` to the local `dist`):
+2) Install and build the React app (Vite aliases `capnweb` to the local `dist`):
    cd examples/worker-react/web
    npm install
    npm run build
@@ -41,7 +41,3 @@ Tuning delays
   - `DELAY_NOTIFS_MS` (default 120)
   - `SIMULATED_RTT_MS` per direction (default 120)
   - `SIMULATED_RTT_JITTER_MS` per direction (default 40)
-
-Notes
-
-- The frontend imports `@cloudflare/jsrpc`. If trying this example before publish, you can `npm link` the built package into the `web` app or adjust imports to point at a local path.

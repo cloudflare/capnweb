@@ -23,7 +23,7 @@ const PROFILES = new Map([
 ]);
 
 const NOTIFICATIONS = new Map([
-  ['u_1', ['Welcome to jsrpc!', 'You have 2 new followers']],
+  ['u_1', ['Welcome to Cap\'n Web!', 'You have 2 new followers']],
   ['u_2', ['New feature: pipelining!', 'Security tips for your account']],
 ]);
 
