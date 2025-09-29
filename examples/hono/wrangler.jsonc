@@ -1,0 +1,6 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "my-capnweb-app",
+  "main": "src/workers.ts",
+  "compatibility_date": "2025-09-28"
+}

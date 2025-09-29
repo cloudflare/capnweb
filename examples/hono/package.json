@@ -1,0 +1,21 @@
+{
+  "name": "my-capnweb-app",
+  "type": "module",
+  "scripts": {
+    "dev:workers": "wrangler dev",
+    "dev:deno": "deno serve --sloppy-imports --port 8787 --watch src/deno.ts",
+    "dev:node": "tsx --watch src/node.ts",
+    "client": "tsx client/client.ts",
+    "client:batch": "tsx client/client-batch.ts",
+    "cf-typegen": "wrangler types --env-interface CloudflareBindings"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.4",
+    "@hono/node-ws": "^1.2.0",
+    "hono": "^4.9.9"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6",
+    "wrangler": "^4.4.0"
+  }
+}
