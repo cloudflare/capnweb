@@ -146,7 +146,7 @@ let friendsPromise = authedApi.getFriendIds();
 // too, so use the magic .map() function to get them, too! Still one round
 // trip.
 let friendProfilesPromise = friendsPromise.map((id: RpcPromise<number>) => {
-  return { id, profile: api.getUserProfile(id); };
+  return { id, profile: api.getUserProfile(id) };
 });
 
 // Now await the promises. The batch is sent at this point. It's important
@@ -708,7 +708,7 @@ You can then set up a connection over it:
 let transport: RpcTransport = new MyTransport();
 
 // Create the main interface we will expose to the other end.
-let localMain: RpcTarget = new MyMainInterface():
+let localMain: RpcTarget = new MyMainInterface();
 
 // Start the session.
 let session = new RpcSession<RemoteMainInterface>(transport, localMain);
