@@ -12,10 +12,16 @@ Non-JSON types are encoded using arrays. The first element of the array contains
 ["date", 1749342170815]
 ```
 
-To encode a literal array, the array must be "escaped" by wrapping it in a second layer of array:
+To encode a literal array, the array must be "escaped" by wrapping it in a second layer of array. This rule applies to all arrays at any level of nesting, including arrays nested inside objects or other structures:
 
 ```
 [["just", "an", "array"]]
+```
+
+For example, an object containing an array property must escape the array:
+
+```
+{"items": [[1, 2, 3]]}
 ```
 
 ## Client vs. Server
@@ -100,7 +106,7 @@ Expressions are JSON-serializable object trees. All JSON types except arrays are
 
 `[[...]]`
 
-A single-element array containing another array is an escape sequence. The inner array is to be interpreted literally. (Its elements are still individually evaluated.)
+A single-element array containing another array is an escape sequence. The inner array is to be interpreted literally. (Its elements are still individually evaluated.) All literal arrays, regardless of where they appear in the structure (top-level, nested in objects, nested in other arrays, etc.), must be escaped this way.
 
 `["date", number]`
 
