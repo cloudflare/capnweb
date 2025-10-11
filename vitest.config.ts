@@ -49,7 +49,7 @@ export default defineConfig({
                       },
                       {
                         type: "ESModule",
-                        path: "./dist/index.js",
+                        path: "./dist/index-workers.js",
                       },
                     ],
                     durableObjects: {

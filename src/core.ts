@@ -3,6 +3,7 @@
 //     https://opensource.org/license/mit
 
 import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
+import { WORKERS_MODULE_SYMBOL } from "./symbols.js"
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
 if (!Symbol.dispose) {
@@ -12,11 +13,7 @@ if (!Symbol.asyncDispose) {
   (Symbol as any).asyncDispose = Symbol.for('asyncDispose');
 }
 
-let workersModuleName = navigator.userAgent === "Cloudflare-Workers" ? "cloudflare:workers" : null;
-let workersModule: any;
-if (workersModuleName) {
-  workersModule = await import(/* @vite-ignore */workersModuleName);
-}
+let workersModule: any = (globalThis as any)[WORKERS_MODULE_SYMBOL];
 
 export interface RpcTarget {
   [__RPC_TARGET_BRAND]: never;
