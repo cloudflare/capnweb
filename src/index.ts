@@ -18,7 +18,7 @@ forceInitMap();
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
          nodeHttpBatchRpcResponse };
-export type { RpcTransport, RpcSessionOptions };
+export type { RpcTransport, RpcSessionOptions, Serializable };
 
 // Hack the type system to make RpcStub's types work nicely!
 /**
