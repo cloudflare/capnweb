@@ -12,7 +12,7 @@ Non-JSON types are encoded using arrays. The first element of the array contains
 ["date", 1749342170815]
 ```
 
-To encode a literal array, the array must be "escaped" by wrapping it in a second layer of array:
+To encode an array, the array must be wrapped in a second layer of array to create an array expression:
 
 ```
 [["just", "an", "array"]]
@@ -100,7 +100,35 @@ Expressions are JSON-serializable object trees. All JSON types except arrays are
 
 `[[...]]`
 
-A single-element array containing another array is an escape sequence. The inner array is to be interpreted literally. (Its elements are still individually evaluated.)
+An array expression. The inner array contains expressions (one for each array element), which are individually evaluated to produce the final array value.
+
+For example, this expression represents an object containing an array:
+
+```
+{
+  "key": [[
+    "abc",
+    ["date", 1757214689123],
+    [[0]]
+  ]]
+}
+```
+
+This is an expression which will evaluate to an object. The expression representing the value of the "key" field is an array expression.
+- The 1st item in the array expression is an expression for the string "abc"
+- The 2nd item is an expression for a date object
+- The 3rd item is another array expression containing an integer expression representing zero.
+
+This expression will evaluate to the following object:
+```
+{
+  "key": [
+    "abc",
+    Date(1757214689123),
+    [0]
+  ]
+}
+```
 
 `["date", number]`
 
@@ -121,7 +149,7 @@ If the type is "import", the expression evaluates to a stub. If it is "pipeline"
 
 `propertyPath` is optional. If specified, it is an array of property names (strings or numbers) leading to a specific property of the import's target. The expression evaluates to that property (unless `callArguments` is also specified).
 
-`callArguments` is also optional. If specified, then the given property should be called as a function. `callArguments` is an expression that evaluates to an array; these are the arguments to the call.
+`callArguments` is also optional. If specified, then the given property should be called as a function. `callArguments` is an array of expressions; these expressions are evaluated to produce the arguments to the call.
 
 `["remap", importId, propertyPath, captures, instructions]`
 
