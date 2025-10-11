@@ -217,7 +217,7 @@ describe("workerd compatibility", () => {
     }
   })
 
-  it("can wrap a SerivceStub in an RpcStub", async () => {
+  it("can wrap a ServiceStub in an RpcStub", async () => {
     let result = await new RpcStub((<any>env).testServer).greet("World");
     expect(result).toBe("Hello, World!");
   });

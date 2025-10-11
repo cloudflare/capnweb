@@ -270,20 +270,20 @@ describe("local stub", () => {
     expect(await outerStub.innerTarget.square(3)).toBe(9);
   });
 
-  it("returns undefined when accessing non-existent properties", async () => {
+  it("returns undefined when accessing nonexistent properties", async () => {
     let objectStub = new RpcStub({foo: "bar"});
     let arrayStub = new RpcStub([1, 2, 3]);
     let targetStub = new RpcStub(new TestTarget());
 
-    expect(await (objectStub as any).nonExistent).toBe(undefined);
-    expect(await (arrayStub as any).nonExistent).toBe(undefined);
-    expect(await (targetStub as any).nonExistent).toBe(undefined);
+    expect(await (objectStub as any).nonexistent).toBe(undefined);
+    expect(await (arrayStub as any).nonexistent).toBe(undefined);
+    expect(await (targetStub as any).nonexistent).toBe(undefined);
 
     // Accessing a property of undefined should throw TypeError (but the error message differs
     // across runtimes).
-    await expect(() => (objectStub as any).nonExistent.foo).rejects.toThrow(TypeError);
-    await expect(() => (arrayStub as any).nonExistent.foo).rejects.toThrow(TypeError);
-    await expect(() => (targetStub as any).nonExistent.foo).rejects.toThrow(TypeError);
+    await expect(() => (objectStub as any).nonexistent.foo).rejects.toThrow(TypeError);
+    await expect(() => (arrayStub as any).nonexistent.foo).rejects.toThrow(TypeError);
+    await expect(() => (targetStub as any).nonexistent.foo).rejects.toThrow(TypeError);
   });
 
   it("exposes only prototype properties for RpcTarget, not instance properties", async () => {

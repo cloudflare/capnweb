@@ -355,7 +355,7 @@ The basic principle is: **The caller is responsible for disposing all stubs.** T
 * Stubs passed in the params of a call remain property of the caller, and must be disposed by the caller, not by the callee.
 * Stubs returned in the result of a call have their ownership transferred from the callee to the caller, and must be disposed by the caller.
 
-In practice, though, the callee and caller do not actually share the same stubs. When stubs are passed over RPC, they are _duplicated_, and the the target object is only disposed when all duplicates of the stub are disposed. Thus, to achieve the rule that only the caller needs to dispose stubs, the RPC system implicitly disposes the callee's duplicates of all stubs when the call completes. That is:
+In practice, though, the callee and caller do not actually share the same stubs. When stubs are passed over RPC, they are _duplicated_, and the target object is only disposed when all duplicates of the stub are disposed. Thus, to achieve the rule that only the caller needs to dispose stubs, the RPC system implicitly disposes the callee's duplicates of all stubs when the call completes. That is:
 * Any stubs the callee receives in the parameters are implicitly disposed when the call completes.
 * Any stubs returned in the results are implicitly disposed some time after the call completes. (Specifically, the RPC system will dispose them once it knows there will be no more pipelined calls.)
 
@@ -382,7 +382,7 @@ Note that if you pass the same `RpcTarget` instance to RPC multiple times -- thu
 
 ### Listening for disconnect
 
-You can monitor any stub for "brokennness" with its `onRpcBroken()` method:
+You can monitor any stub for "brokenness" with its `onRpcBroken()` method:
 
 ```ts
 stub.onRpcBroken((error: any) => {
