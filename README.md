@@ -201,12 +201,13 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Date`
 * `Uint8Array`
 * `Error` and its well-known subclasses
+* `ReadableStream`
+* `WritableStream`
 
 The following types are not supported as of this writing, but may be added in the future:
 * `Map` and `Set`
 * `ArrayBuffer` and typed arrays other than `Uint8Array`
 * `RegExp`
-* `ReadableStream` and `WritableStream`, with automatic flow control.
 * `Headers`, `Request`, and `Response`
 
 The following are intentionally NOT supported:
@@ -226,6 +227,39 @@ WARNING: If you are using TypeScript, note that declaring a method `private` doe
 When a plain function is passed over RPC, it will be treated similarly to an `RpcTarget`. The function will be replaced by a stub which, when invoked, calls back over RPC to the original function object.
 
 If the function has any own properties, those will be available over RPC. Note that this differs from `RpcTarget`: With `RpcTarget`, own properties are not exposed, but with functions, _only_ own properties are exposed. Generally functions don't have properties anyway, making the point moot.
+
+### Streams
+
+`ReadableStream` and `WritableStream` are automatically supported and work seamlessly over RPC. When you pass a stream, it's automatically wrapped and converted, with methods proxied via RPC.
+
+**You can use streams exactly as you would locally - no special handling required!**
+
+```ts
+// On the server, return a readable stream
+class MyApi extends RpcTarget {
+  getDataStream(): ReadableStream {
+    return new ReadableStream({
+      pull(controller) {
+        controller.enqueue("chunk of data");
+        controller.close();
+      }
+    });
+  }
+}
+
+// On the client, receive and use the stream - it's automatically a real ReadableStream!
+let stream = await api.getDataStream();
+let reader = stream.getReader();
+let { value, done } = await reader.read();
+```
+
+The same applies to `WritableStream` - you can return one from a method and write to it directly on the client side.
+
+Streams are particularly useful for:
+* Streaming large responses without buffering everything in memory
+* Real-time data feeds
+* File uploads/downloads
+* Server-sent events
 
 ### `RpcStub<T>`
 

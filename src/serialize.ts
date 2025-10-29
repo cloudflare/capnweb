@@ -3,6 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, PropertyPath, unwrapStubAndPath } from "./core.js";
+import { ReadableStreamRpcTarget, WritableStreamRpcTarget, createReadableStreamFromStub, createWritableStreamFromStub } from "./streams.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -175,6 +176,34 @@ export class Devaluator {
 
       case "undefined":
         return ["undefined"];
+
+      case "readable-stream": {
+        if (!this.source) {
+          throw new Error("Can't serialize streams in this context.");
+        }
+
+        // Wrap the ReadableStream in an RpcTarget and serialize it
+        let wrapper = new ReadableStreamRpcTarget(<ReadableStream>value);
+        let hook = this.source.getHookForRpcTarget(wrapper as any as RpcTarget, parent);
+        let exportId = this.exporter.exportStub(hook);
+        if (!this.exports) this.exports = [];
+        this.exports.push(exportId);
+        return ["readable-stream-export", exportId];
+      }
+
+      case "writable-stream": {
+        if (!this.source) {
+          throw new Error("Can't serialize streams in this context.");
+        }
+
+        // Wrap the WritableStream in an RpcTarget and serialize it
+        let wrapper = new WritableStreamRpcTarget(<WritableStream>value);
+        let hook = this.source.getHookForRpcTarget(wrapper as any as RpcTarget, parent);
+        let exportId = this.exporter.exportStub(hook);
+        if (!this.exports) this.exports = [];
+        this.exports.push(exportId);
+        return ["writable-stream-export", exportId];
+      }
 
       case "stub":
       case "rpc-promise": {
@@ -474,6 +503,30 @@ export class Evaluator {
           let promise = new RpcPromise(resultHook, []);
           this.promises.push({promise, parent, property});
           return promise;
+        }
+
+        case "readable-stream-export": {
+          // Automatically convert stream stub to ReadableStream
+          if (typeof value[1] == "number") {
+            let hook = this.importer.importStub(value[1]);
+            let stub = new RpcStub(hook);
+            this.stubs.push(stub);
+            // Return a real ReadableStream that proxies to the stub
+            return createReadableStreamFromStub(stub);
+          }
+          break;
+        }
+
+        case "writable-stream-export": {
+          // Automatically convert stream stub to WritableStream
+          if (typeof value[1] == "number") {
+            let hook = this.importer.importStub(value[1]);
+            let stub = new RpcStub(hook);
+            this.stubs.push(stub);
+            // Return a real WritableStream that proxies to the stub
+            return createWritableStreamFromStub(stub);
+          }
+          break;
         }
 
         case "export":

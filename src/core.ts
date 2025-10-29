@@ -28,7 +28,7 @@ export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
-    "undefined";
+    "undefined" | "readable-stream" | "writable-stream";
 
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
@@ -88,6 +88,16 @@ export function typeForRpc(value: unknown): TypeForRpc {
     // TODO: Promise<T> or thenable
 
     default:
+      // Check for ReadableStream and WritableStream using instanceof since they can have different
+      // prototypes across implementations
+      if (typeof ReadableStream !== 'undefined' && value instanceof ReadableStream) {
+        return "readable-stream";
+      }
+
+      if (typeof WritableStream !== 'undefined' && value instanceof WritableStream) {
+        return "writable-stream";
+      }
+
       if (workersModule) {
         // TODO: We also need to match `RpcPromise` and `RpcProperty`, but they currently aren't
         //   exported by cloudflare:workers.
@@ -773,6 +783,13 @@ export class RpcPayload {
         // TODO: Should errors be copied if they have own properties?
         return value;
 
+      case "readable-stream":
+      case "writable-stream":
+        // Streams are passed by reference, treated like RPC targets
+        // They will be wrapped in RpcTarget wrappers during serialization
+        throw new Error(
+            "Streams should be wrapped in RpcTargets during serialization, not copied.");
+
       case "array": {
         // We have to construct the new array first, then fill it in, so we can pass it as the
         // parent.
@@ -1014,7 +1031,13 @@ export class RpcPayload {
       // must recursively scan it for things to dispose.
       this.disposeImpl(this.value, undefined);
       if (this.rpcTargets && this.rpcTargets.size > 0) {
-        throw new Error("Not all rpcTargets were accounted for in disposeImpl()?");
+        // Dispose any remaining RpcTargets that weren't in the value tree.
+        // This can happen for streams, which are wrapped in RpcTarget wrappers during serialization.
+        for (let [target, hook] of this.rpcTargets) {
+          hook.dispose();
+          disposeRpcTarget(target);
+        }
+        this.rpcTargets.clear();
       }
     } else {
       // this.source is "params". We don't own the stubs within.
@@ -1037,6 +1060,8 @@ export class RpcPayload {
       case "date":
       case "error":
       case "undefined":
+      case "readable-stream":
+      case "writable-stream":
         return;
 
       case "array": {
@@ -1125,6 +1150,8 @@ export class RpcPayload {
       case "undefined":
       case "function":
       case "rpc-target":
+      case "readable-stream":
+      case "writable-stream":
         return;
 
       case "array": {
@@ -1250,6 +1277,8 @@ function followPath(value: unknown, parent: object | undefined,
       case "bytes":
       case "date":
       case "error":
+      case "readable-stream":
+      case "writable-stream":
         // These have no properties that can be accessed remotely.
         value = undefined;
         break;

@@ -1403,3 +1403,116 @@ describe("MessagePorts", () => {
         new Error("Peer closed MessagePort connection."));
   });
 });
+
+describe("ReadableStream and WritableStream support", () => {
+  it("can send ReadableStream over MessagePort RPC", async () => {
+    let channel = new MessageChannel();
+
+    let serverMain = new TestTarget();
+    newMessagePortRpcSession(channel.port1, serverMain);
+    using clientStub = newMessagePortRpcSession<TestTarget>(channel.port2);
+
+    // Create a readable stream on the server and receive it on the client
+    // The stream is automatically converted - no helper function needed!
+    let stream = await clientStub.createReadableStream([1, 2, 3, 4, 5]);
+
+    // Read all chunks from the stream
+    let chunks: any[] = [];
+    let reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    expect(chunks).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("can send WritableStream over MessagePort RPC", async () => {
+    let channel = new MessageChannel();
+
+    let receivedChunks: any[] = [];
+
+    // Create a test target that captures chunks
+    class WritableTestTarget extends RpcTarget {
+      captureWritable() {
+        return new WritableStream({
+          write(chunk) {
+            receivedChunks.push(chunk);
+          }
+        });
+      }
+    }
+
+    let serverMain = new WritableTestTarget();
+    newMessagePortRpcSession(channel.port1, serverMain);
+    using clientStub = newMessagePortRpcSession<WritableTestTarget>(channel.port2);
+
+    // Get a writable stream from the server
+    // The stream is automatically converted - no helper function needed!
+    let stream = await clientStub.captureWritable();
+
+    // Write chunks to the stream
+    let writer = stream.getWriter();
+    await writer.write("hello");
+    await writer.write("world");
+    await writer.close();
+
+    // Give a moment for async operations to complete
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    expect(receivedChunks).toEqual(["hello", "world"]);
+  });
+
+  it("can read from automatically converted ReadableStream", async () => {
+    let channel = new MessageChannel();
+
+    let serverMain = new TestTarget();
+    newMessagePortRpcSession(channel.port1, serverMain);
+    using clientStub = newMessagePortRpcSession<TestTarget>(channel.port2);
+
+    // Create a stream on the server - automatically converted to ReadableStream
+    let stream = await clientStub.createReadableStream(["a", "b", "c"]);
+    let chunks: any[] = [];
+    let reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    expect(chunks).toEqual(["a", "b", "c"]);
+  });
+
+  it("handles empty streams correctly", async () => {
+    let channel = new MessageChannel();
+
+    let serverMain = new TestTarget();
+    newMessagePortRpcSession(channel.port1, serverMain);
+    using clientStub = newMessagePortRpcSession<TestTarget>(channel.port2);
+
+    // Create an empty stream - automatically converted
+    let stream = await clientStub.createReadableStream([]);
+    let chunks: any[] = [];
+    let reader = stream.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    expect(chunks).toEqual([]);
+  });
+});

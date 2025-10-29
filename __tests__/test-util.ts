@@ -62,4 +62,43 @@ export class TestTarget extends RpcTarget {
   returnNull() { return null; }
   returnUndefined() { return undefined; }
   returnNumber(i: number) { return i; }
+
+  // Stream methods for testing
+  createReadableStream(values: any[]): ReadableStream {
+    let index = 0;
+    return new ReadableStream({
+      pull(controller) {
+        if (index < values.length) {
+          controller.enqueue(values[index++]);
+        } else {
+          controller.close();
+        }
+      }
+    });
+  }
+
+  createWritableStream(onData: (value: any) => void): WritableStream {
+    return new WritableStream({
+      write(chunk) {
+        onData(chunk);
+      }
+    });
+  }
+
+  async consumeStream(stream: ReadableStream): Promise<any[]> {
+    const reader = stream.getReader();
+    const chunks: any[] = [];
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    return chunks;
+  }
 }

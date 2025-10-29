@@ -12,12 +12,13 @@ import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
          newHttpBatchRpcResponse, nodeHttpBatchRpcResponse } from "./batch.js";
 import { newMessagePortRpcSession as newMessagePortRpcSessionImpl } from "./messageport.js";
 import { forceInitMap } from "./map.js";
+import { createReadableStreamFromStub, createWritableStreamFromStub } from "./streams.js";
 
 forceInitMap();
 
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse };
+         nodeHttpBatchRpcResponse, createReadableStreamFromStub, createWritableStreamFromStub };
 export type { RpcTransport, RpcSessionOptions };
 
 // Hack the type system to make RpcStub's types work nicely!
