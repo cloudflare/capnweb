@@ -1413,7 +1413,6 @@ describe("ReadableStream and WritableStream support", () => {
     using clientStub = newMessagePortRpcSession<TestTarget>(channel.port2);
 
     // Create a readable stream on the server and receive it on the client
-    // The stream is automatically converted - no helper function needed!
     let stream = await clientStub.createReadableStream([1, 2, 3, 4, 5]);
 
     // Read all chunks from the stream
@@ -1453,7 +1452,6 @@ describe("ReadableStream and WritableStream support", () => {
     using clientStub = newMessagePortRpcSession<WritableTestTarget>(channel.port2);
 
     // Get a writable stream from the server
-    // The stream is automatically converted - no helper function needed!
     let stream = await clientStub.captureWritable();
 
     // Write chunks to the stream
@@ -1468,7 +1466,7 @@ describe("ReadableStream and WritableStream support", () => {
     expect(receivedChunks).toEqual(["hello", "world"]);
   });
 
-  it("can read from automatically converted ReadableStream", async () => {
+  it("can read from ReadableStream", async () => {
     let channel = new MessageChannel();
 
     let serverMain = new TestTarget();
