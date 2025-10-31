@@ -158,7 +158,7 @@ export class Devaluator {
 
         // TODO:
         // - Determine type by checking prototype rather than `name`, which can be overridden?
-        // - Serialize cause / supressed error / etc.
+        // - Serialize cause / suppressed error / etc.
         // - Serialize added properties.
 
         let rewritten = this.exporter.onSendError(e);

@@ -163,7 +163,7 @@ mapImpl.sendMap = (hook: StubHook, path: PropertyPath, func: (promise: RpcPromis
 
   // Detect misuse: Map callbacks cannot be async.
   if (result instanceof Promise) {
-    // Squelch unhanlded rejections from the map function itself -- it'll probably just throw
+    // Squelch unhandled rejections from the map function itself -- it'll probably just throw
     // something about pulling a MapVariableHook.
     result.catch(err => {});
 
@@ -205,12 +205,12 @@ class MapVariableHook extends StubHook {
 
   // Other methods should never be called.
   call(path: PropertyPath, args: RpcPayload): StubHook {
-    // Can't be called; all calls are incercepted.
+    // Can't be called; all calls are intercepted.
     throwMapperBuilderUseError();
   }
 
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
-    // Can't be called; all map()s are incercepted.
+    // Can't be called; all map()s are intercepted.
     throwMapperBuilderUseError();
   }
 

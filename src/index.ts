@@ -39,7 +39,7 @@ export const RpcStub: {
 /**
  * Represents the result of an RPC call.
  *
- * Also used to represent propreties. That is, `stub.foo` evaluates to an `RpcPromise` for the
+ * Also used to represent properties. That is, `stub.foo` evaluates to an `RpcPromise` for the
  * value of `foo`.
  *
  * This isn't actually a JavaScript `Promise`. It does, however, have `then()`, `catch()`, and
@@ -81,7 +81,7 @@ export const RpcSession: {
 // conditionally being imported from "cloudflare:workers".
 /**
  * Classes which are intended to be passed by reference and called over RPC must extend
- * `RpcTarget`. A class which does not extend `RpcTarget` (and which dosen't have built-in support
+ * `RpcTarget`. A class which does not extend `RpcTarget` (and which doesn't have built-in support
  * from the RPC system) cannot be passed in an RPC message at all; an exception will be thrown.
  *
  * Note that on Cloudflare Workers, this `RpcTarget` is an alias for the one exported from the
@@ -144,7 +144,7 @@ export let newMessagePortRpcSession:<T extends Serializable<T> = Empty>
 export async function newWorkersRpcResponse(request: Request, localMain: any) {
   if (request.method === "POST") {
     let response = await newHttpBatchRpcResponse(request, localMain);
-    // Since we're exposing the same API over WebSocket, too, and WebScoket always allows
+    // Since we're exposing the same API over WebSocket, too, and WebSocket always allows
     // cross-origin requests, the API necessarily must be safe for cross-origin use (e.g. because
     // it uses in-band authorization, as recommended in the readme). So, we might as well allow
     // batch requests to be made cross-origin as well.

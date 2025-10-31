@@ -84,7 +84,7 @@ type BaseType =
   | Request
   | Response
   | Headers;
-// Recursively rewrite all `Stubable` types with `Stub`s, and resolve promsies.
+// Recursively rewrite all `Stubable` types with `Stub`s, and resolve promises.
 // prettier-ignore
 export type Stubify<T> =
   T extends Stubable ? Stub<T>

@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { newHttpBatchRpcSession } from 'capnweb'
-import type { Api } from "../../../src/worker"
+import type { Api } from '../../../src/worker'
 
 type Result = {
   posts: number

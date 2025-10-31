@@ -50,9 +50,9 @@ class BatchClientTransport implements RpcTransport {
   async #scheduleBatch(sendBatch: SendBatchFunc) {
     // Wait for microtask queue to clear before sending a batch.
     //
-    // Note that simply waiting for one turn of the microtask qeueue (await Promise.resolve()) is
+    // Note that simply waiting for one turn of the microtask queue (await Promise.resolve()) is
     // not good enough here as the application needs a chance to call `.then()` on every RPC
-    // promise in order to explicitly indicate they want the results. Unfortuntaely, `await`ing
+    // promise in order to explicitly indicate they want the results. Unfortunately, `await`ing
     // a thenable does not call `.then()` immediately -- for some reason it waits for a turn of
     // the microtask queue first, *then* calls `.then()`.
     await new Promise(resolve => setTimeout(resolve, 0));
@@ -132,7 +132,7 @@ class BatchServerTransport implements RpcTransport {
  *
  * @param request The request received from the client initiating the session.
  * @param localMain The main stub or RpcTarget which the server wishes to expose to the client.
- * @param options Optional RPC sesison options.
+ * @param options Optional RPC session options.
  * @returns The HTTP response to return to the client. Note that the returned object has mutable
  *     headers, so you can modify them using e.g. `response.headers.set("Foo", "bar")`.
  */
@@ -169,7 +169,7 @@ export async function newHttpBatchRpcResponse(
  * @param request The request received from the client initiating the session.
  * @param response The response object, to which the response should be written.
  * @param localMain The main stub or RpcTarget which the server wishes to expose to the client.
- * @param options Optional RPC sesison options. You can also pass headers to set on the response.
+ * @param options Optional RPC session options. You can also pass headers to set on the response.
  */
 export async function nodeHttpBatchRpcResponse(
     request: IncomingMessage, response: ServerResponse,

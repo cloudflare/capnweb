@@ -5,7 +5,7 @@
 /// <reference types="@cloudflare/workers-types" />
 import { expect, it, describe } from "vitest";
 import { RpcStub as NativeRpcStub, RpcTarget as NativeRpcTarget, env, DurableObject } from "cloudflare:workers";
-import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcTarget } from "../src/index.js";
+import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcTarget } from "../src/index-workers.js";
 import { Counter, TestTarget } from "./test-util.js";
 
 class JsCounter extends RpcTarget {
@@ -217,7 +217,7 @@ describe("workerd compatibility", () => {
     }
   })
 
-  it("can wrap a SerivceStub in an RpcStub", async () => {
+  it("can wrap a ServiceStub in an RpcStub", async () => {
     let result = await new RpcStub((<any>env).testServer).greet("World");
     expect(result).toBe("Hello, World!");
   });

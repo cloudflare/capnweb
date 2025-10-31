@@ -56,7 +56,7 @@ export async function setup(project: TestProject) {
 
   // Provide the server address to tests.
   //
-  // We use the Node-specific `url.format` here becaues it automatically handles adding brackets to
+  // We use the Node-specific `url.format` here because it automatically handles adding brackets to
   // IPv6 addresses. Unfortunately, the standard `URL` class doesn't seem to provide this.
   project.provide("testServerHost", url.format({hostname: addr.address, port: addr.port}));
 }

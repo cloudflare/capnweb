@@ -3,6 +3,7 @@
 //     https://opensource.org/license/mit
 
 import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
+import { WORKERS_MODULE_SYMBOL } from "./symbols.js"
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
 if (!Symbol.dispose) {
@@ -12,11 +13,7 @@ if (!Symbol.asyncDispose) {
   (Symbol as any).asyncDispose = Symbol.for('asyncDispose');
 }
 
-let workersModuleName = navigator.userAgent === "Cloudflare-Workers" ? "cloudflare:workers" : null;
-let workersModule: any;
-if (workersModuleName) {
-  workersModule = await import(/* @vite-ignore */workersModuleName);
-}
+let workersModule: any = (globalThis as any)[WORKERS_MODULE_SYMBOL];
 
 export interface RpcTarget {
   [__RPC_TARGET_BRAND]: never;
@@ -204,7 +201,7 @@ export abstract class StubHook {
   // Called to prevent this stub from generating unhandled rejection events if it throws without
   // having been pulled. Without this, if a client "push"es a call that immediately throws before
   // the client manages to "pull" it or use it in a pipeline, this may be treated by the system as
-  // an unhandled rejection. Unfortuntaely, this unhandled rejection would be reported in the
+  // an unhandled rejection. Unfortunately, this unhandled rejection would be reported in the
   // callee rather than the caller, possibly causing the callee to crash or log spurious errors,
   // even though it's really up to the caller to deal with the exception!
   abstract ignoreUnhandledRejections(): void;
@@ -472,11 +469,11 @@ export function unwrapStubTakingOwnership(stub: RpcStub): StubHook {
   }
 }
 
-// Given a stub (still wrapped in a Proxy), extract the underlying `StubHook`, and dulpicate it,
+// Given a stub (still wrapped in a Proxy), extract the underlying `StubHook`, and duplicate it,
 // returning the duplicate.
 //
 // The caller is responsible for disposing the returned hook, but the original stub also still
-// needs to be disposed by its owner (unless it is a proprety, which never needs disposal).
+// needs to be disposed by its owner (unless it is a property, which never needs disposal).
 //
 // The result is a promise (i.e. can be pull()ed) if and only if the input is a promise. Note that
 // this differs from the semantics of the actual `dup()` method.
@@ -493,7 +490,7 @@ export function unwrapStubAndDup(stub: RpcStub): StubHook {
 // Unwrap a stub returning the underlying `StubHook`, returning `undefined` if it is a property
 // stub.
 //
-// This function is agnostic to ownership transfer. Excatly one of `stub` or the return `hook` must
+// This function is agnostic to ownership transfer. Exactly one of `stub` or the return `hook` must
 // eventually be disposed (unless `undefined` is returned, in which case neither need to be
 // disposed, as properties are not normally disposable).
 export function unwrapStubNoProperties(stub: RpcStub): StubHook | undefined {
@@ -507,9 +504,9 @@ export function unwrapStubNoProperties(stub: RpcStub): StubHook | undefined {
 }
 
 // Unwrap a stub returning the underlying `StubHook`. If it's a property, return the `StubHook`
-// representing the stub or promise of which is is a proprety.
+// representing the stub or promise of which is is a property.
 //
-// This function is agnostic to ownership transfer. Excatly one of `stub` or the return `hook` must
+// This function is agnostic to ownership transfer. Exactly one of `stub` or the return `hook` must
 // eventually be disposed.
 export function unwrapStubOrParent(stub: RpcStub): StubHook {
   return stub[RAW_STUB].hook;
@@ -517,7 +514,7 @@ export function unwrapStubOrParent(stub: RpcStub): StubHook {
 
 // Given a stub (still wrapped in a Proxy), extract the `hook` and `pathIfPromise` properties.
 //
-// This function is agnostic to ownership transfer. Excatly one of `stub` or the return `hook` must
+// This function is agnostic to ownership transfer. Exactly one of `stub` or the return `hook` must
 // eventually be disposed.
 export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise?: PropertyPath} {
   return stub[RAW_STUB];
@@ -530,7 +527,7 @@ async function pullPromise(promise: RpcPromise): Promise<unknown> {
   if (pathIfPromise!.length > 0) {
     // If this isn't the root promise, we have to clone it and pull the clone. This is a little
     // weird in terms of disposal: There's no way for the app to dispose/cancel the promise while
-    // waiting becaues it never actually got a direct disposable reference. It has to dispose
+    // waiting because it never actually got a direct disposable reference. It has to dispose
     // the result.
     hook = hook.get(pathIfPromise!);
   }
@@ -616,7 +613,7 @@ export class RpcPayload {
   // Create a payload from a value return from an RPC implementation by the app.
   //
   // Unlike fromAppParams(), in this case the payload takes ownership of all stubs in `value`, and
-  // may hold onto `value` for an arbitarily long time (e.g. to serve pipelined requests). It
+  // may hold onto `value` for an arbitrarily long time (e.g. to serve pipelined requests). It
   // will still avoid modifying `value` and will make a deep copy if it is delivered locally.
   public static fromAppReturn(value: unknown): RpcPayload {
     return new RpcPayload(value, "return");
@@ -687,7 +684,7 @@ export class RpcPayload {
     // The payload value.
     public value: unknown,
 
-    // What is the provinance of `value`?
+    // What is the provenance of `value`?
     // "params": It came from the app, in params to a call. We must dupe any stubs within.
     // "return": It came from the app, returned from a call. We take ownership of all stubs within.
     // "owned": This value belongs fully to us, either because it was deserialized from the wire
@@ -695,7 +692,7 @@ export class RpcPayload {
     private source: "params" | "return" | "owned",
 
     // `stubs` and `promises` are filled in only if `value` belongs to us (`source` is "owned") and
-    // so can safely be delivered to the app. If `value` came from thne app in the first place,
+    // so can safely be delivered to the app. If `value` came from then app in the first place,
     // then it cannot be delivered back to the app nor modified by us without first deep-copying
     // it. `stubs` and `promises` will be computed as part of the deep-copy.
 
@@ -707,7 +704,7 @@ export class RpcPayload {
     private promises?: LocatedPromise[]
   ) {}
 
-  // For `soruce === "return"` payloads only, this tracks any StubHooks created around RpcTargets
+  // For `source === "return"` payloads only, this tracks any StubHooks created around RpcTargets
   // found in the payload at the time that it is serialized (or deep-copied) for return, so that we
   // can make sure they are not disposed before the pipeline ends.
   //
@@ -1214,7 +1211,7 @@ function followPath(value: unknown, parent: object | undefined,
         break;
 
       case "array":
-        // For arrays, restricrt specifically to numeric indexes, to be consistent with
+        // For arrays, restrict specifically to numeric indexes, to be consistent with
         // serialization, which only sends a flat list.
         if (Number.isInteger(part) && <number>part >= 0) {
           value = (<any>value)[part];

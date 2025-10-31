@@ -288,7 +288,7 @@ class RpcMainHook extends RpcImportHook {
 export type RpcSessionOptions = {
   /**
    * If provided, this function will be called whenever an `Error` object is serialized (for any
-   * resaon, not just because it was thrown). This can be used to log errors, and also to redact
+   * reason, not just because it was thrown). This can be used to log errors, and also to redact
    * them.
    *
    * If `onSendError` returns an Error object, than object will be substituted in place of the

@@ -10,7 +10,7 @@
 // build step for it. Instead, we're getting by configuring the worker in vitest.config.ts by
 // just specifying the raw JS modules.
 
-import { newWorkersRpcResponse } from "../dist/index.js";
+import { newWorkersRpcResponse } from "../dist/index-workers.js";
 import { RpcTarget, DurableObject } from "cloudflare:workers";
 
 // TODO(cleanup): At present we clone the implementation of Counter and TestTarget because

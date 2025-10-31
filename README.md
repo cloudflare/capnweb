@@ -146,7 +146,7 @@ let friendsPromise = authedApi.getFriendIds();
 // too, so use the magic .map() function to get them, too! Still one round
 // trip.
 let friendProfilesPromise = friendsPromise.map((id: RpcPromise<number>) => {
-  return { id, profile: api.getUserProfile(id); };
+  return { id, profile: api.getUserProfile(id) };
 });
 
 // Now await the promises. The batch is sent at this point. It's important
@@ -173,7 +173,7 @@ import { newWebSocketRpcSession } from "capnweb";
 // feature, part of the "explicit resource management" spec. Alternatively,
 // we could declare `api` with `let` or `const` and make sure to call
 // `api[Symbol.dispose]()` to dispose it and close the connection later.
-using api = newWebSocketRpcSession<PublicApi>("https://example.com/api");
+using api = newWebSocketRpcSession<PublicApi>("wss://example.com/api");
 
 // Usage is exactly the same, except we don't have to await all the promises
 // at once.
@@ -328,7 +328,7 @@ Unfortunately, garbage collection does not work well when remote resources are i
 
 1. Many JavaScript runtimes only run the garbage collector when they sense "memory pressure" -- if memory is not running low, then they figure there's no need to try to reclaim any. However, the runtime has no way to know if the other side of an RPC connection is suffering memory pressure.
 
-2. Garbage collectors need to trace the full object graph in order to detect which objects are unreachable, especially when those objects contain cyclic refereces. However, the garbage collector can only see local objects; it has no ability to trace through the remote graph to discover cycles that may cross RPC connections.
+2. Garbage collectors need to trace the full object graph in order to detect which objects are unreachable, especially when those objects contain cyclic references. However, the garbage collector can only see local objects; it has no ability to trace through the remote graph to discover cycles that may cross RPC connections.
 
 Both of these problems might be solvable with sufficient work, but the problem seems exceedingly difficult. We make no attempt to solve it in this library.
 
@@ -355,7 +355,7 @@ The basic principle is: **The caller is responsible for disposing all stubs.** T
 * Stubs passed in the params of a call remain property of the caller, and must be disposed by the caller, not by the callee.
 * Stubs returned in the result of a call have their ownership transferred from the callee to the caller, and must be disposed by the caller.
 
-In practice, though, the callee and caller do not actually share the same stubs. When stubs are passed over RPC, they are _duplicated_, and the the target object is only disposed when all duplicates of the stub are disposed. Thus, to achieve the rule that only the caller needs to dispose stubs, the RPC system implicitly disposes the callee's duplicates of all stubs when the call completes. That is:
+In practice, though, the callee and caller do not actually share the same stubs. When stubs are passed over RPC, they are _duplicated_, and the target object is only disposed when all duplicates of the stub are disposed. Thus, to achieve the rule that only the caller needs to dispose stubs, the RPC system implicitly disposes the callee's duplicates of all stubs when the call completes. That is:
 * Any stubs the callee receives in the parameters are implicitly disposed when the call completes.
 * Any stubs returned in the results are implicitly disposed some time after the call completes. (Specifically, the RPC system will dispose them once it knows there will be no more pipelined calls.)
 
@@ -382,7 +382,7 @@ Note that if you pass the same `RpcTarget` instance to RPC multiple times -- thu
 
 ### Listening for disconnect
 
-You can monitor any stub for "brokennness" with its `onRpcBroken()` method:
+You can monitor any stub for "brokenness" with its `onRpcBroken()` method:
 
 ```ts
 stub.onRpcBroken((error: any) => {
@@ -535,7 +535,7 @@ A server on Node.js is a bit more involved, due to the awkward handling of WebSo
 ```ts
 import http from "node:http";
 import { WebSocketServer } from 'ws';  // npm package
-import { RpcTarget, newWebSocketRpcSession, nodeHttpBatchRpcResponse } from "capnpweb";
+import { RpcTarget, newWebSocketRpcSession, nodeHttpBatchRpcResponse } from "capnweb";
 
 class MyApiImpl extends RpcTarget implements MyApi {
   // ... define API, same as above ...
@@ -551,7 +551,7 @@ httpServer = http.createServer(async (request, response) => {
   // Accept Cap'n Web requests at `/api`.
   if (request.url === "/api") {
     try {
-      nodeHttpBatchRpcResponse(request, response, new MyApiImpl(), {
+      await nodeHttpBatchRpcResponse(request, response, new MyApiImpl(), {
         // If you are accepting WebSockets, then you might as well accept cross-origin HTTP, since
         // WebSockets always permit cross-origin request anyway. But, see security considerations
         // for further discussion.
@@ -580,6 +580,42 @@ wsServer.on('connection', (ws) => {
 
 // Accept requests on port 8080.
 httpServer.listen(8080);
+```
+
+### HTTP server on Deno
+```ts
+import {
+  newHttpBatchRpcResponse,
+  newWebSocketRpcSession,
+  RpcTarget,
+} from "npm:capnweb";
+
+// This is the server implementation.
+class MyApiImpl extends RpcTarget implements MyApi {
+  // ... define API, same as above ...
+}
+
+Deno.serve(async (req) => {
+  const url = new URL(req.url);
+  if (url.pathname === "/api") {
+    if (req.headers.get("upgrade") === "websocket") {
+      const { socket, response } = Deno.upgradeWebSocket(req);
+      socket.addEventListener("open", () => {
+        newWebSocketRpcSession(socket, new MyApiImpl());
+      });
+      return response;
+    } else {
+      const response = await newHttpBatchRpcResponse(req, new MyApiImpl());
+      // If you are accepting WebSockets, then you might as well accept cross-origin HTTP, since
+      // WebSockets always permit cross-origin request anyway. But, see security considerations
+      // for further discussion.
+      response.headers.set("Access-Control-Allow-Origin", "*");
+      return response;
+    }
+  }
+
+  return new Response("Not Found", { status: 404 });
+});
 ```
 
 ### HTTP server on other runtimes
@@ -672,7 +708,7 @@ You can then set up a connection over it:
 let transport: RpcTransport = new MyTransport();
 
 // Create the main interface we will expose to the other end.
-let localMain: RpcTarget = new MyMainInterface():
+let localMain: RpcTarget = new MyMainInterface();
 
 // Start the session.
 let session = new RpcSession<RemoteMainInterface>(transport, localMain);
