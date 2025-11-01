@@ -194,20 +194,22 @@ let userId: number = await authedApi.getUserId();
 
 The following types can be passed over RPC (in arguments or return values), and will be passed "by value", meaning the content is serialized, producing a copy at the receiving end:
 
-* Primitive values: strings, numbers, booleans, null, undefined
+* Primitive values: strings, numbers (including `NaN`, `Infinity`, and `-Infinity`), booleans, null, undefined
 * Plain objects (e.g., from object literals)
 * Arrays
 * `bigint`
 * `Date`
 * `Uint8Array`
-* `Error` and its well-known subclasses
+* `ArrayBuffer`
+* `Map` and `Set`
+* `RegExp`
+* `URL` and `Headers`
+* `Error` and its well-known subclasses (with full-fidelity serialization including `cause` chains and custom properties)
 
 The following types are not supported as of this writing, but may be added in the future:
-* `Map` and `Set`
-* `ArrayBuffer` and typed arrays other than `Uint8Array`
-* `RegExp`
+* Typed arrays other than `Uint8Array`
 * `ReadableStream` and `WritableStream`, with automatic flow control.
-* `Headers`, `Request`, and `Response`
+* `Request` and `Response` (require asynchronous body handling)
 
 The following are intentionally NOT supported:
 * Application-defined classes that do not extend `RpcTarget`.
@@ -317,7 +319,7 @@ To facilitate interoperability:
 So basically, it "just works".
 
 With that said, as of this writing, the feature set is not exactly the same between the two. We aim to fix this over time, by adding missing features to both sides until they match. In particular, as of this writing:
-* Workers RPC supports some types that Cap'n Web does not yet, like `Map`, streams, etc.
+* Workers RPC supports some types that Cap'n Web does not yet, like streams.
 * Workers RPC supports sending values that contain aliases and cycles. This can actually cause problems, so we actually plan to *remove* this feature from Workers RPC (with a compatibility flag, of course).
 * Workers RPC does not yet support placing an `RpcPromise` into the parameters of a request, to be replaced by its resolution.
 * Workers RPC does not yet support the magic `.map()` method.
