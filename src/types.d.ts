@@ -21,21 +21,21 @@ export type Stubable = RpcTargetBranded | ((...args: any[]) => any);
 // The reason for using a generic type here is to build a serializable subset of structured
 //   cloneable composite types. This allows types defined with the "interface" keyword to pass the
 //   serializable check as well. Otherwise, only types defined with the "type" keyword would pass.
-export type Serializable<T> =
+export type RpcCompatible<T> =
   // Structured cloneables
   | BaseType
   // Structured cloneable composites
   | Map<
-      T extends Map<infer U, unknown> ? Serializable<U> : never,
-      T extends Map<unknown, infer U> ? Serializable<U> : never
+      T extends Map<infer U, unknown> ? RpcCompatible<U> : never,
+      T extends Map<unknown, infer U> ? RpcCompatible<U> : never
     >
-  | Set<T extends Set<infer U> ? Serializable<U> : never>
-  | Array<T extends Array<infer U> ? Serializable<U> : never>
-  | ReadonlyArray<T extends ReadonlyArray<infer U> ? Serializable<U> : never>
+  | Set<T extends Set<infer U> ? RpcCompatible<U> : never>
+  | Array<T extends Array<infer U> ? RpcCompatible<U> : never>
+  | ReadonlyArray<T extends ReadonlyArray<infer U> ? RpcCompatible<U> : never>
   | {
-      [K in keyof T]: K extends number | string ? Serializable<T[K]> : never;
+      [K in keyof T]: K extends number | string ? RpcCompatible<T[K]> : never;
     }
-  | Promise<T extends Promise<infer U> ? Serializable<U> : never>
+  | Promise<T extends Promise<infer U> ? RpcCompatible<U> : never>
   // Special types
   | Stub<Stubable>
   // Serialized as stubs, see `Stubify`
@@ -43,12 +43,12 @@ export type Serializable<T> =
 
 // Base type for all RPC stubs, including common memory management methods.
 // `T` is used as a marker type for unwrapping `Stub`s later.
-interface StubBase<T extends Serializable<T>> extends Disposable {
+interface StubBase<T extends RpcCompatible<T>> extends Disposable {
   [__RPC_STUB_BRAND]: T;
   dup(): this;
   onRpcBroken(callback: (error: any) => void): void;
 }
-export type Stub<T extends Serializable<T>> =
+export type Stub<T extends RpcCompatible<T>> =
     T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
 
 type TypedArray =
@@ -125,7 +125,7 @@ type MaybeDisposable<T> = T extends object ? Disposable : unknown;
 
 // Type for method return or property on an RPC interface.
 // - Stubable types are replaced by stubs.
-// - Serializable types are passed by value, with stubable types replaced by stubs
+// - RpcCompatible types are passed by value, with stubable types replaced by stubs
 //   and a top-level `Disposer`.
 // Everything else can't be passed over RPC.
 // Technically, we use custom thenables here, but they quack like `Promise`s.
@@ -133,7 +133,7 @@ type MaybeDisposable<T> = T extends object ? Disposable : unknown;
 // prettier-ignore
 type Result<R> =
   R extends Stubable ? Promise<Stub<R>> & Provider<R> & StubBase<R>
-  : R extends Serializable<R> ? Promise<Stubify<R> & MaybeDisposable<R>> & Provider<R> & StubBase<R>
+  : R extends RpcCompatible<R> ? Promise<Stubify<R> & MaybeDisposable<R>> & Provider<R> & StubBase<R>
   : never;
 
 // Type for method or property on an RPC interface.

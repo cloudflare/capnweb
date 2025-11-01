@@ -5,7 +5,7 @@
 import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPromiseImpl } from "./core.js";
 import { serialize, deserialize } from "./serialize.js";
 import { RpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
-import { RpcTargetBranded, Serializable, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
+import { RpcTargetBranded, RpcCompatible, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
@@ -18,7 +18,7 @@ forceInitMap();
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
          nodeHttpBatchRpcResponse };
-export type { RpcTransport, RpcSessionOptions };
+export type { RpcTransport, RpcSessionOptions, RpcCompatible };
 
 // Hack the type system to make RpcStub's types work nicely!
 /**
@@ -31,9 +31,9 @@ export type { RpcTransport, RpcSessionOptions };
  * such method exists on the remote object, an exception is thrown back. But the client does not
  * actually know, until that point, what methods exist.
  */
-export type RpcStub<T extends Serializable<T>> = Stub<T>;
+export type RpcStub<T extends RpcCompatible<T>> = Stub<T>;
 export const RpcStub: {
-  new <T extends Serializable<T>>(value: T): RpcStub<T>;
+  new <T extends RpcCompatible<T>>(value: T): RpcStub<T>;
 } = <any>RpcStubImpl;
 
 /**
@@ -54,7 +54,7 @@ export const RpcStub: {
  * if you only intend to use the promise for pipelining and you never await it, then there's no
  * need to transmit the resolution!
  */
-export type RpcPromise<T extends Serializable<T>> = Stub<T> & Promise<Stubify<T>>;
+export type RpcPromise<T extends RpcCompatible<T>> = Stub<T> & Promise<Stubify<T>>;
 export const RpcPromise: {
   // Note: Cannot construct directly!
 } = <any>RpcPromiseImpl;
@@ -64,7 +64,7 @@ export const RpcPromise: {
  *
  * Most people won't use this. You only need it if you've implemented your own `RpcTransport`.
  */
-export interface RpcSession<T extends Serializable<T> = undefined> {
+export interface RpcSession<T extends RpcCompatible<T> = undefined> {
   getRemoteMain(): RpcStub<T>;
   getStats(): {imports: number, exports: number};
 
@@ -73,7 +73,7 @@ export interface RpcSession<T extends Serializable<T> = undefined> {
   drain(): Promise<void>;
 }
 export const RpcSession: {
-  new <T extends Serializable<T> = undefined>(
+  new <T extends RpcCompatible<T> = undefined>(
       transport: RpcTransport, localMain?: any, options?: RpcSessionOptions): RpcSession<T>;
 } = <any>RpcSessionImpl;
 
@@ -106,7 +106,7 @@ interface Empty {}
  * @param localMain The main RPC interface to expose to the peer. Returns a stub for the main
  * interface exposed from the peer.
  */
-export let newWebSocketRpcSession:<T extends Serializable<T> = Empty>
+export let newWebSocketRpcSession:<T extends RpcCompatible<T> = Empty>
     (webSocket: WebSocket | string, localMain?: any, options?: RpcSessionOptions) => RpcStub<T> =
     <any>newWebSocketRpcSessionImpl;
 
@@ -117,7 +117,7 @@ export let newWebSocketRpcSession:<T extends Serializable<T> = Empty>
  * value is an RpcStub. You can customize anything about the request except for the method
  * (it will always be set to POST) and the body (which the RPC system will fill in).
  */
-export let newHttpBatchRpcSession:<T extends Serializable<T>>
+export let newHttpBatchRpcSession:<T extends RpcCompatible<T>>
     (urlOrRequest: string | Request, init?: RequestInit) => RpcStub<T> =
     <any>newHttpBatchRpcSessionImpl;
 
@@ -126,7 +126,7 @@ export let newHttpBatchRpcSession:<T extends Serializable<T>>
  * between an iframe and its parent frame in a browser context. Each side should call this function
  * on its own end of the MessageChannel.
  */
-export let newMessagePortRpcSession:<T extends Serializable<T> = Empty>
+export let newMessagePortRpcSession:<T extends RpcCompatible<T> = Empty>
     (port: MessagePort, localMain?: any, options?: RpcSessionOptions) => RpcStub<T> =
     <any>newMessagePortRpcSessionImpl;
 
