@@ -26,9 +26,25 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '["date",1234]': new Date(1234),
   '["bytes","aGVsbG8h"]': new TextEncoder().encode("hello!"),
   '["undefined"]': undefined,
-  '["error","Error","the message"]': new Error("the message"),
-  '["error","TypeError","the message"]': new TypeError("the message"),
-  '["error","RangeError","the message"]': new RangeError("the message"),
+  '["error",{"name":"Error","message":"the message"}]': (() => { let e = new Error("the message"); delete e.stack; return e; })(),
+  '["error",{"name":"TypeError","message":"the message"}]': (() => { let e = new TypeError("the message"); delete e.stack; return e; })(),
+  '["error",{"name":"RangeError","message":"the message"}]': (() => { let e = new RangeError("the message"); delete e.stack; return e; })(),
+  '["special-number","NaN"]': NaN,
+  '["special-number","Infinity"]': Infinity,
+  '["special-number","-Infinity"]': -Infinity,
+  '["regexp",{"source":"test","flags":"gi"}]': /test/gi,
+  '["regexp",{"source":"^\\\\d+$","flags":""}]': /^\d+$/,
+  '["map",[[["foo","bar"]]]]': new Map([["foo", "bar"]]),
+  '["map",[[["a","b"]],[["c","d"]]]]': new Map([["a", "b"], ["c", "d"]]),
+  '["set",["foo","bar"]]': new Set(["foo", "bar"]),
+  '["arraybuffer","aGVsbG8h"]': new TextEncoder().encode("hello!").buffer,
+  '["url","https://example.com/path?q=1"]': new URL("https://example.com/path?q=1"),
+  '["headers",[["content-type","application/json"],["x-custom","value"]]]': (() => {
+    let h = new Headers();
+    h.set("Content-Type", "application/json");
+    h.set("X-Custom", "value");
+    return h;
+  })(),
 };
 
 class NotSerializable {
@@ -95,6 +111,49 @@ describe("simple serialization", () => {
     expect(() => deserialize('["unknown_type", "param"]')).toThrowError();
     expect(() => deserialize('["date"]')).toThrowError(); // missing timestamp
     expect(() => deserialize('["error"]')).toThrowError(); // missing type and message
+  })
+
+  it("supports full fidelity Error serialization", () => {
+    // Test error with cause and custom properties
+    let error = new Error("outer error");
+    error.name = "CustomError";
+    let cause = new TypeError("inner error");
+    error.cause = cause;
+    (error as any).customProp = "custom value";
+    (error as any).code = 404;
+
+    let serialized = serialize(error);
+    let deserialized = deserialize(serialized) as Error;
+
+    expect(deserialized.name).toBe("CustomError");
+    expect(deserialized.message).toBe("outer error");
+    expect(deserialized.cause).toBeInstanceOf(TypeError);
+    expect((deserialized.cause as Error).message).toBe("inner error");
+    expect((deserialized as any).customProp).toBe("custom value");
+    expect((deserialized as any).code).toBe(404);
+  })
+
+  it("supports nested Map and Set structures", () => {
+    // Test Map with complex values
+    let map = new Map();
+    map.set("key1", "value1");
+    map.set(123, new Map([["nested", "map"]]));
+    let serialized = serialize(map);
+    let deserialized = deserialize(serialized) as Map<unknown, unknown>;
+    expect(deserialized.get("key1")).toBe("value1");
+    expect(deserialized.get(123)).toBeInstanceOf(Map);
+    expect((deserialized.get(123) as Map<unknown, unknown>).get("nested")).toBe("map");
+
+    // Test Set with complex values
+    let set = new Set();
+    set.add("item1");
+    set.add(new Set(["nested", "set"]));
+    let serializedSet = serialize(set);
+    let deserializedSet = deserialize(serializedSet) as Set<unknown>;
+    expect(deserializedSet.has("item1")).toBe(true);
+    let nestedSet = Array.from(deserializedSet).find(item => item instanceof Set) as Set<unknown>;
+    expect(nestedSet).toBeInstanceOf(Set);
+    expect(nestedSet.has("nested")).toBe(true);
   })
 });
 
@@ -1187,8 +1246,10 @@ describe("error serialization", () => {
         // By default, the stack isn't sent. A stack may be added client-side, though. So we
         // verify that it doesn't contain the function name `throwErrorImpl` nor the file name
         // `test-util.ts`, which should only appear on the server.
-        expect((err as Error).stack).not.toContain("throwErrorImpl");
-        expect((err as Error).stack).not.toContain("test-util.ts");
+        if ((err as Error).stack) {
+          expect((err as Error).stack).not.toContain("throwErrorImpl");
+          expect((err as Error).stack).not.toContain("test-util.ts");
+        }
 
         return "caught";
       });

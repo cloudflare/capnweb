@@ -153,24 +153,132 @@ export class Devaluator {
         }
       }
 
+      case "special-number": {
+        let num = value as number;
+        if (Number.isNaN(num)) {
+          return ["special-number", "NaN"];
+        } else if (num === Infinity) {
+          return ["special-number", "Infinity"];
+        } else if (num === -Infinity) {
+          return ["special-number", "-Infinity"];
+        }
+        // Should not happen if typeForRpc is correct - fall through to default case
+        break;
+      }
+
+      case "regexp": {
+        let re = value as RegExp;
+        return ["regexp", { source: re.source, flags: re.flags }];
+      }
+
+      case "map": {
+        let map = value as Map<unknown, unknown>;
+        let entries: unknown[] = [];
+        for (let [key, val] of map) {
+          // Each entry is a [key, val] array, which needs to be wrapped like any array
+          let keyVal = [
+            this.devaluateImpl(key, map, depth + 1),
+            this.devaluateImpl(val, map, depth + 1)
+          ];
+          entries.push([keyVal]);
+        }
+        return ["map", entries];
+      }
+
+      case "set": {
+        let set = value as Set<unknown>;
+        let values: unknown[] = [];
+        for (let val of set) {
+          let serializedVal = this.devaluateImpl(val, set, depth + 1);
+          // If the value serialized to an array, it's already wrapped by devaluateImpl
+          // But for Set, we need to wrap array values one more time
+          if (serializedVal instanceof Array && !(serializedVal.length > 0 && typeof serializedVal[0] === "string")) {
+            values.push([serializedVal]);
+          } else {
+            values.push(serializedVal);
+          }
+        }
+        return ["set", values];
+      }
+
+      case "arraybuffer": {
+        let buffer = value as ArrayBuffer;
+        let bytes = new Uint8Array(buffer);
+        if ((bytes as any).toBase64) {
+          return ["arraybuffer", (bytes as any).toBase64({omitPadding: true})];
+        } else {
+          // Convert Uint8Array to number array for String.fromCharCode
+          let bytesArray = new Array(bytes.length);
+          for (let i = 0; i < bytes.length; i++) {
+            bytesArray[i] = bytes[i];
+          }
+          return ["arraybuffer",
+              btoa(String.fromCharCode.apply(null, bytesArray).replace(/=*$/, ""))];
+        }
+      }
+
+      case "url": {
+        let url = value as URL;
+        return ["url", url.href];
+      }
+
+      case "headers": {
+        let headers = value as Headers;
+        let entries: Array<[string, string]> = [];
+        headers.forEach((value, key) => {
+          entries.push([key, value]);
+        });
+        return ["headers", entries];
+      }
+
       case "error": {
         let e = <Error>value;
-
-        // TODO:
-        // - Determine type by checking prototype rather than `name`, which can be overridden?
-        // - Serialize cause / suppressed error / etc.
-        // - Serialize added properties.
 
         let rewritten = this.exporter.onSendError(e);
         if (rewritten) {
           e = rewritten;
         }
 
-        let result = ["error", e.name, e.message];
-        if (rewritten && rewritten.stack) {
-          result.push(rewritten.stack);
+        // Full fidelity error serialization: name, message, stack, cause (recursive), customProps
+        let errorData: Record<string, unknown> = {
+          name: e.name || "Error",
+          message: e.message || ""
+        };
+
+        // Preserve stack trace only if onSendError returned an Error with stack property
+        // (same behavior as original implementation)
+        if (rewritten && rewritten.stack !== undefined) {
+          errorData.stack = rewritten.stack;
         }
-        return result;
+
+        // Preserve cause (recursive - cause can be another Error)
+        if (e.cause !== undefined) {
+          errorData.cause = this.devaluateImpl(e.cause, e, depth + 1);
+        }
+
+        // Capture custom properties (best effort)
+        // Use getOwnPropertyNames to capture both enumerable and non-enumerable properties
+        // Standard Error properties: name, message, stack, cause
+        // Browser-specific properties to exclude: line, column, sourceURL (WebKit), fileName, lineNumber, columnNumber (Firefox)
+        const browserProps = new Set(["line", "column", "sourceURL", "fileName", "lineNumber", "columnNumber"]);
+        let customProps: Record<string, unknown> = {};
+        const allProps = Object.getOwnPropertyNames(e);
+        for (const key of allProps) {
+          if (key !== "name" && key !== "message" && key !== "stack" && key !== "cause" && !browserProps.has(key)) {
+            try {
+              customProps[key] = this.devaluateImpl(e[key as keyof Error], e, depth + 1);
+            } catch (err) {
+              // Skip properties that can't be accessed or serialized
+            }
+          }
+        }
+
+        // Only include customProps if not empty
+        if (Object.keys(customProps).length > 0) {
+          errorData.customProps = customProps;
+        }
+
+        return ["error", errorData];
       }
 
       case "undefined":
@@ -315,6 +423,90 @@ export class Evaluator {
             return new Date(value[1]);
           }
           break;
+        case "special-number":
+          if (typeof value[1] == "string") {
+            if (value[1] == "NaN") {
+              return NaN;
+            } else if (value[1] == "Infinity") {
+              return Infinity;
+            } else if (value[1] == "-Infinity") {
+              return -Infinity;
+            }
+          }
+          break;
+        case "regexp":
+          if (value[1] && typeof value[1] == "object" && typeof value[1].source == "string") {
+            return new RegExp(value[1].source, value[1].flags || "");
+          }
+          break;
+        case "map":
+          if (value[1] instanceof Array) {
+            let map = new Map();
+            for (let wrappedEntry of value[1]) {
+              // Each entry is wrapped: [[key, val]]
+              if (wrappedEntry instanceof Array && wrappedEntry.length == 1 &&
+                  wrappedEntry[0] instanceof Array && wrappedEntry[0].length == 2) {
+                let entry = wrappedEntry[0];
+                map.set(
+                  this.evaluateImpl(entry[0], map, 0),
+                  this.evaluateImpl(entry[1], map, 1)
+                );
+              }
+            }
+            return map;
+          }
+          break;
+        case "set":
+          if (value[1] instanceof Array) {
+            let set = new Set();
+            for (let wrappedItem of value[1]) {
+              // Items in Set may be wrapped if they were arrays: [[value]]
+              let item = wrappedItem;
+              if (wrappedItem instanceof Array && wrappedItem.length === 1 && 
+                  wrappedItem[0] instanceof Array && !(wrappedItem[0].length > 0 && typeof wrappedItem[0][0] === "string")) {
+                // It's a wrapped array, unwrap it
+                item = wrappedItem[0];
+              }
+              set.add(this.evaluateImpl(item, set, 0));
+            }
+            return set;
+          }
+          break;
+        case "arraybuffer": {
+          let b64 = Uint8Array as any as FromBase64;
+          if (typeof value[1] == "string") {
+            if (b64.fromBase64) {
+              let bytes = b64.fromBase64(value[1]);
+              return (bytes as any).buffer as ArrayBuffer;
+            } else {
+              let bs = atob(value[1]);
+              let len = bs.length;
+              let bytes = new Uint8Array(len);
+              for (let i = 0; i < len; i++) {
+                bytes[i] = bs.charCodeAt(i);
+              }
+              return bytes.buffer;
+            }
+          }
+          break;
+        }
+        case "url":
+          if (typeof value[1] == "string") {
+            return new URL(value[1]);
+          }
+          break;
+        case "headers":
+          if (value[1] instanceof Array) {
+            let headers = new Headers();
+            for (let entry of value[1]) {
+              if (entry instanceof Array && entry.length == 2 &&
+                  typeof entry[0] == "string" && typeof entry[1] == "string") {
+                headers.set(entry[0], entry[1]);
+              }
+            }
+            return headers;
+          }
+          break;
         case "bytes": {
           let b64 = Uint8Array as FromBase64;
           if (typeof value[1] == "string") {
@@ -333,12 +525,58 @@ export class Evaluator {
           break;
         }
         case "error":
+          // Support both old format: ["error", name, message, stack?]
+          // and new format: ["error", {name, message, stack?, cause?, customProps?}]
           if (value.length >= 3 && typeof value[1] === "string" && typeof value[2] === "string") {
+            // Old format - backward compatibility
             let cls = ERROR_TYPES[value[1]] || Error;
             let result = new cls(value[2]);
             if (typeof value[3] === "string") {
               result.stack = value[3];
             }
+            return result;
+          } else if (value.length >= 2 && value[1] && typeof value[1] === "object") {
+            // New format with full fidelity
+            let errorData = value[1] as {
+              name: string;
+              message: string;
+              stack?: string;
+              cause?: unknown;
+              customProps?: Record<string, unknown>;
+            };
+            let cls = ERROR_TYPES[errorData.name] || Error;
+            let result = new cls(errorData.message || "");
+            
+            // Always delete auto-generated stack first
+            delete result.stack;
+            
+            // Only set name explicitly if it's not a standard error type or differs from default
+            // This preserves the correct non-enumerable property for standard errors
+            if (!ERROR_TYPES[errorData.name] || result.name !== errorData.name) {
+              // Delete the auto-set name first, then set our own
+              delete (result as any).name;
+              Object.defineProperty(result, 'name', {
+                value: errorData.name,
+                writable: true,
+                enumerable: false,
+                configurable: true
+              });
+            }
+
+            if (errorData.stack !== undefined) {
+              result.stack = errorData.stack;
+            }
+
+            if (errorData.cause !== undefined) {
+              result.cause = this.evaluateImpl(errorData.cause, result, "cause");
+            }
+
+            if (errorData.customProps) {
+              for (let key in errorData.customProps) {
+                result[key] = this.evaluateImpl(errorData.customProps[key], result, key);
+              }
+            }
+
             return result;
           }
           break;
