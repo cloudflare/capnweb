@@ -25,13 +25,19 @@ export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
-    "undefined";
+    "undefined" | "regexp" | "map" | "set" | "arraybuffer" | "url" | "headers" | "special-number";
 
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
     case "boolean":
-    case "number":
     case "string":
+      return "primitive";
+
+    case "number":
+      // Check for special numbers (NaN, Infinity, -Infinity)
+      if (!isFinite(value)) {
+        return "special-number";
+      }
       return "primitive";
 
     case "undefined":
@@ -74,7 +80,17 @@ export function typeForRpc(value: unknown): TypeForRpc {
     case Uint8Array.prototype:
       return "bytes";
 
-    // TODO: All other structured clone types.
+    case RegExp.prototype:
+      return "regexp";
+
+    case Map.prototype:
+      return "map";
+
+    case Set.prototype:
+      return "set";
+
+    case ArrayBuffer.prototype:
+      return "arraybuffer";
 
     case RpcStub.prototype:
       return "stub";
@@ -105,6 +121,14 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
       if (value instanceof Error) {
         return "error";
+      }
+
+      // Check for URL and Headers (these don't have standard prototypes we can switch on)
+      if (typeof URL !== "undefined" && value instanceof URL) {
+        return "url";
+      }
+      if (typeof Headers !== "undefined" && value instanceof Headers) {
+        return "headers";
       }
 
       return "unsupported";
@@ -766,9 +790,35 @@ export class RpcPayload {
       case "bytes":
       case "error":
       case "undefined":
+      case "special-number":
+      case "regexp":
+      case "arraybuffer":
+      case "url":
+      case "headers":
         // immutable, no need to copy
         // TODO: Should errors be copied if they have own properties?
         return value;
+
+      case "map": {
+        let map = value as Map<unknown, unknown>;
+        let result = new Map();
+        for (let [key, val] of map) {
+          result.set(
+            this.deepCopy(key, map, 0, result, dupStubs, owner),
+            this.deepCopy(val, map, 1, result, dupStubs, owner)
+          );
+        }
+        return result;
+      }
+
+      case "set": {
+        let set = value as Set<unknown>;
+        let result = new Set();
+        for (let val of set) {
+          result.add(this.deepCopy(val, set, 0, result, dupStubs, owner));
+        }
+        return result;
+      }
 
       case "array": {
         // We have to construct the new array first, then fill it in, so we can pass it as the
@@ -1034,6 +1084,13 @@ export class RpcPayload {
       case "date":
       case "error":
       case "undefined":
+      case "special-number":
+      case "regexp":
+      case "map":
+      case "set":
+      case "arraybuffer":
+      case "url":
+      case "headers":
         return;
 
       case "array": {
@@ -1120,6 +1177,13 @@ export class RpcPayload {
       case "date":
       case "error":
       case "undefined":
+      case "special-number":
+      case "regexp":
+      case "map":
+      case "set":
+      case "arraybuffer":
+      case "url":
+      case "headers":
       case "function":
       case "rpc-target":
         return;
@@ -1247,7 +1311,18 @@ function followPath(value: unknown, parent: object | undefined,
       case "bytes":
       case "date":
       case "error":
-        // These have no properties that can be accessed remotely.
+      case "special-number":
+      case "regexp":
+      case "arraybuffer":
+      case "url":
+      case "headers":
+        // These have no properties that can be accessed remotely (or are immutable).
+        value = undefined;
+        break;
+
+      case "map":
+      case "set":
+        // Map and Set don't support property access via this mechanism
         value = undefined;
         break;
 
