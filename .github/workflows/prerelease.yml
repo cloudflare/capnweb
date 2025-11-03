@@ -1,0 +1,34 @@
+name: Prerelease
+
+on:
+  workflow_run:
+    workflows: ["Test"]
+    branches: [main]
+    types: [completed]
+
+jobs:
+  prerelease:
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.repository_owner == 'cloudflare' }}
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - run: npm ci
+
+      - name: Modify package.json version
+        run: npx tsx .github/version-script.ts
+
+      - run: npm run build
+
+      - run: npm publish --tag beta
+        env:
+          NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}

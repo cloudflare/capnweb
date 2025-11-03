@@ -30,12 +30,16 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.5.1",
+    "@changesets/cli": "^2.29.7",
     "@cloudflare/vitest-pool-workers": "^0.9.0",
     "@cloudflare/workers-types": "^4.20250912.0",
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.4",
+    "pkg-pr-new": "^0.0.60",
     "playwright": "^1.55.0",
     "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4",
     "ws": "^8.18.3"

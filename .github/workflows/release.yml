@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Test"]
+    branches: [main]
+    types: [completed]
+
+jobs:
+  release:
+    permissions:
+      contents: write
+
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.repository_owner == 'cloudflare' }}
+    timeout-minutes: 5
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+
+      - run: npm ci
+      - run: npm run build
+
+      - id: changesets
+        uses: changesets/action@v1
+        with:
+          version: npx tsx .github/changeset-version.ts
+          publish: npx tsx .github/changeset-publish.ts
+        env:
+          GITHUB_TOKEN: ${{ secrets.CAPNWEB_GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+          NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
