@@ -9,7 +9,10 @@ on:
 jobs:
   release:
     permissions:
-      contents: write
+      contents: write # to create release (changesets/action)
+      issues: write # to post issue comments (changesets/action)
+      pull-requests: write # to create pull request (changesets/action)
+      id-token: write # to use OpenID Connect token for provenance (changesets/action)
 
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.repository_owner == 'cloudflare' }}
     timeout-minutes: 5
@@ -34,6 +37,6 @@ jobs:
           version: npx tsx .github/changeset-version.ts
           publish: npx tsx .github/changeset-publish.ts
         env:
-          GITHUB_TOKEN: ${{ secrets.CAPNWEB_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
           NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
