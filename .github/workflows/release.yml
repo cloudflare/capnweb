@@ -25,13 +25,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24    # includes npm 11.5.1 or later, needed for trusted publishing
           cache: "npm"
-
-      # Ensure npm 11.5.1 or later is installed, to use trusted publishing.
-      # See: https://docs.npmjs.com/trusted-publishers
-      - name: Update npm
-        run: npm install -g npm@latest
 
       - run: npm ci
       - run: npm run build
@@ -61,13 +56,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24    # includes npm 11.5.1 or later, needed for trusted publishing
           cache: "npm"
-
-      # Ensure npm 11.5.1 or later is installed, to use trusted publishing.
-      # See: https://docs.npmjs.com/trusted-publishers
-      - name: Update npm
-        run: npm install -g npm@latest
 
       - run: npm ci
 
