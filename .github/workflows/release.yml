@@ -37,7 +37,7 @@ jobs:
           # Note that these commands are NOT interpreted by a shell, they are apparently only
           # split on whitespace and then passed directly to execvp(). Hence the need to indirect
           # through a shell script, ugh. :(
-          version: ./github/changeset-version.sh
+          version: ./.github/changeset-version.sh
           publish: npx changeset publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
