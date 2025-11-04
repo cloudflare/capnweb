@@ -22,6 +22,11 @@ jobs:
           node-version: 22
           cache: "npm"
 
+      # Ensure npm 11.5.1 or later is installed, to use trusted publishing.
+      # See: https://docs.npmjs.com/trusted-publishers
+      - name: Update npm
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       - name: Modify package.json version
@@ -30,5 +35,3 @@ jobs:
       - run: npm run build
 
       - run: npm publish --tag beta
-        env:
-          NPM_PUBLISH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
