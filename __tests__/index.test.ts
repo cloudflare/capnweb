@@ -305,8 +305,16 @@ describe("local stub", () => {
 
     expect(await stub.prototypeProp).toBe("prototype");
     expect(await stub.prototypeMethod()).toBe("method");
-    expect(await (stub as any).instanceProp).toBe(undefined);
-    expect(await (stub as any).dynamicProp).toBe(undefined);
+    await expect(() => (stub as any).instanceProp).rejects.toThrow(new TypeError(
+        "Attempted to access property 'instanceProp', which is an instance property of the " +
+        "RpcTarget. To avoid leaking private internals, instance properties cannot be accessed " +
+        "over RPC. If you want to make this property available over RPC, define it as a method " +
+        "or getter on the class, instead of an instance property."));
+    await expect(() => (stub as any).dynamicProp).rejects.toThrow(new TypeError(
+        "Attempted to access property 'dynamicProp', which is an instance property of the " +
+        "RpcTarget. To avoid leaking private internals, instance properties cannot be accessed " +
+        "over RPC. If you want to make this property available over RPC, define it as a method " +
+        "or getter on the class, instead of an instance property."));
   });
 
   it("does not expose private methods starting with #", async () => {
