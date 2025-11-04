@@ -1,4 +1,6 @@
 name: Publish to pkg.pr.new for pre-release
+permissions:
+  contents: read
 
 on:
   pull_request: {}
