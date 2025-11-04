@@ -118,7 +118,7 @@ export let newWebSocketRpcSession:<T extends Serializable<T> = Empty>
  * (it will always be set to POST) and the body (which the RPC system will fill in).
  */
 export let newHttpBatchRpcSession:<T extends Serializable<T>>
-    (urlOrRequest: string | Request, init?: RequestInit) => RpcStub<T> =
+    (urlOrRequest: string | Request, options?: RpcSessionOptions) => RpcStub<T> =
     <any>newHttpBatchRpcSessionImpl;
 
 /**
