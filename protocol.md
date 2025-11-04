@@ -130,6 +130,22 @@ This expression will evaluate to the following object:
 }
 ```
 
+`["undefined"]`
+
+The literal value `undefined`.
+
+`["inf"]`, `["-inf"]`, `["nan"]`
+
+The values Infinity, -Infinity, and NaN.
+
+`["bytes", base64]`
+
+A `Uint8Array`, represented as a base64-encoded string.
+
+`["bigint", decimal]`
+
+A bigint value, represented as a decimal string.
+
 `["date", number]`
 
 A JavaScript `Date` value. The number represents milliseconds since the Unix epoch.
