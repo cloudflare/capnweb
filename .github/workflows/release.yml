@@ -34,11 +34,10 @@ jobs:
       - id: changesets
         uses: changesets/action@v1
         with:
-          # The standard step is only to run `changeset version` but this does not update the
-          # package-lock.json file. So we also run `npm install`, which does this update.
-          # This is a workaround until this is handled automatically by `changeset version`.
-          # See https://github.com/changesets/changesets/issues/421.
-          version: bash -c 'npx changeset version && npm install'
+          # Note that these commands are NOT interpreted by a shell, they are apparently only
+          # split on whitespace and then passed directly to execvp(). Hence the need to indirect
+          # through a shell script, ugh. :(
+          version: ./github/changeset-version.sh
           publish: npx changeset publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
