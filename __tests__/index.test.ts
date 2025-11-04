@@ -29,6 +29,10 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '["error","Error","the message"]': new Error("the message"),
   '["error","TypeError","the message"]': new TypeError("the message"),
   '["error","RangeError","the message"]': new RangeError("the message"),
+
+  '["inf"]': Infinity,
+  '["-inf"]': -Infinity,
+  '["nan"]': NaN,
 };
 
 class NotSerializable {
