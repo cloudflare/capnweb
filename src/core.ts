@@ -13,6 +13,20 @@ if (!Symbol.asyncDispose) {
   (Symbol as any).asyncDispose = Symbol.for('asyncDispose');
 }
 
+// Polyfill Promise.withResolvers() for old Safari versions (ugh), Hermes (React Native), and
+// maybe others.
+if (!Promise.withResolvers) {
+  Promise.withResolvers = function<T>(): PromiseWithResolvers<T> {
+    let resolve: (value: T | PromiseLike<T>) => void;
+    let reject: (reason?: any) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve: resolve!, reject: reject! };
+  };
+}
+
 let workersModule: any = (globalThis as any)[WORKERS_MODULE_SYMBOL];
 
 export interface RpcTarget {
