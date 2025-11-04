@@ -38,7 +38,7 @@ jobs:
           # package-lock.json file. So we also run `npm install`, which does this update.
           # This is a workaround until this is handled automatically by `changeset version`.
           # See https://github.com/changesets/changesets/issues/421.
-          version: npx changeset version && npm install
+          version: bash -c 'npx changeset version && npm install'
           publish: npx changeset publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
