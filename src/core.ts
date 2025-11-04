@@ -426,6 +426,10 @@ export class RpcStub extends RpcTarget {
     let {hook, pathIfPromise} = this[RAW_STUB];
     return mapImpl.sendMap(hook, pathIfPromise || [], func);
   }
+
+  toString() {
+    return "[object RpcStub]";
+  }
 }
 
 export class RpcPromise extends RpcStub {
@@ -446,6 +450,10 @@ export class RpcPromise extends RpcStub {
 
   finally(onfinally?: (() => void) | undefined | null): Promise<unknown> {
     return pullPromise(this).finally(...arguments);
+  }
+
+  toString() {
+    return "[object RpcPromise]";
   }
 }
 

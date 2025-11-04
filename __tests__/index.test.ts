@@ -395,6 +395,13 @@ describe("local stub", () => {
           [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144]],
     ]);
   });
+
+  it("overrides toString() to at least specify the type", async () => {
+    let stub = new RpcStub(new TestTarget());
+    expect(stub.toString()).toBe("[object RpcStub]");
+    let promise = stub.square(3);
+    expect(promise.toString()).toBe("[object RpcPromise]");
+  });
 });
 
 describe("stub disposal", () => {
