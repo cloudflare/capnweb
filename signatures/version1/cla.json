@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "threepointone",
+      "id": 18808,
+      "comment_id": 3491581938,
+      "created_at": "2025-11-05T14:38:24Z",
+      "repoId": 998173252,
+      "pullRequestNo": 108
+    }
+  ]
 }
