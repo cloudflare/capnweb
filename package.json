@@ -11,11 +11,15 @@
   ],
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": {
         "workerd": "./dist/index-workers.js",
         "default": "./dist/index.js"
       },
-      "types": "./dist/index.d.ts"
+      "require": {
+        "workerd": "./dist/index-workers.cjs",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "type": "module",
@@ -23,8 +27,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
-    "build:watch": "tsup --watch",
+    "build": "tsup --format esm,cjs",
+    "build:watch": "tsup --watch --format esm,cjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
@@ -32,15 +36,15 @@
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.1",
     "@changesets/cli": "^2.29.7",
-    "@cloudflare/vitest-pool-workers": "^0.9.0",
-    "@cloudflare/workers-types": "^4.20250912.0",
+    "@cloudflare/vitest-pool-workers": "^0.10.4",
+    "@cloudflare/workers-types": "^4.20251014.0",
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.4",
     "pkg-pr-new": "^0.0.60",
-    "playwright": "^1.55.0",
+    "playwright": "^1.56.1",
     "tsup": "^8.5.0",
     "tsx": "^4.20.6",
-    "typescript": "^5.9.2",
+    "typescript": "^5.9.3",
     "vitest": "^3.2.4",
     "ws": "^8.18.3"
   },

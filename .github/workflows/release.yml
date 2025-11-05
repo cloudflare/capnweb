@@ -25,11 +25,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24    # includes npm 11.5.1 or later, needed for trusted publishing
+          node-version: 24 # includes npm 11.5.1 or later, needed for trusted publishing
           cache: "npm"
 
       - run: npm ci
-      - run: npm run build
 
       - id: changesets
         uses: changesets/action@v1
@@ -55,14 +54,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 24    # includes npm 11.5.1 or later, needed for trusted publishing
+          node-version: 24 # includes npm 11.5.1 or later, needed for trusted publishing
           cache: "npm"
 
       - run: npm ci
 
       - name: Modify package.json version
         run: npx tsx .github/version-script.ts
-
-      - run: npm run build
 
       - run: npm publish --tag beta
