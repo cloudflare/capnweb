@@ -29,6 +29,8 @@ jobs:
           cache: "npm"
 
       - run: npm ci
+      # we explicitly run here because changesets might not be running the build step https://github.com/changesets/changesets/issues/860#issuecomment-1316398728
+      - run: npm run build
 
       - id: changesets
         uses: changesets/action@v1
