@@ -1,5 +1,11 @@
 # capnweb
 
+## 0.3.0
+
+### Minor Changes
+
+- [#78](https://github.com/cloudflare/capnweb/pull/78) [`8a47045`](https://github.com/cloudflare/capnweb/commit/8a470458dd152a66d473be638626f668f8be47d9) Thanks [@itaylor](https://github.com/itaylor)! - The package now exports the type `RpcCompatible<T>` (previously called `Serializable<T>`, but not exported), which is needed when writing generic functions on `RpcStub` / `RpcPromise`.
+
 ## 0.2.0
 
 ### Minor Changes
