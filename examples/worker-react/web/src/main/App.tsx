@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { newHttpBatchRpcSession } from '@cloudflare/jsrpc'
+import { newHttpBatchRpcSession } from 'capnweb'
 import type { Api } from '../../../src/worker'
 
 type Result = {
@@ -127,7 +127,7 @@ export function App() {
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, lineHeight: 1.5 }}>
-      <h1>JSRPC: Workers + React</h1>
+      <h1>Cap'n Web: Cloudflare Workers + React</h1>
       <div style={{ opacity: 0.8 }}>Network RTT is simulated on the server (configurable via SIMULATED_RTT_MS/SIMULATED_RTT_JITTER_MS in wrangler.toml).</div>
       <p>This demo calls the Worker API in two ways:</p>
       <ul>
