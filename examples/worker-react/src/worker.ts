@@ -1,5 +1,4 @@
-// Use local build output so this example runs without publishing to npm.
-import { newWorkersRpcResponse, RpcTarget } from '../../../dist/index.js';
+import { newWorkersRpcResponse, RpcTarget } from 'capnweb';
 
 type Env = {
   DELAY_AUTH_MS?: string;
@@ -23,11 +22,11 @@ const PROFILES = new Map([
 ]);
 
 const NOTIFICATIONS = new Map([
-  ['u_1', ['Welcome to jsrpc!', 'You have 2 new followers']],
+  ['u_1', ['Welcome to Cap\'n Web!', 'You have 2 new followers']],
   ['u_2', ['New feature: pipelining!', 'Security tips for your account']],
 ]);
 
-class Api extends RpcTarget {
+export class Api extends RpcTarget {
   constructor(private env: Env) { super(); }
 
   async authenticate(sessionToken: string) {

@@ -1,12 +1,12 @@
 import { defineConfig } from 'vite'
 import path from 'node:path'
 
-// Map '@cloudflare/jsrpc' to the repo's local dist build so we can run
-// the example without publishing to npm.
+// Map 'capnweb' to the repo's local dist build so
+// we can run using the local build.
 export default defineConfig({
   resolve: {
     alias: {
-      '@cloudflare/jsrpc': path.resolve(__dirname, '../../../dist/index.js'),
+      'capnweb': path.resolve(__dirname, '../../../dist/index.js'),
     },
   },
   // Ensure modern output so top-level await is allowed (library uses it).
