@@ -1,5 +1,17 @@
 # capnweb
 
+## 0.3.0
+
+### Minor Changes
+
+- [#78](https://github.com/cloudflare/capnweb/pull/78) [`8a47045`](https://github.com/cloudflare/capnweb/commit/8a470458dd152a66d473be638626f668f8be47d9) Thanks [@itaylor](https://github.com/itaylor)! - The package now exports the type `RpcCompatible<T>` (previously called `Serializable<T>`, but not exported), which is needed when writing generic functions on `RpcStub` / `RpcPromise`.
+
+### Patch Changes
+
+- [#120](https://github.com/cloudflare/capnweb/pull/120) [`1c87560`](https://github.com/cloudflare/capnweb/commit/1c87560efe1b042f133e978f7a60ecd52f69a549) Thanks [@kentonv](https://github.com/kentonv)! - Fixed serialization of async functions.
+
+- [#117](https://github.com/cloudflare/capnweb/pull/117) [`d21e4ca`](https://github.com/cloudflare/capnweb/commit/d21e4cacfa1305e271e89657f8167bc688ade438) Thanks [@codehz](https://github.com/codehz)! - Enhance Stubify and Unstubify for tuple types
+
 ## 0.2.0
 
 ### Minor Changes
