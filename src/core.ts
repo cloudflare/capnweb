@@ -41,6 +41,8 @@ type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" 
     "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
     "undefined";
 
+const AsyncFunction = (async function () {}).constructor;
+
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
     case "boolean":
@@ -77,6 +79,7 @@ export function typeForRpc(value: unknown): TypeForRpc {
       return "object";
 
     case Function.prototype:
+    case AsyncFunction.prototype:
       return "function";
 
     case Array.prototype:

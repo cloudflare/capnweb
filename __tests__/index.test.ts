@@ -222,6 +222,11 @@ describe("local stub", () => {
     expect(await stub(3)).toBe(8);
   });
 
+  it("supports wrapping an async function", async () => {
+    let stub = new RpcStub(async (i :number) => { return i + 5; });
+    expect(await stub(3)).toBe(8);
+  });
+
   it("supports wrapping an arbitrary object", async () => {
     let stub = new RpcStub({abc: "hello"});
     expect(await stub.abc).toBe("hello");
@@ -244,6 +249,27 @@ describe("local stub", () => {
 
     expect(await outerStub.value).toBe(42);
     expect(await outerStub.inner.square(4)).toBe(16);
+  });
+
+  it("supports wrapping an object with nested functions", async () => {
+    let outerObject = { square: (x: number) => x * x, value: 42 };
+    let outerStub = new RpcStub(outerObject);
+
+    expect(await outerStub.value).toBe(42);
+    expect(await outerStub.square(4)).toBe(16);
+  });
+
+  it("supports wrapping an object with nested async functions", async () => {
+    async function asyncSqare(x: number) {
+      await Promise.resolve();
+      return x * x;
+    }
+
+    let outerObject = { square: asyncSqare, value: 42 };
+    let outerStub = new RpcStub(outerObject);
+
+    expect(await outerStub.value).toBe(42);
+    expect(await outerStub.square(4)).toBe(16);
   });
 
   it("supports wrapping an RpcTarget with nested stubs", async () => {
@@ -645,6 +671,17 @@ describe("basic rpc", () => {
     expect(await stub.func({$remove$__proto__: {toString: "bad"}})).toBe("[object Object]");
 
     expect(await stub.jsonify({x: 123, $remove$toJSON: () => "bad"})).toBe('{"x":123}');
+  });
+
+  it("supports passing async functinos", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    async function square(i: number) {
+      await Promise.resolve();
+      return i * i;
+    }
+
+    expect(await harness.stub.callFunction(square, 3)).toStrictEqual({result: 9});
   });
 });
 
