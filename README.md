@@ -642,6 +642,10 @@ function newWebSocketRpcSession(
     : Disposable;
 ```
 
+### HTTP server using Hono
+
+If your app is built on [Hono](https://hono.dev/) (on any runtime it supports), check out [`@hono/capnweb`](https://github.com/honojs/middleware/tree/main/packages/capnweb).
+
 ### MessagePort
 
 Cap'n Web can also talk over MessagePorts. This can be used in a browser to talk to Web Workers, iframes, etc.
