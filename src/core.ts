@@ -740,6 +740,30 @@ export class RpcPayload {
   public getHookForRpcTarget(target: RpcTarget | Function, parent: object | undefined,
                              dupStubs: boolean = true): StubHook {
     if (this.source === "params") {
+      if (dupStubs) {
+        // We aren't supposed to take ownership of stubs appearing in params -- we're supposed to
+        // dupe them. But an RpcTarget isn't a stub. If we create a stub around it, the stub takes
+        // ownership.
+        //
+        // Usually, people passing raw RpcTargets into functions actually want the call to take
+        // ownership -- that is, they want to have the disposer called later.
+        //
+        // But, if the RpcTarget happens to implement a `dup()` method, we will go ahead and call
+        // that method, and wrap whatever it returns instead. This method wouldn't actually be
+        // available over RPC anyway (since calling `dup()` on the client-side stub just dupes the
+        // stub), so if an `RpcTarget` implements this, it must intend for us to use it.
+        //
+        // This is particularly important for the case of workerd-native RpcStubs, that is, stubs
+        // from the built-in RPC system, rather than the pure-JS implementation of Cap'n Web.
+        // We treat those stubs as RpcTargets. But, we do need to dup() them, just like we would
+        // our own stubs.
+
+        let dupable = target as any;
+        if (typeof dupable.dup === "function") {
+          target = dupable.dup();
+        }
+      }
+
       return TargetStubHook.create(target, parent);
     } else if (this.source === "return") {
       // If dupStubs is true, we want to both make sure the map contains the stub, and also return
