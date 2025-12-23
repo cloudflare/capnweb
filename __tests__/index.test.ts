@@ -1054,6 +1054,56 @@ describe("stub disposal over RPC", () => {
     expect(targetDisposedCount).toBe(1);
   });
 
+  it("dupes RpcTarget that was passed in params if it has a dup() method", async () => {
+    let dupCount = 0;
+    let disposeCount = 0;
+    class DisposableTarget extends RpcTarget {
+      getValue() { return 42; }
+
+      dup() {
+        ++dupCount;
+        return new DisposableTarget();
+      }
+
+      disposed = false;
+      [Symbol.dispose]() {
+        if (this.disposed) throw new Error("double disposed");
+        this.disposed = true;
+        ++disposeCount;
+      }
+    }
+
+    class MainTarget extends RpcTarget {
+      useDisposableTarget(stub: RpcStub<DisposableTarget>) {
+        return stub.getValue();
+      }
+    }
+
+    await using harness = new TestHarness(new MainTarget());
+    let mainStub = harness.stub as any;
+
+    let disposableTarget = new DisposableTarget();
+
+    {
+      let result = await mainStub.useDisposableTarget(disposableTarget);
+      expect(dupCount).toBe(1);
+      expect(result).toBe(42);
+    }
+
+    {
+      let result = await mainStub.useDisposableTarget(disposableTarget);
+      expect(dupCount).toBe(2);
+      expect(result).toBe(42);
+    }
+
+    // Wait a bit for the disposal message to be processed
+    await pumpMicrotasks();
+
+    expect(dupCount).toBe(2);
+    expect(disposeCount).toBe(2);
+    expect(disposableTarget.disposed).toBe(false);
+  });
+
   it("only disposes remote target when all RPC dups are disposed", async () => {
     let targetDisposed = false;
     class DisposableTarget extends RpcTarget {

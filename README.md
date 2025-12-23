@@ -528,6 +528,14 @@ export default {
 }
 ```
 
+#### Compatibility with Workers' built-in RPC
+
+Cloudflare Workers has long featured [a built-in RPC system with semantics similar to Cap'n Web](https://developers.cloudflare.com/workers/runtime-apis/rpc/).
+
+Cap'n Web is designed to be compatible with Workers RPC, meaning you can pass Cap'n Web RPC stubs over Workers RPC and vice versa. The system will automatically wrap one stub type in the other and arrange to proxy calls.
+
+For best compatibility, make sure to set your [Workers compatibilty date](https://developers.cloudflare.com/workers/configuration/compatibility-dates/) to at least `2026-01-20`, or enable the [compatibility flag](https://developers.cloudflare.com/workers/configuration/compatibility-flags/) `rpc_params_dup_stubs`. (As of this writing, `2026-01-20` is in the future, so you will need to use the flag for now.)
+
 ### HTTP server on Node.js
 
 A server on Node.js is a bit more involved, due to the awkward handling of WebSockets in Node's HTTP library.
