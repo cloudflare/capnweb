@@ -1,6 +1,6 @@
 {
   "name": "capnweb",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "JavaScript/TypeScript-native RPC library with Promise Pipelining",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
