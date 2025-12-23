@@ -230,6 +230,9 @@ interface Env {
 interface TestDo extends DurableObject {
   setValue(val: any): void;
   getValue(): any;
+
+  subscribe(callback: (s: string) => void): void;
+  notify(value: string): void;
 }
 
 interface WorkerdTestTarget extends TestTarget {
@@ -267,6 +270,18 @@ describe("workerd RPC server", () => {
 
       expect(await foo.getValue()).toBe(123);
       expect(await bar.getValue()).toBe("abc");
+    }
+
+    {
+      let baz = cap.getDurableObject("baz");
+
+      let receivedValue: any;
+
+      await baz.subscribe((value: any) => {receivedValue = value});
+
+      await baz.notify("hello");
+
+      expect(receivedValue).toBe("hello");
     }
   })
 

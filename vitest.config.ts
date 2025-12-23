@@ -29,8 +29,7 @@ export default defineConfig({
           poolOptions: {
             workers: {
               miniflare: {
-                compatibilityDate: '2025-07-01',
-                compatibilityFlags: ["expose_global_message_channel"],
+                compatibilityDate: '2026-02-05',
 
                 // Define a backend worker to test server-side functionality. The tests will
                 // talk to it over a service binding. (Only the workerd client tests will talk
@@ -41,7 +40,7 @@ export default defineConfig({
                 workers: [
                   {
                     name: "test-server-workerd",
-                    compatibilityDate: '2025-07-01',
+                    compatibilityDate: '2026-02-05',
                     modules: [
                       {
                         type: "ESModule",
