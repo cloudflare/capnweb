@@ -1,5 +1,11 @@
 # capnweb
 
+## 0.4.0
+
+### Minor Changes
+
+- [#121](https://github.com/cloudflare/capnweb/pull/121) [`32e362f`](https://github.com/cloudflare/capnweb/commit/32e362fd1ee465d3adfe810ba135bbea224ce32b) Thanks [@kentonv](https://github.com/kentonv)! - Improved compatibility with Cloudflare Workers' built-in RPC, particularly when proxying from one to the other.
+
 ## 0.3.0
 
 ### Minor Changes
