@@ -30,7 +30,7 @@ export default defineConfig({
             workers: {
               miniflare: {
                 compatibilityDate: '2025-07-01',
-                compatibilityFlags: ["expose_global_message_channel"],
+                compatibilityFlags: ["expose_global_message_channel", "rpc_params_dup_stubs"],
 
                 // Define a backend worker to test server-side functionality. The tests will
                 // talk to it over a service binding. (Only the workerd client tests will talk
@@ -42,6 +42,7 @@ export default defineConfig({
                   {
                     name: "test-server-workerd",
                     compatibilityDate: '2025-07-01',
+                    compatibilityFlags: ["rpc_params_dup_stubs"],
                     modules: [
                       {
                         type: "ESModule",

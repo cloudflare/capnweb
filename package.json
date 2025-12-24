@@ -46,6 +46,7 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",
+    "workerd": "1.20251223.0",
     "ws": "^8.18.3"
   },
   "repository": {
@@ -55,5 +56,8 @@
   "bugs": {
     "url": "https://github.com/cloudflare/capnweb/issues"
   },
-  "homepage": "https://github.com/cloudflare/capnweb#readme"
+  "homepage": "https://github.com/cloudflare/capnweb#readme",
+  "overrides": {
+    "workerd": "1.20251223.0"
+  }
 }
