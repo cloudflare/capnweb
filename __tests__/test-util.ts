@@ -35,7 +35,7 @@ export class TestTarget extends RpcTarget {
     return { result: self.square(i) };
   }
 
-  async callFunction(func: RpcStub<(i: number) => number>, i: number) {
+  async callFunction(func: RpcStub<(i: number) => Promise<number>>, i: number) {
     return { result: await func(i) };
   }
 

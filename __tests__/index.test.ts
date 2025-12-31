@@ -673,7 +673,7 @@ describe("basic rpc", () => {
     expect(await stub.jsonify({x: 123, $remove$toJSON: () => "bad"})).toBe('{"x":123}');
   });
 
-  it("supports passing async functinos", async () => {
+  it("supports passing async functions", async () => {
     await using harness = new TestHarness(new TestTarget());
 
     async function square(i: number) {
