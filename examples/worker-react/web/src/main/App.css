@@ -1,0 +1,205 @@
+
+:root {
+  --theme-orange: #f6821f;
+  --theme-orange-hover: #f69a4aff;
+  --theme-orange-foreground: #000000;
+
+  --bg-primary: #ffffff;
+  --bg-secondary: #fafafa;
+  --bg-pre: #f5f5f5;
+  --text-primary: #1f2937;
+  --text-secondary: #4b5563;
+  --border-color: #e5e7eb;
+  --button-bg: var(--theme-orange);
+  --button-hover: var(--theme-orange-hover);
+  --button-foreground: var(--theme-orange-foreground);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary: #181818;
+    --bg-secondary: #272727;
+    --bg-pre: #313131;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --border-color: #717171;
+    --button-bg: var(--theme-orange);
+    --button-hover: var(--theme-orange-hover);
+    --button-foreground: var(--theme-orange-foreground);
+  }
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  margin: 0;
+  padding: 0;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+  background: var(--theme-orange);
+  z-index: 9999;
+}
+
+.response-container {
+  margin-top: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+}
+
+.response-title {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 3px 6px;
+  font-size: 12px;
+  border-radius: 4px 4px 0 0;
+  margin: 0;
+}
+
+pre {
+  background: var(--bg-pre);
+  color: var(--text-primary);
+  padding: 12px;
+  border-radius: 0 0 4px 4px;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+  margin: 0;
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 16px;
+  cursor: pointer;
+  background: var(--button-bg);
+  color: var(--button-foreground);
+  border: none;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+button:hover:not(:disabled) {
+  background: var(--button-hover);
+  color: var(--button-foreground);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+section {
+  border: 1px solid var(--border-color);
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+h1 {
+  margin-top: 0;
+}
+
+h2 {
+  margin-top: 0;
+  color: var(--text-primary);
+}
+
+code {
+  background-color: var(--bg-pre);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
+.chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  width: 100%;
+  max-width: 900px;
+  margin-top: 16px;
+  padding: 0px 20px 20px 0px;
+  box-sizing: border-box;
+}
+
+.chart-row {
+  display: flex;
+  align-items: center;
+  height: 22px;
+}
+
+.chart-label {
+  width: 125px;
+  flex-shrink: 0;
+  code {
+    font-size: 11px;
+  }
+}
+
+.chart-timeline {
+  flex: 1;
+  position: relative;
+  height: 100%;
+}
+
+.chart-bar {
+  position: absolute;
+  height: 16px;
+  top: 3px;
+}
+
+.chart-bar-network {
+  background-color: var(--border-color);
+}
+
+.chart-bar-call {
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  color: #000;
+}
+
+.chart-axis {
+  display: flex;
+  align-items: center;
+  height: 20px;
+  margin-top: 4px;
+}
+
+.chart-axis-line {
+  flex: 1;
+  position: relative;
+  height: 100%;
+  border-top: 1px solid var(--border-color);
+}
+
+.chart-tick {
+  position: absolute;
+  top: -1px;
+  height: 6px;
+  border-left: 1px solid var(--border-color);
+  transform: translateX(-0.5px);
+}
+
+.chart-tick-label {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.comparison-bar {
+  height: 5px;
+  background-color: var(--theme-orange);
+  margin-bottom: 10px;
+}
