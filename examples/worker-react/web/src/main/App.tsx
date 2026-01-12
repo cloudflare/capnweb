@@ -139,46 +139,50 @@ export function App() {
         {running ? 'Running…' : 'Run demo'}
       </button>
 
-      {pipelined ? (
+      {(pipelined && sequential) ? (<>
         <section style={{ marginTop: 24 }}>
           <h2>Pipelined (batched)</h2>
           <div>HTTP POSTs: {pipelined.posts}</div>
           <div>Time: {pipelined.ms.toFixed(1)} ms</div>
-          <TraceView trace={pipelined.trace} />
-          <pre>{JSON.stringify({
-            user: pipelined.user,
-            profile: pipelined.profile,
-            notifications: pipelined.notifications,
-          }, null, 2)}</pre>
+          <TraceView trace={pipelined.trace} maxTime={sequential.trace.total} />
+          <div className="response-container">
+            <div className="response-title">Response</div>
+            <pre>{JSON.stringify({
+              user: pipelined.user,
+              profile: pipelined.profile,
+              notifications: pipelined.notifications,
+            }, null, 2)}</pre>
+          </div>
         </section>
-      ) : null}
 
-      {sequential ? (
         <section style={{ marginTop: 24 }}>
           <h2>Sequential (non-batched)</h2>
           <div>HTTP POSTs: {sequential.posts}</div>
           <div>Time: {sequential.ms.toFixed(1)} ms</div>
-          <TraceView trace={sequential.trace} />
-          <pre>{JSON.stringify({
-            user: sequential.user,
-            profile: sequential.profile,
-            notifications: sequential.notifications,
-          }, null, 2)}</pre>
+          <TraceView trace={sequential.trace} maxTime={sequential.trace.total} />
+          <div className="response-container">
+            <div className="response-title">Response</div>
+            <pre>{JSON.stringify({
+              user: sequential.user,
+              profile: sequential.profile,
+              notifications: sequential.notifications,
+            }, null, 2)}</pre>
+          </div>
         </section>
-      ) : null}
 
-      {(pipelined && sequential) ? (
         <section style={{ marginTop: 24 }}>
           <h2>Summary</h2>
           <div>Pipelined: {pipelined.posts} POST, {pipelined.ms.toFixed(1)} ms</div>
-          <div>Sequential: {sequential.posts} POSTs, {sequential.ms.toFixed(1)} ms</div>
-        </section>
+          <div className="comparison-bar" style={{ width: `${(pipelined.ms / sequential.ms) * 100}%` }} />
+          <div style={{ marginTop: 5 }}>Sequential: {sequential.posts} POSTs, {sequential.ms.toFixed(1)} ms</div>
+          <div className="comparison-bar" style={{ width: '100%' }} />
+        </section></>
       ) : null}
     </div>
   )
 }
 
-function TraceView({ trace }: { trace: Trace }) {
+function TraceView({ trace, maxTime }: { trace: Trace, maxTime: number }) {
   const renderedCalls = trace.calls.map((c, i) => ({...c, idx: i}))
 
   return (
@@ -192,8 +196,8 @@ function TraceView({ trace }: { trace: Trace }) {
               key={`net-${i}`}
               className="chart-bar chart-bar-network"
               style={{
-                left: `${(e.start / Math.max(trace.total, 1)) * 100}%`,
-                width: `${Math.max(0.2, ((e.end - e.start) / Math.max(trace.total, 1)) * 100)}%`,
+                left: `${(e.start / Math.max(maxTime, 1)) * 100}%`,
+                width: `${Math.max(0.2, ((e.end - e.start) / Math.max(maxTime, 1)) * 100)}%`,
               }}
             />
           ))}
@@ -203,17 +207,17 @@ function TraceView({ trace }: { trace: Trace }) {
       {/* Call rows */}
       {renderedCalls.map((c, idx) => (
         <div key={`call-${idx}`} className="chart-row">
-          <div className="chart-label">{c.label}</div>
+          <div className="chart-label"><code>{c.label}</code></div>
           <div className="chart-timeline">
             <div
               className="chart-bar chart-bar-call"
               style={{
-                left: `${(c.start / Math.max(trace.total, 1)) * 100}%`,
-                width: `${Math.max(0.2, ((c.end - c.start) / Math.max(trace.total, 1)) * 100)}%`,
+                left: `${(c.start / Math.max(maxTime, 1)) * 100}%`,
+                width: `${Math.max(0.2, ((c.end - c.start) / Math.max(maxTime, 1)) * 100)}%`,
                 backgroundColor: colorFor(idx),
               }}
             >
-              &nbsp;&nbsp;{(c.end - c.start).toFixed(0)}ms
+              &nbsp;{(c.end - c.start).toFixed(0)}ms
             </div>
           </div>
         </div>
@@ -230,7 +234,7 @@ function TraceView({ trace }: { trace: Trace }) {
               style={{ left: `${f * 100}%` }}
             >
               <div className="chart-tick-label">
-                {(trace.total * f).toFixed(0)}ms
+                {(maxTime * f).toFixed(0)}ms
               </div>
             </div>
           ))}

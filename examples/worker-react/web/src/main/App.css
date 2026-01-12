@@ -47,11 +47,26 @@ body::before {
   z-index: 9999;
 }
 
+.response-container {
+  margin-top: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+}
+
+.response-title {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 3px 6px;
+  font-size: 12px;
+  border-radius: 4px 4px 0 0;
+  margin: 0;
+}
+
 pre {
   background: var(--bg-pre);
   color: var(--text-primary);
   padding: 12px;
-  border-radius: 4px;
+  border-radius: 0 0 4px 4px;
   overflow-x: auto;
   font-family: 'Courier New', monospace;
   font-size: 14px;
@@ -95,6 +110,14 @@ h2 {
   color: var(--text-primary);
 }
 
+code {
+  background-color: var(--bg-pre);
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 14px;
+}
+
 .chart {
   display: flex;
   flex-direction: column;
@@ -114,8 +137,11 @@ h2 {
 }
 
 .chart-label {
-  width: 140px;
+  width: 125px;
   flex-shrink: 0;
+  code {
+    font-size: 11px;
+  }
 }
 
 .chart-timeline {
@@ -131,7 +157,7 @@ h2 {
 }
 
 .chart-bar-network {
-  background-color: var(--bg-pre);
+  background-color: var(--border-color);
 }
 
 .chart-bar-call {
@@ -166,15 +192,14 @@ h2 {
 .chart-tick-label {
   position: absolute;
   top: 6px;
-  left: -10px;
+  left: 0;
+  transform: translateX(-50%);
   font-size: 10px;
   white-space: nowrap;
 }
 
-code {
-  background-color: var(--bg-pre);
-  padding: 2px 4px;
-  border-radius: 3px;
-  font-family: 'Courier New', monospace;
-  font-size: 14px;
+.comparison-bar {
+  height: 5px;
+  background-color: var(--theme-orange);
+  margin-bottom: 10px;
 }
