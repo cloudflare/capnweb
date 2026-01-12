@@ -138,7 +138,7 @@ export function App() {
         {running ? 'Running…' : 'Run demo'}
       </button>
 
-      {pipelined && (
+      {pipelined ? (
         <section style={{ marginTop: 24 }}>
           <h2>Pipelined (batched)</h2>
           <div>HTTP POSTs: {pipelined.posts}</div>
@@ -150,9 +150,9 @@ export function App() {
             notifications: pipelined.notifications,
           }, null, 2)}</pre>
         </section>
-      )}
+      ) : null}
 
-      {sequential && (
+      {sequential ? (
         <section style={{ marginTop: 24 }}>
           <h2>Sequential (non-batched)</h2>
           <div>HTTP POSTs: {sequential.posts}</div>
@@ -164,15 +164,15 @@ export function App() {
             notifications: sequential.notifications,
           }, null, 2)}</pre>
         </section>
-      )}
+      ) : null}
 
-      {(pipelined && sequential) && (
+      {(pipelined && sequential) ? (
         <section style={{ marginTop: 24 }}>
           <h2>Summary</h2>
           <div>Pipelined: {pipelined.posts} POST, {pipelined.ms.toFixed(1)} ms</div>
           <div>Sequential: {sequential.posts} POSTs, {sequential.ms.toFixed(1)} ms</div>
         </section>
-      )}
+      ) : null}
     </div>
   )
 }
