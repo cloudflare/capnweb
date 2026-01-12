@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { newHttpBatchRpcSession } from 'capnweb'
 import type { Api } from '../../../src/worker'
+import './App.css'
 
 type Result = {
   posts: number
@@ -22,7 +23,7 @@ export function App() {
 
   // Network RTT is now simulated on the server (Worker). See wrangler.toml vars.
 
-  // Count RPC POSTs and capture network timing by wrapping fetch while this component is mounted.
+  /** Count RPC POSTs and capture network timing by wrapping fetch while this component is mounted. */
   const wrapFetch = useMemo(() => {
     let posts = 0
     let origin = 0
@@ -128,11 +129,11 @@ export function App() {
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, lineHeight: 1.5 }}>
       <h1>Cap'n Web: Cloudflare Workers + React</h1>
-      <div style={{ opacity: 0.8 }}>Network RTT is simulated on the server (configurable via SIMULATED_RTT_MS/SIMULATED_RTT_JITTER_MS in wrangler.toml).</div>
+      <div style={{ opacity: 0.8 }}>Network RTT is simulated on the server (configurable via <code>SIMULATED_RTT_MS</code>/<code>SIMULATED_RTT_JITTER_MS</code> in <code>wrangler.toml</code>).</div>
       <p>This demo calls the Worker API in two ways:</p>
       <ul>
-        <li><b>Pipelined batch</b>: dependent calls in one round trip</li>
-        <li><b>Sequential non-batched</b>: three separate round trips</li>
+        <li><b>Pipelined (batched)</b>: dependent calls in one round trip</li>
+        <li><b>Sequential (non-batched)</b>: three separate round trips</li>
       </ul>
       <button onClick={runDemo} disabled={running}>
         {running ? 'Running…' : 'Run demo'}
@@ -178,46 +179,64 @@ export function App() {
 }
 
 function TraceView({ trace }: { trace: Trace }) {
-  const width = 700
-  const rowHeight = 22
-  const gap = 8
-  const rows = [ 'Network', ...trace.calls.map(c => c.label) ]
-  const totalHeight = rows.length * (rowHeight + gap) + 10
-  const scale = (t: number) => (t / Math.max(trace.total, 1)) * width
-
-  // Deduplicate call labels in case of repeats
   const renderedCalls = trace.calls.map((c, i) => ({...c, idx: i}))
 
   return (
-    <svg width={width + 160} height={totalHeight} style={{ border: '1px solid #eee', background: '#fafafa', margin: '12px 0' }}>
-      {rows.map((label, i) => (
-        <text key={`label-${i}`} x={8} y={i * (rowHeight + gap) + rowHeight - 6} fill="#444" fontSize="12" fontFamily="system-ui, sans-serif">{label}</text>
-      ))}
-
+    <div className="chart">
       {/* Network row */}
-      {trace.network.map((e, i) => (
-        <g key={`net-${i}`}>
-          <rect x={140 + scale(e.start)} y={i * 0 + 4} width={Math.max(2, scale(e.end - e.start))} height={rowHeight - 6} fill="#bbb" transform={`translate(0, ${0 * (rowHeight + gap)})`} />
-        </g>
-      ))}
+      <div className="chart-row">
+        <div className="chart-label">Network</div>
+        <div className="chart-timeline">
+          {trace.network.map((e, i) => (
+            <div
+              key={`net-${i}`}
+              className="chart-bar chart-bar-network"
+              style={{
+                left: `${(e.start / Math.max(trace.total, 1)) * 100}%`,
+                width: `${Math.max(0.2, ((e.end - e.start) / Math.max(trace.total, 1)) * 100)}%`,
+              }}
+            />
+          ))}
+        </div>
+      </div>
 
       {/* Call rows */}
       {renderedCalls.map((c, idx) => (
-        <g key={`call-${idx}`} transform={`translate(0, ${(idx + 1) * (rowHeight + gap)})`}>
-          <rect x={140 + scale(c.start)} y={4} width={Math.max(2, scale(c.end - c.start))} height={rowHeight - 6} fill={colorFor(idx)} />
-          <text x={140 + scale(c.start) + 4} y={rowHeight - 6} fill="#fff" fontSize="11" fontFamily="system-ui, sans-serif">{(c.end - c.start).toFixed(0)}ms</text>
-        </g>
+        <div key={`call-${idx}`} className="chart-row">
+          <div className="chart-label">{c.label}</div>
+          <div className="chart-timeline">
+            <div
+              className="chart-bar chart-bar-call"
+              style={{
+                left: `${(c.start / Math.max(trace.total, 1)) * 100}%`,
+                width: `${Math.max(0.2, ((c.end - c.start) / Math.max(trace.total, 1)) * 100)}%`,
+                backgroundColor: colorFor(idx),
+              }}
+            >
+              &nbsp;&nbsp;{(c.end - c.start).toFixed(0)}ms
+            </div>
+          </div>
+        </div>
       ))}
 
       {/* Axis */}
-      <line x1={140} x2={140 + width} y1={rows.length * (rowHeight + gap) + 2} y2={rows.length * (rowHeight + gap) + 2} stroke="#ddd" />
-      {[0, 0.25, 0.5, 0.75, 1].map((f, i) => (
-        <g key={`tick-${i}`}>
-          <line x1={140 + width * f} x2={140 + width * f} y1={5} y2={rows.length * (rowHeight + gap)} stroke="#eee" />
-          <text x={140 + width * f - 10} y={rows.length * (rowHeight + gap) + 14} fill="#666" fontSize="10">{(trace.total * f).toFixed(0)}ms</text>
-        </g>
-      ))}
-    </svg>
+      <div className="chart-axis">
+        <div className="chart-label"></div>
+        <div className="chart-axis-line">
+          {[0, 0.25, 0.5, 0.75, 1].map((f, i) => (
+            <div
+              key={`tick-${i}`}
+              className="chart-tick"
+              style={{ left: `${f * 100}%` }}
+            >
+              <div className="chart-tick-label">
+                {(trace.total * f).toFixed(0)}ms
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
