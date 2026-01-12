@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { newHttpBatchRpcSession } from 'capnweb'
 import type { Api } from '../../../src/worker'
 
@@ -51,7 +51,7 @@ export function App() {
     return { install, uninstall, get, reset, setOrigin, getEvents }
   }, [])
 
-  async function runPipelined() {
+  const runPipelined = useCallback(async () => {
     wrapFetch.reset()
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
@@ -77,9 +77,9 @@ export function App() {
     calls.forEach(c => { if (!Number.isFinite(c.end)) c.end = total })
     return { posts: wrapFetch.get(), ms: total, user: u, profile: p, notifications: n,
       trace: { total, calls, network: net } }
-  }
+  }, [wrapFetch])
 
-  async function runSequential() {
+  const runSequential = useCallback(async () => {
     wrapFetch.reset()
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
@@ -108,9 +108,9 @@ export function App() {
     calls.forEach(c => { if (!Number.isFinite(c.end)) c.end = total })
     return { posts: wrapFetch.get(), ms: total, user: u, profile: p, notifications: n,
       trace: { total, calls, network: net } }
-  }
+  }, [wrapFetch])
 
-  async function runDemo() {
+  const runDemo = useCallback(async () => {
     if (running) return
     setRunning(true)
     wrapFetch.install()
@@ -123,7 +123,7 @@ export function App() {
       wrapFetch.uninstall()
       setRunning(false)
     }
-  }
+  }, [running, wrapFetch, runPipelined, runSequential])
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, lineHeight: 1.5 }}>
