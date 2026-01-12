@@ -129,7 +129,7 @@ export function App() {
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, lineHeight: 1.5 }}>
       <h1>Cap'n Web: Cloudflare Workers + React</h1>
-      <div style={{ opacity: 0.8 }}>Network RTT is simulated on the server (configurable via <code>SIMULATED_RTT_MS</code>/<code>SIMULATED_RTT_JITTER_MS</code> in <code>wrangler.toml</code>).</div>
+      <div style={{ opacity: 0.8 }}>Network RTT (round-trip-time) is simulated on the server (configurable via <code>SIMULATED_RTT_MS</code>/<code>SIMULATED_RTT_JITTER_MS</code> in <code>wrangler.toml</code>).</div>
       <p>This demo calls the Worker API in two ways:</p>
       <ul>
         <li><b>Pipelined (batched)</b>: dependent calls in one round trip</li>
