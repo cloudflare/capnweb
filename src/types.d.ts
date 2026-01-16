@@ -33,7 +33,7 @@ export type RpcCompatible<T> =
   | Array<T extends Array<infer U> ? RpcCompatible<U> : never>
   | ReadonlyArray<T extends ReadonlyArray<infer U> ? RpcCompatible<U> : never>
   | {
-      [K in keyof T]: K extends number | string ? RpcCompatible<T[K]> : never;
+      [K in keyof T as K extends string | number ? K : never]: RpcCompatible<T[K]>;
     }
   | Promise<T extends Promise<infer U> ? RpcCompatible<U> : never>
   // Special types
