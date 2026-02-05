@@ -648,15 +648,15 @@ export class RpcPayload {
   // stubs is transferred from the inputs to the outputs, hence if the output is disposed, the
   // inputs should not be. (In case of exception, nothing is disposed, though.)
   public static fromArray(array: RpcPayload[]): RpcPayload {
-    let stubs: RpcStub[] = [];
+    let hooks: StubHook[] = [];
     let promises: LocatedPromise[] = [];
 
     let resultArray: unknown[] = [];
 
     for (let payload of array) {
       payload.ensureDeepCopied();
-      for (let stub of payload.stubs!) {
-        stubs.push(stub);
+      for (let hook of payload.hooks!) {
+        hooks.push(hook);
       }
       for (let promise of payload.promises!) {
         if (promise.parent === payload) {
@@ -673,7 +673,7 @@ export class RpcPayload {
       resultArray.push(payload.value);
     }
 
-    return new RpcPayload(resultArray, "owned", stubs, promises);
+    return new RpcPayload(resultArray, "owned", hooks, promises);
   }
 
   // Create a payload from a value parsed off the wire using Evaluator.evaluate().
@@ -687,8 +687,8 @@ export class RpcPayload {
   // When done, the payload takes ownership of the final value and all the stubs within. It may
   // modify the value in preparation for delivery, and may deliver the value directly to the app
   // without copying.
-  public static forEvaluate(stubs: RpcStub[], promises: LocatedPromise[]) {
-    return new RpcPayload(null, "owned", stubs, promises);
+  public static forEvaluate(hooks: StubHook[], promises: LocatedPromise[]) {
+    return new RpcPayload(null, "owned", hooks, promises);
   }
 
   // Deep-copy the given value, including dup()ing all stubs.
@@ -721,8 +721,10 @@ export class RpcPayload {
     // then it cannot be delivered back to the app nor modified by us without first deep-copying
     // it. `stubs` and `promises` will be computed as part of the deep-copy.
 
-    // All non-promise stubs found in `value`. Provided so that they can easily be disposed.
-    private stubs?: RpcStub[],
+    // All non-promise stubs found in `value`. This list is needed only for the purpose of being
+    // able to dispose them when desired. This intentionally doesn't inculde promises because they
+    // are already covered by `promises`, below.
+    private hooks?: StubHook[],
 
     // All promises found in `value`. The locations of each promise are provided to allow
     // substitutions later.
@@ -855,23 +857,22 @@ export class RpcPayload {
           this.promises!.push({parent, property, promise});
           return promise;
         } else {
-          let newStub = new RpcStub(hook);
-          this.stubs!.push(newStub);
-          return newStub;
+          this.hooks!.push(hook);
+          return new RpcStub(hook);
         }
       }
 
       case "function":
       case "rpc-target": {
         let target = <RpcTarget | Function>value;
-        let stub: RpcStub;
+        let hook: StubHook;
         if (owner) {
-          stub = new RpcStub(owner.getHookForRpcTarget(target, oldParent, dupStubs));
+          hook = owner.getHookForRpcTarget(target, oldParent, dupStubs);
         } else {
-          stub = new RpcStub(TargetStubHook.create(target, oldParent));
+          hook = TargetStubHook.create(target, oldParent);
         }
-        this.stubs!.push(stub);
-        return stub;
+        this.hooks!.push(hook);
+        return new RpcStub(hook);
       }
 
       case "rpc-thenable": {
@@ -900,7 +901,7 @@ export class RpcPayload {
       // we take ownership of all stubs.
       let dupStubs = this.source === "params";
 
-      this.stubs = [];
+      this.hooks = [];
       this.promises = [];
 
       // Deep-copy the value.
@@ -908,7 +909,7 @@ export class RpcPayload {
         this.value = this.deepCopy(this.value, undefined, "value", this, dupStubs, this);
       } catch (err) {
         // Roll back the change.
-        this.stubs = undefined;
+        this.hooks = undefined;
         this.promises = undefined;
         throw err;
       }
@@ -1053,7 +1054,7 @@ export class RpcPayload {
   public dispose() {
     if (this.source === "owned") {
       // Oh good, we can just run through them.
-      this.stubs!.forEach(stub => stub[Symbol.dispose]());
+      this.hooks!.forEach(hook => hook.dispose());
       this.promises!.forEach(promise => promise.promise[Symbol.dispose]());
     } else if (this.source === "return") {
       // Value received directly from app as a return value. We take ownership of all stubs, so we
@@ -1068,7 +1069,7 @@ export class RpcPayload {
 
     // Make dispose() idempotent.
     this.source = "owned";
-    this.stubs = [];
+    this.hooks = [];
     this.promises = [];
   }
 
@@ -1146,10 +1147,10 @@ export class RpcPayload {
   // *would* be awaited if this payload were to be delivered. See the similarly-named method of
   // StubHook for explanation.
   ignoreUnhandledRejections(): void {
-    if (this.stubs) {
+    if (this.hooks) {
       // Propagate to all stubs and promises.
-      this.stubs.forEach(stub => {
-        unwrapStubOrParent(stub).ignoreUnhandledRejections();
+      this.hooks.forEach(hook => {
+        hook.ignoreUnhandledRejections();
       });
       this.promises!.forEach(
           promise => unwrapStubOrParent(promise.promise).ignoreUnhandledRejections());

@@ -286,11 +286,11 @@ const NULL_IMPORTER = new NullImporter();
 export class Evaluator {
   constructor(private importer: Importer) {}
 
-  private stubs: RpcStub[] = [];
+  private hooks: StubHook[] = [];
   private promises: LocatedPromise[] = [];
 
   public evaluate(value: unknown): RpcPayload {
-    let payload = RpcPayload.forEvaluate(this.stubs, this.promises);
+    let payload = RpcPayload.forEvaluate(this.hooks, this.promises);
     try {
       payload.value = this.evaluateImpl(value, payload, "value");
       return payload;
@@ -392,9 +392,8 @@ export class Evaluator {
               this.promises.push({promise, parent, property});
               return promise;
             } else {
-              let stub = new RpcPromise(hook, []);
-              this.stubs.push(stub);
-              return stub;
+              this.hooks.push(hook);
+              return new RpcPromise(hook, []);
             }
           };
 
@@ -510,9 +509,8 @@ export class Evaluator {
               return promise;
             } else {
               let hook = this.importer.importStub(value[1]);
-              let stub = new RpcStub(hook);
-              this.stubs.push(stub);
-              return stub;
+              this.hooks.push(hook);
+              return new RpcStub(hook);
             }
           }
           break;
