@@ -35,6 +35,15 @@ export class TestDo extends DurableObject {
   getValue() {
     return this.value;
   }
+
+  subscribe(callback) {
+    this.subscriber = callback.dup();
+  }
+
+  async notify(value) {
+    await this.subscriber(value);
+    this.subscriber[Symbol.dispose]();
+  }
 }
 
 export class TestTarget extends RpcTarget {
