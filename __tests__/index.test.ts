@@ -1509,3 +1509,200 @@ describe("MessagePorts", () => {
         new Error("Peer closed MessagePort connection."));
   });
 });
+
+// =======================================================================================
+
+describe("WritableStream over RPC", () => {
+  it("can send a WritableStream and receive writes", async () => {
+    // Create a WritableStream that collects chunks
+    let chunks: string[] = [];
+    let closeCalled = false;
+    let stream = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); },
+      close() { closeCalled = true; }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        // Write to the stream
+        let writer = stream.getWriter();
+        await writer.write("hello");
+        await writer.write("world");
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    expect(chunks).toEqual(["hello", "world"]);
+    expect(closeCalled).toBe(true);
+  });
+
+  it("supports complex chunk types", async () => {
+    let receivedChunks: unknown[] = [];
+    let stream = new WritableStream({
+      write(chunk) { receivedChunks.push(chunk); }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream) {
+        let writer = stream.getWriter();
+        await writer.write({ name: "test", value: 42 });
+        await writer.write([1, 2, 3]);
+        await writer.write(new Date(1234567890000));
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    expect(receivedChunks).toHaveLength(3);
+    expect(receivedChunks[0]).toEqual({ name: "test", value: 42 });
+    expect(receivedChunks[1]).toEqual([1, 2, 3]);
+    expect(receivedChunks[2]).toEqual(new Date(1234567890000));
+  });
+
+  it("propagates write errors back", async () => {
+    let writeCount = 0;
+    let stream = new WritableStream({
+      write(chunk) {
+        writeCount++;
+        if (writeCount > 2) {
+          throw new Error("Write limit exceeded");
+        }
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream) {
+        let writer = stream.getWriter();
+        await writer.write("first");
+        await writer.write("second");
+        // The third write will fail, and the error will propagate when we try to close
+        await writer.write("third");
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await expect(() => harness.stub.receiveStream(stream)).rejects.toThrow("Write limit exceeded");
+    expect(writeCount).toBe(3);
+  });
+
+  it("aborts stream on disconnect without close", async () => {
+    let abortReason: any = null;
+    let stream = new WritableStream({
+      write(chunk) {},
+      abort(reason) { abortReason = reason; }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      receiveStream(stream: WritableStream) {
+        // Start writing but don't close - just return immediately
+        let writer = stream.getWriter();
+        writer.write("data");
+        // Note: not calling writer.close()
+      }
+    }
+
+    // Don't use the normal harness since we need to control disposal differently
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession(clientTransport);
+    let server = new RpcSession(serverTransport, new StreamReceiver());
+
+    let stub: any = client.getRemoteMain();
+    await stub.receiveStream(stream);
+
+    // Wait a bit for the write to be processed
+    await pumpMicrotasks();
+
+    // Dispose the client, which should cause the stream to be aborted
+    stub[Symbol.dispose]();
+
+    // Wait for the abort to propagate
+    await pumpMicrotasks();
+
+    expect(abortReason).not.toBeNull();
+    expect(abortReason.message).toContain("disposed without calling close");
+  });
+
+  it("handles abort() from receiver", async () => {
+    let abortReason: any = null;
+    let stream = new WritableStream({
+      write(chunk) {},
+      abort(reason) { abortReason = reason; }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream) {
+        let writer = stream.getWriter();
+        await writer.write("data");
+        await writer.abort("User requested abort");
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    // Wait for abort to propagate
+    await pumpMicrotasks();
+
+    expect(abortReason).toBe("User requested abort");
+  });
+
+  it("can send WritableStream in nested object", async () => {
+    let chunks: string[] = [];
+    let stream = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveData(data: { stream: WritableStream<string>, label: string }) {
+        let writer = data.stream.getWriter();
+        await writer.write(`${data.label}: hello`);
+        await writer.close();
+        return "done";
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveData({ stream, label: "test" });
+
+    expect(result).toBe("done");
+    expect(chunks).toEqual(["test: hello"]);
+  });
+
+  it("handles multiple concurrent writes efficiently", async () => {
+    let chunks: number[] = [];
+    let stream = new WritableStream<number>({
+      async write(chunk) {
+        // Simulate some async processing
+        await new Promise(resolve => setTimeout(resolve, 10));
+        chunks.push(chunk);
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<number>) {
+        let writer = stream.getWriter();
+        // Write multiple chunks without awaiting each one
+        // (The implementation should pipeline these)
+        let writes = [];
+        for (let i = 0; i < 5; i++) {
+          writes.push(writer.write(i));
+        }
+        await Promise.all(writes);
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    expect(chunks).toEqual([0, 1, 2, 3, 4]);
+  });
+});

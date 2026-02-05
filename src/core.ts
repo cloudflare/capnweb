@@ -39,7 +39,7 @@ export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
-    "undefined";
+    "undefined" | "writable";
 
 const AsyncFunction = (async function () {}).constructor;
 
@@ -90,6 +90,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case Uint8Array.prototype:
       return "bytes";
+
+    case WritableStream.prototype:
+      return "writable";
 
     // TODO: All other structured clone types.
 
@@ -145,6 +148,26 @@ type MapImpl = {
   // Implements the .map() method of RpcStub.
   sendMap(hook: StubHook, path: PropertyPath, func: (value: RpcPromise) => unknown)
          : RpcPromise;
+}
+
+function streamNotLoaded(): never {
+  throw new Error("Stream implementation was not loaded.");
+}
+
+// Stream support is implemented in `streams.ts`. We can't import it here because it would create
+// an import cycle, so instead we define hook functions that streams.ts will overwrite.
+export let streamImpl: StreamImpl = {
+  createWritableStreamHook: streamNotLoaded,
+  createWritableStreamFromHook: streamNotLoaded
+};
+
+export type StreamImpl = {
+  // Creates a StubHook wrapping a local WritableStream for export.
+  // The hook will call getWriter() on the stream, locking it.
+  createWritableStreamHook(stream: WritableStream): StubHook;
+
+  // Creates a proxy WritableStream that forwards writes to a remote hook.
+  createWritableStreamFromHook(hook: StubHook): WritableStream;
 }
 
 // Inner interface backing an RpcStub or RpcPromise.
@@ -678,8 +701,8 @@ export class RpcPayload {
 
   // Create a payload from a value parsed off the wire using Evaluator.evaluate().
   //
-  // A payload is constructed with a null value and the given stubs and promises arrays. The value
-  // is expected to be filled in by the evaluator, and the stubs and promises arrays are expected
+  // A payload is constructed with a null value and the given hooks and promises arrays. The value
+  // is expected to be filled in by the evaluator, and the hooks and promises arrays are expected
   // to be extended with stubs found during parsing. (This weird usage model is necessary so that
   // if the root value turns out to be a promise, its `parent` in `promises` can be the payload
   // object itself.)
@@ -716,10 +739,10 @@ export class RpcPayload {
     //   or because we deep-copied a value from the app.
     private source: "params" | "return" | "owned",
 
-    // `stubs` and `promises` are filled in only if `value` belongs to us (`source` is "owned") and
+    // `hooks` and `promises` are filled in only if `value` belongs to us (`source` is "owned") and
     // so can safely be delivered to the app. If `value` came from then app in the first place,
     // then it cannot be delivered back to the app nor modified by us without first deep-copying
-    // it. `stubs` and `promises` will be computed as part of the deep-copy.
+    // it. `hooks` and `promises` will be computed as part of the deep-copy.
 
     // All non-promise stubs found in `value`. This list is needed only for the purpose of being
     // able to dispose them when desired. This intentionally doesn't inculde promises because they
@@ -732,11 +755,11 @@ export class RpcPayload {
   ) {}
 
   // For `source === "return"` payloads only, this tracks any StubHooks created around RpcTargets
-  // found in the payload at the time that it is serialized (or deep-copied) for return, so that we
-  // can make sure they are not disposed before the pipeline ends.
+  // or WritableStreams found in the payload at the time that it is serialized (or deep-copied) for
+  // return, so that we can make sure they are not disposed before the pipeline ends.
   //
   // This is initialized on first use.
-  private rpcTargets?: Map<RpcTarget | Function, StubHook>;
+  private rpcTargets?: Map<RpcTarget | Function | WritableStream, StubHook>;
 
   // Get the StubHook representing the given RpcTarget found inside this payload.
   public getHookForRpcTarget(target: RpcTarget | Function, parent: object | undefined,
@@ -799,6 +822,41 @@ export class RpcPayload {
       }
     } else {
       throw new Error("owned payload shouldn't contain raw RpcTargets");
+    }
+  }
+
+  // Get the StubHook representing the given WritableStream found inside this payload.
+  public getHookForWritableStream(stream: WritableStream, parent: object | undefined,
+                                  dupStubs: boolean = true): StubHook {
+    if (this.source === "params") {
+      // For params, we always create a new hook. WritableStreams don't have a dup() method,
+      // and it wouldn't really make sense anyway since we're locking the stream by calling
+      // getWriter().
+      return streamImpl.createWritableStreamHook(stream);
+    } else if (this.source === "return") {
+      // Similar logic to getHookForRpcTarget().
+      let hook = this.rpcTargets?.get(stream);
+      if (hook) {
+        if (dupStubs) {
+          return hook.dup();
+        } else {
+          this.rpcTargets?.delete(stream);
+          return hook;
+        }
+      } else {
+        hook = streamImpl.createWritableStreamHook(stream);
+        if (dupStubs) {
+          if (!this.rpcTargets) {
+            this.rpcTargets = new Map;
+          }
+          this.rpcTargets.set(stream, hook);
+          return hook.dup();
+        } else {
+          return hook;
+        }
+      }
+    } else {
+      throw new Error("owned payload shouldn't contain raw WritableStreams");
     }
   }
 
@@ -885,6 +943,18 @@ export class RpcPayload {
         }
         this.promises!.push({parent, property, promise});
         return promise;
+      }
+
+      case "writable": {
+        let stream = <WritableStream>value;
+        let hook: StubHook;
+        if (owner) {
+          hook = owner.getHookForWritableStream(stream, oldParent, dupStubs);
+        } else {
+          hook = streamImpl.createWritableStreamHook(stream);
+        }
+        this.hooks!.push(hook);
+        return stream;
       }
 
       default:
@@ -1137,6 +1207,22 @@ export class RpcPayload {
         // Since thenables are promises, we don't own them, so we don't dispose them.
         return;
 
+      case "writable": {
+        let stream = <WritableStream>value;
+        let hook = this.rpcTargets?.get(stream);
+        if (hook) {
+          this.rpcTargets!.delete(stream);
+        } else {
+          // Create a hook just so we can call its disposer for consistent behavior, which will
+          // abort the stream.
+          hook = streamImpl.createWritableStreamHook(stream);
+        }
+
+        hook.dispose();
+
+        return;
+      }
+
       default:
         kind satisfies never;
         return;
@@ -1172,6 +1258,7 @@ export class RpcPayload {
       case "undefined":
       case "function":
       case "rpc-target":
+      case "writable":
         return;
 
       case "array": {
@@ -1299,6 +1386,15 @@ function followPath(value: unknown, parent: object | undefined,
         return { hook, remainingPath:
             pathIfPromise ? pathIfPromise.concat(path.slice(i)) : path.slice(i) };
       }
+
+      case "writable":
+        // TODO: How do we pipeline on WritableStream? We can't expose the literal WritableStream
+        //   interface because the caller would call getWriter() which would conflict with the
+        //   RPC system calling it later. Perhaps the caller needs to somehow indicate, on the
+        //   client side, "this pipelined property is expected to be a WritableStream", and then
+        //   we can give them a WritableStream, and somehow this correctly pipelines... idk.
+        value = undefined;
+        break;
 
       case "primitive":
       case "bigint":
@@ -1624,7 +1720,7 @@ class TargetStubHook extends ValueStubHook {
 
 // StubHook derived from a Promise for some other StubHook. Waits for the promise and then
 // forward calls, being careful to honor e-order.
-class PromiseStubHook extends StubHook {
+export class PromiseStubHook extends StubHook {
   private promise: Promise<StubHook>;
   private resolution: StubHook | undefined;
 

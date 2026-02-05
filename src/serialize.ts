@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, PropertyPath, unwrapStubAndPath } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -235,13 +235,22 @@ export class Devaluator {
         return this.devaluateHook("promise", hook);
       }
 
+      case "writable": {
+        if (!this.source) {
+          throw new Error("Can't serialize WritableStream in this context.");
+        }
+
+        let hook = this.source.getHookForWritableStream(<WritableStream>value, parent);
+        return this.devaluateHook("writable", hook);
+      }
+
       default:
         kind satisfies never;
         throw new Error("unreachable");
     }
   }
 
-  private devaluateHook(type: "export" | "promise", hook: StubHook): unknown {
+  private devaluateHook(type: "export" | "promise" | "writable", hook: StubHook): unknown {
     if (!this.exports) this.exports = [];
     let exportId = type === "promise" ? this.exporter.exportPromise(hook)
                                       : this.exporter.exportStub(hook);
@@ -512,6 +521,18 @@ export class Evaluator {
               this.hooks.push(hook);
               return new RpcStub(hook);
             }
+          }
+          break;
+
+        case "writable":
+          // It's a WritableStream export from the sender. We import it and create a proxy
+          // WritableStream that forwards writes to the remote end.
+          if (typeof value[1] == "number") {
+            let hook = this.importer.importStub(value[1]);
+            let stream = streamImpl.createWritableStreamFromHook(hook);
+            // Track the stream for disposal.
+            this.hooks.push(hook);
+            return stream;
           }
           break;
       }

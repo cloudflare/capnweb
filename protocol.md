@@ -193,3 +193,17 @@ The sender is exporting a new stub (or re-exporting a stub that was exported bef
 Like "export", but the expression evaluates to a promise. Promises must be replaced with their resolution before the message is finally delivered to the application.
 
 The `exportId` in this case is always a newly-allocated ID. The sender will proactively send a "resolve" (or "reject") message for this ID when the promise resolves (unless it is released first). The recipient does not need to "pull" the promise explicitly; it is assumed that the recipient always wants the resolution.
+
+`["writable", exportId]`
+
+Represents a `WritableStream`. The sender has called `getWriter()` on the stream, locking it, and holds the writer to handle incoming operations. The `exportId` refers to an entry on the export table that accepts the following method calls:
+
+- `write(chunk)` - Write a chunk to the stream. The chunk can be any RPC-compatible value.
+- `close()` - Close the stream normally, indicating all data has been written.
+- `abort(reason?)` - Abort the stream with an optional reason.
+
+These methods correspond to the methods of `WritableStreamDefaultWriter`.
+
+If the export is released without `close()` having been called, the sender will abort the stream, indicating an abnormal termination (e.g., network disconnect).
+
+The receiver does not need to wait for each `write()` call to complete before sending the next one, nor before sending `close()`. The sender will process writes in order. The receiver should wait for `close()` to complete to verify that all writes were successful; if any write failed, `close()` will also fail with that error.
