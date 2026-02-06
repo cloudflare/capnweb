@@ -1706,3 +1706,248 @@ describe("WritableStream over RPC", () => {
     expect(chunks).toEqual([0, 1, 2, 3, 4]);
   });
 });
+
+describe("ReadableStream over RPC", () => {
+  it("can send a ReadableStream and read all chunks", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("hello");
+        controller.enqueue("world");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<string>) {
+        let chunks: string[] = [];
+        let reader = stream.getReader();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value!);
+        }
+        return chunks;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveStream(stream);
+
+    expect(result).toEqual(["hello", "world"]);
+  });
+
+  it("can return a ReadableStream from an RPC call", async () => {
+    class StreamProvider extends RpcTarget {
+      getStream(): ReadableStream<string> {
+        return new ReadableStream({
+          start(controller) {
+            controller.enqueue("from");
+            controller.enqueue("server");
+            controller.close();
+          }
+        });
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProvider());
+    let stream: any = await harness.stub.getStream();
+
+    let chunks: string[] = [];
+    let reader = stream.getReader();
+    while (true) {
+      let { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+
+    expect(chunks).toEqual(["from", "server"]);
+  });
+
+  it("can send ReadableStream in nested object", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("nested");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveData(data: { stream: ReadableStream<string>, label: string }) {
+        let reader = data.stream.getReader();
+        let chunks: string[] = [];
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value!);
+        }
+        return `${data.label}: ${chunks.join(",")}`;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveData({ stream, label: "test" });
+
+    expect(result).toBe("test: nested");
+  });
+
+  it("can send ReadableStream in nested object (partial read)", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("first");
+        controller.enqueue("second");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveData(data: { stream: ReadableStream<string>, label: string }) {
+        // Only read the first chunk, then cancel the stream
+        let reader = data.stream.getReader();
+        let { value } = await reader.read();
+        await reader.cancel();
+        return `${data.label}: ${value}`;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveData({ stream, label: "test" });
+
+    expect(result).toBe("test: first");
+  });
+
+  it("supports complex chunk types", async () => {
+    let stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue({ name: "test", value: 42 });
+        controller.enqueue([1, 2, 3]);
+        controller.enqueue(new Date(1234567890000));
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream) {
+        let chunks: unknown[] = [];
+        let reader = stream.getReader();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        return chunks;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result: any = await harness.stub.receiveStream(stream);
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ name: "test", value: 42 });
+    expect(result[1]).toEqual([1, 2, 3]);
+    expect(result[2]).toEqual(new Date(1234567890000));
+  });
+
+  it("propagates stream errors to the reader", async () => {
+    let stream = new ReadableStream({
+      pull(controller) {
+        controller.enqueue("ok");
+        controller.error(new Error("Stream failed"));
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream) {
+        let reader = stream.getReader();
+        let chunks: string[] = [];
+        try {
+          while (true) {
+            let { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+          }
+        } catch (err: any) {
+          return `chunks=${chunks.join(",")}, error: ${err.message}`;
+        }
+        return `chunks=${chunks.join(",")}, no error`;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveStream(stream);
+    expect(result).toContain("error:");
+    expect(result).toContain("Stream failed");
+  });
+
+  it("handles many chunks", async () => {
+    let count = 100;
+    let stream = new ReadableStream<number>({
+      start(controller) {
+        for (let i = 0; i < count; i++) {
+          controller.enqueue(i);
+        }
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<number>) {
+        let sum = 0;
+        let reader = stream.getReader();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          sum += value!;
+        }
+        return sum;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveStream(stream);
+
+    // Sum of 0..99
+    expect(result).toBe(4950);
+
+    // HACK: We have to pump more mitrotasks than usual here because every chunk write has to be
+    //   disposed.
+    // TODO: Optimize out the need to dispose each stream write or find some other fix here.
+    for (let i = 0; i < 64; i++) {
+      await pumpMicrotasks();
+    }
+  });
+
+  it("can send both ReadableStream and WritableStream in same message", async () => {
+    let readStream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("input");
+        controller.close();
+      }
+    });
+
+    let outputChunks: string[] = [];
+    let writeStream = new WritableStream<string>({
+      write(chunk) { outputChunks.push(chunk); },
+      close() {}
+    });
+
+    class StreamProcessor extends RpcTarget {
+      async process(input: ReadableStream<string>, output: WritableStream<string>) {
+        let reader = input.getReader();
+        let writer = output.getWriter();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          await writer.write(`processed: ${value}`);
+        }
+        await writer.close();
+        return "done";
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProcessor());
+    let result = await harness.stub.process(readStream, writeStream);
+
+    expect(result).toBe("done");
+    expect(outputChunks).toEqual(["processed: input"]);
+  });
+});

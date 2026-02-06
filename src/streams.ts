@@ -216,9 +216,94 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
 }
 
 // =======================================================================================
+// ReadableStreamStubHook - wraps a local ReadableStream for disposal tracking
+//
+// This hook exists solely to live in RpcPayload.hooks so that the ReadableStream is properly
+// disposed (canceled) when the payload is disposed. It does not handle any RPC operations --
+// the actual data transfer is handled by pumping the stream into a pipe's WritableStream via
+// pipeTo(). All methods other than dispose(), dup(), and ignoreUnhandledRejections() throw errors.
+
+// Many ReadableStreamStubHooks could point at the same ReadableStream. We store a refcount in a
+// separate object that they all share.
+type BoxedReadableState = {
+  refcount: number;
+  stream: ReadableStream;
+  canceled: boolean;
+};
+
+class ReadableStreamStubHook extends StubHook {
+  private state?: BoxedReadableState;  // undefined when disposed
+
+  // Creates a new ReadableStreamStubHook.
+  static create(stream: ReadableStream): ReadableStreamStubHook {
+    return new ReadableStreamStubHook({ refcount: 1, stream, canceled: false });
+  }
+
+  private constructor(state: BoxedReadableState, dupFrom?: ReadableStreamStubHook) {
+    super();
+    this.state = state;
+    if (dupFrom) {
+      ++state.refcount;
+    }
+  }
+
+  call(path: PropertyPath, args: RpcPayload): StubHook {
+    args.dispose();
+    return new ErrorStubHook(new Error("Cannot call methods on a ReadableStream stub"));
+  }
+
+  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
+    for (let cap of captures) {
+      cap.dispose();
+    }
+    return new ErrorStubHook(new Error("Cannot use map() on a ReadableStream"));
+  }
+
+  get(path: PropertyPath): StubHook {
+    return new ErrorStubHook(new Error("Cannot access properties on a ReadableStream stub"));
+  }
+
+  dup(): StubHook {
+    let state = this.state;
+    if (!state) {
+      throw new Error("Attempted to dup a ReadableStreamStubHook after it was disposed.");
+    }
+    return new ReadableStreamStubHook(state, this);
+  }
+
+  pull(): RpcPayload | Promise<RpcPayload> {
+    return Promise.reject(new Error("Cannot pull a ReadableStream stub"));
+  }
+
+  ignoreUnhandledRejections(): void {
+    // Nothing to do.
+  }
+
+  dispose(): void {
+    let state = this.state;
+    this.state = undefined;
+    if (state) {
+      if (--state.refcount === 0) {
+        if (!state.canceled) {
+          state.canceled = true;
+          state.stream.cancel(
+              new Error("ReadableStream RPC stub was disposed without being consumed"))
+              .catch(() => {});  // Ignore errors from cancel.
+        }
+      }
+    }
+  }
+
+  onBroken(callback: (error: any) => void): void {
+    // ReadableStream stubs don't have a "broken" state.
+  }
+}
+
+// =======================================================================================
 // Install the implementations into streamImpl
 
 streamImpl.createWritableStreamHook = WritableStreamStubHook.create;
 streamImpl.createWritableStreamFromHook = createWritableStreamFromHook;
+streamImpl.createReadableStreamHook = ReadableStreamStubHook.create;
 
 export function forceInitStreams() {}

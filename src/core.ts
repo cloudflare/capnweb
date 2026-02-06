@@ -39,7 +39,7 @@ export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
-    "undefined" | "writable";
+    "undefined" | "writable" | "readable";
 
 const AsyncFunction = (async function () {}).constructor;
 
@@ -93,6 +93,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case WritableStream.prototype:
       return "writable";
+
+    case ReadableStream.prototype:
+      return "readable";
 
     // TODO: All other structured clone types.
 
@@ -158,7 +161,8 @@ function streamNotLoaded(): never {
 // an import cycle, so instead we define hook functions that streams.ts will overwrite.
 export let streamImpl: StreamImpl = {
   createWritableStreamHook: streamNotLoaded,
-  createWritableStreamFromHook: streamNotLoaded
+  createWritableStreamFromHook: streamNotLoaded,
+  createReadableStreamHook: streamNotLoaded
 };
 
 export type StreamImpl = {
@@ -168,6 +172,10 @@ export type StreamImpl = {
 
   // Creates a proxy WritableStream that forwards writes to a remote hook.
   createWritableStreamFromHook(hook: StubHook): WritableStream;
+
+  // Creates a minimal StubHook wrapping a local ReadableStream for disposal tracking.
+  // The hook's dispose() will cancel the stream.
+  createReadableStreamHook(stream: ReadableStream): StubHook;
 }
 
 // Inner interface backing an RpcStub or RpcPromise.
@@ -759,7 +767,7 @@ export class RpcPayload {
   // return, so that we can make sure they are not disposed before the pipeline ends.
   //
   // This is initialized on first use.
-  private rpcTargets?: Map<RpcTarget | Function | WritableStream, StubHook>;
+  private rpcTargets?: Map<RpcTarget | Function | WritableStream | ReadableStream, StubHook>;
 
   // Get the StubHook representing the given RpcTarget found inside this payload.
   public getHookForRpcTarget(target: RpcTarget | Function, parent: object | undefined,
@@ -860,6 +868,37 @@ export class RpcPayload {
     }
   }
 
+  // Get the StubHook representing the given ReadableStream found inside this payload.
+  public getHookForReadableStream(stream: ReadableStream, parent: object | undefined,
+                                  dupStubs: boolean = true): StubHook {
+    if (this.source === "params") {
+      return streamImpl.createReadableStreamHook(stream);
+    } else if (this.source === "return") {
+      let hook = this.rpcTargets?.get(stream);
+      if (hook) {
+        if (dupStubs) {
+          return hook.dup();
+        } else {
+          this.rpcTargets?.delete(stream);
+          return hook;
+        }
+      } else {
+        hook = streamImpl.createReadableStreamHook(stream);
+        if (dupStubs) {
+          if (!this.rpcTargets) {
+            this.rpcTargets = new Map;
+          }
+          this.rpcTargets.set(stream, hook);
+          return hook.dup();
+        } else {
+          return hook;
+        }
+      }
+    } else {
+      throw new Error("owned payload shouldn't contain raw ReadableStreams");
+    }
+  }
+
   private deepCopy(
       value: unknown, oldParent: object | undefined, property: string | number, parent: object,
       dupStubs: boolean, owner: RpcPayload | null): unknown {
@@ -952,6 +991,18 @@ export class RpcPayload {
           hook = owner.getHookForWritableStream(stream, oldParent, dupStubs);
         } else {
           hook = streamImpl.createWritableStreamHook(stream);
+        }
+        this.hooks!.push(hook);
+        return stream;
+      }
+
+      case "readable": {
+        let stream = <ReadableStream>value;
+        let hook: StubHook;
+        if (owner) {
+          hook = owner.getHookForReadableStream(stream, oldParent, dupStubs);
+        } else {
+          hook = streamImpl.createReadableStreamHook(stream);
         }
         this.hooks!.push(hook);
         return stream;
@@ -1223,6 +1274,22 @@ export class RpcPayload {
         return;
       }
 
+      case "readable": {
+        let stream = <ReadableStream>value;
+        let hook = this.rpcTargets?.get(stream);
+        if (hook) {
+          this.rpcTargets!.delete(stream);
+        } else {
+          // Create a hook just so we can call its disposer for consistent behavior, which will
+          // cancel the stream.
+          hook = streamImpl.createReadableStreamHook(stream);
+        }
+
+        hook.dispose();
+
+        return;
+      }
+
       default:
         kind satisfies never;
         return;
@@ -1259,6 +1326,7 @@ export class RpcPayload {
       case "function":
       case "rpc-target":
       case "writable":
+      case "readable":
         return;
 
       case "array": {
@@ -1393,6 +1461,13 @@ function followPath(value: unknown, parent: object | undefined,
         //   RPC system calling it later. Perhaps the caller needs to somehow indicate, on the
         //   client side, "this pipelined property is expected to be a WritableStream", and then
         //   we can give them a WritableStream, and somehow this correctly pipelines... idk.
+        value = undefined;
+        break;
+
+      case "readable":
+        // TODO: Do we want to support pipelining on ReadableStream at all? It doesn't seem like
+        //   it really makes sense... you might as well just wait for the promise for the
+        //   ReadableStream to resolve, and then read it, because you'll get bytes just as fast.
         value = undefined;
         break;
 

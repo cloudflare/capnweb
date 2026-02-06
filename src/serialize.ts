@@ -18,6 +18,10 @@ export interface Exporter {
   // to roll back the exports.
   unexport(ids: Array<ExportId>): void;
 
+  // Creates a pipe by sending a ["pipe"] message, then starts pumping the given ReadableStream
+  // into the pipe's writable end. Returns the import ID assigned to the pipe.
+  createPipe(readable: ReadableStream): ImportId;
+
   onSendError(error: Error): Error | void;
 }
 
@@ -32,6 +36,9 @@ class NullExporter implements Exporter {
     return undefined;
   }
   unexport(ids: Array<ExportId>): void {}
+  createPipe(readable: ReadableStream): never {
+    throw new Error("Cannot create pipes without an RPC session.");
+  }
 
   onSendError(error: Error): Error | void {}
 }
@@ -244,6 +251,17 @@ export class Devaluator {
         return this.devaluateHook("writable", hook);
       }
 
+      case "readable": {
+        if (!this.source) {
+          throw new Error("Can't serialize ReadableStream in this context.");
+        }
+
+        // Create a pipe and start pumping the ReadableStream into it.
+        let importId = this.exporter.createPipe(<ReadableStream>value);
+
+        return ["readable", importId];
+      }
+
       default:
         kind satisfies never;
         throw new Error("unreachable");
@@ -273,6 +291,11 @@ export interface Importer {
   importStub(idx: ImportId): StubHook;
   importPromise(idx: ImportId): StubHook;
   getExport(idx: ExportId): StubHook | undefined;
+
+  // Retrieves the ReadableStream end of a pipe created by a ["pipe"] message.
+  // The exportId must refer to an export that was created as a pipe.
+  // This can only be called once per pipe.
+  getPipeReadable(exportId: ExportId): ReadableStream;
 }
 
 class NullImporter implements Importer {
@@ -284,6 +307,9 @@ class NullImporter implements Importer {
   }
   getExport(idx: ExportId): StubHook | undefined {
     return undefined;
+  }
+  getPipeReadable(exportId: ExportId): never {
+    throw new Error("Cannot retrieve pipe readable without an RPC session.");
   }
 }
 
@@ -533,6 +559,14 @@ export class Evaluator {
             // Track the stream for disposal.
             this.hooks.push(hook);
             return stream;
+          }
+          break;
+
+        case "readable":
+          // References the readable end of a pipe. The import ID (from the sender's perspective)
+          // is our export ID.
+          if (typeof value[1] == "number") {
+            return this.importer.getPipeReadable(value[1]);
           }
           break;
       }

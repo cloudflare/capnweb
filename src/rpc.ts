@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath } from "./core.js";
+import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
 import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize } from "./serialize.js";
 
 /**
@@ -39,7 +39,12 @@ export interface RpcTransport {
 type ExportTableEntry = {
   hook: StubHook,
   refcount: number,
-  pull?: Promise<void>
+  pull?: Promise<void>,
+
+  // If this export was created by a ["pipe"] message, this holds the ReadableStream end of the
+  // pipe. It is consumed (and set to undefined) when a ["readable", importId] expression
+  // references this export.
+  pipeReadable?: ReadableStream
 };
 
 // Entry on the imports table.
@@ -505,6 +510,38 @@ class RpcSessionImpl implements Importer, Exporter {
     return this.exports[idx]?.hook;
   }
 
+  getPipeReadable(exportId: ExportId): ReadableStream {
+    let entry = this.exports[exportId];
+    if (!entry || !entry.pipeReadable) {
+      throw new Error(`Export ${exportId} is not a pipe or its readable end was already consumed.`);
+    }
+    let readable = entry.pipeReadable;
+    entry.pipeReadable = undefined;
+    return readable;
+  }
+
+  createPipe(readable: ReadableStream): ImportId {
+    if (this.abortReason) throw this.abortReason;
+
+    this.send(["pipe"]);
+
+    let importId = this.imports.length;
+    // The pipe import is not a promise -- it's immediately usable as a writable stream.
+    let entry = new ImportTableEntry(this, importId, false);
+    this.imports.push(entry);
+
+    // Create a proxy WritableStream from the import hook and pump the ReadableStream into it.
+    let hook = new RpcImportHook(/*isPromise=*/false, entry);
+    let writable = streamImpl.createWritableStreamFromHook(hook);
+    readable.pipeTo(writable).catch(() => {
+      // Errors are handled by the writable stream's error handling -- either the write fails
+      // and the writable side reports it, or the readable side errors and pipeTo aborts the
+      // writable side. Either way, the hook's disposal will handle cleanup.
+    });
+
+    return importId;
+  }
+
   private send(msg: any) {
     if (this.abortReason !== undefined) {
       // Ignore sends after we've aborted.
@@ -663,6 +700,16 @@ class RpcSessionImpl implements Importer, Exporter {
               continue;
             }
             break;
+
+          case "pipe": {  // ["pipe"]
+            // Create a TransformStream. The writable end becomes the export (so the sender can
+            // write/close/abort it). The readable end is stashed for later retrieval via
+            // ["readable", importId].
+            let { readable, writable } = new TransformStream();
+            let hook = streamImpl.createWritableStreamHook(writable);
+            this.exports.push({ hook, refcount: 1, pipeReadable: readable });
+            continue;
+          }
 
           case "pull": {  // ["pull", ImportId]
             let exportId = msg[1];

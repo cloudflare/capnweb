@@ -145,6 +145,10 @@ class MapBuilder implements Exporter {
     // Presumably this MapBuilder is cooked anyway, so we don't really have to release anything.
   }
 
+  createPipe(readable: ReadableStream): never {
+    throw new Error("Cannot send ReadableStream inside a mapper function.");
+  }
+
   onSendError(error: Error): Error | void {
     // TODO(someday): Can we use the error-sender hook from the RPC system somehow?
   }
@@ -287,6 +291,10 @@ class MapApplicator implements Importer {
     } else {
       return this.variables[idx];
     }
+  }
+
+  getPipeReadable(exportId: ExportId): never {
+    throw new Error("A mapper function cannot use pipe readables.");
   }
 }
 
