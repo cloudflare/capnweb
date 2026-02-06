@@ -1789,6 +1789,74 @@ describe("WritableStream over RPC", () => {
     expect(closeReceived).toBe(true);
     await rpcPromise;
   });
+
+  it("uses stream messages instead of push+pull+release", async () => {
+    // Verify that WritableStream writes use the optimized "stream" message type,
+    // which avoids sending separate "pull" and "release" messages.
+    let chunks: string[] = [];
+    let stream = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); },
+      close() {}
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        await writer.write("hello");
+        await writer.write("world");
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+
+    // Collect all messages sent by the server (which appear in the client's queue).
+    let serverMessages: any[] = [];
+    let origServerSend = harness.serverTransport.send;
+    harness.serverTransport.send = async function(message: string) {
+      serverMessages.push(JSON.parse(message));
+      return origServerSend.call(this, message);
+    };
+
+    // Collect all messages sent by the client (which appear in the server's queue).
+    let clientMessages: any[] = [];
+    let origClientSend = harness.clientTransport.send;
+    harness.clientTransport.send = async function(message: string) {
+      clientMessages.push(JSON.parse(message));
+      return origClientSend.call(this, message);
+    };
+
+    await harness.stub.receiveStream(stream);
+    await pumpMicrotasks();
+
+    expect(chunks).toEqual(["hello", "world"]);
+
+    // Server sends: write("hello"), write("world"), close() — these should use "stream".
+    let serverStreamMsgs = serverMessages.filter(m => m[0] === "stream");
+    let serverPushMsgs = serverMessages.filter(m => m[0] === "push");
+
+    // The write() and close() calls should all be "stream" messages (3 total).
+    expect(serverStreamMsgs.length).toBe(3);
+
+    // The server should NOT have sent any "push" messages for the stream writes.
+    // (There may be other push messages for non-stream calls, but we filter by looking
+    // at the pipeline target — stream writes target the writable stream export.)
+    // Actually, the only "push" from the server should be none for stream operations.
+    expect(serverPushMsgs.length).toBe(0);
+
+    // Client should NOT have sent any "pull" or "release" messages for stream writes.
+    // The only client messages should be the initial "push" for the RPC call, a "pull"
+    // for it, and the "release" for the RPC result — not for individual stream writes.
+    let clientPullMsgs = clientMessages.filter(m => m[0] === "pull");
+    let clientReleaseMsgs = clientMessages.filter(m => m[0] === "release");
+
+    // There should be exactly 1 pull (for the top-level receiveStream call).
+    expect(clientPullMsgs.length).toBe(1);
+
+    // Release messages: 1 for the top-level receiveStream result, plus 1 for the
+    // writable stream export itself (passed in params). No releases for stream writes.
+    expect(clientReleaseMsgs.length).toBeLessThanOrEqual(2);
+  });
 });
 
 describe("ReadableStream over RPC", () => {

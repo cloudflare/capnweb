@@ -90,6 +90,16 @@ Instructs the recipient to release the given entry in the import table, disposin
 
 `refcount` is the total number of times this import ID has been "introduced", i.e. the number of times it has been the subject of an "export" or "promise" expression, plus 1 if it was created by a "push". The refcount must be sent to avoid a race condition if the receiving side has recently exported the same ID again. The exporter remembers how many times they have exported this ID, decrementing it by the refcount of any release messages received, and only actually releases the ID when this count reaches zero.
 
+`["stream", expression]`
+
+Like `["push", expression]`, asks the recipient to evaluate the given expression. The expression is implicitly assigned the next sequential import ID (in the positive direction). However, unlike "push":
+
+* Promise pipelining on the result is not supported. The caller must not refer to the import ID in subsequent expressions.
+* The expression is automatically considered "pulled". The sender does not need to send a separate "pull" message.
+* Once the recipient sends a "resolve" or "reject" message for the expression's result, the export is implicitly released (with a refcount of 1). The sender does not need to send a separate "release" message.
+
+This message type is designed for streaming writes, where the result is expected to be empty, and the overhead of separate "pull" and "release" messages is high.
+
 `["pipe"]`
 
 Creates a "pipe" on the remote end. A pipe consists of a `ReadableStream` end and a `WritableStream` end. The pipe is implicitly assigned the next sequential import ID (in the positive direction), similar to `["push", expression]`.

@@ -41,6 +41,10 @@ type ExportTableEntry = {
   refcount: number,
   pull?: Promise<void>,
 
+  // If true, the export should be automatically released (with refcount 1) after its "resolve"
+  // or "reject" message is sent. This is set for exports created by ["stream"] messages.
+  autoRelease?: boolean,
+
   // If this export was created by a ["pipe"] message, this holds the ReadableStream end of the
   // pipe. It is consumed (and set to undefined) when a ["readable", importId] expression
   // references this export.
@@ -449,6 +453,8 @@ class RpcSessionImpl implements Importer, Exporter {
         }
       };
 
+      let autoRelease = exp.autoRelease;
+
       ++this.pullCount;
       exp.pull = resolve().then(
         payload => {
@@ -456,9 +462,11 @@ class RpcSessionImpl implements Importer, Exporter {
           // belongs to the hook which sticks around to handle pipelined requests.
           let value = Devaluator.devaluate(payload.value, undefined, this, payload);
           this.send(["resolve", exportId, value]);
+          if (autoRelease) this.releaseExport(exportId, 1);
         },
         error => {
           this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this)]);
+          if (autoRelease) this.releaseExport(exportId, 1);
         }
       ).catch(
         error => {
@@ -466,6 +474,7 @@ class RpcSessionImpl implements Importer, Exporter {
           // itself always be serializable.
           try {
             this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this)]);
+            if (autoRelease) this.releaseExport(exportId, 1);
           } catch (error2) {
             // TODO: Shouldn't happen, now what?
             this.abort(error2);
@@ -608,21 +617,25 @@ class RpcSessionImpl implements Importer, Exporter {
     // TODO: Clean this up somehow.
     value.push((<Array<unknown>>devalue)[0]);
 
-    let size = this.send(["push", value]);
+    let size = this.send(["stream", value]);
 
-    let entry = new ImportTableEntry(this, this.imports.length, false);
+    // Create the import entry in "already pulling" state (pulling=true), since stream messages
+    // are automatically pulled. Set remoteRefcount to 0 so that resolve() won't send a release
+    // message — the server implicitly releases the export after sending the resolve. Set
+    // localRefcount to 1 so that resolve() doesn't treat this as already-disposed.
+    let importId = this.imports.length;
+    let entry = new ImportTableEntry(this, importId, /*pulling=*/true);
+    entry.remoteRefcount = 0;
+    entry.localRefcount = 1;
     this.imports.push(entry);
-    let hook = new RpcImportHook(/*isPromise=*/true, entry);
 
-    // Pull the result to get a completion promise, then dispose.
-    let pulled = hook.pull();
-    let promise: Promise<void>;
-    if (pulled instanceof Promise) {
-      promise = pulled.then(p => { p.dispose(); });
-    } else {
-      pulled.dispose();
-      promise = Promise.resolve();
-    }
+    // Await the resolution, then dispose the result payload and clean up the import table entry.
+    // (Normally, sendRelease() cleans up the import table, but since remoteRefcount is 0, we
+    // need to do it manually.)
+    let promise = entry.awaitResolution().then(
+      p => { p.dispose(); delete this.imports[importId]; },
+      err => { delete this.imports[importId]; throw err; }
+    );
 
     return { promise, size };
   }
@@ -742,6 +755,26 @@ class RpcSessionImpl implements Importer, Exporter {
               continue;
             }
             break;
+
+          case "stream": {  // ["stream", Expression]
+            // Like "push", but:
+            // - Promise pipelining on the result is not supported.
+            // - The export is automatically considered "pulled".
+            // - Once the "resolve" is sent, the export is implicitly released.
+            if (msg.length > 1) {
+              let payload = new Evaluator(this).evaluate(msg[1]);
+              let hook = new PayloadStubHook(payload);
+              hook.ignoreUnhandledRejections();
+
+              let exportId = this.exports.length;
+              this.exports.push({ hook, refcount: 1, autoRelease: true });
+
+              // Automatically pull since stream messages are always pulled.
+              this.ensureResolvingExport(exportId);
+              continue;
+            }
+            break;
+          }
 
           case "pipe": {  // ["pipe"]
             // Create a TransformStream. The writable end becomes the export (so the sender can
