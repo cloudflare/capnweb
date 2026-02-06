@@ -115,6 +115,7 @@ class TestTransport implements RpcTransport {
   private waiter?: () => void;
   private aborter?: (err: any) => void;
   public log = false;
+  private fenced = false;
 
   async send(message: string): Promise<void> {
     // HACK: If the string "$remove$" appears in the message, remove it. This is used in some
@@ -123,7 +124,7 @@ class TestTransport implements RpcTransport {
 
     if (this.log) console.log(`${this.name}: ${message}`);
     this.partner!.queue.push(message);
-    if (this.partner!.waiter) {
+    if (this.partner!.waiter && !this.partner!.fenced) {
       this.partner!.waiter();
       this.partner!.waiter = undefined;
       this.partner!.aborter = undefined;
@@ -131,7 +132,7 @@ class TestTransport implements RpcTransport {
   }
 
   async receive(): Promise<string> {
-    if (this.queue.length == 0) {
+    while (this.queue.length == 0 || this.fenced) {
       await new Promise<void>((resolve, reject) => {
         this.waiter = resolve;
         this.aborter = reject;
@@ -139,6 +140,27 @@ class TestTransport implements RpcTransport {
     }
 
     return this.queue.shift()!;
+  }
+
+  // Blocks this transport from receiving messages. Messages sent to this transport will
+  // accumulate in the queue until the fence is released.
+  fence() {
+    this.fenced = true;
+  }
+
+  // Releases the fence, allowing queued messages to be received.
+  releaseFence() {
+    this.fenced = false;
+    if (this.queue.length > 0 && this.waiter) {
+      this.waiter();
+      this.waiter = undefined;
+      this.aborter = undefined;
+    }
+  }
+
+  // Returns the number of messages waiting in the receive queue.
+  get pendingCount() {
+    return this.queue.length;
   }
 
   forceReceiveError(error: any) {
@@ -1704,6 +1726,68 @@ describe("WritableStream over RPC", () => {
     await harness.stub.receiveStream(stream);
 
     expect(chunks).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("applies backpressure when window fills up", async () => {
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    // Track how many writes the sender has initiated (on the server side).
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        // Each chunk is ~40KB when serialized, so ~7 writes fill the 256KB window.
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+
+    // Fence the client transport. The initial RPC (client → server) still gets through since the
+    // fence is on the client's receive side. But write RPCs (server → client) will accumulate in
+    // the client's queue, so no resolve messages get sent back to the server, and the server's
+    // flow control window never refills.
+    harness.clientTransport.fence();
+
+    let rpcPromise = harness.stub.receiveStream(stream);
+
+    // Pump microtasks until `writesSent` stops advancing.
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await pumpMicrotasks();
+      if (writesSent == oldWritesSent) break;
+    }
+
+    // With a 64KB window and ~10KB per write, the sender should have been blocked after about
+    // 7 writes. Without flow control, all 20 writes would be sent.
+    expect(writesSent).toBeGreaterThanOrEqual(5);
+    expect(writesSent).toBeLessThanOrEqual(10);
+    expect(writesReceived).toBe(0);  // Client hasn't received any writes yet.
+    expect(closeReceived).toBe(false);
+
+    // Release the fence and let everything complete.
+    harness.clientTransport.releaseFence();
+
+    while (!closeReceived) {
+      await pumpMicrotasks();
+    }
+
+    expect(writesSent).toBe(20);
+    expect(writesReceived).toBe(20);
+    expect(closeReceived).toBe(true);
+    await rpcPromise;
   });
 });
 

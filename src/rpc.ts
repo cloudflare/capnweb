@@ -201,6 +201,15 @@ class RpcImportHook extends StubHook {
     }
   }
 
+  stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
+    let entry = this.getEntry();
+    if (entry.resolution) {
+      return entry.resolution.stream(path, args);
+    } else {
+      return entry.session.sendStream(entry.importId, path, args);
+    }
+  }
+
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
     let entry: ImportTableEntry;
     try {
@@ -542,10 +551,11 @@ class RpcSessionImpl implements Importer, Exporter {
     return importId;
   }
 
-  private send(msg: any) {
+  // Serializes and sends a message. Returns the byte length of the serialized message.
+  private send(msg: any): number {
     if (this.abortReason !== undefined) {
       // Ignore sends after we've aborted.
-      return;
+      return 0;
     }
 
     let msgText: string;
@@ -562,6 +572,8 @@ class RpcSessionImpl implements Importer, Exporter {
         // If send fails, abort the connection, but don't try to send an abort message since
         // that'll probably also fail.
         .catch(err => this.abort(err, false));
+
+    return msgText.length;
   }
 
   sendCall(id: ImportId, path: PropertyPath, args?: RpcPayload): RpcImportHook {
@@ -583,6 +595,36 @@ class RpcSessionImpl implements Importer, Exporter {
     let entry = new ImportTableEntry(this, this.imports.length, false);
     this.imports.push(entry);
     return new RpcImportHook(/*isPromise=*/true, entry);
+  }
+
+  sendStream(id: ImportId, path: PropertyPath, args: RpcPayload)
+      : {promise: Promise<void>, size: number} {
+    if (this.abortReason) throw this.abortReason;
+
+    let value: Array<any> = ["pipeline", id, path];
+    let devalue = Devaluator.devaluate(args.value, undefined, this, args);
+
+    // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
+    // TODO: Clean this up somehow.
+    value.push((<Array<unknown>>devalue)[0]);
+
+    let size = this.send(["push", value]);
+
+    let entry = new ImportTableEntry(this, this.imports.length, false);
+    this.imports.push(entry);
+    let hook = new RpcImportHook(/*isPromise=*/true, entry);
+
+    // Pull the result to get a completion promise, then dispose.
+    let pulled = hook.pull();
+    let promise: Promise<void>;
+    if (pulled instanceof Promise) {
+      promise = pulled.then(p => { p.dispose(); });
+    } else {
+      pulled.dispose();
+      promise = Promise.resolve();
+    }
+
+    return { promise, size };
   }
 
   sendMap(id: ImportId, path: PropertyPath, captures: StubHook[], instructions: unknown[])

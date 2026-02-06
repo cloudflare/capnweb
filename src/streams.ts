@@ -121,9 +121,21 @@ class WritableStreamStubHook extends StubHook {
 // =======================================================================================
 // createWritableStreamFromHook - creates a proxy WritableStream that forwards to a remote hook
 
+// Initial window size for flow control, in bytes of serialized message data.
+// TODO: Implement auto-tuning to increase the window size dynamically.
+const STREAM_WINDOW_SIZE = 256 * 1024;
+
 function createWritableStreamFromHook(hook: StubHook): WritableStream {
   let pendingError: any = undefined;
   let hookDisposed = false;
+
+  // Window-based flow control for remote writes. When a write is sent, the serialized message size
+  // is subtracted from the window. When the write response comes back, the size is added back. If
+  // the window goes non-positive, the write callback returns a promise that blocks until the window
+  // recovers. The WritableStream spec guarantees write() won't be called again until the previous
+  // call's returned promise resolves, so at most one write can be blocked at a time.
+  let window = STREAM_WINDOW_SIZE;
+  let windowResolver: (() => void) | undefined;
 
   const disposeHook = () => {
     if (!hookDisposed) {
@@ -134,38 +146,50 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
 
   return new WritableStream({
     write(chunk, controller) {
-      // If we already have an error, fail immediately
+      // If we already have an error, fail immediately.
       if (pendingError !== undefined) {
         throw pendingError;
       }
 
-      // Create payload for the write call
       const payload = RpcPayload.fromAppParams([chunk]);
-      const resultHook = hook.call(["write"], payload);
+      const { promise, size } = hook.stream(["write"], payload);
 
-      // Fire-and-forget the RPC, but pull the result so we can detect errors. If a write fails,
-      // we set pendingError to stop the application from sending more futile writes.
-      // Per the RPC protocol, if any write fails, the subsequent close() will also fail, so
-      // there's no need to track pending writes or await them in close().
-      (async () => {
-        try {
-          let result = await resultHook.pull();
-          result.dispose();
-        } catch (err) {
-          // Store the error, abort the controller, and dispose the hook.
-          // We dispose immediately because the stream is now broken and the caller
-          // may not call close() or abort() after seeing the error.
+      if (size !== undefined) {
+        // Remote call — use window-based flow control.
+        window -= size;
+
+        // When the response comes back, add size back to the window.
+        promise.then(() => {
+          window += size;
+          if (window > 0 && windowResolver) {
+            let r = windowResolver;
+            windowResolver = undefined;
+            r();
+          }
+        }, (err) => {
           if (pendingError === undefined) {
             pendingError = err;
             controller.error(err);
             disposeHook();
           }
-        }
-      })();
+        });
 
-      // Don't await - return immediately for pipelining.
-      // Errors will be caught asynchronously and reported via controller.error().
-      // TODO: Actually, return a promise for flow control purposes.
+        // If the window went non-positive, return a promise that blocks until it recovers.
+        if (window <= 0) {
+          return new Promise<void>(resolve => {
+            windowResolver = resolve;
+          });
+        }
+      } else {
+        // Local call — await the promise directly to serialize writes (no overlapping).
+        // We still need to detect errors to set pendingError.
+        return promise.catch((err) => {
+          if (pendingError === undefined) {
+            pendingError = err;
+          }
+          throw err;
+        });
+      }
     },
 
     async close() {
@@ -176,41 +200,29 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
 
       // Send close(). Per the RPC protocol, if any previous write failed, close() will also
       // fail with that error -- so there's no need to await pending writes first.
-      const payload = RpcPayload.fromAppParams([]);
-      const resultHook = hook.call(["close"], payload);
+      const { promise } = hook.stream(["close"], RpcPayload.fromAppParams([]));
 
       try {
-        const result = await resultHook.pull();
-        result.dispose();
+        await promise;
       } catch (err) {
         // If a write error was detected (possibly while we were waiting for close()), prefer
         // throwing that, since the close error is likely just a consequence (e.g. "can't close
         // errored stream").
         throw pendingError ?? err;
       } finally {
-        // Dispose the hook now that we're done
         disposeHook();
       }
     },
 
     abort(reason) {
-      // If we already have an error, the hook has already been disposed.
       if (pendingError !== undefined) {
         return;
       }
 
-      // Set pendingError so that any subsequent write() or close() calls fail immediately.
       pendingError = reason ?? new Error("WritableStream was aborted");
 
-      // Send abort()
-      const payload = RpcPayload.fromAppParams([reason]);
-      const resultHook = hook.call(["abort"], payload);
-
-      // Fire-and-forget, then dispose
-      Promise.resolve(resultHook.pull()).then(
-        (p: RpcPayload) => { p.dispose(); disposeHook(); },
-        (_: any) => { disposeHook(); }
-      );
+      const { promise } = hook.stream(["abort"], RpcPayload.fromAppParams([reason]));
+      promise.then(() => disposeHook(), () => disposeHook());
     }
   });
 }

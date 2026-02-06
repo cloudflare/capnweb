@@ -190,6 +190,26 @@ export abstract class StubHook {
   // promise for the result.
   abstract call(path: PropertyPath, args: RpcPayload): StubHook;
 
+  // Like call(), but designed for streaming calls (e.g. WritableStream writes). Returns:
+  // - promise: A Promise<void> for the completion of the call.
+  // - size: If the call was remote, the byte size of the serialized message. For local calls,
+  //   undefined is returned, indicating the caller should await the promise to serialize writes
+  //   (no overlapping).
+  stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
+    // Default implementation: delegate to call() + pull(). No size is returned, so the caller
+    // knows this is a local call and should await the promise directly.
+    let hook = this.call(path, args);
+    let pulled = hook.pull();
+    let promise: Promise<void>;
+    if (pulled instanceof Promise) {
+      promise = pulled.then(p => { p.dispose(); });
+    } else {
+      pulled.dispose();
+      promise = Promise.resolve();
+    }
+    return { promise };
+  }
+
   // Apply a map operation.
   //
   // `captures` is a list of external stubs which are used as part of the mapper function.
@@ -1817,6 +1837,18 @@ export class PromiseStubHook extends StubHook {
     args.ensureDeepCopied();
 
     return new PromiseStubHook(this.promise.then(hook => hook.call(path, args)));
+  }
+
+  stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
+    // Not yet resolved — we don't know if this will be local or remote. Deep-copy args and wait.
+    // No size is returned because we can't know yet; this means the caller will await the promise,
+    // which is the safe default (serialized writes).
+    args.ensureDeepCopied();
+    let promise = this.promise.then(hook => {
+      let result = hook.stream(path, args);
+      return result.promise;
+    });
+    return { promise };
   }
 
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
