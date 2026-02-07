@@ -1,4 +1,4 @@
-// Copyright (c) 2025 Cloudflare, Inc.
+// Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
@@ -119,22 +119,203 @@ class WritableStreamStubHook extends StubHook {
 }
 
 // =======================================================================================
-// createWritableStreamFromHook - creates a proxy WritableStream that forwards to a remote hook
+// FlowController - BDP-based dynamic flow control for stream writes
+//
+// Estimates the bandwidth-delay product (BDP) of a stream by observing write sends and acks,
+// and dynamically adjusts the window size to match. The window is set to the estimated BDP
+// multiplied by a growth factor, so that the sender always pushes slightly more than the
+// estimated capacity — naturally probing for increased bandwidth.
+//
+// The algorithm works in two phases:
+// - Startup: The window is allowed to double each RTT (STARTUP_GROWTH_FACTOR = 2), enabling
+//   rapid discovery of available bandwidth. Startup ends when the window stops growing
+//   meaningfully for STARTUP_EXIT_ROUNDS consecutive RTT rounds.
+// - Steady state: The window grows by at most STEADY_GROWTH_FACTOR (1.25) per RTT and
+//   shrinks by at most DECAY_FACTOR (0.90) per RTT, providing stability.
 
-// Initial window size for flow control, in bytes of serialized message data.
-// TODO: Implement auto-tuning to increase the window size dynamically.
-const STREAM_WINDOW_SIZE = 256 * 1024;
+// Flow control constants — tunable.
+//
+// Initial window size in bytes. Used before we have any bandwidth estimate.
+const INITIAL_WINDOW = 256 * 1024;
+// Maximum window size in bytes.
+const MAX_WINDOW = 1024 * 1024 * 1024;
+// Minimum window size in bytes.
+const MIN_WINDOW = 64 * 1024;
+// During startup, we allow the window to grow by up to this factor per RTT.
+const STARTUP_GROWTH_FACTOR = 2;
+// In steady state, we allow the window to grow by up to this factor per RTT.
+const STEADY_GROWTH_FACTOR = 1.25;
+// Allowed reduction in window size per RTT.
+const DECAY_FACTOR = 0.90;
+// Number of consecutive non-increasing ack rounds before exiting startup.
+const STARTUP_EXIT_ROUNDS = 3;
+
+// Opaque token returned by onSend() that must be passed back to onAck(). Carries the
+// send-time snapshot needed to compute delivery rate and apply the window collar.
+export type SendToken = {
+  sentTime: number;
+  size: number;
+  deliveredAtSend: number;
+  deliveredTimeAtSend: number;
+  windowAtSend: number;
+  windowFullAtSend: boolean;
+};
+
+// Exported for testing purposes only -- otherwise this is only used internally by
+// createWritableStreamFromHook().
+export class FlowController {
+  // The current window size in bytes. The sender blocks when bytesInFlight >= window.
+  window = INITIAL_WINDOW;
+
+  // Total bytes currently in flight (sent but not yet acked).
+  bytesInFlight = 0;
+
+  // Whether we're still in the startup phase.
+  inStartupPhase = true;
+
+  // ----- BDP estimation state (private) -----
+
+  // Total bytes acked so far.
+  private delivered = 0;
+  // Time of most recent ack.
+  private deliveredTime = 0;
+  // Time when the very first ack was received.
+  private firstAckTime = 0;
+  private firstAckDelivered = 0;
+  // Global minimum RTT observed (milliseconds).
+  private minRtt = Infinity;
+
+  // For startup exit: count of consecutive RTT rounds where the window didn't meaningfully grow.
+  private roundsWithoutIncrease = 0;
+  // Window size at the start of the current round, for startup exit detection.
+  private lastRoundWindow = 0;
+  // Time when the current round started.
+  private roundStartTime = 0;
+
+  constructor(private now: () => number) {}
+
+  // Called when a write of `size` bytes is about to be sent. Returns a token that must be
+  // passed to onAck() when the ack arrives, and whether the sender should block (window full).
+  onSend(size: number): { token: SendToken, shouldBlock: boolean } {
+    this.bytesInFlight += size;
+
+    let token: SendToken = {
+      sentTime: this.now(),
+      size,
+      deliveredAtSend: this.delivered,
+      deliveredTimeAtSend: this.deliveredTime,
+      windowAtSend: this.window,
+      windowFullAtSend: this.bytesInFlight >= this.window,
+    };
+
+    return { token, shouldBlock: token.windowFullAtSend };
+  }
+
+  // Called when a previously-sent write fails. Restores bytesInFlight without updating
+  // any BDP estimates.
+  onError(token: SendToken): void {
+    this.bytesInFlight -= token.size;
+  }
+
+  // Called when an ack is received for a previously-sent write. Updates BDP estimates and
+  // the window. Returns whether a blocked sender should now unblock.
+  onAck(token: SendToken): boolean {
+    let ackTime = this.now();
+
+    // Update delivery tracking metrics.
+    this.delivered += token.size;
+    this.deliveredTime = ackTime;
+    this.bytesInFlight -= token.size;
+
+    // Update RTT estimate.
+    let rtt = ackTime - token.sentTime;
+    this.minRtt = Math.min(this.minRtt, rtt);
+
+    // Update bandwidth estimate and window.
+    if (this.firstAckTime === 0) {
+      // This is the very first ack. We can't estimate bandwidth yet since we need to look
+      // at the interval between acks.
+      this.firstAckTime = ackTime;
+      this.firstAckDelivered = this.delivered;
+    } else {
+      let baseTime;
+      let baseDelivered;
+
+      if (token.deliveredTimeAtSend === 0) {
+        // This write was sent before any acks had been received, but wasn't the very first
+        // write. We can estimate bandwidth starting from the first ack.
+        baseTime = this.firstAckTime;
+        baseDelivered = this.firstAckDelivered;
+      } else {
+        baseTime = token.deliveredTimeAtSend;
+        baseDelivered = token.deliveredAtSend;
+      }
+
+      let interval = ackTime - baseTime;
+      let bytes = this.delivered - baseDelivered;
+      let bandwidth = bytes / interval;
+
+      // Choose our target growth factor depending on whether we're at startup or steady
+      // state.
+      let growthFactor = this.inStartupPhase ? STARTUP_GROWTH_FACTOR : STEADY_GROWTH_FACTOR;
+
+      // Calculate new window to be our calculated bandwidth-delay product, plus a growth
+      // factor to account for the possibility that bandwidth is constrained only due to
+      // the window having been too small.
+      let newWindow = bandwidth * this.minRtt * growthFactor;
+
+      // Don't allow the window to grow too quickly -- it can only grow by at most
+      // `growthFactor` for each RTT.
+      newWindow = Math.min(newWindow, token.windowAtSend * growthFactor);
+
+      if (token.windowFullAtSend) {
+        // Don't allow the window to shrink too quickly.
+        newWindow = Math.max(newWindow, token.windowAtSend * DECAY_FACTOR);
+      } else {
+        // Don't allow the window to shrink at all if we weren't saturating it -- in this
+        // case the sending app is not fully utilizing the connection, so no backpressure is
+        // needed. We clamp to this.window here, not this.windowAtSend, since we don't want to
+        // undo previous shrinkage, when alternating between sends that saturated and ones that
+        // didn't.
+        newWindow = Math.max(newWindow, this.window);
+      }
+
+      // Clamp to min/max values.
+      this.window = Math.max(Math.min(newWindow, MAX_WINDOW), MIN_WINDOW);
+
+      // Check if the startup phase is done.
+      if (this.inStartupPhase && token.sentTime >= this.roundStartTime) {
+        if (this.window > this.lastRoundWindow * STEADY_GROWTH_FACTOR) {
+          // Saw a significant increase this round, so reset the counter.
+          this.roundsWithoutIncrease = 0;
+        } else {
+          // Window size didn't increase enough this round.
+          if (++this.roundsWithoutIncrease >= STARTUP_EXIT_ROUNDS) {
+            // After three rounds with insufficient increase, exit startup mode.
+            this.inStartupPhase = false;
+          }
+        }
+
+        // Advance to next round.
+        this.roundStartTime = ackTime;
+        this.lastRoundWindow = this.window;
+      }
+    }
+
+    return this.bytesInFlight < this.window;
+  }
+}
+
+// =======================================================================================
+// createWritableStreamFromHook - creates a proxy WritableStream that forwards to a remote hook
 
 function createWritableStreamFromHook(hook: StubHook): WritableStream {
   let pendingError: any = undefined;
   let hookDisposed = false;
 
-  // Window-based flow control for remote writes. When a write is sent, the serialized message size
-  // is subtracted from the window. When the write response comes back, the size is added back. If
-  // the window goes non-positive, the write callback returns a promise that blocks until the window
-  // recovers. The WritableStream spec guarantees write() won't be called again until the previous
-  // call's returned promise resolves, so at most one write can be blocked at a time.
-  let window = STREAM_WINDOW_SIZE;
+  let fc = new FlowController(() => performance.now());
+
+  // If a previous write blocked waiting for the window to open, this resolver will unblock it.
   let windowResolver: (() => void) | undefined;
 
   const disposeHook = () => {
@@ -154,33 +335,7 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
       const payload = RpcPayload.fromAppParams([chunk]);
       const { promise, size } = hook.stream(["write"], payload);
 
-      if (size !== undefined) {
-        // Remote call — use window-based flow control.
-        window -= size;
-
-        // When the response comes back, add size back to the window.
-        promise.then(() => {
-          window += size;
-          if (window > 0 && windowResolver) {
-            let r = windowResolver;
-            windowResolver = undefined;
-            r();
-          }
-        }, (err) => {
-          if (pendingError === undefined) {
-            pendingError = err;
-            controller.error(err);
-            disposeHook();
-          }
-        });
-
-        // If the window went non-positive, return a promise that blocks until it recovers.
-        if (window <= 0) {
-          return new Promise<void>(resolve => {
-            windowResolver = resolve;
-          });
-        }
-      } else {
+      if (size === undefined) {
         // Local call — await the promise directly to serialize writes (no overlapping).
         // We still need to detect errors to set pendingError.
         return promise.catch((err) => {
@@ -189,6 +344,33 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
           }
           throw err;
         });
+      } else {
+        // Remote call — use window-based flow control.
+        let { token, shouldBlock } = fc.onSend(size);
+
+        // When the response comes back, update the window size based on BDP estimates.
+        promise.then(() => {
+          let hasCapacity = fc.onAck(token);
+
+          if (hasCapacity && windowResolver) {
+            windowResolver();
+            windowResolver = undefined;
+          }
+        }, (err) => {
+          fc.onError(token);
+          if (pendingError === undefined) {
+            pendingError = err;
+            controller.error(err);
+            disposeHook();
+          }
+        });
+
+        // If we've filled (or exceeded) the window, block until acks free up space.
+        if (shouldBlock) {
+          return new Promise<void>(resolve => {
+            windowResolver = resolve;
+          });
+        }
       }
     },
 
