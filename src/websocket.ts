@@ -59,7 +59,8 @@ class WebSocketTransport implements RpcTransport {
     webSocket.addEventListener("message", (event: MessageEvent<any>) => {
       if (this.#error) {
         // Ignore further messages.
-      } else if (typeof event.data === "string") {
+      } else if (typeof event.data === "string" ||
+                 event.data instanceof ArrayBuffer) {
         if (this.#receiveResolver) {
           this.#receiveResolver(event.data);
           this.#receiveResolver = undefined;
@@ -67,8 +68,20 @@ class WebSocketTransport implements RpcTransport {
         } else {
           this.#receiveQueue.push(event.data);
         }
+      } else if (ArrayBuffer.isView(event.data)) {
+        // Convert typed arrays (e.g. Node Buffer) to ArrayBuffer.
+        let view = event.data;
+        let buf = (view.buffer as ArrayBuffer).slice(
+            view.byteOffset, view.byteOffset + view.byteLength);
+        if (this.#receiveResolver) {
+          this.#receiveResolver(buf);
+          this.#receiveResolver = undefined;
+          this.#receiveRejecter = undefined;
+        } else {
+          this.#receiveQueue.push(buf);
+        }
       } else {
-        this.#receivedError(new TypeError("Received non-string message from WebSocket."));
+        this.#receivedError(new TypeError("Received unsupported message type from WebSocket."));
       }
     });
 
@@ -82,13 +95,13 @@ class WebSocketTransport implements RpcTransport {
   }
 
   #webSocket: WebSocket;
-  #sendQueue?: string[];  // only if not opened yet
-  #receiveResolver?: (message: string) => void;
+  #sendQueue?: (string | ArrayBuffer)[];  // only if not opened yet
+  #receiveResolver?: (message: string | ArrayBuffer) => void;
   #receiveRejecter?: (err: any) => void;
-  #receiveQueue: string[] = [];
+  #receiveQueue: (string | ArrayBuffer)[] = [];
   #error?: any;
 
-  async send(message: string): Promise<void> {
+  async send(message: string | ArrayBuffer): Promise<void> {
     if (this.#sendQueue === undefined) {
       this.#webSocket.send(message);
     } else {
@@ -97,13 +110,13 @@ class WebSocketTransport implements RpcTransport {
     }
   }
 
-  async receive(): Promise<string> {
+  async receive(): Promise<string | ArrayBuffer> {
     if (this.#receiveQueue.length > 0) {
       return this.#receiveQueue.shift()!;
     } else if (this.#error) {
       throw this.#error;
     } else {
-      return new Promise<string>((resolve, reject) => {
+      return new Promise<string | ArrayBuffer>((resolve, reject) => {
         this.#receiveResolver = resolve;
         this.#receiveRejecter = reject;
       });
