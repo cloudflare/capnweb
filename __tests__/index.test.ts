@@ -1764,9 +1764,15 @@ describe("WritableStream over RPC", () => {
     let rpcPromise = harness.stub.receiveStream(stream);
 
     // Pump microtasks until `writesSent` stops advancing.
+    //
+    // Actually, we use setTimeout(0) instead of pumpMicrotasks() because some platforms' streams
+    // implementations sometimes require falling back to the macro event loop to make progress.
+    // In particular, this test hangs on workerd (in the closeReceived loop, later) about 1/4
+    // of the time if we are using pumpMicrotasks() instead of setTimeout(0). webkit also seems
+    // to be affected.
     for (;;) {
       let oldWritesSent = writesSent;
-      await pumpMicrotasks();
+      await new Promise(resolve => setTimeout(resolve, 0));
       if (writesSent == oldWritesSent) break;
     }
 
@@ -1781,7 +1787,7 @@ describe("WritableStream over RPC", () => {
     harness.clientTransport.releaseFence();
 
     while (!closeReceived) {
-      await pumpMicrotasks();
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
 
     expect(writesSent).toBe(20);
