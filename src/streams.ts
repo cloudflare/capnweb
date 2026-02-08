@@ -316,7 +316,8 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
   let fc = new FlowController(() => performance.now());
 
   // If a previous write blocked waiting for the window to open, this resolver will unblock it.
-  let windowResolver: (() => void) | undefined;
+  let windowResolve: (() => void) | undefined;
+  let windowReject: ((e: unknown) => void) | undefined;
 
   const disposeHook = () => {
     if (!hookDisposed) {
@@ -352,9 +353,10 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
         promise.then(() => {
           let hasCapacity = fc.onAck(token);
 
-          if (hasCapacity && windowResolver) {
-            windowResolver();
-            windowResolver = undefined;
+          if (hasCapacity && windowResolve) {
+            windowResolve();
+            windowResolve = undefined;
+            windowReject = undefined;
           }
         }, (err) => {
           fc.onError(token);
@@ -363,12 +365,20 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
             controller.error(err);
             disposeHook();
           }
+          // Unblock any write waiting on backpressure -- reject it so the
+          // stream finishes erroring instead of hanging forever.
+          if (windowReject) {
+            windowReject(err);
+            windowResolve = undefined;
+            windowReject = undefined;
+          }
         });
 
         // If we've filled (or exceeded) the window, block until acks free up space.
         if (shouldBlock) {
-          return new Promise<void>(resolve => {
-            windowResolver = resolve;
+          return new Promise<void>((resolve, reject) => {
+            windowResolve = resolve;
+            windowReject = reject;
           });
         }
       }
@@ -402,6 +412,11 @@ function createWritableStreamFromHook(hook: StubHook): WritableStream {
       }
 
       pendingError = reason ?? new Error("WritableStream was aborted");
+      if (windowReject) {
+        windowReject(pendingError);
+        windowResolve = undefined;
+        windowReject = undefined;
+      }
 
       const { promise } = hook.stream(["abort"], RpcPayload.fromAppParams([reason]));
       promise.then(() => disposeHook(), () => disposeHook());

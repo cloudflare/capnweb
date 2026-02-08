@@ -1857,6 +1857,74 @@ describe("WritableStream over RPC", () => {
     // writable stream export itself (passed in params). No releases for stream writes.
     expect(clientReleaseMsgs.length).toBeLessThanOrEqual(2);
   });
+
+  it("unblocks a backpressure-blocked write when an in-flight write errors", async () => {
+    let writeCount = 0;
+    let stream = new WritableStream<string>({
+      write(chunk) {
+        writeCount++;
+        if (writeCount >= 2) {
+          throw new Error("Simulated write failure");
+        }
+      },
+      close() {},
+      abort() {}
+    });
+
+    let writerError: any = null;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(100000);
+        try {
+          for (let i = 0; i < 20; i++) {
+            await writer.write(chunk);
+          }
+          await writer.close();
+        } catch (err) {
+          writerError = err;
+          throw err;
+        }
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    harness.clientTransport.fence();
+
+    let rpcDone = false;
+    let rpcError: any = null;
+    let rpcPromise = harness.stub.receiveStream(stream).then(
+      () => { rpcDone = true; },
+      (err: any) => { rpcDone = true; rpcError = err; }
+    );
+
+    for (let i = 0; i < 100; i++) {
+      await pumpMicrotasks();
+    }
+
+    harness.clientTransport.releaseFence();
+
+    let settled = false;
+    let timeout = new Promise<void>(resolve => setTimeout(() => {
+      settled = true;
+      resolve();
+    }, 500));
+
+    await Promise.race([
+      (async () => {
+        while (!rpcDone && !settled) {
+          await pumpMicrotasks();
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+      })(),
+      timeout
+    ]);
+
+    expect(rpcDone).toBe(true);
+    expect(rpcError).not.toBeNull();
+    expect(rpcError.message).toContain("Simulated write failure");
+  });
 });
 
 describe("ReadableStream over RPC", () => {
