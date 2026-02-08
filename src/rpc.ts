@@ -6,6 +6,28 @@ import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStub
 import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize } from "./serialize.js";
 
 /**
+ * Pluggable wire format for encoding/decoding RPC messages. Implement this interface to use a
+ * binary format (e.g. CBOR) instead of JSON.
+ */
+export interface WireFormat {
+  encode(value: unknown): string | ArrayBuffer;
+  decode(data: string | ArrayBuffer): unknown;
+}
+
+/** Default wire format that uses JSON text encoding. */
+export const jsonFormat: WireFormat = {
+  encode(value: unknown): string {
+    return JSON.stringify(value);
+  },
+  decode(data: string | ArrayBuffer): unknown {
+    if (typeof data !== "string") {
+      throw new TypeError("jsonFormat received non-string data");
+    }
+    return JSON.parse(data);
+  },
+};
+
+/**
  * Interface for an RPC transport, which is a simple bidirectional message stream. Implement this
  * interface if the built-in transports (e.g. for HTTP batch and WebSocket) don't meet your needs.
  */
@@ -13,7 +35,7 @@ export interface RpcTransport {
   /**
    * Sends a message to the other end.
    */
-  send(message: string): Promise<void>;
+  send(message: string | ArrayBuffer): Promise<void>;
 
   /**
    * Receives a message sent by the other end.
@@ -23,7 +45,7 @@ export interface RpcTransport {
    * If there are no outstanding calls (and none are made in the future), then the error does not
    * propagate anywhere -- this is considered a "clean" shutdown.
    */
-  receive(): Promise<string>;
+  receive(): Promise<string | ArrayBuffer>;
 
   /**
    * Indicates that the RPC system has suffered an error that prevents the session from continuing.
@@ -298,6 +320,15 @@ export type RpcSessionOptions = {
    * to serialize the error with the stack omitted.
    */
   onSendError?: (error: Error) => Error | void;
+
+  /** Wire format for encoding/decoding messages. Defaults to `jsonFormat` (JSON text). */
+  format?: WireFormat;
+
+  /**
+   * When true, `Uint8Array` values are passed through raw instead of being base64-encoded.
+   * Only useful with a binary wire format that natively supports byte arrays.
+   */
+  binaryBytes?: boolean;
 };
 
 class RpcSessionImpl implements Importer, Exporter {
@@ -322,8 +353,13 @@ class RpcSessionImpl implements Importer, Exporter {
   // may be deleted from the middle (hence leaving the array sparse).
   onBrokenCallbacks: ((error: any) => void)[] = [];
 
+  private format: WireFormat;
+  private binaryBytes: boolean;
+
   constructor(private transport: RpcTransport, mainHook: StubHook,
       private options: RpcSessionOptions) {
+    this.format = options.format ?? jsonFormat;
+    this.binaryBytes = options.binaryBytes ?? false;
     // Export zero is automatically the bootstrap object.
     this.exports.push({hook: mainHook, refcount: 1});
 
@@ -440,18 +476,21 @@ class RpcSessionImpl implements Importer, Exporter {
         payload => {
           // We don't transfer ownership of stubs in the payload since the payload
           // belongs to the hook which sticks around to handle pipelined requests.
-          let value = Devaluator.devaluate(payload.value, undefined, this, payload);
+          let value = Devaluator.devaluate(
+              payload.value, undefined, this, payload, this.binaryBytes);
           this.send(["resolve", exportId, value]);
         },
         error => {
-          this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this)]);
+          this.send(["reject", exportId,
+              Devaluator.devaluate(error, undefined, this, undefined, this.binaryBytes)]);
         }
       ).catch(
         error => {
           // If serialization failed, report the serialization error, which should
           // itself always be serializable.
           try {
-            this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this)]);
+            this.send(["reject", exportId,
+                Devaluator.devaluate(error, undefined, this, undefined, this.binaryBytes)]);
           } catch (error2) {
             // TODO: Shouldn't happen, now what?
             this.abort(error2);
@@ -511,17 +550,17 @@ class RpcSessionImpl implements Importer, Exporter {
       return;
     }
 
-    let msgText: string;
+    let encoded: string | ArrayBuffer;
     try {
-      msgText = JSON.stringify(msg);
+      encoded = this.format.encode(msg);
     } catch (err) {
-      // If JSON stringification failed, there's something wrong with the devaluator, as it should
-      // not allow non-JSONable values to be injected in the first place.
+      // If encoding failed, there's something wrong with the devaluator, as it should
+      // not allow non-encodable values to be injected in the first place.
       try { this.abort(err); } catch (err2) {}
       throw err;
     }
 
-    this.transport.send(msgText)
+    this.transport.send(encoded)
         // If send fails, abort the connection, but don't try to send an abort message since
         // that'll probably also fail.
         .catch(err => this.abort(err, false));
@@ -532,7 +571,7 @@ class RpcSessionImpl implements Importer, Exporter {
 
     let value: Array<any> = ["pipeline", id, path];
     if (args) {
-      let devalue = Devaluator.devaluate(args.value, undefined, this, args);
+      let devalue = Devaluator.devaluate(args.value, undefined, this, args, this.binaryBytes);
 
       // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
       // TODO: Clean this up somehow.
@@ -596,8 +635,8 @@ class RpcSessionImpl implements Importer, Exporter {
 
     if (trySendAbortMessage) {
       try {
-        this.transport.send(JSON.stringify(["abort", Devaluator
-            .devaluate(error, undefined, this)]))
+        this.transport.send(this.format.encode(["abort", Devaluator
+            .devaluate(error, undefined, this, undefined, this.binaryBytes)]))
             .catch(err => {});
       } catch (err) {
         // ignore, probably the whole reason we're aborting is because the transport is broken
@@ -644,7 +683,8 @@ class RpcSessionImpl implements Importer, Exporter {
 
   private async readLoop(abortPromise: Promise<never>) {
     while (!this.abortReason) {
-      let msg = JSON.parse(await Promise.race([this.transport.receive(), abortPromise]));
+      let msg: any = this.format.decode(
+          await Promise.race([this.transport.receive(), abortPromise]));
       if (this.abortReason) break;  // check again before processing
 
       if (msg instanceof Array) {

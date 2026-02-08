@@ -29,7 +29,8 @@ class MessagePortTransport implements RpcTransport {
       } else if (event.data === null) {
         // Peer is signaling that they're closing the connection
         this.#receivedError(new Error("Peer closed MessagePort connection."));
-      } else if (typeof event.data === "string") {
+      } else if (typeof event.data === "string" ||
+                 event.data instanceof ArrayBuffer) {
         if (this.#receiveResolver) {
           this.#receiveResolver(event.data);
           this.#receiveResolver = undefined;
@@ -48,25 +49,25 @@ class MessagePortTransport implements RpcTransport {
   }
 
   #port: MessagePort;
-  #receiveResolver?: (message: string) => void;
+  #receiveResolver?: (message: string | ArrayBuffer) => void;
   #receiveRejecter?: (err: any) => void;
-  #receiveQueue: string[] = [];
+  #receiveQueue: (string | ArrayBuffer)[] = [];
   #error?: any;
 
-  async send(message: string): Promise<void> {
+  async send(message: string | ArrayBuffer): Promise<void> {
     if (this.#error) {
       throw this.#error;
     }
     this.#port.postMessage(message);
   }
 
-  async receive(): Promise<string> {
+  async receive(): Promise<string | ArrayBuffer> {
     if (this.#receiveQueue.length > 0) {
       return this.#receiveQueue.shift()!;
     } else if (this.#error) {
       throw this.#error;
     } else {
-      return new Promise<string>((resolve, reject) => {
+      return new Promise<string | ArrayBuffer>((resolve, reject) => {
         this.#receiveResolver = resolve;
         this.#receiveRejecter = reject;
       });

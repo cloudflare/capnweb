@@ -5,7 +5,7 @@
 import { expect, it, describe, inject } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport, RpcTarget,
          RpcStub, newWebSocketRpcSession, newMessagePortRpcSession,
-         newHttpBatchRpcSession} from "../src/index.js"
+         newHttpBatchRpcSession, type WireFormat, jsonFormat} from "../src/index.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 let SERIALIZE_TEST_CASES: Record<string, unknown> = {
@@ -111,15 +111,17 @@ class TestTransport implements RpcTransport {
     }
   }
 
-  private queue: string[] = [];
+  private queue: (string | ArrayBuffer)[] = [];
   private waiter?: () => void;
   private aborter?: (err: any) => void;
   public log = false;
 
-  async send(message: string): Promise<void> {
+  async send(message: string | ArrayBuffer): Promise<void> {
     // HACK: If the string "$remove$" appears in the message, remove it. This is used in some
     //   tests to hack the RPC protocol.
-    message = message.replaceAll("$remove$", "");
+    if (typeof message === "string") {
+      message = message.replaceAll("$remove$", "");
+    }
 
     if (this.log) console.log(`${this.name}: ${message}`);
     this.partner!.queue.push(message);
@@ -130,7 +132,7 @@ class TestTransport implements RpcTransport {
     }
   }
 
-  async receive(): Promise<string> {
+  async receive(): Promise<string | ArrayBuffer> {
     if (this.queue.length == 0) {
       await new Promise<void>((resolve, reject) => {
         this.waiter = resolve;
@@ -161,11 +163,11 @@ class TestHarness<T extends RpcTarget> {
 
   stub: RpcStub<T>;
 
-  constructor(target: T, serverOptions?: RpcSessionOptions) {
+  constructor(target: T, serverOptions?: RpcSessionOptions, clientOptions?: RpcSessionOptions) {
     this.clientTransport = new TestTransport("client");
     this.serverTransport = new TestTransport("server", this.clientTransport);
 
-    this.client = new RpcSession<T>(this.clientTransport);
+    this.client = new RpcSession<T>(this.clientTransport, undefined, clientOptions);
 
     // TODO: If I remove `<undefined>` here, I get a TypeScript error about the instantiation being
     //   excessively deep and possibly infinite. Why? `<undefined>` is supposed to be the default.
@@ -1507,5 +1509,60 @@ describe("MessagePorts", () => {
     // Wait for the client to detect the broken connection
     await expect(() => brokenPromise).rejects.toThrow(
         new Error("Peer closed MessagePort connection."));
+  });
+});
+
+describe("WireFormat", () => {
+  it("works with the default jsonFormat", async () => {
+    let fmtOpts: RpcSessionOptions = { format: jsonFormat };
+    await using harness = new TestHarness(new TestTarget(), fmtOpts, fmtOpts);
+    expect(await harness.stub.square(5)).toBe(25);
+  });
+
+  it("works with a custom identity format", async () => {
+    // A trivial format that still uses JSON under the hood but proves the plumbing works.
+    let encodeCount = 0;
+    let decodeCount = 0;
+    let customFormat: WireFormat = {
+      encode(value: unknown): string {
+        encodeCount++;
+        return JSON.stringify(value);
+      },
+      decode(data: string | ArrayBuffer): unknown {
+        decodeCount++;
+        if (typeof data !== "string") throw new Error("expected string");
+        return JSON.parse(data);
+      },
+    };
+
+    let fmtOpts: RpcSessionOptions = { format: customFormat };
+    await using harness = new TestHarness(new TestTarget(), fmtOpts, fmtOpts);
+    expect(await harness.stub.square(4)).toBe(16);
+    expect(encodeCount).toBeGreaterThan(0);
+    expect(decodeCount).toBeGreaterThan(0);
+  });
+
+  it("works with an ArrayBuffer-based format", async () => {
+    // Format that encodes to ArrayBuffer via TextEncoder/TextDecoder (proves binary path).
+    let encoder = new TextEncoder();
+    let decoder = new TextDecoder();
+    let binaryFormat: WireFormat = {
+      encode(value: unknown): ArrayBuffer {
+        return encoder.encode(JSON.stringify(value)).buffer as ArrayBuffer;
+      },
+      decode(data: string | ArrayBuffer): unknown {
+        if (data instanceof ArrayBuffer) {
+          return JSON.parse(decoder.decode(data));
+        }
+        return JSON.parse(data as string);
+      },
+    };
+
+    let fmtOpts: RpcSessionOptions = { format: binaryFormat };
+    await using harness = new TestHarness(new TestTarget(), fmtOpts, fmtOpts);
+    expect(await harness.stub.square(6)).toBe(36);
+
+    using counter = await harness.stub.makeCounter(10);
+    expect(await counter.increment(5)).toBe(15);
   });
 });

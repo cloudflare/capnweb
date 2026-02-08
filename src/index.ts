@@ -4,7 +4,8 @@
 
 import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPromiseImpl } from "./core.js";
 import { serialize, deserialize } from "./serialize.js";
-import { RpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
+import { RpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions, WireFormat,
+         jsonFormat } from "./rpc.js";
 import { RpcTargetBranded, RpcCompatible, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse } from "./websocket.js";
@@ -17,8 +18,8 @@ forceInitMap();
 
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse };
-export type { RpcTransport, RpcSessionOptions, RpcCompatible };
+         nodeHttpBatchRpcResponse, jsonFormat };
+export type { RpcTransport, RpcSessionOptions, RpcCompatible, WireFormat };
 
 // Hack the type system to make RpcStub's types work nicely!
 /**

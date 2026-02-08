@@ -65,7 +65,10 @@ interface FromBase64 {
 // actually converting to a string. (The name is meant to be the opposite of "Evaluator", which
 // implements the opposite direction.)
 export class Devaluator {
-  private constructor(private exporter: Exporter, private source: RpcPayload | undefined) {}
+  private constructor(
+      private exporter: Exporter,
+      private source: RpcPayload | undefined,
+      private binaryBytes: boolean) {}
 
   // Devaluate the given value.
   // * value: The value to devaluate.
@@ -73,12 +76,14 @@ export class Devaluator {
   //     as a function.
   // * exporter: Callbacks to the RPC session for exporting capabilities found in this message.
   // * source: The RpcPayload which contains the value, and therefore owns stubs within.
+  // * binaryBytes: When true, Uint8Array values are passed through raw instead of base64-encoding.
   //
-  // Returns: The devaluated value, ready to be JSON-serialized.
+  // Returns: The devaluated value, ready to be encoded by the wire format.
   public static devaluate(
-      value: unknown, parent?: object, exporter: Exporter = NULL_EXPORTER, source?: RpcPayload)
+      value: unknown, parent?: object, exporter: Exporter = NULL_EXPORTER, source?: RpcPayload,
+      binaryBytes: boolean = false)
       : unknown {
-    let devaluator = new Devaluator(exporter, source);
+    let devaluator = new Devaluator(exporter, source, binaryBytes);
     try {
       return devaluator.devaluateImpl(value, parent, 0);
     } catch (err) {
@@ -155,6 +160,9 @@ export class Devaluator {
 
       case "bytes": {
         let bytes = value as Uint8Array;
+        if (this.binaryBytes) {
+          return ["bytes", bytes];
+        }
         if (bytes.toBase64) {
           return ["bytes", bytes.toBase64({omitPadding: true})];
         } else {
@@ -326,6 +334,9 @@ export class Evaluator {
           }
           break;
         case "bytes": {
+          if (value[1] instanceof Uint8Array) {
+            return value[1];
+          }
           let b64 = Uint8Array as FromBase64;
           if (typeof value[1] == "string") {
             if (b64.fromBase64) {
