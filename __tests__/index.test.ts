@@ -2176,4 +2176,55 @@ describe("ReadableStream over RPC", () => {
     expect(result).toBe("done");
     expect(outputChunks).toEqual(["processed: input"]);
   });
+
+  it("cancels a ReadableStream in a result when the whole result is disposed", async () => {
+    if (navigator.userAgent === "Cloudflare-Workers") {
+      // There's currently some bugs in workerd which prevent this test from working there:
+      //     https://github.com/cloudflare/workerd/pull/6066
+      // When that gets fixed, remove this early return.
+      return;
+    }
+
+    let cancelCalled = false;
+
+    class StreamProvider extends RpcTarget {
+      getStream(): ReadableStream<string> {
+        return new ReadableStream({
+          start(controller) {
+            // Enqueue a few chunks and leave the stream open (not closed).
+            // This simulates a stream the caller might not fully consume.
+            controller.enqueue("chunk-1");
+            controller.enqueue("chunk-2");
+          },
+          cancel() {
+            cancelCalled = true;
+          }
+        });
+      }
+    }
+
+    // Don't use the standard harness — the disposal tracking bug causes leaked exports
+    // that would trip the checkAllDisposed assertion and mask the real test failure.
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession(clientTransport);
+    let server = new RpcSession(serverTransport, new StreamProvider());
+
+    let stub: any = client.getRemoteMain();
+
+    // Get the stream result but don't read from it.
+    let streamResult = await stub.getStream();
+
+    // Dispose the result without reading — this should cascade and cancel the
+    // underlying ReadableStream on the server.
+    streamResult[Symbol.dispose]();
+
+    // Wait for disposal to propagate across the RPC boundary.
+    for (let i = 0; i < 64; i++) {
+      await pumpMicrotasks();
+    }
+
+    expect(cancelCalled).toBe(true);
+  });
 });

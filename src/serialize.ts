@@ -566,7 +566,12 @@ export class Evaluator {
           // References the readable end of a pipe. The import ID (from the sender's perspective)
           // is our export ID.
           if (typeof value[1] == "number") {
-            return this.importer.getPipeReadable(value[1]);
+            let stream = this.importer.getPipeReadable(value[1]);
+            // Track the stream for disposal so that if the payload is disposed before the
+            // app reads the stream, the ReadableStream is properly canceled.
+            let hook = streamImpl.createReadableStreamHook(stream);
+            this.hooks.push(hook);
+            return stream;
           }
           break;
       }
