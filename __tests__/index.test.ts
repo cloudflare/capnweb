@@ -2103,3 +2103,252 @@ describe("ReadableStream over RPC", () => {
     expect(outputChunks).toEqual(["processed: input"]);
   });
 });
+
+// =======================================================================================
+// BUG: blocked-write-lost-wakeup — windowResolver never settled on error/abort
+//
+// When writing to a WritableStream over RPC, the sender uses a flow control window.
+// When the window fills, write() blocks on a custom promise stored in `windowResolver`.
+// If the receiver's write handler throws (or the stream is aborted), `pendingError` is set
+// and `controller.error()` is called — but nothing settles `windowResolver`. The blocked
+// write hangs forever.
+//
+// USER PERSPECTIVE: You pass a WritableStream to an RPC method. The remote side writes
+// many chunks (enough to fill the 256KB flow control window). Then the local write handler
+// throws an error. Instead of the error propagating back to the remote writer, the remote
+// writer's `await writer.write(chunk)` hangs forever — the RPC call never completes, the
+// connection appears stuck, and there's no error, no timeout, nothing.
+//
+// This is the same class of bug as a "lost wakeup" in concurrent programming — the
+// condition variable (windowResolver) is never signaled when the error state changes.
+
+describe("blocked-write-lost-wakeup", () => {
+  // These tests demonstrate a "lost wakeup" bug in createWritableStreamFromHook
+  // (streams.ts:312-410).
+  //
+  // When writing to a WritableStream over RPC, a FlowController tracks the congestion
+  // window. When bytesInFlight >= window, write() blocks on a promise stored in
+  // `windowResolver`. Normally, successful acks call `windowResolver()` to unblock.
+  //
+  // BUG: If ALL pending writes fail (or if abort() is called while blocked), nothing
+  // settles `windowResolver`. The error handler (line 359-365) sets `pendingError` and
+  // calls `controller.error()` + `disposeHook()`, but doesn't call `windowResolver()`.
+  // The abort handler (line 399-408) sets `pendingError` but also doesn't settle it.
+  // Result: the blocked write hangs forever.
+  //
+  // This only triggers when the error happens before any successful ack can unblock the
+  // window. In practice this happens when:
+  // 1. The very first write fails (all in-flight writes fail)
+  // 2. The connection drops while the window is full
+  // 3. abort() is called while writes are blocked
+
+  it("FAILING: write unblocks when every pending write errors after window fills", async () => {
+    // USER SCENARIO: You pass a WritableStream to an RPC method. The remote side writes
+    // data at high throughput. Your local write handler ALWAYS throws (e.g., validation
+    // error, stream already errored). Because every write fails, there are no successful
+    // acks to settle windowResolver.
+    //
+    // USER CODE (client):
+    //   let stream = new WritableStream({
+    //     write(chunk) { throw new Error("validation failed"); }
+    //   });
+    //   await service.upload(stream);  // <-- hangs forever
+    let stream = new WritableStream<string>({
+      write(chunk) {
+        // Every write fails — no successful acks will be produced
+        throw new Error("Receiver rejected all writes");
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let bigChunk = "x".repeat(50000);
+        for (let i = 0; i < 20; i++) {
+          await writer.write(bigChunk);
+        }
+        await writer.close();
+      }
+    }
+
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession(clientTransport);
+    let server = new RpcSession(serverTransport, new StreamReceiver());
+
+    let stub: any = client.getRemoteMain();
+
+    // Fence the server so it can't receive reject responses from the client.
+    // This causes writes to fill the flow control window (since no acks arrive).
+    // When the fence is released, all reject messages arrive at once — but since
+    // they're ALL errors, no successful onAck() ever fires windowResolver().
+    serverTransport.fence();
+
+    let rpcPromise = stub.receiveStream(stream);
+
+    // Let writes accumulate until window fills and sender blocks.
+    await pumpMicrotasks();
+
+    // Release fence — all reject responses flow in.
+    // BUG: windowResolver is never settled because onError() doesn't call it.
+    serverTransport.releaseFence();
+
+    let result = await Promise.race([
+      rpcPromise.then(
+        () => "completed",
+        (err: unknown) => `error: ${err instanceof Error ? err.message : err}`
+      ),
+      new Promise<string>(resolve => setTimeout(() => resolve("TIMEOUT — windowResolver hung"), 3000))
+    ]);
+
+    expect(result).not.toBe("TIMEOUT — windowResolver hung");
+    expect(result).toContain("error:");
+  });
+
+  it("FAILING: concurrent fire-and-forget writes hang when all are rejected", async () => {
+    // Same bug as above, but framed as a common user pattern: fire-and-forget writes
+    // followed by close(). The caller doesn't await each write individually — they
+    // fire off many writes and only await close() at the end.
+    //
+    // USER CODE (server):
+    //   async writeAllChunks(dest: WritableStream<Uint8Array>) {
+    //     let writer = dest.getWriter();
+    //     for (let chunk of chunks) {
+    //       writer.write(chunk);  // fire-and-forget, relies on backpressure
+    //     }
+    //     await writer.close();  // <-- hangs if all writes failed and window filled
+    //   }
+    let localStream = new WritableStream<string>({
+      write(chunk) {
+        throw new Error("Permission denied");
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let bigChunk = "x".repeat(50000);
+        // Fire-and-forget writes (don't await each one)
+        for (let i = 0; i < 20; i++) {
+          writer.write(bigChunk);
+        }
+        // Only await close — if windowResolver hangs, close never completes
+        // because the WritableStream is still processing the pending write.
+        await writer.close();
+      }
+    }
+
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession(clientTransport);
+    let server = new RpcSession(serverTransport, new StreamReceiver());
+
+    let stub: any = client.getRemoteMain();
+
+    // Fence to prevent acks, causing window to fill.
+    serverTransport.fence();
+
+    let rpcPromise = stub.receiveStream(localStream);
+    await pumpMicrotasks();
+
+    // Release fence — all reject responses arrive, but windowResolver unsettled.
+    serverTransport.releaseFence();
+
+    let result = await Promise.race([
+      rpcPromise.then(
+        () => "completed",
+        (err: unknown) => `error: ${err instanceof Error ? err.message : err}`
+      ),
+      new Promise<string>(resolve => setTimeout(() => resolve("TIMEOUT — fire-and-forget writes hung"), 3000))
+    ]);
+
+    expect(result).not.toBe("TIMEOUT — fire-and-forget writes hung");
+    expect(result).toContain("error:");
+  });
+
+  // NOTE on abort + windowResolver: Per the WritableStream spec, writer.abort() waits
+  // for any pending write promise to settle before calling the sink's abort(). Since the
+  // pending write is stuck on our custom windowResolver (blocked-write-lost-wakeup bug),
+  // abort() also hangs. Fixing the lost wakeup (settling windowResolver on error) also
+  // fixes the abort case, because the write unblocks and abort() can proceed. No separate
+  // test needed; the tests above cover this.
+});
+
+// =======================================================================================
+// BUG: readable-not-tracked-for-disposal — Evaluator omits hook for ["readable"]
+//
+// In serialize.ts Evaluator.evaluateImpl, the ["readable"] case (line 565-570) calls
+// getPipeReadable() but does NOT push a hook to this.hooks[]. Compare with ["writable"]
+// (line 553-562) which does: this.hooks.push(hook).
+//
+// Consequence: If an RpcPayload containing a ReadableStream is disposed before the app
+// reads the stream, the ReadableStream is never canceled. The pipe's source keeps pumping
+// data into a TransformStream that nobody reads.
+//
+// USER PERSPECTIVE: You return a ReadableStream from an RPC method but the caller never
+// reads it (e.g., they dispose the result). The underlying source keeps running, consuming
+// resources (memory, CPU, network) indefinitely. For a "normal" local ReadableStream,
+// disposal would cancel it. Over RPC, the cleanup is silently lost.
+
+describe("readable-not-tracked-for-disposal", () => {
+  it("FAILING: ReadableStream in RPC result is canceled when result is disposed without reading", async () => {
+    // In serialize.ts Evaluator, the ["readable"] case (line 565-570) calls
+    // getPipeReadable() but does NOT push a hook to this.hooks[]. Compare with
+    // ["writable"] (line 553-562) which does: this.hooks.push(hook).
+    //
+    // Consequence: If an RpcPayload containing a ReadableStream is disposed before
+    // the app reads the stream, the ReadableStream is never canceled.
+    //
+    // USER PERSPECTIVE: You return a ReadableStream from an RPC method but the caller
+    // decides they don't need it (e.g., they dispose the result early). For a local
+    // ReadableStream, disposal would cancel it and clean up the source. Over RPC, the
+    // underlying source keeps running — consuming memory, CPU, and possibly network
+    // bandwidth — with no way to stop it.
+    let cancelCalled = false;
+
+    class StreamProvider extends RpcTarget {
+      getStream(): ReadableStream<string> {
+        return new ReadableStream({
+          start(controller) {
+            // Enqueue a few chunks and leave the stream open (not closed).
+            // This simulates a stream the caller might not fully consume.
+            controller.enqueue("chunk-1");
+            controller.enqueue("chunk-2");
+          },
+          cancel() {
+            cancelCalled = true;
+          }
+        });
+      }
+    }
+
+    // Don't use the standard harness — the disposal tracking bug causes leaked exports
+    // that would trip the checkAllDisposed assertion and mask the real test failure.
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession(clientTransport);
+    let server = new RpcSession(serverTransport, new StreamProvider());
+
+    let stub: any = client.getRemoteMain();
+
+    // Get the stream result but don't read from it.
+    let streamResult = await stub.getStream();
+
+    // Dispose the result without reading — this should cascade and cancel the
+    // underlying ReadableStream on the server.
+    streamResult[Symbol.dispose]();
+
+    // Wait for disposal to propagate across the RPC boundary.
+    for (let i = 0; i < 64; i++) {
+      await pumpMicrotasks();
+    }
+
+    // BUG: cancelCalled is false because the Evaluator doesn't track the readable
+    // stream for disposal. The pipe's writable end (and therefore the source) keeps
+    // running indefinitely.
+    expect(cancelCalled).toBe(true);
+  });
+});
