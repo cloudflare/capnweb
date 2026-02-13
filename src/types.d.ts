@@ -108,7 +108,9 @@ export type Stubify<T> =
 // `Stub` depends on `Provider`, which depends on `Unstubify`, which would depend on `Stub`.
 // prettier-ignore
 type UnstubifyInner<T> =
-  T extends StubBase<infer V> ? (T | V)  // can provide either stub or local RpcTarget
+  // Keep local RpcTarget acceptance, but avoid `Stub | Value` unions when the stub
+  // is already assignable to the value type (needed for callback contextual typing).
+  T extends StubBase<infer V> ? (T extends V ? V : (T | V))
   : T extends Map<infer K, infer V> ? Map<Unstubify<K>, Unstubify<V>>
   : T extends Set<infer V> ? Set<Unstubify<V>>
   : T extends [] ? []
