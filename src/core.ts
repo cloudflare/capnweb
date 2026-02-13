@@ -39,7 +39,7 @@ export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
-    "undefined" | "writable" | "readable";
+    "undefined" | "writable" | "readable" | "headers" | "request" | "response";
 
 const AsyncFunction = (async function () {}).constructor;
 
@@ -96,6 +96,15 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case ReadableStream.prototype:
       return "readable";
+
+    case Headers.prototype:
+      return "headers";
+
+    case Request.prototype:
+      return "request";
+
+    case Response.prototype:
+      return "response";
 
     // TODO: All other structured clone types.
 
@@ -1017,6 +1026,9 @@ export class RpcPayload {
       }
 
       case "readable": {
+        // Note that we don't use tee() here because we treat streams as reference types -- we
+        // actually want to share the same body. tee()ing the stream would force the runtime to
+        // buffer a copy of the whole body which would usually never be read.
         let stream = <ReadableStream>value;
         let hook: StubHook;
         if (owner) {
@@ -1026,6 +1038,37 @@ export class RpcPayload {
         }
         this.hooks!.push(hook);
         return stream;
+      }
+
+      case "headers":
+        return new Headers(<Headers>value);
+
+      case "request": {
+        let req = <Request>value;
+        if (req.body) {
+          // Note "deep-copy" of a ReadableStream always returns the same stream, but we still
+          // need to run it in order to handle refcounting / disposal properly.
+          this.deepCopy(req.body, req, "body", req, dupStubs, owner);
+        }
+
+        // Make an actual copy of the object, e.g. so the headers are copied.
+        // Note that it would be incorrect to use clone() here since that would tee() the body
+        // stream.
+        return new Request(req);
+      }
+
+      case "response": {
+        let resp = <Response>value;
+        if (resp.body) {
+          // Note "deep-copy" of a ReadableStream always returns the same stream, but we still
+          // need to run it in order to handle refcounting / disposal properly.
+          this.deepCopy(resp.body, resp, "body", resp, dupStubs, owner);
+        }
+
+        // Make an actual copy of the object, e.g. so the headers are copied.
+        // Note that it would be incorrect to use clone() here since that would tee() the body
+        // stream.
+        return new Response(resp.body, resp);
       }
 
       default:
@@ -1278,6 +1321,26 @@ export class RpcPayload {
         // Since thenables are promises, we don't own them, so we don't dispose them.
         return;
 
+      case "headers":
+        // Headers have no owned resources to dispose.
+        return;
+
+      case "request": {
+        // The body may be a ReadableStream that has an associated hook in rpcTargets.
+        let req = <Request>value;
+        if (req.body) this.disposeImpl(req.body, req);
+        // TODO: When we support AbortSignal, we may need to dispose request.signal here?
+        return;
+      }
+
+      case "response": {
+        // The body may be a ReadableStream that has an associated hook in rpcTargets.
+        let resp = <Response>value;
+        if (resp.body) this.disposeImpl(resp.body, resp);
+        // TODO: When we support WebSocket, we may need to dispose response.webSocket here?
+        return;
+      }
+
       case "writable": {
         let stream = <WritableStream>value;
         let hook = this.rpcTargets?.get(stream);
@@ -1347,6 +1410,9 @@ export class RpcPayload {
       case "rpc-target":
       case "writable":
       case "readable":
+      case "headers":
+      case "request":
+      case "response":
         return;
 
       case "array": {
@@ -1496,6 +1562,9 @@ function followPath(value: unknown, parent: object | undefined,
       case "bytes":
       case "date":
       case "error":
+      case "headers":
+      case "request":
+      case "response":
         // These have no properties that can be accessed remotely.
         value = undefined;
         break;

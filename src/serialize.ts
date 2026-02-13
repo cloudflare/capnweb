@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -171,6 +171,132 @@ export class Devaluator {
         }
       }
 
+      case "headers":
+        // The `Headers` TS type apparently doesn't declare itself as being
+        // Iterable<[string, string]>, but it is.
+        return ["headers", [...<Iterable<[string, string]>>value]];
+
+      case "request": {
+        let req = <Request>value;
+        let init: Record<string, unknown> = {};
+
+        // For many properties below, the official Fetch spec says they must always be present,
+        // but some platforms don't support them. So, we check both whether the property exists,
+        // and whether it is equal to the default, before bothering to add it to `init`.
+
+        if (req.method !== "GET") init.method = req.method;
+
+        let headers = [...<Iterable<[string, string]>><any>req.headers];
+        if (headers.length > 0) {
+          // Note that we don't need to serialize this as ["headers", headers] because we are only
+          // trying to create a valid RequestInit object.
+          init.headers = headers;
+        }
+
+        if (req.body) {
+          init.body = this.devaluateImpl(req.body, req, depth + 1);
+
+          // Apparently the fetch spec technically requires that `duplex` be specified when a
+          // body is specified, and Chrome in fact requires this, and requires the value is "half".
+          // Workers hasn't implemented this (and actually supports full duplex by default, lol).
+          // The TS types for Request currently don't define this property, but it is there (on
+          // Chrome at least).
+          init.duplex = (<any>req).duplex || "half";
+        } else if (req.body === undefined &&
+            !["GET", "HEAD", "OPTIONS", "TRACE", "DELETE"].includes(req.method)) {
+          // If the body is undefined rather than null, most likely we're on a platform that
+          // doesn't support request body streams (*cough*Firefox*cough*). We'll need to hack
+          // around this by using `req.arrayBuffer()` to get the body. Unfortunately this is async,
+          // so we can't just embed the resulting body into the message we are constructing. We
+          // will actually have to construct a ReadableStream. Ugh!
+
+          let bodyPromise = req.arrayBuffer();
+
+          let readable = new ReadableStream<Uint8Array>({
+            async start(controller) {
+              try {
+                // `as Uint8Array` is needed here to work around some sort of weird bug in the TS
+                // types where `new Uint8Array` somehow doesn't return a `Uint8Array`. Instead it
+                // somehow returns `Uint8Array<ArrayBuffer>` -- but `Uint8Array` is not a generic
+                // type! WTF?
+                controller.enqueue(new Uint8Array(await bodyPromise) as Uint8Array);
+                controller.close();
+              } catch (err) {
+                controller.error(err);
+              }
+            }
+          });
+
+          // We can't recurse to devaluateImpl() to serialize the body because it'll call
+          // source.getHookForReadableStream(), adding a hook on the payload which isn't actually
+          // reachable by walking the payload, which will cause trouble later. So we have to
+          // inline it a bit here...
+          let hook = streamImpl.createReadableStreamHook(readable);
+          let importId = this.exporter.createPipe(readable, hook);
+          init.body = ["readable", importId];
+          init.duplex = (<any>req).duplex || "half";
+        }
+
+        if (req.cache && req.cache !== "default") init.cache = req.cache;
+        if (req.redirect !== "follow") init.redirect = req.redirect;
+        if (req.integrity) init.integrity = req.integrity;
+
+        // These properties are only meaningful in browsers and not supported by most WinterCG
+        // (server-side) platforms.
+        if (req.mode && req.mode !== "cors") init.mode = req.mode;
+        if (req.credentials && req.credentials !== "same-origin") {
+          init.credentials = req.credentials;
+        }
+        if (req.referrer && req.referrer !== "about:client") init.referrer = req.referrer;
+        if (req.referrerPolicy) init.referrerPolicy = req.referrerPolicy;
+        if (req.keepalive) init.keepalive = req.keepalive;
+
+        // These properties are specific to Cloudflare Workers. Cast the request to `any` to
+        // silence type errors on other platforms.
+        let cfReq = req as any;
+        if (cfReq.cf) init.cf = cfReq.cf;
+        if (cfReq.encodeResponseBody && cfReq.encodeResponseBody !== "automatic") {
+          init.encodeResponseBody = cfReq.encodeResponseBody;
+        }
+
+        // TODO: Support request.signal. Annoyingly, all `Request`s have a `signal` property even
+        //   if none was passed to the constructor, and there's no way to tell if it's a real
+        //   signal. So for now, since we don't support AbortSignal yet, all we can do is ignore
+        //   it; we can't throw an error if it's present.
+
+        return ["request", req.url, init];
+      }
+
+      case "response": {
+        let resp = <Response>value;
+        let body = this.devaluateImpl(resp.body, resp, depth + 1);
+        let init: Record<string, unknown> = {};
+
+        if (resp.status !== 200) init.status = resp.status;
+        if (resp.statusText) init.statusText = resp.statusText;
+
+        let headers = [...<Iterable<[string, string]>><any>resp.headers];
+        if (headers.length > 0) {
+          // Note that we don't need to serialize this as ["headers", headers] because we are only
+          // trying to create a valid ResponseInit object.
+          init.headers = headers;
+        }
+
+        // These properties are specific to Cloudflare Workers. Cast the request to `any` to
+        // silence type errors on other platforms.
+        let cfResp = resp as any;
+        if (cfResp.cf) init.cf = cfResp.cf;
+        if (cfResp.encodeBody && cfResp.encodeBody !== "automatic") {
+          init.encodeBody = cfResp.encodeBody;
+        }
+        if (cfResp.webSocket) {
+          // As of this writing, we don't support WebSocket, but we might someday.
+          throw new TypeError("Can't serialize a Response containing a webSocket.");
+        }
+
+        return ["response", body, init];
+      }
+
       case "error": {
         let e = <Error>value;
 
@@ -319,6 +445,21 @@ class NullImporter implements Importer {
 
 const NULL_IMPORTER = new NullImporter();
 
+// Some runtimes (Firefox) don't support `request.body` as a stream, but we receive request bodies
+// as streams. We'll need to read the body into an ArrayBuffer and recreate the request. This is
+// asynchronous, so we'll have to swap in a promise here. This potentially breaks e-order but
+// that's something people will just have to live with when sending a Request to a Firefox
+// endpoint (probably rare).
+function fixBrokenRequestBody(request: Request, body: ReadableStream): RpcPromise {
+  // Reuse built-in code to read the stream into an array.
+  let promise = new Response(body).arrayBuffer().then(arrayBuffer => {
+    let bytes = new Uint8Array(arrayBuffer);
+    let result = new Request(request, {body: bytes});
+    return new PayloadStubHook(RpcPayload.fromAppReturn(result));
+  });
+  return new RpcPromise(new PromiseStubHook(promise), []);
+}
+
 // Takes object trees parse from JSON and converts them into fully-hydrated JavaScript objects for
 // delivery to the app. This is used to implement deserialization, except that it doesn't actually
 // start from a raw string.
@@ -402,6 +543,92 @@ export class Evaluator {
           return -Infinity;
         case "nan":
           return NaN;
+
+        case "headers":
+          // We only need to validate that the parameter is an array, so as not to invoke an
+          // unexpected variant of the Headers constructor. So long as it is an array then we can
+          // rely on the constructor to perform type checking.
+          if (value.length === 2 && value[1] instanceof Array) {
+            return new Headers(value[1] as [string, string][]);
+          }
+          break;
+
+        case "request": {
+          if (value.length !== 3 || typeof value[1] !== "string") break;
+          let url = value[1] as string;
+          let init = value[2];
+          if (typeof init !== "object" || init === null) break;
+
+          // Evaluate specific properties which are expected to contain non-trivial types.
+          if (init.body) {
+            init.body = this.evaluateImpl(init.body, init, "body");
+            if (init.body === null ||
+                typeof init.body === "string" ||
+                init.body instanceof Uint8Array ||
+                init.body instanceof ReadableStream) {
+              // Acceptable types.
+            } else {
+              throw new TypeError("Request body must be of type ReadableStream.");
+            }
+          }
+          if (init.signal) {
+            init.signal = this.evaluateImpl(init.signal, init, "signal");
+            if (!(init.signal instanceof AbortSignal)) {
+              throw new TypeError("Request siganl must be of type AbortSignal.");
+            }
+          }
+
+          // Type-check `headers` is an array because the constructor allows multiple
+          // representations and we don't want to allow the others.
+          if (init.headers && !(init.headers instanceof Array)) {
+            throw new TypeError("Request headers must be serialized as an array of pairs.");
+          }
+
+          // We assume the `Request` constructor can type-check the remaining properties.
+          let result = new Request(url, init as RequestInit);
+
+          if (init.body instanceof ReadableStream && result.body === undefined) {
+            // Oh no! We must be on Firefox where request bodies are not supported, but we had a
+            // body.
+            let promise = fixBrokenRequestBody(result, init.body);
+            this.promises.push({promise, parent, property});
+            return promise;
+          } else {
+            return result;
+          }
+        }
+
+        case "response": {
+          if (value.length !== 3) break;
+
+          let body = this.evaluateImpl(value[1], parent, property);
+          if (body === null ||
+              typeof body === "string" ||
+              body instanceof Uint8Array ||
+              body instanceof ReadableStream) {
+            // Acceptable types.
+          } else {
+            throw new TypeError("Response body must be of type ReadableStream.");
+          }
+
+          let init = value[2];
+          if (typeof init !== "object" || init === null) break;
+
+          // Evaluate specific properties which are expected to contain non-trivial types.
+          if (init.webSocket) {
+            // `response.webSocket` is a Cloudflare Workers extension. Not (yet?) supported for
+            // serialization.
+            throw new TypeError("Can't deserialize a Response containing a webSocket.");
+          }
+
+          // Type-check `headers` is an array because the constructor allows multiple
+          // representations and we don't want to allow the others.
+          if (init.headers && !(init.headers instanceof Array)) {
+            throw new TypeError("Request headers must be serialized as an array of pairs.");
+          }
+
+          return new Response(body as BodyInit | null, init as ResponseInit);
+        }
 
         case "import":
         case "pipeline": {
