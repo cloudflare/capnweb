@@ -19,8 +19,9 @@ export interface Exporter {
   unexport(ids: Array<ExportId>): void;
 
   // Creates a pipe by sending a ["pipe"] message, then starts pumping the given ReadableStream
-  // into the pipe's writable end. Returns the import ID assigned to the pipe.
-  createPipe(readable: ReadableStream): ImportId;
+  // into the pipe's writable end. Returns the import ID assigned to the pipe. `hook` should be
+  // disposed when the pipe finishes.
+  createPipe(readable: ReadableStream, hook: StubHook): ImportId;
 
   onSendError(error: Error): Error | void;
 }
@@ -256,8 +257,11 @@ export class Devaluator {
           throw new Error("Can't serialize ReadableStream in this context.");
         }
 
+        let ws = <ReadableStream>value;
+        let hook = this.source.getHookForReadableStream(ws, parent);
+
         // Create a pipe and start pumping the ReadableStream into it.
-        let importId = this.exporter.createPipe(<ReadableStream>value);
+        let importId = this.exporter.createPipe(ws, hook);
 
         return ["readable", importId];
       }

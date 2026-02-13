@@ -538,7 +538,7 @@ class RpcSessionImpl implements Importer, Exporter {
     return readable;
   }
 
-  createPipe(readable: ReadableStream): ImportId {
+  createPipe(readable: ReadableStream, readableHook: StubHook): ImportId {
     if (this.abortReason) throw this.abortReason;
 
     this.send(["pipe"]);
@@ -555,7 +555,7 @@ class RpcSessionImpl implements Importer, Exporter {
       // Errors are handled by the writable stream's error handling -- either the write fails
       // and the writable side reports it, or the readable side errors and pipeTo aborts the
       // writable side. Either way, the hook's disposal will handle cleanup.
-    });
+    }).finally(() => readableHook.dispose());
 
     return importId;
   }

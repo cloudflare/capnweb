@@ -495,9 +495,20 @@ class ReadableStreamStubHook extends StubHook {
       if (--state.refcount === 0) {
         if (!state.canceled) {
           state.canceled = true;
-          state.stream.cancel(
-              new Error("ReadableStream RPC stub was disposed without being consumed"))
-              .catch(() => {});  // Ignore errors from cancel.
+
+          // Don't try to cancel the stream if it's locked. It won't work anyway -- it'll throw
+          // an exception, which we'd ignore anyway.
+          //
+          // This is a little janky but it makes some sense: If someone has locked the stream, they
+          // have taken responsibility for fully reading it. The only reason we really need to
+          // cancel when this hook is disposed is to handle the case where an application receives
+          // a ReadableStream but completely ignores it -- we want it to be canceled naturally when
+          // the payload is disposed.
+          if (!state.stream.locked) {
+            state.stream.cancel(
+                new Error("ReadableStream RPC stub was disposed without being consumed"))
+                .catch(() => {});  // Ignore errors from cancel.
+          }
         }
       }
     }
