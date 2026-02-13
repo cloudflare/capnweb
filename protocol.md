@@ -90,6 +90,26 @@ Instructs the recipient to release the given entry in the import table, disposin
 
 `refcount` is the total number of times this import ID has been "introduced", i.e. the number of times it has been the subject of an "export" or "promise" expression, plus 1 if it was created by a "push". The refcount must be sent to avoid a race condition if the receiving side has recently exported the same ID again. The exporter remembers how many times they have exported this ID, decrementing it by the refcount of any release messages received, and only actually releases the ID when this count reaches zero.
 
+`["stream", expression]`
+
+Like `["push", expression]`, asks the recipient to evaluate the given expression. The expression is implicitly assigned the next sequential import ID (in the positive direction). However, unlike "push":
+
+* Promise pipelining on the result is not supported. The caller must not refer to the import ID in subsequent expressions.
+* The expression is automatically considered "pulled". The sender does not need to send a separate "pull" message.
+* Once the recipient sends a "resolve" or "reject" message for the expression's result, the export is implicitly released (with a refcount of 1). The sender does not need to send a separate "release" message.
+
+This message type is designed for streaming writes, where the result is expected to be empty, and the overhead of separate "pull" and "release" messages is high.
+
+`["pipe"]`
+
+Creates a "pipe" on the remote end. A pipe consists of a `ReadableStream` end and a `WritableStream` end. The pipe is implicitly assigned the next sequential import ID (in the positive direction), similar to `["push", expression]`.
+
+The new import is not a promise. It is immediately usable as if it were a `WritableStream` — the sender can call `write`, `close`, and/or `abort` on it, using the same interface as described for the `["writable", exportId]` expression.
+
+The readable end of the pipe can be referenced in a subsequent message using the `["readable", importId]` expression. This expression can only be used once per pipe.
+
+The purpose of the pipe mechanism is to support sending `ReadableStream` over RPC. When a message contains a `ReadableStream`, the sender first sends a `["pipe"]` message to establish the writable end, then begins pumping the stream's data through it (by calling `write`, `close`, `abort`), and includes the readable end in the subsequent message via `["readable", importId]`. This allows data to start flowing immediately without waiting for a network round trip.
+
 `["abort", expression]`
 
 Indicates that the sender has experienced an error causing it to terminate the session. The expression evaluates to the error which caused the abort. No further messages will be sent nor received.
@@ -193,3 +213,25 @@ The sender is exporting a new stub (or re-exporting a stub that was exported bef
 Like "export", but the expression evaluates to a promise. Promises must be replaced with their resolution before the message is finally delivered to the application.
 
 The `exportId` in this case is always a newly-allocated ID. The sender will proactively send a "resolve" (or "reject") message for this ID when the promise resolves (unless it is released first). The recipient does not need to "pull" the promise explicitly; it is assumed that the recipient always wants the resolution.
+
+`["writable", exportId]`
+
+Represents a `WritableStream`. The sender has called `getWriter()` on the stream, locking it, and holds the writer to handle incoming operations. The `exportId` refers to an entry on the export table that accepts the following method calls:
+
+- `write(chunk)` - Write a chunk to the stream. The chunk can be any RPC-compatible value.
+- `close()` - Close the stream normally, indicating all data has been written.
+- `abort(reason?)` - Abort the stream with an optional reason.
+
+These methods correspond to the methods of `WritableStreamDefaultWriter`.
+
+If the export is released without `close()` having been called, the sender will abort the stream, indicating an abnormal termination (e.g., network disconnect).
+
+The receiver does not need to wait for each `write()` call to complete before sending the next one, nor before sending `close()`. The sender will process writes in order. The receiver should wait for `close()` to complete to verify that all writes were successful; if any write failed, `close()` will also fail with that error.
+
+`["readable", importId]`
+
+References the readable end of a pipe previously created by a `["pipe"]` message. `importId` must refer to an import table entry that was created as a pipe. The expression evaluates to a `ReadableStream`.
+
+This expression can only be used once per pipe. Once the readable end has been retrieved, it is removed from the pipe entry.
+
+See the description of `["pipe"]` in the top-level messages section for an explanation of how pipes and readable streams work together.

@@ -115,6 +115,7 @@ class TestTransport implements RpcTransport {
   private waiter?: () => void;
   private aborter?: (err: any) => void;
   public log = false;
+  private fenced = false;
 
   async send(message: string): Promise<void> {
     // HACK: If the string "$remove$" appears in the message, remove it. This is used in some
@@ -123,7 +124,7 @@ class TestTransport implements RpcTransport {
 
     if (this.log) console.log(`${this.name}: ${message}`);
     this.partner!.queue.push(message);
-    if (this.partner!.waiter) {
+    if (this.partner!.waiter && !this.partner!.fenced) {
       this.partner!.waiter();
       this.partner!.waiter = undefined;
       this.partner!.aborter = undefined;
@@ -131,7 +132,7 @@ class TestTransport implements RpcTransport {
   }
 
   async receive(): Promise<string> {
-    if (this.queue.length == 0) {
+    while (this.queue.length == 0 || this.fenced) {
       await new Promise<void>((resolve, reject) => {
         this.waiter = resolve;
         this.aborter = reject;
@@ -139,6 +140,27 @@ class TestTransport implements RpcTransport {
     }
 
     return this.queue.shift()!;
+  }
+
+  // Blocks this transport from receiving messages. Messages sent to this transport will
+  // accumulate in the queue until the fence is released.
+  fence() {
+    this.fenced = true;
+  }
+
+  // Releases the fence, allowing queued messages to be received.
+  releaseFence() {
+    this.fenced = false;
+    if (this.queue.length > 0 && this.waiter) {
+      this.waiter();
+      this.waiter = undefined;
+      this.aborter = undefined;
+    }
+  }
+
+  // Returns the number of messages waiting in the receive queue.
+  get pendingCount() {
+    return this.queue.length;
   }
 
   forceReceiveError(error: any) {
@@ -1507,5 +1529,702 @@ describe("MessagePorts", () => {
     // Wait for the client to detect the broken connection
     await expect(() => brokenPromise).rejects.toThrow(
         new Error("Peer closed MessagePort connection."));
+  });
+});
+
+// =======================================================================================
+
+describe("WritableStream over RPC", () => {
+  it("can send a WritableStream and receive writes", async () => {
+    // Create a WritableStream that collects chunks
+    let chunks: string[] = [];
+    let closeCalled = false;
+    let stream = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); },
+      close() { closeCalled = true; }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        // Write to the stream
+        let writer = stream.getWriter();
+        await writer.write("hello");
+        await writer.write("world");
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    expect(chunks).toEqual(["hello", "world"]);
+    expect(closeCalled).toBe(true);
+  });
+
+  it("supports complex chunk types", async () => {
+    let receivedChunks: unknown[] = [];
+    let stream = new WritableStream({
+      write(chunk) { receivedChunks.push(chunk); }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream) {
+        let writer = stream.getWriter();
+        await writer.write({ name: "test", value: 42 });
+        await writer.write([1, 2, 3]);
+        await writer.write(new Date(1234567890000));
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    expect(receivedChunks).toHaveLength(3);
+    expect(receivedChunks[0]).toEqual({ name: "test", value: 42 });
+    expect(receivedChunks[1]).toEqual([1, 2, 3]);
+    expect(receivedChunks[2]).toEqual(new Date(1234567890000));
+  });
+
+  it("propagates write errors back", async () => {
+    let writeCount = 0;
+    let stream = new WritableStream({
+      write(chunk) {
+        writeCount++;
+        if (writeCount > 2) {
+          throw new Error("Write limit exceeded");
+        }
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream) {
+        let writer = stream.getWriter();
+        await writer.write("first");
+        await writer.write("second");
+        // The third write will fail, and the error will propagate when we try to close
+        await writer.write("third");
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await expect(() => harness.stub.receiveStream(stream)).rejects.toThrow("Write limit exceeded");
+    expect(writeCount).toBe(3);
+  });
+
+  it("aborts stream on disconnect without close", async () => {
+    let abortReason: any = null;
+    let stream = new WritableStream({
+      write(chunk) {},
+      abort(reason) { abortReason = reason; }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      receiveStream(stream: WritableStream) {
+        // Start writing but don't close - just return immediately
+        let writer = stream.getWriter();
+        writer.write("data");
+        // Note: not calling writer.close()
+      }
+    }
+
+    // Don't use the normal harness since we need to control disposal differently
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession(clientTransport);
+    let server = new RpcSession(serverTransport, new StreamReceiver());
+
+    let stub: any = client.getRemoteMain();
+    await stub.receiveStream(stream);
+
+    // Wait a bit for the write to be processed
+    await pumpMicrotasks();
+
+    // Dispose the client, which should cause the stream to be aborted
+    stub[Symbol.dispose]();
+
+    // Wait for the abort to propagate
+    await pumpMicrotasks();
+
+    expect(abortReason).not.toBeNull();
+    expect(abortReason.message).toContain("disposed without calling close");
+  });
+
+  it("handles abort() from receiver", async () => {
+    let abortReason: any = null;
+    let stream = new WritableStream({
+      write(chunk) {},
+      abort(reason) { abortReason = reason; }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream) {
+        let writer = stream.getWriter();
+        await writer.write("data");
+        await writer.abort("User requested abort");
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    // Wait for abort to propagate
+    await pumpMicrotasks();
+
+    expect(abortReason).toBe("User requested abort");
+  });
+
+  it("can send WritableStream in nested object", async () => {
+    let chunks: string[] = [];
+    let stream = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveData(data: { stream: WritableStream<string>, label: string }) {
+        let writer = data.stream.getWriter();
+        await writer.write(`${data.label}: hello`);
+        await writer.close();
+        return "done";
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveData({ stream, label: "test" });
+
+    expect(result).toBe("done");
+    expect(chunks).toEqual(["test: hello"]);
+  });
+
+  it("handles multiple concurrent writes efficiently", async () => {
+    let chunks: number[] = [];
+    let stream = new WritableStream<number>({
+      async write(chunk) {
+        // Simulate some async processing
+        await new Promise(resolve => setTimeout(resolve, 10));
+        chunks.push(chunk);
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<number>) {
+        let writer = stream.getWriter();
+        // Write multiple chunks without awaiting each one
+        // (The implementation should pipeline these)
+        let writes = [];
+        for (let i = 0; i < 5; i++) {
+          writes.push(writer.write(i));
+        }
+        await Promise.all(writes);
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await harness.stub.receiveStream(stream);
+
+    expect(chunks).toEqual([0, 1, 2, 3, 4]);
+  });
+
+  it("applies backpressure when window fills up", async () => {
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    // Track how many writes the sender has initiated (on the server side).
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        // Each chunk is ~40KB when serialized, so ~7 writes fill the 256KB window.
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+
+    // Fence the client transport. The initial RPC (client → server) still gets through since the
+    // fence is on the client's receive side. But write RPCs (server → client) will accumulate in
+    // the client's queue, so no resolve messages get sent back to the server, and the server's
+    // flow control window never refills.
+    harness.clientTransport.fence();
+
+    let rpcPromise = harness.stub.receiveStream(stream);
+
+    // Pump microtasks until `writesSent` stops advancing.
+    //
+    // Actually, we use setTimeout(0) instead of pumpMicrotasks() because some platforms' streams
+    // implementations sometimes require falling back to the macro event loop to make progress.
+    // In particular, this test hangs on workerd (in the closeReceived loop, later) about 1/4
+    // of the time if we are using pumpMicrotasks() instead of setTimeout(0). webkit also seems
+    // to be affected.
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (writesSent == oldWritesSent) break;
+    }
+
+    // With a 64KB window and ~10KB per write, the sender should have been blocked after about
+    // 7 writes. Without flow control, all 20 writes would be sent.
+    expect(writesSent).toBeGreaterThanOrEqual(5);
+    expect(writesSent).toBeLessThanOrEqual(10);
+    expect(writesReceived).toBe(0);  // Client hasn't received any writes yet.
+    expect(closeReceived).toBe(false);
+
+    // Release the fence and let everything complete.
+    harness.clientTransport.releaseFence();
+
+    while (!closeReceived) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    expect(writesSent).toBe(20);
+    expect(writesReceived).toBe(20);
+    expect(closeReceived).toBe(true);
+    await rpcPromise;
+  });
+
+  it("uses stream messages instead of push+pull+release", async () => {
+    // Verify that WritableStream writes use the optimized "stream" message type,
+    // which avoids sending separate "pull" and "release" messages.
+    let chunks: string[] = [];
+    let stream = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); },
+      close() {}
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        await writer.write("hello");
+        await writer.write("world");
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+
+    // Collect all messages sent by the server (which appear in the client's queue).
+    let serverMessages: any[] = [];
+    let origServerSend = harness.serverTransport.send;
+    harness.serverTransport.send = async function(message: string) {
+      serverMessages.push(JSON.parse(message));
+      return origServerSend.call(this, message);
+    };
+
+    // Collect all messages sent by the client (which appear in the server's queue).
+    let clientMessages: any[] = [];
+    let origClientSend = harness.clientTransport.send;
+    harness.clientTransport.send = async function(message: string) {
+      clientMessages.push(JSON.parse(message));
+      return origClientSend.call(this, message);
+    };
+
+    await harness.stub.receiveStream(stream);
+    await pumpMicrotasks();
+
+    expect(chunks).toEqual(["hello", "world"]);
+
+    // Server sends: write("hello"), write("world"), close() — these should use "stream".
+    let serverStreamMsgs = serverMessages.filter(m => m[0] === "stream");
+    let serverPushMsgs = serverMessages.filter(m => m[0] === "push");
+
+    // The write() and close() calls should all be "stream" messages (3 total).
+    expect(serverStreamMsgs.length).toBe(3);
+
+    // The server should NOT have sent any "push" messages for the stream writes.
+    // (There may be other push messages for non-stream calls, but we filter by looking
+    // at the pipeline target — stream writes target the writable stream export.)
+    // Actually, the only "push" from the server should be none for stream operations.
+    expect(serverPushMsgs.length).toBe(0);
+
+    // Client should NOT have sent any "pull" or "release" messages for stream writes.
+    // The only client messages should be the initial "push" for the RPC call, a "pull"
+    // for it, and the "release" for the RPC result — not for individual stream writes.
+    let clientPullMsgs = clientMessages.filter(m => m[0] === "pull");
+    let clientReleaseMsgs = clientMessages.filter(m => m[0] === "release");
+
+    // There should be exactly 1 pull (for the top-level receiveStream call).
+    expect(clientPullMsgs.length).toBe(1);
+
+    // Release messages: 1 for the top-level receiveStream result, plus 1 for the
+    // writable stream export itself (passed in params). No releases for stream writes.
+    expect(clientReleaseMsgs.length).toBeLessThanOrEqual(2);
+  });
+
+  it("unblocks a backpressure-blocked write when an in-flight write errors", async () => {
+    let writeCount = 0;
+    let stream = new WritableStream<string>({
+      write(chunk) {
+        writeCount++;
+        if (writeCount >= 2) {
+          throw new Error("Simulated write failure");
+        }
+      },
+      close() {},
+      abort() {}
+    });
+
+    let writerError: any = null;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(100000);
+        try {
+          for (let i = 0; i < 20; i++) {
+            await writer.write(chunk);
+          }
+          await writer.close();
+        } catch (err) {
+          writerError = err;
+          throw err;
+        }
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    harness.clientTransport.fence();
+
+    let rpcDone = false;
+    let rpcError: any = null;
+    let rpcPromise = harness.stub.receiveStream(stream).then(
+      () => { rpcDone = true; },
+      (err: any) => { rpcDone = true; rpcError = err; }
+    );
+
+    for (let i = 0; i < 100; i++) {
+      await pumpMicrotasks();
+    }
+
+    harness.clientTransport.releaseFence();
+
+    let settled = false;
+    let timeout = new Promise<void>(resolve => setTimeout(() => {
+      settled = true;
+      resolve();
+    }, 500));
+
+    await Promise.race([
+      (async () => {
+        while (!rpcDone && !settled) {
+          await pumpMicrotasks();
+          await new Promise(resolve => setTimeout(resolve, 5));
+        }
+      })(),
+      timeout
+    ]);
+
+    expect(rpcDone).toBe(true);
+    expect(rpcError).not.toBeNull();
+    expect(rpcError.message).toContain("Simulated write failure");
+  });
+});
+
+describe("ReadableStream over RPC", () => {
+  it("can send a ReadableStream and read all chunks", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("hello");
+        controller.enqueue("world");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<string>) {
+        let chunks: string[] = [];
+        let reader = stream.getReader();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value!);
+        }
+        return chunks;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveStream(stream);
+
+    expect(result).toEqual(["hello", "world"]);
+  });
+
+  it("can return a ReadableStream from an RPC call", async () => {
+    class StreamProvider extends RpcTarget {
+      getStream(): ReadableStream<string> {
+        return new ReadableStream({
+          start(controller) {
+            controller.enqueue("from");
+            controller.enqueue("server");
+            controller.close();
+          }
+        });
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProvider());
+    let stream: any = await harness.stub.getStream();
+
+    let chunks: string[] = [];
+    let reader = stream.getReader();
+    while (true) {
+      let { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+
+    expect(chunks).toEqual(["from", "server"]);
+  });
+
+  it("can send ReadableStream in nested object", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("nested");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveData(data: { stream: ReadableStream<string>, label: string }) {
+        let reader = data.stream.getReader();
+        let chunks: string[] = [];
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value!);
+        }
+        return `${data.label}: ${chunks.join(",")}`;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveData({ stream, label: "test" });
+
+    expect(result).toBe("test: nested");
+  });
+
+  it("can send ReadableStream in nested object (partial read)", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("first");
+        controller.enqueue("second");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveData(data: { stream: ReadableStream<string>, label: string }) {
+        // Only read the first chunk, then cancel the stream
+        let reader = data.stream.getReader();
+        let { value } = await reader.read();
+        await reader.cancel();
+        return `${data.label}: ${value}`;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveData({ stream, label: "test" });
+
+    expect(result).toBe("test: first");
+  });
+
+  it("supports complex chunk types", async () => {
+    let stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue({ name: "test", value: 42 });
+        controller.enqueue([1, 2, 3]);
+        controller.enqueue(new Date(1234567890000));
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream) {
+        let chunks: unknown[] = [];
+        let reader = stream.getReader();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value);
+        }
+        return chunks;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result: any = await harness.stub.receiveStream(stream);
+
+    expect(result).toHaveLength(3);
+    expect(result[0]).toEqual({ name: "test", value: 42 });
+    expect(result[1]).toEqual([1, 2, 3]);
+    expect(result[2]).toEqual(new Date(1234567890000));
+  });
+
+  it("propagates stream errors to the reader", async () => {
+    let stream = new ReadableStream({
+      pull(controller) {
+        controller.enqueue("ok");
+        controller.error(new Error("Stream failed"));
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream) {
+        let reader = stream.getReader();
+        let chunks: string[] = [];
+        try {
+          while (true) {
+            let { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+          }
+        } catch (err: any) {
+          return `chunks=${chunks.join(",")}, error: ${err.message}`;
+        }
+        return `chunks=${chunks.join(",")}, no error`;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveStream(stream);
+    expect(result).toContain("error:");
+    expect(result).toContain("Stream failed");
+  });
+
+  it("handles many chunks", async () => {
+    let count = 100;
+    let stream = new ReadableStream<number>({
+      start(controller) {
+        for (let i = 0; i < count; i++) {
+          controller.enqueue(i);
+        }
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<number>) {
+        let sum = 0;
+        let reader = stream.getReader();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          sum += value!;
+        }
+        return sum;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result = await harness.stub.receiveStream(stream);
+
+    // Sum of 0..99
+    expect(result).toBe(4950);
+
+    // HACK: We have to pump more mitrotasks than usual here because every chunk write has to be
+    //   disposed.
+    // TODO: Optimize out the need to dispose each stream write or find some other fix here.
+    for (let i = 0; i < 64; i++) {
+      await pumpMicrotasks();
+    }
+  });
+
+  it("can send both ReadableStream and WritableStream in same message", async () => {
+    let readStream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("input");
+        controller.close();
+      }
+    });
+
+    let outputChunks: string[] = [];
+    let writeStream = new WritableStream<string>({
+      write(chunk) { outputChunks.push(chunk); },
+      close() {}
+    });
+
+    class StreamProcessor extends RpcTarget {
+      async process(input: ReadableStream<string>, output: WritableStream<string>) {
+        let reader = input.getReader();
+        let writer = output.getWriter();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          await writer.write(`processed: ${value}`);
+        }
+        await writer.close();
+        return "done";
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProcessor());
+    let result = await harness.stub.process(readStream, writeStream);
+
+    expect(result).toBe("done");
+    expect(outputChunks).toEqual(["processed: input"]);
+  });
+
+  it("cancels a ReadableStream in a result when the whole result is disposed", async () => {
+    if (navigator.userAgent === "Cloudflare-Workers") {
+      // There's currently some bugs in workerd which prevent this test from working there:
+      //     https://github.com/cloudflare/workerd/pull/6066
+      // When that gets fixed, remove this early return.
+      return;
+    }
+
+    let cancelCalled = false;
+
+    class StreamProvider extends RpcTarget {
+      getStream(): ReadableStream<string> {
+        return new ReadableStream({
+          start(controller) {
+            // Enqueue a few chunks and leave the stream open (not closed).
+            // This simulates a stream the caller might not fully consume.
+            controller.enqueue("chunk-1");
+            controller.enqueue("chunk-2");
+          },
+          cancel() {
+            cancelCalled = true;
+          }
+        });
+      }
+    }
+
+    // Don't use the standard harness — the disposal tracking bug causes leaked exports
+    // that would trip the checkAllDisposed assertion and mask the real test failure.
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession(clientTransport);
+    let server = new RpcSession(serverTransport, new StreamProvider());
+
+    let stub: any = client.getRemoteMain();
+
+    // Get the stream result but don't read from it.
+    let streamResult = await stub.getStream();
+
+    // Dispose the result without reading — this should cascade and cancel the
+    // underlying ReadableStream on the server.
+    streamResult[Symbol.dispose]();
+
+    // Wait for disposal to propagate across the RPC boundary.
+    for (let i = 0; i < 64; i++) {
+      await pumpMicrotasks();
+    }
+
+    expect(cancelCalled).toBe(true);
   });
 });

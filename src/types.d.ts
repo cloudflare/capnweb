@@ -80,7 +80,7 @@ type BaseType =
   | Error
   | RegExp
   | ReadableStream<Uint8Array>
-  | WritableStream<Uint8Array>
+  | WritableStream<any>  // Chunk type can be any RPC-compatible type
   | Request
   | Response
   | Headers;

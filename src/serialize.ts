@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, PropertyPath, unwrapStubAndPath } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -18,6 +18,11 @@ export interface Exporter {
   // to roll back the exports.
   unexport(ids: Array<ExportId>): void;
 
+  // Creates a pipe by sending a ["pipe"] message, then starts pumping the given ReadableStream
+  // into the pipe's writable end. Returns the import ID assigned to the pipe. `hook` should be
+  // disposed when the pipe finishes.
+  createPipe(readable: ReadableStream, hook: StubHook): ImportId;
+
   onSendError(error: Error): Error | void;
 }
 
@@ -32,6 +37,9 @@ class NullExporter implements Exporter {
     return undefined;
   }
   unexport(ids: Array<ExportId>): void {}
+  createPipe(readable: ReadableStream): never {
+    throw new Error("Cannot create pipes without an RPC session.");
+  }
 
   onSendError(error: Error): Error | void {}
 }
@@ -235,13 +243,36 @@ export class Devaluator {
         return this.devaluateHook("promise", hook);
       }
 
+      case "writable": {
+        if (!this.source) {
+          throw new Error("Can't serialize WritableStream in this context.");
+        }
+
+        let hook = this.source.getHookForWritableStream(<WritableStream>value, parent);
+        return this.devaluateHook("writable", hook);
+      }
+
+      case "readable": {
+        if (!this.source) {
+          throw new Error("Can't serialize ReadableStream in this context.");
+        }
+
+        let ws = <ReadableStream>value;
+        let hook = this.source.getHookForReadableStream(ws, parent);
+
+        // Create a pipe and start pumping the ReadableStream into it.
+        let importId = this.exporter.createPipe(ws, hook);
+
+        return ["readable", importId];
+      }
+
       default:
         kind satisfies never;
         throw new Error("unreachable");
     }
   }
 
-  private devaluateHook(type: "export" | "promise", hook: StubHook): unknown {
+  private devaluateHook(type: "export" | "promise" | "writable", hook: StubHook): unknown {
     if (!this.exports) this.exports = [];
     let exportId = type === "promise" ? this.exporter.exportPromise(hook)
                                       : this.exporter.exportStub(hook);
@@ -264,6 +295,11 @@ export interface Importer {
   importStub(idx: ImportId): StubHook;
   importPromise(idx: ImportId): StubHook;
   getExport(idx: ExportId): StubHook | undefined;
+
+  // Retrieves the ReadableStream end of a pipe created by a ["pipe"] message.
+  // The exportId must refer to an export that was created as a pipe.
+  // This can only be called once per pipe.
+  getPipeReadable(exportId: ExportId): ReadableStream;
 }
 
 class NullImporter implements Importer {
@@ -276,6 +312,9 @@ class NullImporter implements Importer {
   getExport(idx: ExportId): StubHook | undefined {
     return undefined;
   }
+  getPipeReadable(exportId: ExportId): never {
+    throw new Error("Cannot retrieve pipe readable without an RPC session.");
+  }
 }
 
 const NULL_IMPORTER = new NullImporter();
@@ -286,11 +325,11 @@ const NULL_IMPORTER = new NullImporter();
 export class Evaluator {
   constructor(private importer: Importer) {}
 
-  private stubs: RpcStub[] = [];
+  private hooks: StubHook[] = [];
   private promises: LocatedPromise[] = [];
 
   public evaluate(value: unknown): RpcPayload {
-    let payload = RpcPayload.forEvaluate(this.stubs, this.promises);
+    let payload = RpcPayload.forEvaluate(this.hooks, this.promises);
     try {
       payload.value = this.evaluateImpl(value, payload, "value");
       return payload;
@@ -392,9 +431,8 @@ export class Evaluator {
               this.promises.push({promise, parent, property});
               return promise;
             } else {
-              let stub = new RpcPromise(hook, []);
-              this.stubs.push(stub);
-              return stub;
+              this.hooks.push(hook);
+              return new RpcPromise(hook, []);
             }
           };
 
@@ -510,10 +548,34 @@ export class Evaluator {
               return promise;
             } else {
               let hook = this.importer.importStub(value[1]);
-              let stub = new RpcStub(hook);
-              this.stubs.push(stub);
-              return stub;
+              this.hooks.push(hook);
+              return new RpcStub(hook);
             }
+          }
+          break;
+
+        case "writable":
+          // It's a WritableStream export from the sender. We import it and create a proxy
+          // WritableStream that forwards writes to the remote end.
+          if (typeof value[1] == "number") {
+            let hook = this.importer.importStub(value[1]);
+            let stream = streamImpl.createWritableStreamFromHook(hook);
+            // Track the stream for disposal.
+            this.hooks.push(hook);
+            return stream;
+          }
+          break;
+
+        case "readable":
+          // References the readable end of a pipe. The import ID (from the sender's perspective)
+          // is our export ID.
+          if (typeof value[1] == "number") {
+            let stream = this.importer.getPipeReadable(value[1]);
+            // Track the stream for disposal so that if the payload is disposed before the
+            // app reads the stream, the ReadableStream is properly canceled.
+            let hook = streamImpl.createReadableStreamHook(stream);
+            this.hooks.push(hook);
+            return stream;
           }
           break;
       }

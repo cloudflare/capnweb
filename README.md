@@ -201,12 +201,12 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Date`
 * `Uint8Array`
 * `Error` and its well-known subclasses
+* `ReadableStream` and `WritableStream`, with automatic flow control.
 
 The following types are not supported as of this writing, but may be added in the future:
 * `Map` and `Set`
 * `ArrayBuffer` and typed arrays other than `Uint8Array`
 * `RegExp`
-* `ReadableStream` and `WritableStream`, with automatic flow control.
 * `Headers`, `Request`, and `Response`
 
 The following are intentionally NOT supported:
@@ -304,6 +304,10 @@ Cap'n Web does NOT send arbitrary code over the wire!
 The trick here is record-replay: On the calling side, Cap'n Web will invoke your callback once, in a special "recording" mode, passing in a special placeholder stub which records what you do with it. During the invocation, any RPCs invoked by the callback (on *any* stub) will not actually be executed, but will be recorded as an action the callback performs. Any stubs you use during the recording are "captured" as well. Once the callback returns, the recording and the capture list can then be sent to the peer, where the recording can then be replayed as needed to process individual results.
 
 Since all of the not-yet-determined values seen by the callback are represented as `RpcPromise`s, the callback's behavior is deterministic. Any actual computation (arithmetic, branching, etc.) can't possibly use these promises as (meaningful) inputs, so would logically produce the same results for every invocation of the callback. Any such computation will actually end up being performed on the sending side, just once, with the results being imbued into the recording.
+
+### Streaming with flow control
+
+You may pass a `ReadableStream` or `WritableStream` over RPC. When doing so, the RPC system automatically creates an equivalent stream at the other end and pumps bytes (or arbitrarily-typed chunks) across. This is done in such a way as to ensure the available bandwidth is fully utilized while minimizing buffer bloat, by observing the bandwidth-delay product and applying backpressure when too much is written. Multiple streams can be sent across the same connection -- they will be multiplexed appropriately, similar to HTTP/2 stream multiplexing.
 
 ### Cloudflare Workers RPC interoperability
 
