@@ -202,12 +202,12 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Uint8Array`
 * `Error` and its well-known subclasses
 * `ReadableStream` and `WritableStream`, with automatic flow control.
+* `Headers`, `Request`, and `Response` from the Fetch API.
 
 The following types are not supported as of this writing, but may be added in the future:
 * `Map` and `Set`
 * `ArrayBuffer` and typed arrays other than `Uint8Array`
 * `RegExp`
-* `Headers`, `Request`, and `Response`
 
 The following are intentionally NOT supported:
 * Application-defined classes that do not extend `RpcTarget`.

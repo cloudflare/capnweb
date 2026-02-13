@@ -176,6 +176,22 @@ A JavaScript `Error` value. `type` is the name of the specific well-known `Error
 
 _TODO: We should extend this to encode own properties that have been added to the error._
 
+`["headers", pairs]`
+
+A `Headers` object from the Fetch API. `pairs` is an array of `[name, value]` pairs, where both `name` and `value` are strings. For example: `["headers", [["content-type", "text/plain"], ["x-custom", "hello"]]]`.
+
+`["request", url, init]`
+
+A `Request` object from the Fetch API. `url` and `init` are the parameters to pass to `Request`'s constructor to create the desired `Request` instance. The sender should omit properties from `init` when their value would be the default value anyway. `init.headers`, if present, must contain an array of pairs, suitable to pass to the constructor of `Headers`. `init.body`, if present, is an expression for the response body, which must evaluate to `null`, a string, `Uint8Array`, or `ReadableStream`. Other properties of `init` must be plain values; they will not be evaluated as expressions before passing to the `Request` constructor.
+
+At this time, `init.signal` is not supported and must not be sent, though that will change when `AbortSignal` gains support for serialization.
+
+`["response", body, init]`
+
+A `Response` object from the Fetch API. `body` and `init` are the parameters to pass to `Response`'s constructor to create the desired `Response` instance. `body` is an expression which must evaluate to `null`, a string, `UInt8Array`, or `ReadableStream`. `init.headers`, if present, must contain an array of pairs, suitable to pass to the constructor of `Headers`. Other properties of `init` must be plain values; they will not be evaluated as expressions before passing to the `Response` constructor.
+
+At this time, `init.webSocket` (a Cloudflare Workers extension) is not supported and must not be sent, though that may change if `WebSocket` gains support for serialization.
+
 `["import", importId, propertyPath, callArguments]`
 `["pipeline", importId, propertyPath, callArguments]`
 
