@@ -24,6 +24,14 @@ The protocol does not have a "client" or a "server"; it is fully bidirectional. 
 
 With that said, for documentation purposes, we often use the words "client" and "server" when describing specific interactions, in order to make the language easier to understand. The word "client" generally refers to the caller of an RPC, or the importer of a stub. The word "server" refers to the callee, or the exporter. This is merely a convention to make explanations more natural.
 
+## Transport and Framing
+
+The protocol operates on a bidirectional stream of discrete messages. Each message is a single JSON value (typically an array). The protocol does not define how messages are framed on the wire; this is the responsibility of the transport layer.
+
+For transports that natively provide message framing (e.g. WebSocket or MessagePort), each transport-level message corresponds to exactly one RPC message.
+
+For transports that operate on a byte stream (e.g. HTTP request/response bodies), messages are newline-delimited. Each message is serialized as a single line of JSON (no embedded newlines), and messages are separated by a newline character (`\n`). An empty body is interpreted as zero messages.
+
 ## Imports and Exports
 
 Each side of an RPC session maintains two tables: imports and exports. One side's exports correspond to the other side's imports. Imports and exports are assigned sequential numeric IDs. However, in some cases an ID needs to be chosen by the importing side, and in some cases by the exporting side. In order to avoid conflicts:
