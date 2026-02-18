@@ -27,8 +27,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup --format esm,cjs",
-    "build:watch": "tsup --watch --format esm,cjs",
+    "build": "tsup",
+    "build:watch": "tsup --watch",
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build"
