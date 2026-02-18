@@ -33,6 +33,26 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '["inf"]': Infinity,
   '["-inf"]': -Infinity,
   '["nan"]': NaN,
+
+  '["headers",[]]': new Headers(),
+  '["headers",[["content-type","text/plain"],["x-custom","hello"]]]':
+      new Headers({"Content-Type": "text/plain", "X-Custom": "hello"}),
+
+  '["request","http://example.com/",{"method":"HEAD"}]':
+      new Request("http://example.com/", {method: "HEAD"}),
+  '["request","http://example.com/",{"method":"DELETE","headers":[["x-foo","bar"]]}]':
+      new Request("http://example.com/", {method: "DELETE", headers: {"X-Foo": "bar"}}),
+  '["request","http://example.com/",{"redirect":"manual"}]':
+      new Request("http://example.com/", {redirect: "manual"}),
+
+  // Note: Cloudflare Workers atutomatically fills in `statusText` based on `status` while other
+  //   platforms leave it as an empty string. So we can't actually test a totalyl empty init
+  //   struct here, annoyingly.
+  '["response",null,{"statusText":"OK"}]': new Response(null, {statusText: "OK"}),
+  '["response",null,{"status":404,"statusText":"Not Found"}]':
+      new Response(null, {status: 404, statusText: "Not Found"}),
+  '["response",null,{"status":201,"statusText":"Hello","headers":[["x-custom","value"]]}]':
+      new Response(null, {status: 201, statusText: "Hello", headers: {"X-Custom": "value"}}),
 };
 
 class NotSerializable {
@@ -54,7 +74,14 @@ describe("simple serialization", () => {
 
   it("can deserialize", () => {
     for (let key in SERIALIZE_TEST_CASES) {
-      expect(deserialize(key)).toStrictEqual(SERIALIZE_TEST_CASES[key]);
+      let value = deserialize(key);
+      if (value instanceof Headers || value instanceof Request || value instanceof Response) {
+        // toStrictEqual() won't work, so test these by serializing them again and making sure
+        // they at least round-trip.
+        expect(serialize(value)).toBe(key);
+      } else {
+        expect(value).toStrictEqual(SERIALIZE_TEST_CASES[key]);
+      }
     }
   })
 
@@ -2226,5 +2253,152 @@ describe("ReadableStream over RPC", () => {
     }
 
     expect(cancelCalled).toBe(true);
+  });
+});
+
+// =======================================================================================
+
+describe("Fetch API types over RPC", () => {
+  it("can send Headers over RPC", async () => {
+    class HeaderServer extends RpcTarget {
+      getHeaders() {
+        return new Headers({"Content-Type": "text/html", "X-Server": "test"});
+      }
+      readHeader(headers: Headers, name: string) {
+        return headers.get(name);
+      }
+    }
+
+    await using harness = new TestHarness(new HeaderServer());
+    let stub = harness.stub as any;
+
+    // Server -> Client
+    let headers: Headers = await stub.getHeaders();
+    expect(headers).toBeInstanceOf(Headers);
+    expect(headers.get("content-type")).toBe("text/html");
+    expect(headers.get("x-server")).toBe("test");
+
+    // Client -> Server
+    let result = await stub.readHeader(new Headers({"Authorization": "Bearer abc"}), "authorization");
+    expect(result).toBe("Bearer abc");
+  });
+
+  it("can send Request with body over RPC", async () => {
+    class RequestServer extends RpcTarget {
+      async receiveRequest(req: Request) {
+        return {
+          url: req.url,
+          method: req.method,
+          body: await req.text(),
+          customHeader: req.headers.get("x-custom"),
+        };
+      }
+      getRequest() {
+        return new Request("http://example.com/api", {
+          method: "POST",
+          headers: {"X-Custom": "fromserver"},
+          body: "server body",
+        });
+      }
+    }
+
+    await using harness = new TestHarness(new RequestServer());
+    let stub = harness.stub as any;
+
+    // Client -> Server: send request with body and headers
+    let result = await stub.receiveRequest(new Request("http://test.com/path", {
+      method: "PUT",
+      headers: {"X-Custom": "hello"},
+      body: "request body",
+    }));
+    expect(result.url).toBe("http://test.com/path");
+    expect(result.method).toBe("PUT");
+    expect(result.body).toBe("request body");
+    expect(result.customHeader).toBe("hello");
+
+    // Server -> Client: receive request with body
+    let req: Request = await stub.getRequest();
+    expect(req).toBeInstanceOf(Request);
+    expect(req.url).toBe("http://example.com/api");
+    expect(req.method).toBe("POST");
+    expect(req.headers.get("x-custom")).toBe("fromserver");
+    expect(await req.text()).toBe("server body");
+  });
+
+  it("can send Response with body over RPC", async () => {
+    class ResponseServer extends RpcTarget {
+      async receiveResponse(resp: Response) {
+        return {
+          status: resp.status,
+          statusText: resp.statusText,
+          body: await resp.text(),
+          customHeader: resp.headers.get("x-custom"),
+        };
+      }
+      getResponse() {
+        return new Response("hello from server", {
+          status: 201,
+          statusText: "Created",
+          headers: {"X-Custom": "fromserver"},
+        });
+      }
+    }
+
+    await using harness = new TestHarness(new ResponseServer());
+    let stub = harness.stub as any;
+
+    // Client -> Server: send response with body and status
+    let result = await stub.receiveResponse(new Response("response body", {
+      status: 404,
+      statusText: "Not Found",
+      headers: {"X-Custom": "value"},
+    }));
+    expect(result.status).toBe(404);
+    expect(result.statusText).toBe("Not Found");
+    expect(result.body).toBe("response body");
+    expect(result.customHeader).toBe("value");
+
+    // Server -> Client: receive response with body
+    let resp: Response = await stub.getResponse();
+    expect(resp).toBeInstanceOf(Response);
+    expect(resp.status).toBe(201);
+    expect(resp.statusText).toBe("Created");
+    expect(resp.headers.get("x-custom")).toBe("fromserver");
+    expect(await resp.text()).toBe("hello from server");
+  });
+
+  it("can send Request without body over RPC", async () => {
+    class RequestServer extends RpcTarget {
+      async receiveRequest(req: Request) {
+        let hasBody = req.body !== null;
+        if (req.body === undefined) {
+          // Ugh, Firefox doesn't support `request.body`, try a different approach.
+          hasBody = (await req.arrayBuffer()).byteLength > 0;
+        }
+
+        return { url: req.url, method: req.method, hasBody };
+      }
+    }
+
+    await using harness = new TestHarness(new RequestServer());
+    let stub = harness.stub as any;
+    let result = await stub.receiveRequest(new Request("http://example.com"));
+    expect(result.url).toBe("http://example.com/");
+    expect(result.method).toBe("GET");
+    expect(result.hasBody).toBe(false);
+  });
+
+  it("can send Response without body over RPC", async () => {
+    class ResponseServer extends RpcTarget {
+      receiveResponse(resp: Response) {
+        return { status: resp.status, hasBody: resp.body !== null };
+      }
+    }
+
+    await using harness = new TestHarness(new ResponseServer());
+    let stub = harness.stub as any;
+    let result = await stub.receiveResponse(new Response(null, {status: 204}));
+    expect(result.status).toBe(204);
+    expect(result.hasBody).toBe(false);
   });
 });
