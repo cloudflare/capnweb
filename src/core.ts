@@ -28,6 +28,8 @@ if (!Promise.withResolvers) {
 }
 
 let workersModule: any = (globalThis as any)[WORKERS_MODULE_SYMBOL];
+// Handle cloudflare-internal:workers which exports on `default` instead of named exports
+workersModule = workersModule?.default ?? workersModule;
 
 export interface RpcTarget {
   [__RPC_TARGET_BRAND]: never;
