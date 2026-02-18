@@ -1,5 +1,15 @@
 # capnweb
 
+## 0.5.0
+
+### Minor Changes
+
+- [#132](https://github.com/cloudflare/capnweb/pull/132) [`c2bb17b`](https://github.com/cloudflare/capnweb/commit/c2bb17b940b23eb8ab89be1e85538493cb4552ad) Thanks [@kentonv](https://github.com/kentonv)! - Added support for sending ReadableStream and WritableStream over RPC, with automatic flow control.
+
+### Patch Changes
+
+- [#129](https://github.com/cloudflare/capnweb/pull/129) [`10abaf3`](https://github.com/cloudflare/capnweb/commit/10abaf35dbf4de32ad1d91d4c3482dcba72f3e30) Thanks [@dmmulroy](https://github.com/dmmulroy)! - Fix RpcCompatible type to filter out symbol keys instead of mapping them to never
+
 ## 0.4.0
 
 ### Minor Changes
