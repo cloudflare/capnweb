@@ -30,7 +30,9 @@ The protocol operates on a bidirectional stream of discrete messages. Each messa
 
 For transports that natively provide message framing (e.g. WebSocket or MessagePort), each transport-level message corresponds to exactly one RPC message.
 
-For transports that operate on a byte stream (e.g. HTTP request/response bodies), messages are newline-delimited. Each message is serialized as a single line of JSON (no embedded newlines), and messages are separated by a newline character (`\n`). An empty body is interpreted as zero messages.
+The built-in HTTP transport is newline-delimited, packing a series of messages into a single HTTP request or response body. Each message is serialized as a single line of JSON (no embedded newlines), and messages are separated by a newline character (`\n`). An empty body is interpreted as zero messages.
+
+Other transports are free to use other framing strategies.
 
 ## Imports and Exports
 
