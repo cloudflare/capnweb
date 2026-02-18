@@ -321,6 +321,25 @@ describe("local stub", () => {
     expect(await outerStub.square(4)).toBe(16);
   });
 
+  it("does not consume Request bodies in local calls", async () => {
+    class RequestTarget extends RpcTarget {
+      touch(_req: Request) {
+        return "ok";
+      }
+    }
+
+    let stub = new RpcStub(new RequestTarget());
+    let req = new Request("http://example.com", {method: "POST", body: "hello"});
+
+    expect(req.bodyUsed).toBe(false);
+
+    let result = await stub.touch(req);
+    expect(result).toBe("ok");
+
+    expect(req.bodyUsed).toBe(false);
+    await expect(req.text()).resolves.toBe("hello");
+  });
+
   it("supports wrapping an RpcTarget with nested stubs", async () => {
     class TargetWithStubs extends RpcTarget {
       getValue() { return 42; }
