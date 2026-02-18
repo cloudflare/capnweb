@@ -1045,21 +1045,26 @@ export class RpcPayload {
 
       case "request": {
         let req = <Request>value;
-        if (req.body) {
+        if (req.body && !dupStubs) {
+          // Only register the body stream for disposal tracking when taking ownership (return
+          // values). For params (dupStubs=true), the caller retains ownership of the body; we
+          // must not cancel it on disposal.
           // Note "deep-copy" of a ReadableStream always returns the same stream, but we still
           // need to run it in order to handle refcounting / disposal properly.
           this.deepCopy(req.body, req, "body", req, dupStubs, owner);
         }
 
         // Make an actual copy of the object, e.g. so the headers are copied.
-        // Note that it would be incorrect to use clone() here since that would tee() the body
-        // stream.
-        return new Request(req);
+        // Don't use clone() (tees body) or new Request(req) (consumes body in some runtimes).
+        return new Request(req.url, req);
       }
 
       case "response": {
         let resp = <Response>value;
-        if (resp.body) {
+        if (resp.body && !dupStubs) {
+          // Only register the body stream for disposal tracking when taking ownership (return
+          // values). For params (dupStubs=true), the caller retains ownership of the body; we
+          // must not cancel it on disposal.
           // Note "deep-copy" of a ReadableStream always returns the same stream, but we still
           // need to run it in order to handle refcounting / disposal properly.
           this.deepCopy(resp.body, resp, "body", resp, dupStubs, owner);
