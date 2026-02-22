@@ -144,7 +144,12 @@ type UnstubifyInner<T> =
 // (This also covers RpcPromise, because it's defined as being a Promise.)
 // Map placeholders are also allowed so primitive map callback inputs can be forwarded directly
 // into RPC params.
+//
+// Keep raw non-stub members so generic assignability still works when UnstubifyInner<T> is deferred.
+// Remove stub members from mixed unions so callback params don’t get both stub and unstubbed signatures.
+type NonStubMembers<T> = Exclude<T, StubBase<any>>;
 type Unstubify<T> =
+  | NonStubMembers<T>
   | UnstubifyInner<T>
   | Promise<UnstubifyInner<T>>
   | MapValuePlaceholder<UnstubifyInner<T>>;
