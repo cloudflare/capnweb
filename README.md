@@ -81,7 +81,7 @@ We declare our interface in a shared types file:
 
 ```ts
 interface PublicApi {
-  // Authenticate the API token, and returned the authenticated API.
+  // Authenticate the API token, and return the authenticated API.
   authenticate(apiToken: string): AuthedApi;
 
   // Get a given user's public profile info. (Doesn't require authentication.)
