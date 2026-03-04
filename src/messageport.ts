@@ -4,6 +4,7 @@
 
 import { RpcStub } from "./core.js";
 import { RpcTransport, RpcSession, RpcSessionOptions } from "./rpc.js";
+import type { EncodingLevel } from "./serialize.js";
 
 // Start a MessagePort session given a MessagePort or a pair of MessagePorts.
 //
@@ -17,6 +18,8 @@ export function newMessagePortRpcSession(
 }
 
 class MessagePortTransport implements RpcTransport {
+  readonly encodingLevel: EncodingLevel = "passthrough";
+
   constructor (port: MessagePort) {
     this.#port = port;
 
@@ -29,7 +32,8 @@ class MessagePortTransport implements RpcTransport {
       } else if (event.data === null) {
         // Peer is signaling that they're closing the connection
         this.#receivedError(new Error("Peer closed MessagePort connection."));
-      } else if (typeof event.data === "string") {
+      } else {
+        // Accept any structured-clonable data
         if (this.#receiveResolver) {
           this.#receiveResolver(event.data);
           this.#receiveResolver = undefined;
@@ -37,8 +41,6 @@ class MessagePortTransport implements RpcTransport {
         } else {
           this.#receiveQueue.push(event.data);
         }
-      } else {
-        this.#receivedError(new TypeError("Received non-string message from MessagePort."));
       }
     });
 
@@ -48,25 +50,25 @@ class MessagePortTransport implements RpcTransport {
   }
 
   #port: MessagePort;
-  #receiveResolver?: (message: string) => void;
+  #receiveResolver?: (message: string | object) => void;
   #receiveRejecter?: (err: any) => void;
-  #receiveQueue: string[] = [];
+  #receiveQueue: (string | object)[] = [];
   #error?: any;
 
-  async send(message: string): Promise<void> {
+  async send(message: string | object): Promise<void> {
     if (this.#error) {
       throw this.#error;
     }
     this.#port.postMessage(message);
   }
 
-  async receive(): Promise<string> {
+  async receive(): Promise<string | object> {
     if (this.#receiveQueue.length > 0) {
       return this.#receiveQueue.shift()!;
     } else if (this.#error) {
       throw this.#error;
     } else {
-      return new Promise<string>((resolve, reject) => {
+      return new Promise<string | object>((resolve, reject) => {
         this.#receiveResolver = resolve;
         this.#receiveRejecter = reject;
       });
