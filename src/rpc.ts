@@ -629,15 +629,10 @@ class RpcSessionImpl implements Importer, Exporter {
         msgLength = msgText.length;
       } else {
         encoded = msg;
-        // For non-stringify levels, estimate size for flow control.
-        // This may fail if msg contains non-JSON types (Uint8Array, BigInt, etc.)
-        // In that case, use a rough estimate.
-        try {
-          msgLength = JSON.stringify(msg).length;
-        } catch {
-          // Rough estimate: 100 bytes per top-level message element
-          msgLength = Array.isArray(msg) ? msg.length * 100 : 100;
-        }
+        // For non-stringify levels, use a rough estimate for flow control.
+        // Avoid JSON.stringify since it would fail on non-JSON types (Uint8Array, BigInt, etc.)
+        // and defeats the purpose of not stringifying.
+        msgLength = Array.isArray(msg) ? msg.length * 100 : 100;
       }
     } catch (err) {
       // If JSON stringification failed, there's something wrong with the devaluator, as it should
@@ -835,7 +830,7 @@ class RpcSessionImpl implements Importer, Exporter {
             // - The export is automatically considered "pulled".
             // - Once the "resolve" is sent, the export is implicitly released.
             if (msg.length > 1) {
-              let payload = new Evaluator(this).evaluate(msg[1]);
+              let payload = new Evaluator(this, this.encodingLevel).evaluate(msg[1]);
               let hook = new PayloadStubHook(payload);
               hook.ignoreUnhandledRejections();
 
