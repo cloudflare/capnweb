@@ -736,3 +736,64 @@ let stub: RemoteMainInterface = session.getRemoteMain();
 ```
 
 Note that sessions are entirely symmetric: neither side is defined as the "client" nor the "server". Each side can optionally expose a "main interface" to the other. In typical scenarios with a logical client and server, the server exposes a main interface but the client does not.
+
+### Encoding Levels
+
+Transports can operate at different encoding levels, controlling how messages are serialized:
+
+| Level           | Message Format                  | Use Case                        |
+| --------------- | ------------------------------- | ------------------------------- |
+| `"stringify"`   | JSON string                     | HTTP batch, WebSocket (default) |
+| `"devalue"`     | JS object (JSON-compatible)     | Custom JSON-like encoders       |
+| `"partial"`     | JS object with raw `Uint8Array` | CBOR, MessagePack               |
+| `"passthrough"` | Structured-clonable object      | MessagePort, `postMessage()`    |
+
+**Default behavior:** Existing code works unchanged. WebSocket and HTTP batch use `"stringify"`. MessagePort automatically uses `"passthrough"` for efficient structured cloning.
+
+```ts
+// MessagePort: Uint8Array passed directly via structured clone, no base64 overhead
+const channel = new MessageChannel();
+newMessagePortRpcSession(channel.port1, new FileService());
+const stub = newMessagePortRpcSession<FileService>(channel.port2);
+const contents = await stub.getFileContents("/path"); // Uint8Array transferred efficiently
+```
+
+**Binary encoding (CBOR/MessagePack):** Use `wrapTransport()` to add encoding at the `"partial"` level:
+
+```ts
+import { wrapTransport, RpcSession } from "capnweb";
+import * as cbor from "cbor-x";
+
+const rawTransport = createWebSocketTransport(url);
+const cborTransport = wrapTransport(
+  rawTransport,
+  (msg) => cbor.encode(msg),
+  (data) => cbor.decode(data),
+  "partial"  // Keeps Uint8Array raw for CBOR
+);
+
+const session = new RpcSession<MyApi>(cborTransport);
+```
+
+**Custom transports:** Declare `encodingLevel` to tell the RPC system what format you expect:
+
+```ts
+class MyBinaryTransport implements RpcTransport {
+  readonly encodingLevel: EncodingLevel = "partial";
+
+  async send(message: object): Promise<void> {
+    // message is JS object; Uint8Array values are raw, not base64
+    await this.connection.write(myEncoder.encode(message));
+  }
+
+  async receive(): Promise<object> {
+    return myDecoder.decode(await this.connection.read());
+  }
+}
+```
+
+What happens to `Uint8Array([1, 2, 3])` at each level:
+- `"stringify"` → `'["bytes","AQID"]'` (JSON string)
+- `"devalue"` → `["bytes", "AQID"]` (JS object)
+- `"partial"` → `["bytes", Uint8Array([1,2,3])]` (raw binary)
+- `"passthrough"` → `["bytes", Uint8Array([1,2,3])]` (also preserves Date, BigInt, Error)
