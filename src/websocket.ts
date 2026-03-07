@@ -6,6 +6,7 @@
 
 import { RpcStub } from "./core.js";
 import { RpcTransport, RpcSession, RpcSessionOptions } from "./rpc.js";
+import type { EncodingLevel } from "./serialize.js";
 
 export function newWebSocketRpcSession(
     webSocket: WebSocket | string, localMain?: any, options?: RpcSessionOptions): RpcStub {
@@ -39,6 +40,8 @@ export function newWorkersWebSocketRpcResponse(
 }
 
 class WebSocketTransport implements RpcTransport {
+  readonly encodingLevel: EncodingLevel = "stringify";
+
   constructor (webSocket: WebSocket) {
     this.#webSocket = webSocket;
 
@@ -88,16 +91,16 @@ class WebSocketTransport implements RpcTransport {
   #receiveQueue: string[] = [];
   #error?: any;
 
-  async send(message: string): Promise<void> {
+  async send(message: string | object): Promise<void> {
     if (this.#sendQueue === undefined) {
-      this.#webSocket.send(message);
+      this.#webSocket.send(message as string);
     } else {
       // Not open yet, queue for later.
-      this.#sendQueue.push(message);
+      this.#sendQueue.push(message as string);
     }
   }
 
-  async receive(): Promise<string> {
+  async receive(): Promise<string | object> {
     if (this.#receiveQueue.length > 0) {
       return this.#receiveQueue.shift()!;
     } else if (this.#error) {

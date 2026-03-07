@@ -3,7 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
-import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize } from "./serialize.js";
+import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize, EncodingLevel } from "./serialize.js";
 
 /**
  * Interface for an RPC transport, which is a simple bidirectional message stream. Implement this
@@ -11,9 +11,19 @@ import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serializ
  */
 export interface RpcTransport {
   /**
+   * The encoding level this transport works with. Defaults to "stringify" if not specified.
+   *
+   * - "stringify": Transport receives/sends JSON strings.
+   * - "devalue": Transport receives/sends JS objects (JSON-compatible).
+   * - "partial": Transport receives/sends JS objects with raw Uint8Array.
+   * - "passthrough": Transport receives/sends structured-clonable objects.
+   */
+  readonly encodingLevel?: EncodingLevel;
+
+  /**
    * Sends a message to the other end.
    */
-  send(message: string): Promise<void>;
+  send(message: string | object): Promise<void>;
 
   /**
    * Receives a message sent by the other end.
@@ -23,7 +33,7 @@ export interface RpcTransport {
    * If there are no outstanding calls (and none are made in the future), then the error does not
    * propagate anywhere -- this is considered a "clean" shutdown.
    */
-  receive(): Promise<string>;
+  receive(): Promise<string | object>;
 
   /**
    * Indicates that the RPC system has suffered an error that prevents the session from continuing.
@@ -33,6 +43,44 @@ export interface RpcTransport {
    * peer, so if that is dropped, the peer may have less information about what happened.)
    */
   abort?(reason: any): void;
+}
+
+/**
+ * Wraps a transport with custom encode/decode functions, allowing you to use binary formats
+ * like CBOR or MessagePack.
+ *
+ * @param inner The underlying transport to wrap.
+ * @param encode Function to encode outgoing messages.
+ * @param decode Function to decode incoming messages.
+ * @param level The encoding level this wrapped transport operates at.
+ *
+ * @example
+ * ```ts
+ * import * as cbor from "cbor-x";
+ *
+ * // Wrap a WebSocket transport with CBOR encoding
+ * const cborTransport = wrapTransport(
+ *   rawWebSocketTransport,
+ *   (msg) => cbor.encode(msg),
+ *   (data) => cbor.decode(data as Uint8Array),
+ *   "partial"  // Uint8Array stays raw for CBOR
+ * );
+ *
+ * const session = new RpcSession(cborTransport, myApi);
+ * ```
+ */
+export function wrapTransport(
+  inner: RpcTransport,
+  encode: (value: string | object) => string | object,
+  decode: (data: string | object) => string | object,
+  level: EncodingLevel
+): RpcTransport {
+  return {
+    encodingLevel: level,
+    async send(message: string | object) { await inner.send(encode(message)); },
+    async receive() { return decode(await inner.receive()); },
+    abort: inner.abort?.bind(inner),
+  };
 }
 
 // Entry on the exports table.
@@ -340,8 +388,12 @@ class RpcSessionImpl implements Importer, Exporter {
   // may be deleted from the middle (hence leaving the array sparse).
   onBrokenCallbacks: ((error: any) => void)[] = [];
 
+  // Encoding level from the transport (defaults to "stringify")
+  private encodingLevel: EncodingLevel;
+
   constructor(private transport: RpcTransport, mainHook: StubHook,
       private options: RpcSessionOptions) {
+    this.encodingLevel = transport.encodingLevel ?? "stringify";
     // Export zero is automatically the bootstrap object.
     this.exports.push({hook: mainHook, refcount: 1});
 
@@ -460,12 +512,12 @@ class RpcSessionImpl implements Importer, Exporter {
         payload => {
           // We don't transfer ownership of stubs in the payload since the payload
           // belongs to the hook which sticks around to handle pipelined requests.
-          let value = Devaluator.devaluate(payload.value, undefined, this, payload);
+          let value = Devaluator.devaluate(payload.value, undefined, this, payload, this.encodingLevel);
           this.send(["resolve", exportId, value]);
           if (autoRelease) this.releaseExport(exportId, 1);
         },
         error => {
-          this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this)]);
+          this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this, undefined, this.encodingLevel)]);
           if (autoRelease) this.releaseExport(exportId, 1);
         }
       ).catch(
@@ -473,7 +525,7 @@ class RpcSessionImpl implements Importer, Exporter {
           // If serialization failed, report the serialization error, which should
           // itself always be serializable.
           try {
-            this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this)]);
+            this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this, undefined, this.encodingLevel)]);
             if (autoRelease) this.releaseExport(exportId, 1);
           } catch (error2) {
             // TODO: Shouldn't happen, now what?
@@ -567,9 +619,21 @@ class RpcSessionImpl implements Importer, Exporter {
       return 0;
     }
 
-    let msgText: string;
+    let encoded: string | object;
+    let msgLength: number;
     try {
-      msgText = JSON.stringify(msg);
+      // Only stringify at "stringify" level; otherwise pass object directly
+      if (this.encodingLevel === "stringify") {
+        let msgText = JSON.stringify(msg);
+        encoded = msgText;
+        msgLength = msgText.length;
+      } else {
+        encoded = msg;
+        // For non-stringify levels, use a rough estimate for flow control.
+        // Avoid JSON.stringify since it would fail on non-JSON types (Uint8Array, BigInt, etc.)
+        // and defeats the purpose of not stringifying.
+        msgLength = Array.isArray(msg) ? msg.length * 100 : 100;
+      }
     } catch (err) {
       // If JSON stringification failed, there's something wrong with the devaluator, as it should
       // not allow non-JSONable values to be injected in the first place.
@@ -577,12 +641,12 @@ class RpcSessionImpl implements Importer, Exporter {
       throw err;
     }
 
-    this.transport.send(msgText)
+    this.transport.send(encoded)
         // If send fails, abort the connection, but don't try to send an abort message since
         // that'll probably also fail.
         .catch(err => this.abort(err, false));
 
-    return msgText.length;
+    return msgLength;
   }
 
   sendCall(id: ImportId, path: PropertyPath, args?: RpcPayload): RpcImportHook {
@@ -590,7 +654,7 @@ class RpcSessionImpl implements Importer, Exporter {
 
     let value: Array<any> = ["pipeline", id, path];
     if (args) {
-      let devalue = Devaluator.devaluate(args.value, undefined, this, args);
+      let devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
 
       // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
       // TODO: Clean this up somehow.
@@ -611,7 +675,7 @@ class RpcSessionImpl implements Importer, Exporter {
     if (this.abortReason) throw this.abortReason;
 
     let value: Array<any> = ["pipeline", id, path];
-    let devalue = Devaluator.devaluate(args.value, undefined, this, args);
+    let devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
 
     // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
     // TODO: Clean this up somehow.
@@ -688,8 +752,9 @@ class RpcSessionImpl implements Importer, Exporter {
 
     if (trySendAbortMessage) {
       try {
-        this.transport.send(JSON.stringify(["abort", Devaluator
-            .devaluate(error, undefined, this)]))
+        let abortMsg = ["abort", Devaluator.devaluate(error, undefined, this, undefined, this.encodingLevel)];
+        let encoded: string | object = this.encodingLevel === "stringify" ? JSON.stringify(abortMsg) : abortMsg;
+        this.transport.send(encoded)
             .catch(err => {});
       } catch (err) {
         // ignore, probably the whole reason we're aborting is because the transport is broken
@@ -736,14 +801,17 @@ class RpcSessionImpl implements Importer, Exporter {
 
   private async readLoop(abortPromise: Promise<never>) {
     while (!this.abortReason) {
-      let msg = JSON.parse(await Promise.race([this.transport.receive(), abortPromise]));
+      let raw = await Promise.race([this.transport.receive(), abortPromise]);
       if (this.abortReason) break;  // check again before processing
+
+      // Only parse JSON at "stringify" level; otherwise message is already an object
+      let msg = this.encodingLevel === "stringify" ? JSON.parse(raw as string) : raw;
 
       if (msg instanceof Array) {
         switch (msg[0]) {
           case "push":  // ["push", Expression]
             if (msg.length > 1) {
-              let payload = new Evaluator(this).evaluate(msg[1]);
+              let payload = new Evaluator(this, this.encodingLevel).evaluate(msg[1]);
               let hook = new PayloadStubHook(payload);
 
               // It's possible for a rejection to occur before the client gets a chance to send
@@ -762,7 +830,7 @@ class RpcSessionImpl implements Importer, Exporter {
             // - The export is automatically considered "pulled".
             // - Once the "resolve" is sent, the export is implicitly released.
             if (msg.length > 1) {
-              let payload = new Evaluator(this).evaluate(msg[1]);
+              let payload = new Evaluator(this, this.encodingLevel).evaluate(msg[1]);
               let hook = new PayloadStubHook(payload);
               hook.ignoreUnhandledRejections();
 
@@ -802,11 +870,11 @@ class RpcSessionImpl implements Importer, Exporter {
               let imp = this.imports[importId];
               if (imp) {
                 if (msg[0] == "resolve") {
-                  imp.resolve(new PayloadStubHook(new Evaluator(this).evaluate(msg[2])));
+                  imp.resolve(new PayloadStubHook(new Evaluator(this, this.encodingLevel).evaluate(msg[2])));
                 } else {
                   // HACK: We expect errors are always simple values (no stubs) so we can just
                   //   pull the value out of the payload.
-                  let payload = new Evaluator(this).evaluate(msg[2]);
+                  let payload = new Evaluator(this, this.encodingLevel).evaluate(msg[2]);
                   payload.dispose();  // just in case -- should be no-op
                   imp.resolve(new ErrorStubHook(payload.value));
                 }
@@ -817,7 +885,7 @@ class RpcSessionImpl implements Importer, Exporter {
                 if (msg[0] == "resolve") {
                   // We need to evaluate the resolution and immediately dispose it so that we
                   // release any stubs it contains.
-                  new Evaluator(this).evaluate(msg[2]).dispose();
+                  new Evaluator(this, this.encodingLevel).evaluate(msg[2]).dispose();
                 }
               }
               continue;
@@ -836,7 +904,7 @@ class RpcSessionImpl implements Importer, Exporter {
           }
 
           case "abort": {
-            let payload = new Evaluator(this).evaluate(msg[1]);
+            let payload = new Evaluator(this, this.encodingLevel).evaluate(msg[1]);
             payload.dispose();  // just in case -- should be no-op
             this.abort(payload, false);
             break;
