@@ -41,29 +41,27 @@ interface PublicApi {
   pingAsync(): Promise<number>
   pingVoid(): void
   pingUndefined(): undefined
-  echoName(name: string | Promise<string>): Promise<string>
+  echoName(name: string): Promise<string>
 
   getCounter(seed: number): Counter
   getCounterAsync(seed: number): Promise<Counter>
   getMaybeCounter(seed: number): Promise<Counter | undefined>
-  getCounterMap(): Promise<Map<string, Counter>>
-  bumpCounter(counter: RpcStub<Counter>, by?: number | Promise<number>): Promise<number>
-  mergeCounters(counters: Map<string, RpcStub<Counter>>): Promise<number>
+  getCounterTable(): Promise<Record<string, Counter>>
+  bumpCounter(counter: RpcStub<Counter>, by?: number): Promise<number>
+  mergeCounters(counters: Record<string, RpcStub<Counter>>): Promise<number>
   invokeFormatter(formatter: RpcStub<Formatter>, value: number): Promise<string>
 
   getUser(userId: number): Promise<User>
   getMaybeUser(userId: number): Promise<User | null>
   listUsers(): Promise<User[]>
-  getUserSet(): Promise<Set<User>>
   sum(values: readonly number[]): Promise<number>
-  acceptRegExp(pattern: RegExp): Promise<string>
   acceptStreams(readable: ReadableStream<Uint8Array>, writable: WritableStream<any>): Promise<void>
 
-  getPair(): readonly [Counter, Promise<Counter>]
+  getPair(): readonly [Counter, Counter]
   getNested(): Promise<{
     owner: User
-    members: Array<Promise<User>>
-    mainCounter: Promise<Counter>
+    members: User[]
+    mainCounter: Counter
   }>
 }
 
@@ -71,13 +69,14 @@ interface PublicApi {
 type _RpcCompatibleChecks = [
   Expect<Counter extends RpcCompatible<Counter> ? true : false>,
   Expect<User extends RpcCompatible<User> ? true : false>,
-  Expect<Promise<User> extends RpcCompatible<Promise<User>> ? true : false>,
   Expect<Equal<number extends RpcCompatible<number> ? true : false, true>>,
   Expect<Date extends RpcCompatible<Date> ? true : false>,
-  Expect<Map<string, number> extends RpcCompatible<Map<string, number>> ? true : false>,
-  Expect<Set<User> extends RpcCompatible<Set<User>> ? true : false>,
+  Expect<Record<string, Counter> extends RpcCompatible<Record<string, Counter>> ? true : false>,
   Expect<
-    readonly [Counter, Promise<User>] extends RpcCompatible<readonly [Counter, Promise<User>]>
+    { owner: User; mainCounter: Counter } extends RpcCompatible<{
+      owner: User
+      mainCounter: Counter
+    }>
       ? true
       : false
   >
@@ -88,10 +87,13 @@ declare const transport: RpcTransport
 declare const localCounter: Counter
 declare const counterStub: RpcStub<Counter>
 declare const counterPromise: RpcPromise<Counter>
-declare const counterOrStubMap: Map<string, Counter | RpcStub<Counter>>
+declare const counterTable: Record<string, Counter | RpcStub<Counter>>
 declare const byteReadable: ReadableStream<Uint8Array>
 declare const genericWritable: WritableStream<any>
 declare const textReadable: ReadableStream<string>
+declare const namePromise: RpcPromise<string>
+declare const stepPromise: RpcPromise<number>
+declare const counterTablePromise: RpcPromise<Record<string, Counter>>
 
 // Session constructors and transport helpers should all produce the same RpcStub surface.
 const localStub = new RpcStub(new Counter())
@@ -134,23 +136,18 @@ expectAssignable<Promise<number>>(directCounter.value)
 expectAssignable<Promise<number>>(asyncCounter.value)
 
 api.echoName("alice")
-api.echoName(Promise.resolve("bob"))
+api.echoName(namePromise)
 
 api.bumpCounter(localCounter, 2)
-api.bumpCounter(counterStub, Promise.resolve(3))
+api.bumpCounter(counterStub, stepPromise)
 api.bumpCounter(counterPromise, 4)
 
-api.mergeCounters(counterOrStubMap)
-api.mergeCounters(Promise.resolve(counterOrStubMap))
+api.mergeCounters(counterTable)
+api.mergeCounters(counterTablePromise)
 
 api.sum([1, 2, 3] as const)
-api.sum(Promise.resolve([4, 5, 6] as const))
-
-api.acceptRegExp(/capnweb/i)
-api.acceptRegExp(Promise.resolve(/rpc/))
 
 api.acceptStreams(byteReadable, genericWritable)
-api.acceptStreams(Promise.resolve(byteReadable), Promise.resolve(genericWritable))
 
 api.invokeFormatter(async (value: number) => `${value}`, 5)
 api.invokeFormatter(new RpcStub(async (value: number) => `${value}`), 6)
@@ -158,8 +155,8 @@ api.invokeFormatter(new RpcStub(async (value: number) => `${value}`), 6)
 // Awaited checks make the post-Unstubify return shapes explicit.
 type _AwaitedGetUser = Awaited<ReturnType<typeof api.getUser>>
 type _AwaitedGetMaybeCounter = Awaited<ReturnType<typeof api.getMaybeCounter>>
-type _AwaitedGetCounterMap = Awaited<ReturnType<typeof api.getCounterMap>>
-type _AwaitedGetUserSet = Awaited<ReturnType<typeof api.getUserSet>>
+type _AwaitedGetCounterTable = Awaited<ReturnType<typeof api.getCounterTable>>
+type _AwaitedListUsers = Awaited<ReturnType<typeof api.listUsers>>
 type _AwaitedGetPair = Awaited<ReturnType<typeof api.getPair>>
 type _AwaitedGetNested = Awaited<ReturnType<typeof api.getNested>>
 
@@ -167,11 +164,14 @@ type _GetUserIsStub = Expect<Equal<_AwaitedGetUser, RpcStub<User>>>
 type _GetMaybeCounterIsStubified = Expect<
   Equal<_AwaitedGetMaybeCounter, RpcStub<Counter> | undefined>
 >
-type _CounterMapValueIsStubified = Expect<
-  Equal<_AwaitedGetCounterMap extends Map<string, infer Value> ? Value : never, RpcStub<Counter>>
+type _CounterTableValueIsStubified = Expect<
+  Equal<
+    _AwaitedGetCounterTable extends Record<string, infer Value> ? Value : never,
+    RpcStub<Counter>
+  >
 >
-type _UserSetValueIsStubified = Expect<
-  Equal<_AwaitedGetUserSet extends Set<infer Value> ? Value : never, RpcStub<User>>
+type _ListUsersValueIsStubified = Expect<
+  Equal<_AwaitedListUsers[number], RpcStub<User>>
 >
 type _PairTupleElementsAreStubified = [
   Expect<Equal<_AwaitedGetPair[0], RpcStub<Counter>>>,
@@ -196,8 +196,8 @@ async function assertAwaitedShapes() {
   expectType<RpcStub<Counter>>(fromAsync)
   expectType<RpcStub<Counter> | undefined>(maybeCounter)
 
-  const counterMap = await api.getCounterMap()
-  expectType<RpcStub<Counter> | undefined>(counterMap.get("primary"))
+  const counterTableResult = await api.getCounterTable()
+  expectType<RpcStub<Counter>>(counterTableResult.primary)
 
   const [left, right] = await api.getPair()
   expectType<RpcStub<Counter>>(left)
@@ -208,16 +208,13 @@ async function assertAwaitedShapes() {
   expectType<RpcStub<User>>(nested.members[0])
   expectType<RpcStub<Counter>>(nested.mainCounter)
 
-  const userSet = await api.getUserSet()
-  const firstUser = userSet.values().next().value
-  expectType<RpcStub<User> | undefined>(firstUser)
+  const users = await api.listUsers()
+  expectType<RpcStub<User>>(users[0])
 
   const sumResult = await api.sum([10, 11, 12])
-  const regexResult = await api.acceptRegExp(/test/)
-  const mergeResult = await api.mergeCounters(counterOrStubMap)
+  const mergeResult = await api.mergeCounters(counterTable)
   const streamResult = await api.acceptStreams(byteReadable, genericWritable)
   expectType<number>(sumResult)
-  expectType<string>(regexResult)
   expectType<number>(mergeResult)
   expectType<void>(streamResult)
 }
@@ -253,14 +250,11 @@ api.bumpCounter({ increment: () => 1, value: 1 }, 1)
 // @ts-expect-error wrong primitive argument type
 api.echoName(123)
 
-// @ts-expect-error map keys must be strings
+// @ts-expect-error counter table must be a plain record
 api.mergeCounters(new Map([[1, localCounter]]))
 
 // @ts-expect-error sum values must be numbers
 api.sum(["1", "2"])
-
-// @ts-expect-error regex argument must be RegExp
-api.acceptRegExp("pattern")
 
 // @ts-expect-error readable stream chunk type must be Uint8Array
 api.acceptStreams(textReadable, genericWritable)

@@ -10,7 +10,7 @@ import {
 type GatewayResult = {
   ack: string
   worker: MathWorker
-  status: Promise<JobStatus>
+  status: JobStatus
 }
 
 type SubmitJobInput = {
@@ -19,7 +19,7 @@ type SubmitJobInput = {
   sink: RpcStub<AuditSink>
   deps: Array<RpcStub<MathWorker>>
   meta: {
-    attempts: number | Promise<number>
+    attempts: number
     tags: readonly string[]
   }
 }
@@ -44,7 +44,7 @@ type JobStatus = {
 }
 
 type CallableGateway = {
-  (name: string, retries?: number | Promise<number>): Promise<GatewayResult>
+  (name: string, retries?: number): Promise<GatewayResult>
   version(): string
   getWorker(id: number): Promise<MathWorker>
   getMaybeWorker(enabled: boolean): Promise<MathWorker | null>
@@ -67,7 +67,7 @@ type _CallableIsRpcCompatible = Expect<
 >
 
 // Positive coverage for callable stubs, nested targets, and pipelined placeholder mapping.
-const callResult = gateway("alpha", Promise.resolve(2))
+const callResult = gateway("alpha", 2)
 expectType<RpcPromise<GatewayResult>>(callResult)
 expectAssignable<Promise<string>>(callResult.ack)
 expectAssignable<Promise<number>>(callResult.worker.multiply(2, 3))
@@ -95,7 +95,7 @@ const submitted = gateway.submitJob({
   id: callResult.worker.id,
   worker: gateway.getWorker(11),
   sink: localSink,
-  deps: [gateway.getWorker(12), Promise.resolve(new MathWorker())],
+  deps: [gateway.getWorker(12), new RpcStub(new MathWorker())],
   meta: {
     attempts: gateway.getWorker(13).id,
     tags: ["a", "b"] as const,
@@ -110,7 +110,7 @@ async function assertExtraShapes() {
     worker: new RpcStub(new MathWorker()),
     sink: new RpcStub(new AuditSink()),
     deps: [new RpcStub(new MathWorker())],
-    meta: { attempts: Promise.resolve(2), tags: ["x"] },
+    meta: { attempts: 2, tags: ["x"] },
   })
   expectType<true>(done.ok)
   expectType<RpcStub<MathWorker>>(done.worker)

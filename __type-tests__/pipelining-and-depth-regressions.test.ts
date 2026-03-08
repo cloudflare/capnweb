@@ -52,15 +52,15 @@ interface RootApi {
   getId(): Promise<number>
   nested(): Promise<{
     api: Api
-    post: Promise<Post>
+    post: Post
     meta: {
       owner: User
-      ownerPromise: Promise<User>
     }
   }>
 }
 
 declare const stub: RpcStub<RootApi>
+declare const stepPromise: RpcPromise<number>
 
 // Pipelining should preserve stubified access across chained methods, args, and map placeholders.
 const nestedPipelined = stub.api().post().getData(123)
@@ -105,7 +105,6 @@ async function assertPipelinedAndAwaitedShapes() {
   expectType<RpcStub<Api>>(nested.api)
   expectType<RpcStub<Post>>(nested.post)
   expectType<RpcStub<User>>(nested.meta.owner)
-  expectType<RpcStub<User>>(nested.meta.ownerPromise)
 }
 
 void assertPipelinedAndAwaitedShapes
@@ -138,7 +137,7 @@ type _ParseResultNotAny = Expect<Equal<IsAny<ParseAwaited>, false>>
 type _ParseResultUnknown = Expect<Equal<ParseAwaited, unknown>>
 
 anyFallbackApi.version()
-anyFallbackApi.mix("x", Promise.resolve(2))
+anyFallbackApi.mix("x", stepPromise)
 
 interface AnyParamTypedReturnApi {
   parse(input: any): number
@@ -188,7 +187,6 @@ type NestedUnknownObjectResultNever = IsNever<typeof nestedUnknownObjectResult>
 type _NestedUnknownObjectResultNotNever = Expect<Equal<NestedUnknownObjectResultNever, false>>
 
 unknownInferenceApi.echoUnknownObject({ id: "abc", count: 1, extra: { enabled: true } })
-unknownInferenceApi.echoUnknownObject(Promise.resolve({ id: "abc" }))
 
 class UnknownInferenceTarget extends RpcTarget {
   hello() {
@@ -212,12 +210,7 @@ type _ClassUnknownObjectResultNotNever = Expect<Equal<ClassUnknownObjectResultNe
 
 interface UnknownEdgeCaseApi {
   roundTripUnknownArray(value: UnknownRecord[]): UnknownRecord[]
-  roundTripUnknownMap(value: Map<string, UnknownRecord>): Map<string, UnknownRecord>
-  roundTripUnknownPromise(value: Promise<UnknownRecord>): Promise<UnknownRecord>
   roundTripUnknownNullable(value: UnknownRecord | null): UnknownRecord | null
-  roundTripUnknownNestedPromise(value: { payload: Promise<UnknownRecord> }): {
-    payload: Promise<UnknownRecord>
-  }
 }
 
 declare const unknownEdgeCaseApi: RpcStub<UnknownEdgeCaseApi>
@@ -225,22 +218,11 @@ declare const unknownEdgeCaseApi: RpcStub<UnknownEdgeCaseApi>
 type _UnknownArrayCompatible = Expect<
   UnknownRecord[] extends RpcCompatible<UnknownRecord[]> ? true : false
 >
-type _UnknownMapCompatible = Expect<
-  Map<string, UnknownRecord> extends RpcCompatible<Map<string, UnknownRecord>> ? true : false
->
-type _UnknownPromiseCompatible = Expect<
-  Promise<UnknownRecord> extends RpcCompatible<Promise<UnknownRecord>> ? true : false
->
 
 const unknownArrayResult = unknownEdgeCaseApi.roundTripUnknownArray([{ id: "x" }, { active: true }])
 expectAssignable<Promise<UnknownRecord[]>>(unknownArrayResult)
 type UnknownArrayResultNever = IsNever<typeof unknownArrayResult>
 type _UnknownArrayResultNotNever = Expect<Equal<UnknownArrayResultNever, false>>
-
-const unknownMapResult = unknownEdgeCaseApi.roundTripUnknownMap(new Map([["first", { id: "x" }]]))
-expectAssignable<Promise<Map<string, UnknownRecord>>>(unknownMapResult)
-type UnknownMapResultNever = IsNever<typeof unknownMapResult>
-type _UnknownMapResultNotNever = Expect<Equal<UnknownMapResultNever, false>>
 
 const unknownNullableResult = unknownEdgeCaseApi.roundTripUnknownNullable(
   Math.random() > 0.5 ? { id: "x" } : null
@@ -249,11 +231,6 @@ expectAssignable<Promise<UnknownRecord | null>>(unknownNullableResult)
 type UnknownNullableResultNever = IsNever<typeof unknownNullableResult>
 type _UnknownNullableResultNotNever = Expect<Equal<UnknownNullableResultNever, false>>
 
-unknownEdgeCaseApi.roundTripUnknownPromise(Promise.resolve({ id: "x", count: 1 }))
-unknownEdgeCaseApi.roundTripUnknownNestedPromise({
-  payload: Promise.resolve({ id: "x", extra: { enabled: true } }),
-})
-
 async function assertUnknownInferenceShapes() {
   const unknownValue = await unknownInferenceApi.getUnknown()
   const unknownObject = await unknownInferenceApi.getUnknownObject()
@@ -261,13 +238,7 @@ async function assertUnknownInferenceShapes() {
   const roundTrippedUnknownObject = await unknownInferenceApi.echoUnknownObject({ id: "rpc" })
   const classUnknownObject = await unknownInferenceTarget.giveMeUnknownObject()
   const unknownArray = await unknownEdgeCaseApi.roundTripUnknownArray([{ id: "arr" }])
-  const unknownMap = await unknownEdgeCaseApi.roundTripUnknownMap(
-    new Map([["primary", { id: "map" }]])
-  )
   const unknownNullable = await unknownEdgeCaseApi.roundTripUnknownNullable(null)
-  const unknownNestedPromise = await unknownEdgeCaseApi.roundTripUnknownNestedPromise({
-    payload: Promise.resolve({ id: "nested" }),
-  })
 
   expectType<unknown>(unknownValue)
   expectType<UnknownRecord>(unknownObject)
@@ -275,9 +246,7 @@ async function assertUnknownInferenceShapes() {
   expectType<UnknownRecord>(roundTrippedUnknownObject)
   expectType<UnknownRecord>(classUnknownObject)
   expectType<UnknownRecord[]>(unknownArray)
-  expectType<UnknownRecord | undefined>(unknownMap.get("primary"))
   expectType<UnknownRecord | null>(unknownNullable)
-  expectType<UnknownRecord>(unknownNestedPromise.payload)
 }
 
 void assertUnknownInferenceShapes
@@ -290,8 +259,8 @@ type DeepNode<N extends number> = N extends 0
     }
   : {
       depth: N
-      next: Promise<DeepNode<Dec<N>>>
-      owner: Promise<User>
+      next: DeepNode<Dec<N>>
+      owner: User
       post: Post
     }
 
@@ -340,9 +309,6 @@ unknownInferenceApi.echoUnknownObject(123)
 
 // @ts-expect-error unknown-array elements must be object-like records
 unknownEdgeCaseApi.roundTripUnknownArray([123])
-
-// @ts-expect-error unknown-map values must be object-like records
-unknownEdgeCaseApi.roundTripUnknownMap(new Map([["bad", 123]]))
 
 // @ts-expect-error nullable unknown record does not accept undefined
 unknownEdgeCaseApi.roundTripUnknownNullable(undefined)

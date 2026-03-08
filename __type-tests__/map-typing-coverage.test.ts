@@ -30,6 +30,8 @@ interface MapApi {
   getLookup(): Promise<Record<string, User>>
   listFormatters(): Promise<NamedFormatter[]>
   greet(name: string): Promise<string>
+  formatScore(score: number, digits?: number): Promise<string>
+  inspectPairElement(value: number | User): Promise<string>
 }
 
 declare const api: RpcStub<MapApi>
@@ -66,7 +68,7 @@ const mappedNestedRpcPromises = api.listUsers().map((user) => {
 
 const mappedScores = api.listScores().map((score) => {
   expectType<NonThenable<RpcPromise<number>>>(score)
-  return score.toFixed(2)
+  return api.formatScore(score, 2)
 })
 expectAssignable<Promise<string>>(mappedScores[0])
 
@@ -81,7 +83,7 @@ expectAssignable<Promise<string>>(mappedMaybe[0])
 
 const mappedPair = api.pair().map((pair) => {
   expectType<NonThenable<RpcPromise<number> | RpcPromise<User>>>(pair)
-  return pair.toString()
+  return api.inspectPairElement(pair)
 })
 expectAssignable<Promise<string>>(mappedPair[0])
 

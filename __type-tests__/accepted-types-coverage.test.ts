@@ -176,20 +176,6 @@ api.roundTripKnownError(new URIError("uri"))
 api.roundTripKnownError(new EvalError("eval"))
 api.roundTripKnownError(new AggregateError([], "agg"))
 
-// Promise-like arguments should be accepted anywhere normal values are accepted.
-api.roundTripString(Promise.resolve("wrapped"))
-api.roundTripNumber(Promise.resolve(5))
-api.roundTripBoolean(Promise.resolve(false))
-api.roundTripBigInt(Promise.resolve(7n))
-api.roundTripDate(Promise.resolve(new Date(10)))
-api.roundTripBytes(Promise.resolve(new Uint8Array([1])))
-api.roundTripReadable(Promise.resolve(readableBytes))
-api.roundTripWritable(Promise.resolve(writableAny))
-api.roundTripRequest(Promise.resolve(request))
-api.roundTripResponse(Promise.resolve(response))
-api.roundTripKnownError(Promise.resolve(new TypeError("typed")))
-api.roundTripBundle(Promise.resolve(bundle))
-
 // Keep awaited assertions together so the resolved, post-Unstubify shapes stay obvious.
 async function assertAcceptedAwaitedShapes() {
   const s = await api.roundTripString("value")

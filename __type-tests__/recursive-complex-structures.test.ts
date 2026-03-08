@@ -30,36 +30,36 @@ class Cursor extends RpcTarget {
 
 type GraphNode = {
   id: string
-  parent: Promise<GraphNode | null>
-  children: Promise<GraphNode[]>
-  links: Map<string, Promise<GraphNode>>
-  checkpoints: readonly [at: number, previous: Promise<GraphNode> | null]
+  parent: GraphNode | null
+  children: GraphNode[]
+  links: Partial<Record<string, GraphNode>>
+  checkpoints: readonly [at: number, previous: GraphNode | null]
 }
 
 type GraphEnvelope =
   | {
       kind: "node"
-      node: Promise<GraphNode>
-      extras: Array<Promise<GraphNode>>
+      node: GraphNode
+      extras: GraphNode[]
     }
   | {
       kind: "cursor"
-      cursor: Promise<Cursor>
-      history: Promise<GraphEnvelope[]>
+      cursor: Cursor
+      history: GraphEnvelope[]
     }
 
 interface RecursiveComplexApi {
   root(): Promise<GraphNode>
   merge(
     envelope: GraphEnvelope,
-    hops: number | Promise<number>
+    hops: number
   ): Promise<{
     envelope: GraphEnvelope
     node: GraphNode
     cursor: Cursor
   }>
   cursor(): Promise<Cursor>
-  useWorker(worker: RpcStub<Worker>, nodeId: string | Promise<string>): Promise<number>
+  useWorker(worker: RpcStub<Worker>, nodeId: string): Promise<number>
 }
 
 declare const api: RpcStub<RecursiveComplexApi>
@@ -70,10 +70,10 @@ const localWorker = new RpcStub(new Worker())
 const merged = api.merge(
   {
     kind: "node",
-    node: Promise.resolve(localNode),
-    extras: [Promise.resolve(localNode), Promise.resolve(localNode)],
+    node: localNode,
+    extras: [localNode, localNode],
   },
-  Promise.resolve(2)
+  2
 )
 expectAssignable<Promise<"node" | "cursor">>(merged.envelope.kind)
 expectAssignable<Promise<string>>(merged.node.id)
@@ -82,8 +82,8 @@ expectAssignable<Promise<number>>(merged.cursor.next().score)
 const mergedCursor = api.merge(
   {
     kind: "cursor",
-    cursor: Promise.resolve(localCursor),
-    history: Promise.resolve([]),
+    cursor: localCursor,
+    history: [],
   },
   1
 )
@@ -140,7 +140,11 @@ expectAssignable<Promise<number>>(api.useWorker(localWorker, api.root().id))
 // Regression guard: this depth exceeds prior capped-recursion limits.
 type DeepTree<N extends number> = N extends 0
   ? { leaf: true; id: string }
-  : { id: string; next: Promise<DeepTree<Dec<N>>>; siblings: Array<Promise<DeepTree<Dec<N>>>> }
+  : {
+      id: string
+      next: DeepTree<Dec<N>>
+      siblings: Array<DeepTree<Dec<N>>>
+    }
 
 interface DeepTreeApi {
   roundTrip(tree: DeepTree<48>): Promise<DeepTree<48>>
@@ -161,13 +165,13 @@ async function assertRecursiveShapes() {
   expectType<string>(root.id)
   expectAssignable<{ id: string } | null>(root.parent)
   expectAssignable<{ id: string }>(root.children[0])
-  expectAssignable<{ id: string } | undefined>(root.links.get("primary"))
+  expectAssignable<{ id: string } | undefined>(root.links.primary)
 
   const mergedResult = await api.merge(
     {
       kind: "cursor",
-      cursor: Promise.resolve(localCursor),
-      history: Promise.resolve([]),
+      cursor: localCursor,
+      history: [],
     },
     2
   )

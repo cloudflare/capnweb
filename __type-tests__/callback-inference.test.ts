@@ -1,4 +1,4 @@
-import { RpcStub, RpcTarget } from "../src/index.js"
+import { RpcPromise, RpcStub, RpcTarget } from "../src/index.js"
 import { expectAssignable, expectType, type Expect } from "./helpers.js"
 
 type NoArgCallback = () => void
@@ -59,6 +59,16 @@ declare const noArgCallbackStub: RpcStub<NoArgCallback>
 declare const callbackStub: RpcStub<TimestampCallback>
 declare const asyncCallbackStub: RpcStub<AsyncTimestampCallback>
 declare const asyncBooleanCallbackStub: RpcStub<BooleanAsyncCallback>
+declare const noArgCallbackPromise: RpcPromise<NoArgCallback>
+declare const callbackPromise: RpcPromise<TimestampCallback>
+declare const asyncCallbackPromise: RpcPromise<AsyncTimestampCallback>
+declare const optionalCallbackPromise: RpcPromise<OptionalTimestampCallback>
+declare const configureOptionsPromise: RpcPromise<{
+  onTick: TimestampCallback
+  onError?: ErrorCallback
+}>
+declare const relayPromise: RpcPromise<TimestampRelay>
+declare const badCallbackPromise: RpcPromise<(ts: string) => void>
 
 // Static checks for the callback parameter shapes exposed on the stub.
 type RunArg = Parameters<typeof stub.run>[0]
@@ -68,10 +78,12 @@ type SendOptionalArg = Parameters<typeof stub.sendOptional>[0]
 type SendPairArg = Parameters<typeof stub.sendPair>[0]
 
 type _RunAllowsPlainFn = Expect<(() => void) extends RunArg ? true : false>
-type _RunAllowsPromiseFn = Expect<Promise<() => void> extends RunArg ? true : false>
+type _RunAllowsPipelinedFn = Expect<RpcPromise<() => void> extends RunArg ? true : false>
 type _SendTsAllowsPlainFn = Expect<((ts: number) => void) extends SendTsArg ? true : false>
 type _SendTsAllowsStub = Expect<RpcStub<(ts: number) => void> extends SendTsArg ? true : false>
-type _SendTsAllowsPromiseFn = Expect<Promise<(ts: number) => void> extends SendTsArg ? true : false>
+type _SendTsAllowsPipelinedFn = Expect<
+  RpcPromise<(ts: number) => void> extends SendTsArg ? true : false
+>
 type _SendTsAsyncAllowsPlainFn = Expect<
   ((ts: number) => Promise<void>) extends SendTsAsyncArg ? true : false
 >
@@ -82,43 +94,30 @@ type _SendPairAllowsPlainFn = Expect<
   ((ts: number, source: string) => void) extends SendPairArg ? true : false
 >
 
-// Positive coverage: plain functions, RpcStub instances, and promise-wrapped callbacks all work.
+// Positive coverage: plain functions, RpcStub instances, and pipelined callbacks all work.
 stub.run(() => {})
 stub.run(noArgCallbackStub)
-stub.run(Promise.resolve(() => {}))
+stub.run(noArgCallbackPromise)
 
 stub.sendMeCurrentTs((ts: number) => {
   expectType<number>(ts)
   ts.toFixed()
 })
 stub.sendMeCurrentTs(callbackStub)
-stub.sendMeCurrentTs(
-  Promise.resolve((ts: number) => {
-    expectType<number>(ts)
-  })
-)
-stub.sendMeCurrentTs(Promise.resolve(callbackStub))
+stub.sendMeCurrentTs(callbackPromise)
 
 stub.sendMeCurrentTsAsync(async (ts: number) => {
   expectType<number>(ts)
   ts.toFixed()
 })
 stub.sendMeCurrentTsAsync(asyncCallbackStub)
-stub.sendMeCurrentTsAsync(
-  Promise.resolve(async (ts: number) => {
-    ts.toFixed()
-  })
-)
+stub.sendMeCurrentTsAsync(asyncCallbackPromise)
 
 stub.sendOptional((ts?: number) => {
   expectType<number | undefined>(ts)
   ts?.toFixed()
 })
-stub.sendOptional(
-  Promise.resolve((ts?: number) => {
-    ts?.toFixed()
-  })
-)
+stub.sendOptional(optionalCallbackPromise)
 
 const booleanResult = stub.sendBooleanAsync(async (flag: boolean) => {
   expectType<boolean>(flag)
@@ -143,34 +142,21 @@ stub.configure({
     expectType<string>(message)
   },
 })
-stub.configure(
-  Promise.resolve({
-    onTick: (ts: number) => {
-      ts.toFixed()
-    },
-  })
-)
+stub.configure(configureOptionsPromise)
 
 stub.fanout([
   callbackStub,
   (ts: number) => {
     ts.toFixed()
   },
-  Promise.resolve((ts: number) => {
-    ts.toFixed()
-  }),
+  callbackPromise,
 ])
 
 stub.useRelay((next: RpcStub<TimestampCallback>, value: number) => {
   expectAssignable<Promise<void>>(next(value))
   expectType<number>(value)
 })
-stub.useRelay(
-  Promise.resolve((next: RpcStub<TimestampCallback>, value: number) => {
-    void next
-    void value
-  })
-)
+stub.useRelay(relayPromise)
 
 // Inline callbacks should inherit parameter types from the surrounding RpcStub signature.
 stub.sendMeCurrentTs((ts) => {
@@ -238,10 +224,8 @@ stub.fanout([
   },
 ])
 
-// @ts-expect-error promise callback has wrong arg type
-stub.sendMeCurrentTs(Promise.resolve((ts: string) => {
-  console.log(ts)
-}))
+// @ts-expect-error pipelined callback has wrong arg type
+stub.sendMeCurrentTs(badCallbackPromise)
 
 // @ts-expect-error relay callback value param has wrong type
 stub.useRelay((next: RpcStub<TimestampCallback>, value: string) => {

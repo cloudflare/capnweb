@@ -1,4 +1,4 @@
-import { RpcStub, RpcTarget } from "../src/index.js"
+import { RpcPromise, RpcStub, RpcTarget } from "../src/index.js"
 import { expectAssignable, expectType, type Expect } from "./helpers.js"
 
 type Summary = { summary: string; size: number }
@@ -33,7 +33,8 @@ type NestedAckBatchCallback = (
   next: RpcStub<AckHandler>,
   batch: readonly JobCommand[]
 ) => Promise<readonly Ack[]>
-type HandlerMap = Map<string, RpcStub<AckHandler>>
+type HandlerTable = Record<string, RpcStub<AckHandler>>
+type EntryList = readonly (readonly [string, number])[]
 type RecordLookup = Record<string, { audit: RpcStub<AuditTarget>; ack: Ack }>
 type RecordStatusMap = Record<string, { status: "ok" | "bad"; when: Date }>
 
@@ -83,12 +84,19 @@ class AdvancedCallbackServer extends RpcTarget {
     }, [])
   }
 
-  withMap(callback: RpcStub<(handlers: HandlerMap) => Promise<number>>) {
-    return callback(new Map())
+  withHandlerTable(callback: RpcStub<(handlers: HandlerTable) => Promise<number>>) {
+    return callback({
+      default: new RpcStub(async (command: JobCommand): Promise<Ack> => {
+        if (command.kind === "flush") {
+          return { ok: true, taskId: "flush", at: new Date(0) }
+        }
+        return { ok: false, taskId: command.taskId, error: new Error("not-implemented") }
+      }),
+    })
   }
 
-  withSet(callback: RpcStub<(items: Set<readonly [string, number]>) => Promise<Set<string>>>) {
-    return callback(new Set([["a", 1] as const]))
+  withEntryList(callback: RpcStub<(items: EntryList) => Promise<readonly string[]>>) {
+    return callback([["a", 1] as const])
   }
 
   withRecord(callback: RpcStub<(lookup: RecordLookup) => Promise<RecordStatusMap>>) {
@@ -103,6 +111,15 @@ class AdvancedCallbackServer extends RpcTarget {
 
 declare const stub: RpcStub<AdvancedCallbackServer>
 declare const ackHandlerStub: RpcStub<AckHandler>
+declare const envelopeCallbackPromise: RpcPromise<EnvelopeCallback>
+declare const commandCallbackPromise: RpcPromise<CommandCallback>
+declare const tupleCallbackPromise: RpcPromise<TupleCallback>
+declare const nestedBatchCallbackPromise: RpcPromise<NestedAckBatchCallback>
+declare const handlerTableCallbackPromise: RpcPromise<(handlers: HandlerTable) => Promise<number>>
+declare const entryListCallbackPromise: RpcPromise<
+  (items: EntryList) => Promise<readonly string[]>
+>
+declare const recordCallbackPromise: RpcPromise<(lookup: RecordLookup) => Promise<RecordStatusMap>>
 
 // Static checks for the higher-order callback entrypoints.
 type WithEnvelopeArg = Parameters<typeof stub.withEnvelope>[0]
@@ -111,8 +128,8 @@ type WithOptionalAndRestArg = Parameters<typeof stub.withOptionalAndRest>[0]
 type _WithEnvelopeAcceptsPlainFn = Expect<
   ((input: Envelope) => void) extends WithEnvelopeArg ? true : false
 >
-type _WithEnvelopeAcceptsPromiseWrappedFn = Expect<
-  Promise<(input: Envelope) => void> extends WithEnvelopeArg ? true : false
+type _WithEnvelopeAcceptsPipelinedFn = Expect<
+  RpcPromise<(input: Envelope) => void> extends WithEnvelopeArg ? true : false
 >
 type _WithOptionalAndRestAcceptsPlainFn = Expect<
   ((topic: string, priority?: number, ...labels: string[]) => void) extends WithOptionalAndRestArg
@@ -126,11 +143,7 @@ stub.withEnvelope((input: Envelope) => {
   expectType<readonly [number, bigint]>(input.checkpoint)
   expectType<readonly string[]>(input.meta.tags)
 })
-stub.withEnvelope(
-  Promise.resolve((input: Envelope) => {
-    input.bytes.byteLength
-  })
-)
+stub.withEnvelope(envelopeCallbackPromise)
 
 stub.withEnvelopeAsync(async (input: Envelope) => {
   return { summary: input.id, size: input.bytes.byteLength }
@@ -146,14 +159,7 @@ stub.withCommand((command: JobCommand): Ack => {
   }
   return { ok: true, taskId: "flush", at: new Date(0) }
 })
-stub.withCommand(
-  Promise.resolve((command: JobCommand) => {
-    if (command.kind === "flush") {
-      return Promise.resolve({ ok: true, taskId: "flush", at: new Date(0) } as const)
-    }
-    return Promise.resolve({ ok: false, taskId: command.taskId, error: new Error("x") } as const)
-  })
-)
+stub.withCommand(commandCallbackPromise)
 
 stub.withOptionalAndRest((topic: string, priority = 0, ...labels: string[]) => {
   expectType<string>(topic)
@@ -165,11 +171,7 @@ stub.withTuple(async (pair: readonly [string, Date, Uint8Array]) => {
   expectType<Date>(pair[1])
   return [pair[0], pair[2].byteLength] as const
 })
-stub.withTuple(
-  Promise.resolve(async (pair: readonly [string, Date, Uint8Array]) => {
-    return [pair[0], pair[2].byteLength] as const
-  })
-)
+stub.withTuple(tupleCallbackPromise)
 
 stub.withNestedCallback(async (next: RpcStub<AckHandler>, batch: readonly JobCommand[]) => {
   expectType<readonly JobCommand[]>(batch)
@@ -177,41 +179,23 @@ stub.withNestedCallback(async (next: RpcStub<AckHandler>, batch: readonly JobCom
   expectType<Ack>(first)
   return [first]
 })
-stub.withNestedCallback(
-  Promise.resolve(async (next: RpcStub<AckHandler>) => {
-    const ack = await next({ kind: "cancel", taskId: "id-2" })
-    return [ack] as const
-  })
-)
+stub.withNestedCallback(nestedBatchCallbackPromise)
 
-stub.withMap(async (handlers: HandlerMap) => {
-  const handler = handlers.get("default")
-  if (handler) {
-    const ack = await handler({ kind: "flush", force: true })
-    expectType<Ack>(ack)
-  }
-  return handlers.size
+stub.withHandlerTable(async (handlers: HandlerTable) => {
+  const ack = await handlers.default({ kind: "flush", force: true })
+  expectType<Ack>(ack)
+  return Object.keys(handlers).length
 })
-stub.withMap(
-  Promise.resolve(async (handlers: HandlerMap) => {
-    void handlers
-    return 0
-  })
-)
+stub.withHandlerTable(handlerTableCallbackPromise)
 
-stub.withSet(async (items: Set<readonly [string, number]>) => {
-  const out = new Set<string>()
+stub.withEntryList(async (items: EntryList) => {
+  const out: string[] = []
   for (const [name, count] of items) {
-    out.add(`${name}:${count}`)
+    out.push(`${name}:${count}`)
   }
   return out
 })
-stub.withSet(
-  Promise.resolve(async (items: Set<readonly [string, number]>) => {
-    void items
-    return new Set<string>(["ok"])
-  })
-)
+stub.withEntryList(entryListCallbackPromise)
 
 stub.withRecord(async (lookup: RecordLookup) => {
   const out: RecordStatusMap = {}
@@ -225,14 +209,7 @@ stub.withRecord(async (lookup: RecordLookup) => {
   }
   return out
 })
-stub.withRecord(
-  Promise.resolve(async (lookup: RecordLookup) => {
-    void lookup
-    return {
-      one: { status: "ok", when: new Date(0) },
-    }
-  })
-)
+stub.withRecord(recordCallbackPromise)
 
 // Keep awaited shape checks together so the resolved container types stay readable.
 async function assertReturnShapes() {
@@ -250,6 +227,16 @@ async function assertReturnShapes() {
 
   const ack = await stub.withCommand(ackHandlerStub)
   expectType<Ack>(ack)
+
+  const handlerCount = await stub.withHandlerTable(async (handlers: HandlerTable) => {
+    return Object.keys(handlers).length
+  })
+  expectType<number>(handlerCount)
+
+  const entryLabels = await stub.withEntryList(async (items: EntryList) => {
+    return items.map(([name, count]) => `${name}:${count}`)
+  })
+  expectType<string>(entryLabels[0])
 }
 
 void assertReturnShapes
@@ -302,16 +289,16 @@ stub.withNestedCallback(async (next: RpcStub<(command: string) => Promise<Ack>>)
   return [result]
 })
 
-// @ts-expect-error wrong map handler value type
-stub.withMap(async (handlers: Map<string, RpcStub<(command: string) => Promise<Ack>>>) => {
+// @ts-expect-error wrong handler table value type
+stub.withHandlerTable(async (handlers: Record<string, RpcStub<(command: string) => Promise<Ack>>>) => {
   void handlers
   return 0
 })
 
-// @ts-expect-error wrong set item type
-stub.withSet(async (items: Set<readonly [number, number]>) => {
+// @ts-expect-error wrong entry item type
+stub.withEntryList(async (items: readonly (readonly [number, number])[]) => {
   void items
-  return new Set<string>()
+  return ["ok"] as const
 })
 
 // @ts-expect-error wrong record callback return shape
