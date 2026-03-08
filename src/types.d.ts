@@ -16,13 +16,49 @@ export interface RpcTargetBranded {
   [__RPC_TARGET_BRAND]: never;
 }
 
-type IsAny<T> = 0 extends (1 & T) ? true : false;
-type IsUnknown<T> = unknown extends T ? ([T] extends [unknown] ? true : false) : false;
-
 // Types that can be used through `Stub`s.
 // `never[]` preserves compatibility with strongly-typed function signatures without introducing
 // `any` into inference.
 export type Stubable = RpcTargetBranded | ((...args: never[]) => unknown);
+
+type IsUnknown<T> = unknown extends T ? ([T] extends [unknown] ? true : false) : false;
+
+// Types that can be passed over RPC.
+// The reason for using a generic type here is to build a serializable subset of structured
+// cloneable composite types. This allows types defined with the "interface" keyword to pass the
+// serializable check as well. Otherwise, only types defined with the "type" keyword would pass.
+export type RpcCompatible<T> =
+  // Allow `unknown` as a leaf so records/interfaces with `unknown` fields remain compatible.
+  | (IsUnknown<T> extends true ? unknown : never)
+  // Structured cloneables
+  | BaseType
+  // Structured cloneable composites
+  | Map<
+      T extends Map<infer U, unknown> ? RpcCompatible<U> : never,
+      T extends Map<unknown, infer U> ? RpcCompatible<U> : never
+    >
+  | Set<T extends Set<infer U> ? RpcCompatible<U> : never>
+  | Array<T extends Array<infer U> ? RpcCompatible<U> : never>
+  | ReadonlyArray<T extends ReadonlyArray<infer U> ? RpcCompatible<U> : never>
+  | {
+      [K in keyof T as K extends string | number ? K : never]: RpcCompatible<T[K]>;
+    }
+  | Promise<T extends Promise<infer U> ? RpcCompatible<U> : never>
+  // Special types
+  | Stub<Stubable>
+  // Serialized as stubs, see `Stubify`
+  | Stubable;
+
+// Base type for all RPC stubs, including common memory management methods.
+// `T` is used as a marker type for unwrapping `Stub`s later.
+interface StubBase<T = unknown> extends Disposable {
+  [__RPC_STUB_BRAND]: T;
+  dup(): this;
+  onRpcBroken(callback: (error: any) => void): void;
+}
+
+export type Stub<T extends RpcCompatible<T>> =
+    T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
 
 type TypedArray =
   | Uint8Array
@@ -57,48 +93,6 @@ type BaseType =
   | Request
   | Response
   | Headers;
-
-// Base type for all RPC stubs, including common memory management methods.
-// `T` is used as a marker type for unwrapping `Stub`s later.
-interface StubBase<T = unknown> extends Disposable {
-  [__RPC_STUB_BRAND]: T;
-  dup(): this;
-  onRpcBroken(callback: (error: any) => void): void;
-}
-
-// Marker carried by map() callback inputs. This lets primitive placeholders flow through params.
-interface MapValuePlaceholder<T> {
-  [__RPC_MAP_VALUE_BRAND]: T;
-}
-
-// Types that can be passed over RPC.
-// The reason for using a generic type here is to build a serializable subset of structured
-// cloneable composite types. This allows types defined with the "interface" keyword to pass the
-// serializable check as well. Otherwise, only types defined with the "type" keyword would pass.
-export type RpcCompatible<T> =
-  // Allow `unknown` as a leaf so records/interfaces with `unknown` fields remain compatible.
-  | (IsUnknown<T> extends true ? unknown : never)
-  // Structured cloneables
-  | BaseType
-  // Structured cloneable composites
-  | Map<
-      T extends Map<infer U, unknown> ? RpcCompatible<U> : never,
-      T extends Map<unknown, infer U> ? RpcCompatible<U> : never
-    >
-  | Set<T extends Set<infer U> ? RpcCompatible<U> : never>
-  | Array<T extends Array<infer U> ? RpcCompatible<U> : never>
-  | ReadonlyArray<T extends ReadonlyArray<infer U> ? RpcCompatible<U> : never>
-  | {
-      [K in keyof T as K extends string | number ? K : never]: RpcCompatible<T[K]>;
-    }
-  | Promise<T extends Promise<infer U> ? RpcCompatible<U> : never>
-  // Special types
-  | Stub<Stubable>
-  // Serialized as stubs, see `Stubify`
-  | Stubable;
-
-export type Stub<T extends RpcCompatible<T>> =
-    T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
 
 // Recursively rewrite all `Stubable` types with `Stub`s, and resolve promises.
 // prettier-ignore
@@ -147,6 +141,11 @@ type UnstubifyInner<T> =
 //
 // Keep raw non-stub members so generic assignability still works when UnstubifyInner<T> is deferred.
 // Remove stub members from mixed unions so callback params don’t get both stub and unstubbed signatures.
+// Marker carried by map() callback inputs. This lets primitive placeholders flow through params.
+interface MapValuePlaceholder<T> {
+  [__RPC_MAP_VALUE_BRAND]: T;
+}
+
 type NonStubMembers<T> = Exclude<T, StubBase<any>>;
 type Unstubify<T> =
   | NonStubMembers<T>
@@ -167,6 +166,7 @@ type MaybeDisposable<T> = T extends object ? Disposable : unknown;
 // Everything else can't be passed over RPC.
 // Technically, we use custom thenables here, but they quack like `Promise`s.
 // Intersecting with `(Maybe)Provider` allows pipelining.
+type IsAny<T> = 0 extends (1 & T) ? true : false;
 type UnknownResult = Promise<unknown> & Provider<unknown> & StubBase<unknown>;
 
 // prettier-ignore
