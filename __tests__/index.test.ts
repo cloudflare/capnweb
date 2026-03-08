@@ -422,7 +422,7 @@ class TestTransport implements RpcTransport {
   public log = false;
   private fenced = false;
 
-  async send(message: string): Promise<void> {
+  send(message: string): void {
     // HACK: If the string "$remove$" appears in the message, remove it. This is used in some
     //   tests to hack the RPC protocol.
     message = message.replaceAll("$remove$", "");
@@ -2306,7 +2306,7 @@ describe("WritableStream over RPC", () => {
     // Collect all messages sent by the server (which appear in the client's queue).
     let serverMessages: any[] = [];
     let origServerSend = harness.serverTransport.send;
-    harness.serverTransport.send = async function(message: string) {
+    harness.serverTransport.send = function(message: string) {
       serverMessages.push(JSON.parse(message));
       return origServerSend.call(this, message);
     };
@@ -2314,7 +2314,7 @@ describe("WritableStream over RPC", () => {
     // Collect all messages sent by the client (which appear in the server's queue).
     let clientMessages: any[] = [];
     let origClientSend = harness.clientTransport.send;
-    harness.clientTransport.send = async function(message: string) {
+    harness.clientTransport.send = function(message: string) {
       clientMessages.push(JSON.parse(message));
       return origClientSend.call(this, message);
     };
