@@ -16,17 +16,17 @@ export interface RpcTargetBranded {
   [__RPC_TARGET_BRAND]: never;
 }
 
-// Types that can be used through `Stub`s.
+// Types that can be used through `Stub`s
 // `never[]` preserves compatibility with strongly-typed function signatures without introducing
 // `any` into inference.
 export type Stubable = RpcTargetBranded | ((...args: never[]) => unknown);
 
 type IsUnknown<T> = unknown extends T ? ([T] extends [unknown] ? true : false) : false;
 
-// Types that can be passed over RPC.
+// Types that can be passed over RPC
 // The reason for using a generic type here is to build a serializable subset of structured
-// cloneable composite types. This allows types defined with the "interface" keyword to pass the
-// serializable check as well. Otherwise, only types defined with the "type" keyword would pass.
+//   cloneable composite types. This allows types defined with the "interface" keyword to pass the
+//   serializable check as well. Otherwise, only types defined with the "type" keyword would pass.
 export type RpcCompatible<T> =
   // Allow `unknown` as a leaf so records/interfaces with `unknown` fields remain compatible.
   | (IsUnknown<T> extends true ? unknown : never)
@@ -56,7 +56,6 @@ interface StubBase<T = unknown> extends Disposable {
   dup(): this;
   onRpcBroken(callback: (error: any) => void): void;
 }
-
 export type Stub<T extends RpcCompatible<T>> =
     T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
 
@@ -93,7 +92,6 @@ type BaseType =
   | Request
   | Response
   | Headers;
-
 // Recursively rewrite all `Stubable` types with `Stub`s, and resolve promises.
 // prettier-ignore
 export type Stubify<T> =
