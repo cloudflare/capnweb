@@ -11,21 +11,21 @@ export type ExportId = number;
  * Encoding levels determine how much pre-processing the RPC system does before handing
  * messages to the transport.
  *
- * - `"stringify"`: Full JSON encoding (string output). Default, used by HTTP batch.
- * - `"devalue"`: JS object tree with all types encoded (JSON-compatible). For custom encoders.
- * - `"partial"`: Like devalue but Uint8Array stays raw. For CBOR/MessagePack.
- * - `"passthrough"`: Only encode stubs/functions, pass native types through. For MessagePort.
+ * - `"string"`: Full JSON encoding (string output). Default, used by HTTP batch.
+ * - `"json"`: JS object tree with all types encoded (JSON-compatible). For custom encoders.
+ * - `"jsonWithBytes"`: Like json but Uint8Array stays raw. For CBOR/MessagePack.
+ * - `"structuredClone"`: Only encode stubs/functions, pass native types through. For MessagePort.
  *
  * @example
  * ```ts
  * // What happens to Uint8Array([1, 2, 3]) at each level:
- * "stringify"   → '["bytes","AQID"]'           // JSON string with base64
- * "devalue"     → ["bytes", "AQID"]            // JS array with base64
- * "partial"     → ["bytes", Uint8Array]        // JS array with raw bytes
- * "passthrough" → ["bytes", Uint8Array]        // + Date, BigInt, Error stay native
+ * "string"          → '["bytes","AQID"]'           // JSON string with base64
+ * "json"            → ["bytes", "AQID"]            // JS array with base64
+ * "jsonWithBytes"   → ["bytes", Uint8Array]        // JS array with raw bytes
+ * "structuredClone" → ["bytes", Uint8Array]        // + Date, BigInt, Error stay native
  * ```
  */
-export type EncodingLevel = "stringify" | "devalue" | "partial" | "passthrough";
+export type EncodingLevel = "string" | "json" | "jsonWithBytes" | "structuredClone";
 
 // =======================================================================================
 
@@ -105,13 +105,13 @@ export class Devaluator {
   //     as a function.
   // * exporter: Callbacks to the RPC session for exporting capabilities found in this message.
   // * source: The RpcPayload which contains the value, and therefore owns stubs within.
-  // * encodingLevel: How much encoding to apply (default "stringify").
+  // * encodingLevel: How much encoding to apply (default "string").
   //
   // Returns: The devaluated value, ready to be JSON-serialized (or passed to transport directly
-  // for non-stringify levels).
+  // for non-string levels).
   public static devaluate(
       value: unknown, parent?: object, exporter: Exporter = NULL_EXPORTER, source?: RpcPayload,
-      encodingLevel: EncodingLevel = "stringify")
+      encodingLevel: EncodingLevel = "string")
       : unknown {
     let devaluator = new Devaluator(exporter, source, encodingLevel);
     try {
@@ -151,7 +151,7 @@ export class Devaluator {
       case "primitive":
         if (typeof value === "number" && !isFinite(value)) {
           // At passthrough level, keep Infinity/NaN as native values
-          if (this.encodingLevel === "passthrough") {
+          if (this.encodingLevel === "structuredClone") {
             return value;
           }
           if (value === Infinity) {
@@ -187,23 +187,23 @@ export class Devaluator {
       }
 
       case "bigint":
-        // At passthrough level, keep BigInt as native value
-        if (this.encodingLevel === "passthrough") {
+        // At structuredClone level, keep BigInt as native value
+        if (this.encodingLevel === "structuredClone") {
           return value;
         }
         return ["bigint", (<bigint>value).toString()];
 
       case "date":
-        // At passthrough level, keep Date as native value
-        if (this.encodingLevel === "passthrough") {
+        // At structuredClone level, keep Date as native value
+        if (this.encodingLevel === "structuredClone") {
           return value;
         }
         return ["date", (<Date>value).getTime()];
 
       case "bytes": {
         let bytes = value as Uint8Array;
-        // At passthrough or partial level, keep Uint8Array raw
-        if (this.encodingLevel === "passthrough" || this.encodingLevel === "partial") {
+        // At structuredClone or jsonWithBytes level, keep Uint8Array raw
+        if (this.encodingLevel === "structuredClone" || this.encodingLevel === "jsonWithBytes") {
           return ["bytes", bytes];
         }
         // Otherwise encode as base64
@@ -355,8 +355,8 @@ export class Devaluator {
           e = rewritten;
         }
 
-        // At passthrough level, keep Error as native value (still call onSendError above)
-        if (this.encodingLevel === "passthrough") {
+        // At structuredClone level, keep Error as native value (still call onSendError above)
+        if (this.encodingLevel === "structuredClone") {
           return rewritten || value;
         }
 
@@ -368,8 +368,8 @@ export class Devaluator {
       }
 
       case "undefined":
-        // At passthrough level, keep undefined as native value
-        if (this.encodingLevel === "passthrough") {
+        // At structuredClone level, keep undefined as native value
+        if (this.encodingLevel === "structuredClone") {
           return undefined;
         }
         return ["undefined"];
@@ -518,7 +518,7 @@ function fixBrokenRequestBody(request: Request, body: ReadableStream): RpcPromis
 // delivery to the app. This is used to implement deserialization, except that it doesn't actually
 // start from a raw string.
 export class Evaluator {
-  constructor(private importer: Importer, private encodingLevel: EncodingLevel = "stringify") {}
+  constructor(private importer: Importer, private encodingLevel: EncodingLevel = "string") {}
 
   private hooks: StubHook[] = [];
   private promises: LocatedPromise[] = [];
@@ -540,8 +540,8 @@ export class Evaluator {
   }
 
   private evaluateImpl(value: unknown, parent: object, property: string | number): unknown {
-    // At passthrough level, native types come through directly
-    if (this.encodingLevel === "passthrough" || this.encodingLevel === "partial") {
+    // At structuredClone level, native types come through directly
+    if (this.encodingLevel === "structuredClone" || this.encodingLevel === "jsonWithBytes") {
       if (value instanceof Date || value instanceof Uint8Array ||
           value instanceof Error || typeof value === "bigint") {
         return value;
@@ -568,7 +568,7 @@ export class Evaluator {
           }
           break;
         case "bytes": {
-          // At partial/passthrough level, bytes may already be a Uint8Array
+          // At jsonWithBytes/structuredClone level, bytes may already be a Uint8Array
           if (value[1] instanceof Uint8Array) {
             return value[1];
           }

@@ -4,7 +4,7 @@
 
 import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPromiseImpl } from "./core.js";
 import { serialize, deserialize, EncodingLevel } from "./serialize.js";
-import { RpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions, wrapTransport } from "./rpc.js";
+import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcTargetBranded, RpcCompatible, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse } from "./websocket.js";
@@ -19,8 +19,9 @@ forceInitStreams();
 
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse, wrapTransport };
-export type { RpcTransport, RpcSessionOptions, RpcCompatible, EncodingLevel };
+         nodeHttpBatchRpcResponse };
+export type { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport,
+         RpcSessionOptions, RpcCompatible, EncodingLevel };
 
 // Hack the type system to make RpcStub's types work nicely!
 /**
@@ -76,7 +77,7 @@ export interface RpcSession<T extends RpcCompatible<T> = undefined> {
 }
 export const RpcSession: {
   new <T extends RpcCompatible<T> = undefined>(
-      transport: RpcTransport, localMain?: any, options?: RpcSessionOptions): RpcSession<T>;
+      transport: AnyRpcTransport, localMain?: any, options?: RpcSessionOptions): RpcSession<T>;
 } = <any>RpcSessionImpl;
 
 // RpcTarget needs some hackage too to brand it properly and account for the implementation
