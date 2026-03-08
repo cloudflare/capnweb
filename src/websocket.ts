@@ -38,9 +38,16 @@ export function newWorkersWebSocketRpcResponse(
   });
 }
 
-class WebSocketTransport implements RpcTransport {
+/**
+ * Generic WebSocket transport. Default `T = string` is backward-compatible and satisfies
+ * `RpcTransport`. Use `T = ArrayBuffer` as a building block for binary transports.
+ */
+export class WebSocketTransport<T extends string | ArrayBuffer = string> {
   constructor (webSocket: WebSocket) {
     this.#webSocket = webSocket;
+
+    // Always set binaryType — harmless for string mode, required for ArrayBuffer mode.
+    webSocket.binaryType = "arraybuffer";
 
     if (webSocket.readyState === WebSocket.CONNECTING) {
       this.#sendQueue = [];
@@ -59,16 +66,16 @@ class WebSocketTransport implements RpcTransport {
     webSocket.addEventListener("message", (event: MessageEvent<any>) => {
       if (this.#error) {
         // Ignore further messages.
-      } else if (typeof event.data === "string") {
+      } else if (typeof event.data === "string" || event.data instanceof ArrayBuffer) {
         if (this.#receiveResolver) {
-          this.#receiveResolver(event.data);
+          this.#receiveResolver(event.data as T);
           this.#receiveResolver = undefined;
           this.#receiveRejecter = undefined;
         } else {
-          this.#receiveQueue.push(event.data);
+          this.#receiveQueue.push(event.data as T);
         }
       } else {
-        this.#receivedError(new TypeError("Received non-string message from WebSocket."));
+        this.#receivedError(new TypeError("Received unexpected message type from WebSocket."));
       }
     });
 
@@ -82,13 +89,13 @@ class WebSocketTransport implements RpcTransport {
   }
 
   #webSocket: WebSocket;
-  #sendQueue?: string[];  // only if not opened yet
-  #receiveResolver?: (message: string) => void;
+  #sendQueue?: T[];  // only if not opened yet
+  #receiveResolver?: (message: T) => void;
   #receiveRejecter?: (err: any) => void;
-  #receiveQueue: string[] = [];
+  #receiveQueue: T[] = [];
   #error?: any;
 
-  async send(message: string): Promise<void> {
+  send(message: T): void {
     if (this.#sendQueue === undefined) {
       this.#webSocket.send(message);
     } else {
@@ -97,20 +104,20 @@ class WebSocketTransport implements RpcTransport {
     }
   }
 
-  async receive(): Promise<string> {
+  receive(): Promise<T> {
     if (this.#receiveQueue.length > 0) {
-      return this.#receiveQueue.shift()!;
+      return Promise.resolve(this.#receiveQueue.shift()!);
     } else if (this.#error) {
-      throw this.#error;
+      return Promise.reject(this.#error);
     } else {
-      return new Promise<string>((resolve, reject) => {
+      return new Promise<T>((resolve, reject) => {
         this.#receiveResolver = resolve;
         this.#receiveRejecter = reject;
       });
     }
   }
 
-  abort?(reason: any): void {
+  abort(reason: any): void {
     let message: string;
     if (reason instanceof Error) {
       message = reason.message;
@@ -136,3 +143,6 @@ class WebSocketTransport implements RpcTransport {
     }
   }
 }
+
+// WebSocketTransport<string> satisfies RpcTransport (can't use `implements` on generic class).
+const _typeCheck: RpcTransport = null! as WebSocketTransport<string>;

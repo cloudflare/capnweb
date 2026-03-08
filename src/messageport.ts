@@ -3,7 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { RpcStub } from "./core.js";
-import { RpcTransport, RpcSession, RpcSessionOptions } from "./rpc.js";
+import { RpcTransportWithCustomEncoding, RpcSession, RpcSessionOptions } from "./rpc.js";
 
 // Start a MessagePort session given a MessagePort or a pair of MessagePorts.
 //
@@ -16,7 +16,9 @@ export function newMessagePortRpcSession(
   return rpc.getRemoteMain();
 }
 
-class MessagePortTransport implements RpcTransport {
+class MessagePortTransport implements RpcTransportWithCustomEncoding {
+  readonly encodingLevel = "structuredClone" as const;
+
   constructor (port: MessagePort) {
     this.#port = port;
 
@@ -29,7 +31,8 @@ class MessagePortTransport implements RpcTransport {
       } else if (event.data === null) {
         // Peer is signaling that they're closing the connection
         this.#receivedError(new Error("Peer closed MessagePort connection."));
-      } else if (typeof event.data === "string") {
+      } else {
+        // Accept any structured-clonable data
         if (this.#receiveResolver) {
           this.#receiveResolver(event.data);
           this.#receiveResolver = undefined;
@@ -37,8 +40,6 @@ class MessagePortTransport implements RpcTransport {
         } else {
           this.#receiveQueue.push(event.data);
         }
-      } else {
-        this.#receivedError(new TypeError("Received non-string message from MessagePort."));
       }
     });
 
@@ -48,32 +49,32 @@ class MessagePortTransport implements RpcTransport {
   }
 
   #port: MessagePort;
-  #receiveResolver?: (message: string) => void;
+  #receiveResolver?: (message: unknown) => void;
   #receiveRejecter?: (err: any) => void;
-  #receiveQueue: string[] = [];
+  #receiveQueue: unknown[] = [];
   #error?: any;
 
-  async send(message: string): Promise<void> {
+  send(message: unknown): void {
     if (this.#error) {
       throw this.#error;
     }
     this.#port.postMessage(message);
   }
 
-  async receive(): Promise<string> {
+  async receive(): Promise<unknown> {
     if (this.#receiveQueue.length > 0) {
       return this.#receiveQueue.shift()!;
     } else if (this.#error) {
       throw this.#error;
     } else {
-      return new Promise<string>((resolve, reject) => {
+      return new Promise<unknown>((resolve, reject) => {
         this.#receiveResolver = resolve;
         this.#receiveRejecter = reject;
       });
     }
   }
 
-  abort?(reason: any): void {
+  abort(reason: any): void {
     // Send close signal to peer before closing
     try {
       this.#port.postMessage(null);

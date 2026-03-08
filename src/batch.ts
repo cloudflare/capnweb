@@ -19,7 +19,7 @@ class BatchClientTransport implements RpcTransport {
   #batchToSend: string[] | null = [];
   #batchToReceive: string[] | null = null;
 
-  async send(message: string): Promise<void> {
+  send(message: string): void {
     // If the batch was already sent, we just ignore the message, because throwing may cause the
     // RPC system to abort prematurely. Once the last receive() is done then we'll throw an error
     // that aborts the RPC system at the right time and will propagate to all other requests.
@@ -98,8 +98,9 @@ class BatchServerTransport implements RpcTransport {
   #batchToReceive: string[];
   #allReceived: PromiseWithResolvers<void> = Promise.withResolvers<void>();
 
-  async send(message: string): Promise<void> {
+  send(message: string): number {
     this.#batchToSend.push(message);
+    return message.length;
   }
 
   async receive(): Promise<string> {
