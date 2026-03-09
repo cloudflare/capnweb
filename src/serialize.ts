@@ -165,10 +165,11 @@ export class Devaluator {
 
       case "bytes": {
         let bytes = value as Uint8Array;
-        let b64: string;
         if (bytes.toBase64) {
-          b64 = bytes.toBase64({omitPadding: true});
-        } else if (typeof Buffer !== "undefined") {
+          return ["bytes", bytes.toBase64({omitPadding: true})];
+        }
+        let b64: string;
+        if (typeof Buffer !== "undefined") {
           let buf = bytes instanceof Buffer ? bytes
               : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
           b64 = buf.toString("base64");

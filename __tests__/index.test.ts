@@ -150,6 +150,16 @@ describe("simple serialization", () => {
     expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
   })
 
+  it("strips base64 padding from serialized bytes", () => {
+    // 5 bytes requires base64 padding (5 % 3 != 0), verify it's stripped.
+    let bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    let serialized = serialize(bytes);
+    expect(serialized).not.toContain("=");
+    let deserialized = deserialize(serialized) as Uint8Array;
+    expect(deserialized).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
+  })
+
   it("can serialize Node.js Buffer as bytes", () => {
     if (typeof Buffer === "undefined") return; // skip in browsers
     let buf = Buffer.from("hello!");
