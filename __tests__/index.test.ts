@@ -75,9 +75,10 @@ describe("simple serialization", () => {
   it("can deserialize", () => {
     for (let key in SERIALIZE_TEST_CASES) {
       let value = deserialize(key);
-      if (value instanceof Headers || value instanceof Request || value instanceof Response) {
-        // toStrictEqual() won't work, so test these by serializing them again and making sure
-        // they at least round-trip.
+      if (value instanceof Uint8Array ||
+          value instanceof Headers || value instanceof Request || value instanceof Response) {
+        // toStrictEqual() won't work for these (e.g. in Node.js, Uint8Array may deserialize as
+        // Buffer), so test by serializing again and making sure they round-trip.
         expect(serialize(value)).toBe(key);
       } else {
         expect(value).toStrictEqual(SERIALIZE_TEST_CASES[key]);
@@ -126,6 +127,47 @@ describe("simple serialization", () => {
     expect(() => deserialize('["unknown_type", "param"]')).toThrowError();
     expect(() => deserialize('["date"]')).toThrowError(); // missing timestamp
     expect(() => deserialize('["error"]')).toThrowError(); // missing type and message
+  })
+
+  it("can serialize large Uint8Array without stack overflow", () => {
+    let bytes = new Uint8Array(200000);
+    for (let i = 0; i < bytes.length; i++) {
+      bytes[i] = i & 0xff;
+    }
+    let serialized = serialize(bytes);
+    let deserialized = deserialize(serialized) as Uint8Array;
+    expect(deserialized).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
+  })
+
+  it("correctly serializes Uint8Array with trailing byte value 61", () => {
+    // Byte 61 is ASCII '='. A previous bug applied .replace(/=*$/, "") to the binary string
+    // instead of the base64 output, which would silently strip trailing 61-valued bytes.
+    let bytes = new Uint8Array([72, 101, 108, 108, 111, 61]); // "Hello="
+    let serialized = serialize(bytes);
+    let deserialized = deserialize(serialized) as Uint8Array;
+    expect(deserialized).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
+  })
+
+  it("strips base64 padding from serialized bytes", () => {
+    // 5 bytes requires base64 padding (5 % 3 != 0), verify it's stripped.
+    let bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    let serialized = serialize(bytes);
+    expect(serialized).not.toContain("=");
+    let deserialized = deserialize(serialized) as Uint8Array;
+    expect(deserialized).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
+  })
+
+  it("can serialize Node.js Buffer as bytes", () => {
+    if (typeof Buffer === "undefined") return; // skip in browsers
+    let buf = Buffer.from("hello!");
+    let serialized = serialize(buf);
+    expect(serialized).toBe('["bytes","aGVsbG8h"]');
+    let deserialized = deserialize(serialized) as Uint8Array;
+    expect(deserialized).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(deserialized)).toStrictEqual(new Uint8Array(buf));
   })
 });
 

@@ -43,6 +43,11 @@ type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" 
 
 const AsyncFunction = (async function () {}).constructor;
 
+// Buffer.prototype for Node.js environments, where Buffer is a Uint8Array subclass that we want
+// to accept as "bytes". In browsers, this is undefined, which won't match any prototype.
+let BUFFER_PROTOTYPE: object | undefined =
+    typeof Buffer !== "undefined" ? Buffer.prototype : undefined;
+
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
     case "boolean":
@@ -89,6 +94,7 @@ export function typeForRpc(value: unknown): TypeForRpc {
       return "date";
 
     case Uint8Array.prototype:
+    case BUFFER_PROTOTYPE:
       return "bytes";
 
     case WritableStream.prototype:

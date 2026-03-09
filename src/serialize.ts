@@ -52,20 +52,22 @@ const ERROR_TYPES: Record<string, any> = {
   // TODO: DOMError? Others?
 };
 
-// Polyfill type for UInt8Array.toBase64(), which has started landing in JS runtimes but is not
-// supported everywhere just yet.
-interface Uint8Array {
-  toBase64?(options?: {
-    alphabet?: "base64" | "base64url",
-    omitPadding?: boolean
-  }): string;
-};
+// Polyfill types for Uint8Array.toBase64() / Uint8Array.fromBase64(), which have started landing
+// in JS runtimes but are not supported everywhere just yet.
+declare global {
+  interface Uint8Array {
+    toBase64?(options?: {
+      alphabet?: "base64" | "base64url",
+      omitPadding?: boolean
+    }): string;
+  }
 
-interface FromBase64 {
-  fromBase64?(text: string, options?: {
-    alphabet?: "base64" | "base64url",
-    lastChunkHandling?: "loose" | "strict" | "stop-before-partial"
-  }): Uint8Array;
+  interface Uint8ArrayConstructor {
+    fromBase64?(text: string, options?: {
+      alphabet?: "base64" | "base64url",
+      lastChunkHandling?: "loose" | "strict" | "stop-before-partial"
+    }): Uint8Array;
+  }
 }
 
 // Converts fully-hydrated messages into object trees that are JSON-serializable for sending over
@@ -165,10 +167,20 @@ export class Devaluator {
         let bytes = value as Uint8Array;
         if (bytes.toBase64) {
           return ["bytes", bytes.toBase64({omitPadding: true})];
-        } else {
-          return ["bytes",
-              btoa(String.fromCharCode.apply(null, bytes as number[]).replace(/=*$/, ""))];
         }
+        let b64: string;
+        if (typeof Buffer !== "undefined") {
+          let buf = bytes instanceof Buffer ? bytes
+              : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+          b64 = buf.toString("base64");
+        } else {
+          let binary = "";
+          for (let i = 0; i < bytes.length; i++) {
+            binary += String.fromCharCode(bytes[i]);
+          }
+          b64 = btoa(binary);
+        }
+        return ["bytes", b64.replace(/=+$/, "")];
       }
 
       case "headers":
@@ -507,10 +519,11 @@ export class Evaluator {
           }
           break;
         case "bytes": {
-          let b64 = Uint8Array as FromBase64;
           if (typeof value[1] == "string") {
-            if (b64.fromBase64) {
-              return b64.fromBase64(value[1]);
+            if (typeof Buffer !== "undefined") {
+              return Buffer.from(value[1], "base64");
+            } else if (Uint8Array.fromBase64) {
+              return Uint8Array.fromBase64(value[1]);
             } else {
               let bs = atob(value[1]);
               let len = bs.length;
