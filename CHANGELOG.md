@@ -1,5 +1,17 @@
 # capnweb
 
+## 0.6.0
+
+### Minor Changes
+
+- [#145](https://github.com/cloudflare/capnweb/pull/145) [`5667226`](https://github.com/cloudflare/capnweb/commit/5667226688fad4e28508f7779d49c1c89e53f102) Thanks [@kentonv](https://github.com/kentonv)! - When Node's `Buffer` is available, Cap'n Web will now serialize it the same as `Uint8Array`, and will deserialize all byte arrays as `Buffer` by default. `Buffer` is a subclass of `Uint8Array`, so this should be compatible while being convenient in Node apps.
+
+- [#142](https://github.com/cloudflare/capnweb/pull/142) [`60be60d`](https://github.com/cloudflare/capnweb/commit/60be60d504f6d6984e88a6ef558b91dee5afb97b) Thanks [@VastBlast](https://github.com/VastBlast)! - Major improvements to type definitions, fixing bugs and making them more accurate.
+
+### Patch Changes
+
+- [#145](https://github.com/cloudflare/capnweb/pull/145) [`5667226`](https://github.com/cloudflare/capnweb/commit/5667226688fad4e28508f7779d49c1c89e53f102) Thanks [@kentonv](https://github.com/kentonv)! - Fixed base64 encoding of very large byte arrays on platforms that don't support Uint8Array.toBase64().
+
 ## 0.5.0
 
 ### Minor Changes
