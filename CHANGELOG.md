@@ -1,5 +1,11 @@
 # capnweb
 
+## 0.6.1
+
+### Patch Changes
+
+- [#148](https://github.com/cloudflare/capnweb/pull/148) [`189fa79`](https://github.com/cloudflare/capnweb/commit/189fa799f6ef26d0704b355c1e11a9ed9a362247) Thanks [@kentonv](https://github.com/kentonv)! - Fixed type overrides for Uint8Array's toBase64 and fromBase64 leaking into capnweb's public interface.
+
 ## 0.6.0
 
 ### Minor Changes
