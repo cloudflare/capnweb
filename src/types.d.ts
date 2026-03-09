@@ -140,11 +140,6 @@ type UnstubifyInner<T> =
 // Keep raw non-stub members so generic assignability still works when UnstubifyInner<T> is deferred.
 // Remove stub members from mixed unions so callback params don’t get both stub and unstubbed signatures.
 // Marker carried by map() callback inputs. This lets primitive placeholders flow through params.
-interface MapValuePlaceholder<T> {
-  [__RPC_MAP_VALUE_BRAND]: T;
-}
-
-type NonStubMembers<T> = Exclude<T, StubBase<any>>;
 type Unstubify<T> =
   | NonStubMembers<T>
   | UnstubifyInner<T>
@@ -152,6 +147,12 @@ type Unstubify<T> =
   | MapValuePlaceholder<UnstubifyInner<T>>;
 
 type UnstubifyAll<A extends readonly unknown[]> = { [I in keyof A]: Unstubify<A[I]> };
+
+interface MapValuePlaceholder<T> {
+  [__RPC_MAP_VALUE_BRAND]: T;
+}
+
+type NonStubMembers<T> = Exclude<T, StubBase<any>>;
 
 // Utility type for adding `Disposable`s to `object` types only.
 // Note `unknown & T` is equivalent to `T`.
@@ -164,9 +165,6 @@ type MaybeDisposable<T> = T extends object ? Disposable : unknown;
 // Everything else can't be passed over RPC.
 // Technically, we use custom thenables here, but they quack like `Promise`s.
 // Intersecting with `(Maybe)Provider` allows pipelining.
-type IsAny<T> = 0 extends (1 & T) ? true : false;
-type UnknownResult = Promise<unknown> & Provider<unknown> & StubBase<unknown>;
-
 // prettier-ignore
 type Result<R> =
   IsAny<R> extends true ? UnknownResult
@@ -174,6 +172,9 @@ type Result<R> =
   : R extends Stubable ? Promise<Stub<R>> & Provider<R> & StubBase<R>
   : R extends RpcCompatible<R> ? Promise<Stubify<R> & MaybeDisposable<R>> & Provider<R> & StubBase<R>
   : never;
+
+type IsAny<T> = 0 extends (1 & T) ? true : false;
+type UnknownResult = Promise<unknown> & Provider<unknown> & StubBase<unknown>;
 
 // Type for method or property on an RPC interface.
 // For methods, unwrap `Stub`s in parameters, and rewrite returns to be `Result`s.
