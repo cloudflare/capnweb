@@ -3,5 +3,5 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["./**/*.ts"]
+  "include": ["./**/*.ts", "../src/base64-shims.d.ts"]
 }

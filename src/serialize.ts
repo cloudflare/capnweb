@@ -52,24 +52,6 @@ const ERROR_TYPES: Record<string, any> = {
   // TODO: DOMError? Others?
 };
 
-// Polyfill types for Uint8Array.toBase64() / Uint8Array.fromBase64(), which have started landing
-// in JS runtimes but are not supported everywhere just yet.
-declare global {
-  interface Uint8Array {
-    toBase64?(options?: {
-      alphabet?: "base64" | "base64url",
-      omitPadding?: boolean
-    }): string;
-  }
-
-  interface Uint8ArrayConstructor {
-    fromBase64?(text: string, options?: {
-      alphabet?: "base64" | "base64url",
-      lastChunkHandling?: "loose" | "strict" | "stop-before-partial"
-    }): Uint8Array;
-  }
-}
-
 // Converts fully-hydrated messages into object trees that are JSON-serializable for sending over
 // the wire. This is used to implement serialization -- but it doesn't take the last step of
 // actually converting to a string. (The name is meant to be the opposite of "Evaluator", which
