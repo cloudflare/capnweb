@@ -838,7 +838,7 @@ class RpcSessionImpl implements Importer, Exporter {
           case "abort": {
             let payload = new Evaluator(this).evaluate(msg[1]);
             payload.dispose();  // just in case -- should be no-op
-            this.abort(payload, false);
+            this.abort(payload.value, false);
             break;
           }
         }
