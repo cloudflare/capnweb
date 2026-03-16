@@ -5,7 +5,7 @@
 import { expect, it, describe, inject } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport, RpcTarget,
          RpcStub, newWebSocketRpcSession, newMessagePortRpcSession,
-         newHttpBatchRpcSession} from "../src/index.js"
+         newHttpBatchRpcSession } from "../src/index.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 let SERIALIZE_TEST_CASES: Record<string, unknown> = {
@@ -168,6 +168,16 @@ describe("simple serialization", () => {
     let deserialized = deserialize(serialized) as Uint8Array;
     expect(deserialized).toBeInstanceOf(Uint8Array);
     expect(new Uint8Array(deserialized)).toStrictEqual(new Uint8Array(buf));
+  })
+
+  it("preserves Invalid Date values through serialization", () => {
+    let invalidDate = new Date(NaN);
+    let serialized = serialize(invalidDate);
+    expect(serialized).toBe('["date",null]');
+
+    let deserialized = deserialize(serialized) as Date;
+    expect(deserialized).toBeInstanceOf(Date);
+    expect(Number.isNaN(deserialized.getTime())).toBe(true);
   })
 });
 
@@ -1499,6 +1509,25 @@ describe("onRpcBroken", () => {
       {which: "counter1", error: new Error("test disconnect")},
       {which: "hangingCall", error: new Error("test disconnect")},
     ]);
+  });
+
+  it("propagates remote abort reasons to onRpcBroken", async () => {
+    let clientTransport = new TestTransport("client");
+    let serverTransport = new TestTransport("server", clientTransport);
+
+    let client = new RpcSession<TestTarget>(clientTransport);
+    new RpcSession(serverTransport, new TestTarget());
+
+    let stub = client.getRemoteMain();
+    let brokenPromise = new Promise(resolve => {
+      stub.onRpcBroken(resolve);
+    });
+
+    await clientTransport.send('["bogus"]');
+
+    let error = await brokenPromise;
+    expect(error).toBeInstanceOf(Error);
+    expect(error).toStrictEqual(new Error('bad RPC message: ["bogus"]'));
   });
 });
 
