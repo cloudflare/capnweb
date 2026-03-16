@@ -169,6 +169,16 @@ describe("simple serialization", () => {
     expect(deserialized).toBeInstanceOf(Uint8Array);
     expect(new Uint8Array(deserialized)).toStrictEqual(new Uint8Array(buf));
   })
+
+  it("preserves Invalid Date values through serialization", () => {
+    let invalidDate = new Date(NaN);
+    let serialized = serialize(invalidDate);
+    expect(serialized).toBe('["date",null]');
+
+    let deserialized = deserialize(serialized) as Date;
+    expect(deserialized).toBeInstanceOf(Date);
+    expect(Number.isNaN(deserialized.getTime())).toBe(true);
+  })
 });
 
 // =======================================================================================
