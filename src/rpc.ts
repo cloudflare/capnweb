@@ -323,7 +323,7 @@ class RpcSessionImpl implements Importer, Exporter {
   private reverseExports: Map<StubHook, ExportId> = new Map();
   private imports: Array<ImportTableEntry> = [];
   private abortReason?: any;
-  private cancelReadLoop: (error: any) => void;
+  private cancelReadLoop?: (error: any) => void;
 
   // We assign positive numbers to imports we initiate, and negative numbers to exports we
   // initiate. So the next import ID is just `imports.length`, but the next export ID needs
@@ -348,11 +348,7 @@ class RpcSessionImpl implements Importer, Exporter {
     // Import zero is the other side's bootstrap object.
     this.imports.push(new ImportTableEntry(this, 0, false));
 
-    let rejectFunc: (error: any) => void;;
-    let abortPromise = new Promise<never>((resolve, reject) => { rejectFunc = reject; });
-    this.cancelReadLoop = rejectFunc!;
-
-    this.readLoop(abortPromise).catch(err => this.abort(err));
+    this.readLoop().catch(err => this.abort(err));
   }
 
   // Should only be called once immediately after construction.
@@ -684,7 +680,8 @@ class RpcSessionImpl implements Importer, Exporter {
     // Don't double-abort.
     if (this.abortReason !== undefined) return;
 
-    this.cancelReadLoop(error);
+    this.cancelReadLoop?.(error);
+    this.cancelReadLoop = undefined;
 
     if (trySendAbortMessage) {
       try {
@@ -734,9 +731,9 @@ class RpcSessionImpl implements Importer, Exporter {
     }
   }
 
-  private async readLoop(abortPromise: Promise<never>) {
+  private async readLoop() {
     while (!this.abortReason) {
-      let msg = JSON.parse(await Promise.race([this.transport.receive(), abortPromise]));
+      let msg = JSON.parse(await this.receiveOrAbort());
       if (this.abortReason) break;  // check again before processing
 
       if (msg instanceof Array) {
@@ -846,6 +843,27 @@ class RpcSessionImpl implements Importer, Exporter {
 
       throw new Error(`bad RPC message: ${JSON.stringify(msg)}`);
     }
+  }
+
+  // Use a fresh cancellation promise for each read. Reusing one session-long promise here causes
+  // Promise.race() to accumulate reactions until the session is shut down.
+  private receiveOrAbort(): Promise<string> {
+    let readCanceled = Promise.withResolvers<never>();
+    this.cancelReadLoop = readCanceled.reject;
+
+    let receivePromise: Promise<string>;
+    try {
+      receivePromise = this.transport.receive();
+    } catch (err) {
+      this.cancelReadLoop = undefined;
+      return Promise.reject(err);
+    }
+
+    return Promise.race([receivePromise, readCanceled.promise]).finally(() => {
+      if (this.cancelReadLoop === readCanceled.reject) {
+        this.cancelReadLoop = undefined;
+      }
+    });
   }
 
   async drain(): Promise<void> {
