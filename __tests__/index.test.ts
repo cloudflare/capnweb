@@ -1537,6 +1537,36 @@ describe("WebSockets", () => {
       expect(await cap.incrementCounter(counter, 9)).toBe(13);
     }
   });
+
+  it("can handle the same high-byte-volume workload in Node", async () => {
+    let entries = 6000;
+    let concurrency = 100;
+    let payload = "0".repeat(500_000);
+    let url = `ws://${inject("testServerHost")}`;
+    let cap = newWebSocketRpcSession<TestTarget>(url);
+    let completed = 0;
+    let pending = new Set<Promise<void>>();
+
+    try {
+      for (let i = 0; i < entries; i++) {
+        while (pending.size >= concurrency) {
+          await Promise.race(pending);
+        }
+
+        let task = cap.store(`key-${i}`, payload)
+            .then(() => { completed += 1; })
+            .finally(() => pending.delete(task));
+
+        pending.add(task);
+      }
+
+      await Promise.all(pending);
+    } finally {
+      cap[Symbol.dispose]();
+    }
+
+    expect(completed).toBe(entries);
+  }, 60_000);
 });
 
 describe("MessagePorts", () => {

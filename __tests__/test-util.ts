@@ -27,6 +27,8 @@ function throwErrorImpl(): never {
 }
 
 export class TestTarget extends RpcTarget {
+  store(_key: string, _value: string) {}
+
   square(i: number) {
     return i * i;
   }
@@ -63,7 +65,13 @@ export class TestTarget extends RpcTarget {
     return result;
   }
 
-  returnNull() { return null; }
-  returnUndefined() { return undefined; }
-  returnNumber(i: number) { return i; }
+  returnNull() {
+    return null;
+  }
+  returnUndefined() {
+    return undefined;
+  }
+  returnNumber(i: number) {
+    return i;
+  }
 }
