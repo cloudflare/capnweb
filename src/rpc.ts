@@ -744,7 +744,20 @@ class RpcSessionImpl implements Importer, Exporter {
 
   private async readLoop() {
     while (!this.abortReason) {
-      let msg = JSON.parse(await this.receiveOrAbort());
+      // Each receive needs its own abort promise so Promise.race() doesn't keep old reads.
+      let readCanceled = Promise.withResolvers<never>();
+      this.cancelReadLoop = readCanceled.reject;
+
+      let msgText: string;
+      try {
+        msgText = await Promise.race([this.transport.receive(), readCanceled.promise]);
+      } finally {
+        if (this.cancelReadLoop === readCanceled.reject) {
+          this.cancelReadLoop = undefined;
+        }
+      }
+
+      let msg = JSON.parse(msgText);
       if (this.abortReason) break;  // check again before processing
 
       if (msg instanceof Array) {
@@ -860,27 +873,6 @@ class RpcSessionImpl implements Importer, Exporter {
 
       throw new Error(`bad RPC message: ${JSON.stringify(msg)}`);
     }
-  }
-
-  // Use a fresh cancellation promise for each read. Reusing one session-long promise here causes
-  // Promise.race() to accumulate reactions until the session is shut down.
-  private receiveOrAbort(): Promise<string> {
-    let readCanceled = Promise.withResolvers<never>();
-    this.cancelReadLoop = readCanceled.reject;
-
-    let receivePromise: Promise<string>;
-    try {
-      receivePromise = this.transport.receive();
-    } catch (err) {
-      this.cancelReadLoop = undefined;
-      return Promise.reject(err);
-    }
-
-    return Promise.race([receivePromise, readCanceled.promise]).finally(() => {
-      if (this.cancelReadLoop === readCanceled.reject) {
-        this.cancelReadLoop = undefined;
-      }
-    });
   }
 
   async drain(): Promise<void> {
