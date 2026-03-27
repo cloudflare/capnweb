@@ -6,7 +6,7 @@ Cap'n Web is a spiritual sibling to [Cap'n Proto](https://capnproto.org) (and is
 * That said, it integrates nicely with TypeScript.
 * Also unlike Cap'n Proto, Cap'n Web's underlying serialization is human-readable. In fact, it's just JSON, with a little pre-/post-processing.
 * It works over HTTP, WebSocket, and postMessage() out-of-the-box, with the ability to extend it to other transports easily.
-* It works in all major browsers, Cloudflare Workers, Node.js, and other modern JavaScript runtimes.
+* It works in all major browsers, Cloudflare Workers, Node.js, Bun, Deno, and other modern JavaScript runtimes.
 The whole thing compresses (minify+gzip) to under 10kB with no dependencies.
 
 Cap'n Web is more expressive than almost every other RPC system, because it implements an object-capability RPC model. That means it:
@@ -627,6 +627,71 @@ Deno.serve(async (req) => {
   }
 
   return new Response("Not Found", { status: 404 });
+});
+```
+
+### HTTP server on Bun
+
+Bun's server-side WebSocket API uses [callback-based handlers](https://bun.sh/docs/runtime/http/websockets) instead of the standard `addEventListener` interface. Cap'n Web provides `newBunWebSocketRpcHandler()` which returns a handler object you can pass directly to `Bun.serve()`.
+
+```ts
+import { RpcTarget, newBunWebSocketRpcHandler, newHttpBatchRpcResponse } from "capnweb";
+
+class MyApiImpl extends RpcTarget implements MyApi {
+  // ... define API, same as above ...
+}
+
+// Create a WebSocket handler that manages RPC sessions automatically.
+// The callback is invoked once per connection to create a fresh API instance.
+let rpcHandler = newBunWebSocketRpcHandler(() => new MyApiImpl());
+
+Bun.serve({
+  async fetch(req, server) {
+    let url = new URL(req.url);
+    if (url.pathname === "/api") {
+      // Upgrade WebSocket requests.
+      if (req.headers.get("upgrade")?.toLowerCase() === "websocket") {
+        if (server.upgrade(req)) return;
+        return new Response("WebSocket upgrade failed", { status: 500 });
+      }
+
+      // Handle HTTP batch requests.
+      let response = await newHttpBatchRpcResponse(req, new MyApiImpl());
+      response.headers.set("Access-Control-Allow-Origin", "*");
+      return response;
+    }
+
+    return new Response("Not Found", { status: 404 });
+  },
+
+  // Pass the handler directly — no manual wiring needed.
+  websocket: rpcHandler,
+});
+```
+
+```ts
+import { newBunWebSocketRpcSession, newHttpBatchRpcResponse, type RpcTarget, type BunWebSocketTransport } from "capnweb";
+
+class MyApiImpl extends RpcTarget implements MyApi {
+  // ... define API, same as above ...
+}
+
+type Data = { userId: string; transport?: BunWebSocketTransport<Data> };
+
+Bun.serve<Data>({
+  fetch(req, server) {
+    let userId = authenticate(req);
+    server.upgrade(req, { data: { userId } });
+  },
+  websocket: {
+    open(ws) {
+      let { stub, transport } = newBunWebSocketRpcSession(ws, new MyApiImpl());
+      ws.data.transport = transport;
+    },
+    message(ws, msg) { ws.data.transport?.dispatchMessage(msg); },
+    close(ws, code, reason) { ws.data.transport?.dispatchClose(code, reason); },
+    error(ws, err) { ws.data.transport?.dispatchError(err); },
+  },
 });
 ```
 
