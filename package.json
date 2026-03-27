@@ -14,10 +14,12 @@
       "types": "./dist/index.d.ts",
       "import": {
         "workerd": "./dist/index-workers.js",
+        "bun": "./dist/index-bun.js",
         "default": "./dist/index.js"
       },
       "require": {
         "workerd": "./dist/index-workers.cjs",
+        "bun": "./dist/index-bun.cjs",
         "default": "./dist/index.cjs"
       }
     }
@@ -30,6 +32,8 @@
     "build": "tsup",
     "build:watch": "tsup --watch",
     "test": "vitest run",
+    "test:bun": "bun test __tests__/bun.test.ts",
+    "test:ci": "vitest run && bun test __tests__/bun.test.ts",
     "test:watch": "vitest",
     "test:types": "tsc -p __type-tests__/tsconfig.json --noEmit",
     "prepublishOnly": "npm run build"
@@ -39,6 +43,7 @@
     "@changesets/cli": "^2.29.8",
     "@cloudflare/vitest-pool-workers": "^0.12.10",
     "@cloudflare/workers-types": "^4.20260205.0",
+    "@types/bun": "^1.2.0",
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.4",
     "pkg-pr-new": "^0.0.60",
