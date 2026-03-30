@@ -11,17 +11,19 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": {
-        "workerd": "./dist/index-workers.js",
-        "bun": "./dist/index-bun.js",
-        "default": "./dist/index.js"
+      "workerd": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index-workers.js",
+        "require": "./dist/index-workers.cjs"
       },
-      "require": {
-        "workerd": "./dist/index-workers.cjs",
-        "bun": "./dist/index-bun.cjs",
-        "default": "./dist/index.cjs"
-      }
+      "bun": {
+        "types": "./dist/index-bun.d.ts",
+        "import": "./dist/index-bun.js",
+        "require": "./dist/index-bun.cjs"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "type": "module",
