@@ -1054,6 +1054,92 @@ describe("map() over RPC", () => {
   });
 });
 
+describe("record-replay closure over RPC", () => {
+  it("passes a function as a closure inside a map() callback", async () => {
+    await using harness = new TestHarness(new TestTarget());
+    let counter = new RpcStub(new Counter(0));
+
+    expect(await harness.stub.map(stub => {
+      return stub.callFunction(y => counter.increment(y), 3);
+    })).toStrictEqual({result: 3});
+  });
+
+  it("encodes a closure's literal return value as its terminal instruction", async () => {
+    await using harness = new TestHarness(new TestTarget());
+    let counter = new RpcStub(new Counter(0));
+
+    expect(await harness.stub.map(stub => {
+      return stub.callFunction(y => {
+        counter.increment(y);
+        return 42;
+      }, 3);
+    })).toStrictEqual({result: 42});
+    expect(await counter.value).toBe(3);
+  });
+
+  it("supports invoking a received closure multiple times", async () => {
+    class DoubleCaller extends RpcTarget {
+      async callTwice(fn: RpcStub<(x: number) => Promise<number>>) {
+        return [await fn(1), await fn(2)];
+      }
+    }
+
+    await using harness = new TestHarness(new DoubleCaller());
+    let counter = new RpcStub(new Counter(10));
+
+    expect(await harness.stub.map(stub => {
+      return stub.callTwice(y => counter.increment(y));
+    })).toStrictEqual([11, 13]);
+  });
+
+  it("supports nested closures", async () => {
+    class Passthrough extends RpcTarget {
+      call(fn: RpcStub<(x: number) => number | Promise<number>>, x: number) {
+        return fn(x);
+      }
+    }
+
+    await using harness = new TestHarness(new Passthrough());
+    let counter = new RpcStub(new Counter(0));
+
+    expect(await harness.stub.map(stub => {
+      return stub.call(y => {
+        return stub.call(z => {
+          counter.increment(y);
+          return counter.increment(z);
+        }, 7);
+      }, 5);
+    })).toBe(12);
+  });
+
+  it("supports dup() to stash a closure past its param payload's lifetime", async () => {
+    class Stasher extends RpcTarget {
+      private stashed: any;
+
+      stashFn(fn: any) { this.stashed = fn.dup(); }
+      async invokeStashed(x: number) { return await this.stashed(x); }
+      release() {
+        this.stashed?.[Symbol.dispose]();
+        this.stashed = undefined;
+      }
+    }
+
+    await using harness = new TestHarness(new Stasher());
+    let stub = harness.stub;
+    let counter = new RpcStub(new Counter(100));
+
+    await stub.map(stub => {
+      return stub.stashFn((y: number) => counter.increment(y));
+    });
+
+    expect(await stub.invokeStashed(5)).toBe(105);
+    expect(await stub.invokeStashed(3)).toBe(108);
+
+    await stub.release();
+  });
+
+});
+
 describe("stub disposal over RPC", () => {
   it("disposes remote RpcTarget when stub is disposed", async () => {
     let targetDisposedCount = 0;

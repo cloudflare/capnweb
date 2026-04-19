@@ -4,6 +4,7 @@
 
 import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
 import { WORKERS_MODULE_SYMBOL } from "./symbols.js"
+import type { Importer } from "./serialize.js";
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
 if (!Symbol.dispose) {
@@ -155,7 +156,13 @@ function mapNotLoaded(): never {
 
 // map() is implemented in `map.ts`. We can't import it here because it would create an import
 // cycle, so instead we define two hook functions that map.ts will overwrite when it is imported.
-export let mapImpl: MapImpl = { applyMap: mapNotLoaded, sendMap: mapNotLoaded };
+export let mapImpl: MapImpl = { 
+  applyMap: mapNotLoaded, 
+  sendMap: mapNotLoaded, 
+  evaluateCaptures: mapNotLoaded, 
+  serializeClosure: mapNotLoaded,
+  evaluateClosure: mapNotLoaded
+};
 
 type MapImpl = {
   // Applies a map function to an input value (usually an array).
@@ -166,6 +173,12 @@ type MapImpl = {
   // Implements the .map() method of RpcStub.
   sendMap(hook: StubHook, path: PropertyPath, func: (value: RpcPromise) => unknown)
          : RpcPromise;
+
+  evaluateCaptures(captures: unknown[], importer: Importer): StubHook[];
+
+  evaluateClosure(captures: StubHook[], instructions: unknown[]): (arg: unknown) => unknown;
+
+  serializeClosure(func: (value: RpcPromise) => unknown): unknown[];
 }
 
 function streamNotLoaded(): never {

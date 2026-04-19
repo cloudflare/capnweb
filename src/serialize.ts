@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook, mapImpl } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -10,6 +10,7 @@ export type ExportId = number;
 // =======================================================================================
 
 export interface Exporter {
+  exportFunctionAsClosure?: boolean;
   exportStub(hook: StubHook): ExportId;
   exportPromise(hook: StubHook): ExportId;
   getImport(hook: StubHook): ImportId | undefined;
@@ -349,6 +350,10 @@ export class Devaluator {
       case "rpc-target": {
         if (!this.source) {
           throw new Error("Can't serialize RPC stubs in this context.");
+        }
+        if (kind === 'function' && this.exporter.exportFunctionAsClosure) {
+          // Serialize as a closure (record-replay)
+          return mapImpl.serializeClosure(value as ((arg: any) => any));
         }
 
         let hook = this.source.getHookForRpcTarget(<RpcTarget|Function>value, parent);
@@ -725,24 +730,7 @@ export class Evaluator {
             break;  // report error below
           }
 
-          let captures: StubHook[] = value[3].map(cap => {
-            if (!(cap instanceof Array) ||
-                cap.length !== 2 ||
-                (cap[0] !== "import" && cap[0] !== "export") ||
-                typeof cap[1] !== "number") {
-              throw new TypeError(`unknown map capture: ${JSON.stringify(cap)}`);
-            }
-
-            if (cap[0] === "export") {
-              return this.importer.importStub(cap[1]);
-            } else {
-              let exp = this.importer.getExport(cap[1]);
-              if (!exp) {
-                throw new Error(`no such entry on exports table: ${cap[1]}`);
-              }
-              return exp.dup();
-            }
-          });
+          let captures: StubHook[] = mapImpl.evaluateCaptures(value[3], this.importer);
 
           let instructions = value[4];
 
@@ -751,6 +739,21 @@ export class Evaluator {
           let promise = new RpcPromise(resultHook, []);
           this.promises.push({promise, parent, property});
           return promise;
+        }
+
+        case "closure": {
+          if (value.length !== 3 ||
+              !(value[1] instanceof Array) ||
+              !(value[2] instanceof Array)) {
+            break;   // report error below
+          }
+          const captures = mapImpl.evaluateCaptures(value[1], this.importer);
+          const instructions = value[2];
+          // Tie each capture's lifetime to the containing payload:
+          for (const cap of captures) {
+            this.hooks.push(cap);
+          }
+          return mapImpl.evaluateClosure(captures, instructions);
         }
 
         case "export":
