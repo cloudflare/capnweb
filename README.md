@@ -669,32 +669,6 @@ Bun.serve({
 });
 ```
 
-```ts
-import { newBunWebSocketRpcSession, newHttpBatchRpcResponse, type RpcTarget, type BunWebSocketTransport } from "capnweb";
-
-class MyApiImpl extends RpcTarget implements MyApi {
-  // ... define API, same as above ...
-}
-
-type Data = { userId: string; transport?: BunWebSocketTransport<Data> };
-
-Bun.serve<Data>({
-  fetch(req, server) {
-    let userId = authenticate(req);
-    server.upgrade(req, { data: { userId } });
-  },
-  websocket: {
-    open(ws) {
-      let { stub, transport } = newBunWebSocketRpcSession(ws, new MyApiImpl());
-      ws.data.transport = transport;
-    },
-    message(ws, msg) { ws.data.transport?.dispatchMessage(msg); },
-    close(ws, code, reason) { ws.data.transport?.dispatchClose(code, reason); },
-    error(ws, err) { ws.data.transport?.dispatchError(err); },
-  },
-});
-```
-
 ### HTTP server on other runtimes
 
 Every runtime does HTTP handling and WebSockets a little differently, although most modern runtimes use the standard `Request` and `Response` types from the Fetch API, as well as the standard `WebSocket` API. You should be able to use these two functions (exported by `capnweb`) to implement both HTTP batch and WebSocket handling on all platforms:
