@@ -11,15 +11,19 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": {
-        "workerd": "./dist/index-workers.js",
-        "default": "./dist/index.js"
+      "workerd": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index-workers.js",
+        "require": "./dist/index-workers.cjs"
       },
-      "require": {
-        "workerd": "./dist/index-workers.cjs",
-        "default": "./dist/index.cjs"
-      }
+      "bun": {
+        "types": "./dist/index-bun.d.ts",
+        "import": "./dist/index-bun.js",
+        "require": "./dist/index-bun.cjs"
+      },
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "type": "module",
@@ -30,6 +34,8 @@
     "build": "tsup",
     "build:watch": "tsup --watch",
     "test": "vitest run",
+    "test:bun": "bun test __tests__/bun.test.ts",
+    "test:ci": "vitest run && bun test __tests__/bun.test.ts",
     "test:watch": "vitest",
     "test:types": "tsc -p __type-tests__/tsconfig.json --noEmit",
     "prepublishOnly": "npm run build"
@@ -39,6 +45,7 @@
     "@changesets/cli": "^2.29.8",
     "@cloudflare/vitest-pool-workers": "^0.12.10",
     "@cloudflare/workers-types": "^4.20260205.0",
+    "@types/bun": "^1.2.0",
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.4",
     "pkg-pr-new": "^0.0.60",
