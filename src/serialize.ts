@@ -46,6 +46,17 @@ class NullExporter implements Exporter {
 
 const NULL_EXPORTER = new NullExporter();
 
+// Collect all bytes from a ReadableStream into a Blob with the given MIME type. Used on the
+// receive side to assemble a Blob from a pipe stream before delivering to user code.
+//
+// `Response` is a standard global in every runtime we support (Node >=18, browsers, workerd), so
+// we can rely on `Response.blob()` for the heavy lifting. `Response.blob()` may discard the
+// caller-specified MIME type, so we `slice()` to reattach it if needed.
+async function streamToBlob(stream: ReadableStream, type: string): Promise<Blob> {
+  let b = await new Response(stream).blob();
+  return b.type === type ? b : b.slice(0, b.size, type);
+}
+
 // Maps error name to error class for deserialization.
 const ERROR_TYPES: Record<string, any> = {
   Error, EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError, AggregateError,
@@ -292,6 +303,21 @@ export class Devaluator {
         return ["response", body, init];
       }
 
+      case "blob": {
+        // Blobs are always streamed through a pipe. Reading a Blob's bytes is inherently async,
+        // so there's no way to preserve send-side e-order regardless of encoding; always using
+        // the pipe keeps the encoder synchronous (matching the wire semantics of a payload
+        // containing a promise).
+        //
+        // When devaluating via NULL_EXPORTER (i.e. `serialize()`), createPipe() throws
+        // "Cannot create pipes without an RPC session." — same behaviour as streams and stubs.
+        let blob = value as Blob;
+        let readable = blob.stream();
+        let hook = streamImpl.createReadableStreamHook(readable);
+        let importId = this.exporter.createPipe(readable, hook);
+        return ["blob", blob.type, ["readable", importId]];
+      }
+
       case "error": {
         let e = <Error>value;
 
@@ -451,6 +477,17 @@ function fixBrokenRequestBody(request: Request, body: ReadableStream): RpcPromis
     let bytes = new Uint8Array(arrayBuffer);
     let result = new Request(request, {body: bytes});
     return new PayloadStubHook(RpcPayload.fromAppReturn(result));
+  });
+  return new RpcPromise(new PromiseStubHook(promise), []);
+}
+
+// Assemble a Blob from a pipe ReadableStream asynchronously, wrapped in an RpcPromise so it plugs
+// into the existing payload-delivery substitution machinery. Same pattern as
+// fixBrokenRequestBody() above: the caller pushes the returned RpcPromise into the Evaluator's
+// `promises` list, and deliverTo() replaces it with the resolved Blob before user code runs.
+function streamToBlobPromise(stream: ReadableStream, type: string): RpcPromise {
+  let promise = streamToBlob(stream, type).then(blob => {
+    return new PayloadStubHook(RpcPayload.fromAppReturn(blob));
   });
   return new RpcPromise(new PromiseStubHook(promise), []);
 }
@@ -624,6 +661,23 @@ export class Evaluator {
           }
 
           return new Response(body as BodyInit | null, init as ResponseInit);
+        }
+
+        case "blob": {
+          // Wire format is strictly ["blob", type, ["readable", id]] — the encoder always streams
+          // bytes through a pipe, so the content expression must evaluate to a ReadableStream.
+          if (value.length !== 3 || typeof value[1] !== "string") break;
+          let contentType = value[1] as string;
+          let content = this.evaluateImpl(value[2], parent, property);
+          if (!(content instanceof ReadableStream)) {
+            throw new TypeError("Blob content must be serialized as a ReadableStream.");
+          }
+          // Reuse the RpcPromise infrastructure (same pattern as fixBrokenRequestBody): the
+          // payload-delivery machinery resolves the promise and substitutes the real Blob before
+          // user code sees the value.
+          let promise = streamToBlobPromise(content, contentType);
+          this.promises.push({promise, parent, property});
+          return promise;
         }
 
         case "import":

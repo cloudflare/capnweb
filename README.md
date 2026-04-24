@@ -201,6 +201,7 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Date`
 * `Uint8Array`
 * `Error` and its well-known subclasses
+* `Blob`
 * `ReadableStream` and `WritableStream`, with automatic flow control.
 * `Headers`, `Request`, and `Response` from the Fetch API.
 

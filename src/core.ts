@@ -38,8 +38,8 @@ export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
-    "bigint" | "bytes" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" | "error" |
-    "undefined" | "writable" | "readable" | "headers" | "request" | "response";
+    "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
+    "error" | "undefined" | "writable" | "readable" | "headers" | "request" | "response";
 
 const AsyncFunction = (async function () {}).constructor;
 
@@ -47,6 +47,9 @@ const AsyncFunction = (async function () {}).constructor;
 // to accept as "bytes". In browsers, this is undefined, which won't match any prototype.
 let BUFFER_PROTOTYPE: object | undefined =
     typeof Buffer !== "undefined" ? Buffer.prototype : undefined;
+
+// Blob is available in every runtime we support (Node >=18, browsers, workerd).
+const BLOB_PROTOTYPE = Blob.prototype;
 
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
@@ -111,6 +114,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case Response.prototype:
       return "response";
+
+    case BLOB_PROTOTYPE:
+      return "blob";
 
     // TODO: All other structured clone types.
 
@@ -947,6 +953,7 @@ export class RpcPayload {
       case "bigint":
       case "date":
       case "bytes":
+      case "blob":
       case "error":
       case "undefined":
         // immutable, no need to copy
@@ -1271,6 +1278,7 @@ export class RpcPayload {
       case "primitive":
       case "bigint":
       case "bytes":
+      case "blob":
       case "date":
       case "error":
       case "undefined":
@@ -1409,6 +1417,7 @@ export class RpcPayload {
       case "primitive":
       case "bigint":
       case "bytes":
+      case "blob":
       case "date":
       case "error":
       case "undefined":
@@ -1566,6 +1575,7 @@ function followPath(value: unknown, parent: object | undefined,
       case "primitive":
       case "bigint":
       case "bytes":
+      case "blob":
       case "date":
       case "error":
       case "headers":
