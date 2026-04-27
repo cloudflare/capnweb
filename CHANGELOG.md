@@ -1,5 +1,11 @@
 # capnweb
 
+## 0.7.0
+
+### Minor Changes
+
+- [#159](https://github.com/cloudflare/capnweb/pull/159) [`7cb9132`](https://github.com/cloudflare/capnweb/commit/7cb91326387bea52a4dab889ed01a46f30ce4af0) Thanks [@aron-cf](https://github.com/aron-cf)! - Added support for Bun's alternative WebSocket server API.
+
 ## 0.6.1
 
 ### Patch Changes
