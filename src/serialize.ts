@@ -96,6 +96,76 @@ export class Devaluator {
     }
   }
 
+  // Returns false on exactly the conditions under which `devaluateImpl` would throw. Must
+  // be kept in sync with `devaluateImpl`'s dispatch.
+  private canDevaluate(value: unknown, depth: number): boolean {
+    if (depth >= 64) return false;
+
+    let kind = typeForRpc(value);
+    switch (kind) {
+      case "unsupported":
+        return false;
+
+      case "primitive":
+      case "bigint":
+      case "date":
+      case "bytes":
+      case "headers":
+      case "undefined":
+        return true;
+
+      case "object": {
+        let object = <Record<string, unknown>>value;
+        for (let key in object) {
+          if (!this.canDevaluate(object[key], depth + 1)) return false;
+        }
+        return true;
+      }
+
+      case "array": {
+        let array = <Array<unknown>>value;
+        for (let i = 0; i < array.length; i++) {
+          if (!this.canDevaluate(array[i], depth + 1)) return false;
+        }
+        return true;
+      }
+
+      case "request": {
+        let req = <Request>value;
+        if (req.body) {
+          if (!this.canDevaluate(req.body, depth + 1)) return false;
+        }
+        return true;
+      }
+
+      case "response": {
+        let resp = <Response>value;
+        if ((<any>resp).webSocket) return false;
+        return this.canDevaluate(resp.body, depth + 1);
+      }
+
+      case "error":
+        // The error case in devaluateImpl catches per-property failures itself, so it never
+        // throws.
+        return true;
+
+      case "stub":
+      case "rpc-promise":
+      case "function":
+      case "rpc-target":
+      case "rpc-thenable":
+      case "writable":
+      case "readable":
+      case "blob":
+        // These cases throw if there's no `RpcPayload` source to serialize against.
+        return !!this.source;
+
+      default:
+        kind satisfies never;
+        return false;
+    }
+  }
+
   private exports?: Array<ExportId>;
 
   private devaluateImpl(value: unknown, parent: object | undefined, depth: number): unknown {
@@ -325,16 +395,46 @@ export class Devaluator {
 
         // TODO:
         // - Determine type by checking prototype rather than `name`, which can be overridden?
-        // - Serialize cause / suppressed error / etc.
-        // - Serialize added properties.
 
         let rewritten = this.exporter.onSendError(e);
         if (rewritten) {
           e = rewritten;
         }
 
-        let result = ["error", e.name, e.message];
-        if (rewritten && rewritten.stack) {
+        // Capture own enumerable properties plus the standard non-enumerable slots `cause`
+        // and (for AggregateError) `errors`. Each value is checked to ensure it will
+        // serialize before being included. Values that fail to serialize are dropped.
+        // The error itself must always make it through; use `onSendError` to scrub
+        // heavy or sensitive fields.
+        let anyE = <any>e;
+        let props: Record<string, unknown> | undefined;
+        let captureProp = (key: string, val: unknown) => {
+          if (!this.canDevaluate(val, depth + 1)) return;
+          let encoded = this.devaluateImpl(val, e, depth + 1);
+          if (!props) props = {};
+          props[key] = encoded;
+        };
+        for (let key of Object.keys(e)) {
+          if (key === "name" || key === "message" || key === "stack") continue;
+          captureProp(key, anyE[key]);
+        }
+        // `cause` is normally non-enumerable, so Object.keys() misses it.
+        if ("cause" in e) {
+          captureProp("cause", anyE.cause);
+        }
+        if (e instanceof AggregateError) {
+          captureProp("errors", e.errors);
+        }
+
+        // Backwards-compat: only emit the new tail elements when there's something to add.
+        // Errors with no extras serialize to the legacy 3- or 4-element form, byte-identical
+        // to what previous versions produced.
+        let result: unknown[] = ["error", e.name, e.message];
+        if (props) {
+          // Normalize the stack slot to null so `props` is always at index 4.
+          result.push(rewritten && rewritten.stack ? rewritten.stack : null);
+          result.push(props);
+        } else if (rewritten && rewritten.stack) {
           result.push(rewritten.stack);
         }
         return result;
@@ -566,9 +666,25 @@ export class Evaluator {
         case "error":
           if (value.length >= 3 && typeof value[1] === "string" && typeof value[2] === "string") {
             let cls = ERROR_TYPES[value[1]] || Error;
-            let result = new cls(value[2]);
+            // AggregateError's constructor takes (errors, message); we pass an empty array
+            // and patch `errors` from the props bag below.
+            let result = cls === AggregateError ? new cls([], value[2]) : new cls(value[2]);
             if (typeof value[3] === "string") {
               result.stack = value[3];
+            }
+            // Optional 5th element: own properties bag. Unknown keys are assigned as own
+            // enumerable properties so the receiver sees what the sender attached.
+            if (value.length >= 5) {
+              let props = value[4];
+              if (!props || typeof props !== "object" || Array.isArray(props)) {
+                break;  // malformed; fall through to the "unknown special value" throw
+              }
+              let anyResult = <any>result;
+              let propsObj = <Record<string, unknown>>props;
+              for (let key of Object.keys(propsObj)) {
+                if (key === "name" || key === "message" || key === "stack") continue;
+                anyResult[key] = this.evaluateImpl(propsObj[key], result, key);
+              }
             }
             return result;
           }

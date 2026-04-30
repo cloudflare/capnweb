@@ -179,7 +179,7 @@ describe("simple serialization", () => {
     expect(deserialized).toBeInstanceOf(Date);
     expect(Number.isNaN(deserialized.getTime())).toBe(true);
   })
-});
+})
 
 // =======================================================================================
 
@@ -199,8 +199,213 @@ describe("blob serialization", () => {
     // through NULL_EXPORTER and therefore cannot support Blob — same as streams and stubs.
     let blob = new Blob(["hello"], {type: "text/plain"});
     expect(() => serialize(blob)).toThrowError("Cannot create pipes without an RPC session");
+  })
+})
+
+describe("error serialization", () => {
+  function roundTrip(err: Error): Error & Record<string, unknown> {
+    return deserialize(serialize(err)) as unknown as Error & Record<string, unknown>;
+  }
+
+  it("preserves dynamically-attached own properties", () => {
+    let err = new Error("the message") as Error & Record<string, unknown>;
+    err.code = "E_FOO";
+    err.details = { reason: "x", retries: 3 };
+
+    let result = roundTrip(err);
+    expect(result).toBeInstanceOf(Error);
+    expect(result.name).toBe("Error");
+    expect(result.message).toBe("the message");
+    expect(result.code).toBe("E_FOO");
+    expect(result.details).toStrictEqual({ reason: "x", retries: 3 });
   });
-});
+
+  it("preserves class-field properties on Error subclasses", () => {
+    class MyError extends Error {
+      code = "E_FOO";
+      foo = "bar";
+    }
+    let err = new MyError("boom");
+
+    let result = roundTrip(err);
+    // Subclass identity is not preserved and falls back to Error.
+    expect(result).toBeInstanceOf(Error);
+    expect(result.message).toBe("boom");
+    expect(result.code).toBe("E_FOO");
+    expect(result.foo).toBe("bar");
+  });
+
+  it("preserves built-in subclass identity when extras are present", () => {
+    let err = new TypeError("t") as TypeError & Record<string, unknown>;
+    err.code = 1;
+
+    let result = roundTrip(err);
+    expect(result).toBeInstanceOf(TypeError);
+    expect(result.name).toBe("TypeError");
+    expect(result.message).toBe("t");
+    expect(result.code).toBe(1);
+  });
+
+  it("emits the legacy 3-element form when there are no extras", () => {
+    let err = new Error("plain");
+    err.stack = undefined;
+    expect(serialize(err)).toBe('["error","Error","plain"]');
+  });
+
+  it("emits 5 elements with null stack when extras are present but stack is absent", () => {
+    let err = new Error("x") as Error & Record<string, unknown>;
+    err.stack = undefined;
+    err.code = "X";
+
+    let parsed = JSON.parse(serialize(err));
+    expect(parsed[0]).toBe("error");
+    expect(parsed[1]).toBe("Error");
+    expect(parsed[2]).toBe("x");
+    expect(parsed[3]).toBe(null);
+    expect(parsed[4]).toStrictEqual({ code: "X" });
+  });
+
+  it("round-trips nested supported types inside props", () => {
+    let err = new Error("nested") as Error & Record<string, unknown>;
+    err.when = new Date(1234);
+    err.big = 12345678901234567890n;
+    err.bytes = new TextEncoder().encode("hi!");
+    err.obj = { a: 1, b: [2, 3] };
+    err.inner = new TypeError("inner");
+
+    let result = roundTrip(err);
+    expect(result.when).toStrictEqual(new Date(1234));
+    expect(result.big).toBe(12345678901234567890n);
+    expect(new Uint8Array(result.bytes as Buffer)).toStrictEqual(new TextEncoder().encode("hi!"));
+    expect(result.obj).toStrictEqual({ a: 1, b: [2, 3] });
+
+    if (!(result.inner instanceof TypeError)) throw new Error("invariant");
+    expect(result.inner).toBeInstanceOf(TypeError);
+    expect(result.inner.message).toBe("inner");
+  });
+
+  it("is decodable by a legacy 4-element decoder (new sender -> old receiver)", () => {
+    // Mimic the pre-change decoder branch: only look at value[1..3], ignore the rest.
+    function legacyDecode(json: string): Error & Record<string, unknown> {
+      let value = JSON.parse(json);
+      if (value.length >= 3 && typeof value[1] === "string" && typeof value[2] === "string") {
+        let cls: any = { Error, TypeError, RangeError }[value[1]] || Error;
+        let result = new cls(value[2]);
+        if (typeof value[3] === "string") {
+          result.stack = value[3];
+        }
+        return result;
+      }
+      throw new Error("unparseable");
+    }
+
+    // Default `serialize` strips stack, so value[3] will be null. Old decoder's
+    // `typeof value[3] === "string"` check still passes (just doesn't fire), and value[4]
+    // is silently ignored. We're verifying the new shape doesn't break the old branch.
+    let err = new TypeError("t") as TypeError & Record<string, unknown>;
+    err.code = "X";
+
+    let decoded = legacyDecode(serialize(err));
+    expect(decoded).toBeInstanceOf(TypeError);
+    expect(decoded.message).toBe("t");
+    expect(decoded.code).toBeUndefined();
+  });
+
+  it("decodes legacy 3- and 4-element forms (old sender -> new receiver)", () => {
+    let three = deserialize('["error","Error","msg"]') as Error;
+    expect(three).toBeInstanceOf(Error);
+    expect(three.message).toBe("msg");
+
+    let four = deserialize('["error","TypeError","msg","trace"]') as Error;
+    expect(four).toBeInstanceOf(TypeError);
+    expect(four.message).toBe("msg");
+    expect(four.stack).toBe("trace");
+  });
+
+  it("throws when decoding an error with a malformed props bag", () => {
+    // A non-object/array `props` is structurally invalid; reject rather than silently ignore.
+    expect(() => deserialize('["error","Error","msg",null,"not-an-object"]'))
+        .toThrow(TypeError);
+    expect(() => deserialize('["error","Error","msg",null,42]'))
+        .toThrow(TypeError);
+    expect(() => deserialize('["error","Error","msg",null,[1,2]]'))
+        .toThrow(TypeError);
+    expect(() => deserialize('["error","Error","msg",null,null]'))
+        .toThrow(TypeError);
+  });
+
+  it("round-trips Error.cause", () => {
+    let inner = new TypeError("inner");
+    let outer = new Error("outer", { cause: inner });
+
+    let result = roundTrip(outer);
+    expect(result).toBeInstanceOf(Error);
+    expect(result.message).toBe("outer");
+
+    if (!(result.cause instanceof Error)) throw new Error("invariant");
+    expect(result.cause).toBeInstanceOf(TypeError);
+    expect(result.cause.message).toBe("inner");
+  });
+
+  it("round-trips a primitive cause", () => {
+    let err = new Error("oops", { cause: "boom" });
+    let result = roundTrip(err);
+    expect(result.cause).toBe("boom");
+  });
+
+  it("round-trips AggregateError.errors with inner subclass identity", () => {
+    let agg = new AggregateError([new TypeError("a"), new RangeError("b")], "agg");
+    let result = roundTrip(agg);
+
+    if (!(result instanceof AggregateError)) throw new Error("invariant");
+    expect(result).toBeInstanceOf(AggregateError);
+    expect(result.message).toBe("agg");
+    expect(Array.isArray(result.errors)).toBe(true);
+    expect(result.errors).toHaveLength(2);
+    expect(result.errors[0]).toBeInstanceOf(TypeError);
+    expect(result.errors[0].message).toBe("a");
+    expect(result.errors[1]).toBeInstanceOf(RangeError);
+    expect(result.errors[1].message).toBe("b");
+  });
+
+  it("silently drops properties whose values cannot be serialized", () => {
+    let err = new Error("with-bad-prop") as Error & Record<string, unknown>;
+    err.code = "E_OK";
+    err.bad = Object.create(null);
+
+    let serialized = serialize(err);
+    let result = deserialize(serialized) as Error & Record<string, unknown>;
+
+    expect(result).toBeInstanceOf(Error);
+    expect(result.message).toBe("with-bad-prop");
+    expect(result.code).toBe("E_OK");
+    expect("bad" in result).toBe(false);
+  });
+
+  it("silently drops cyclic property values", () => {
+    let err = new Error("cyclic") as Error & Record<string, unknown>;
+    err.code = "E_OK";
+    let cycle: any = {};
+    cycle.self = cycle;
+    err.cycle = cycle;
+
+    let result = roundTrip(err);
+    expect(result.message).toBe("cyclic");
+    expect(result.code).toBe("E_OK");
+    expect("cycle" in result).toBe(false);
+  });
+
+  it("never throws even when every extra property is unsupported", () => {
+    let err = new Error("all-bad") as Error & Record<string, unknown>;
+    err.a = Object.create(null);
+    err.b = Symbol("x");
+
+    let result = roundTrip(err);
+    expect(result.message).toBe("all-bad");
+    expect("a" in result).toBe(false);
+    expect("b" in result).toBe(false);
+  })
+})
 
 // =======================================================================================
 
@@ -657,6 +862,155 @@ describe("basic rpc", () => {
     await using harness = new TestHarness(new TestTarget());
     let stub = harness.stub;
     await expect(() => stub.throwError()).rejects.toThrow(new RangeError("test error"));
+  });
+
+  it("preserves own properties on thrown errors over RPC", async () => {
+    class RichTarget extends RpcTarget {
+      throwRich() {
+        let err = new RangeError("rich") as any;
+        err.code = "E_RICH";
+        err.details = { reason: "because", count: 7 };
+        err.when = new Date(1234);
+        throw err;
+      }
+    }
+    await using harness = new TestHarness(new RichTarget());
+    let stub = harness.stub as any;
+
+    let caught: any;
+    try {
+      await stub.throwRich();
+    } catch (e) {
+      caught = e;
+    }
+
+    expect(caught).toBeInstanceOf(RangeError);
+    expect(caught.message).toBe("rich");
+    expect(caught.code).toBe("E_RICH");
+    expect(caught.details).toStrictEqual({ reason: "because", count: 7 });
+    expect(caught.when).toStrictEqual(new Date(1234));
+  });
+
+  it("preserves Error.cause on thrown errors over RPC", async () => {
+    class CauseTarget extends RpcTarget {
+      throwWithCause() {
+        throw new Error("outer", { cause: new TypeError("inner") });
+      }
+    }
+    await using harness = new TestHarness(new CauseTarget());
+    let stub = harness.stub as any;
+
+    let caught: any;
+    try {
+      await stub.throwWithCause();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught.message).toBe("outer");
+    expect(caught.cause).toBeInstanceOf(TypeError);
+    expect(caught.cause.message).toBe("inner");
+  });
+
+  it("round-trips heavyweight-but-supported types attached to errors", async () => {
+    class ReqErrTarget extends RpcTarget {
+      throwWithRequest() {
+        let err = new Error("with-request") as any;
+        err.request = new Request("http://example.com/", { method: "DELETE" });
+        throw err;
+      }
+    }
+    await using harness = new TestHarness(new ReqErrTarget());
+    let stub = harness.stub as any;
+
+    let caught: any;
+    try {
+      await stub.throwWithRequest();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught.message).toBe("with-request");
+    expect(caught.request).toBeInstanceOf(Request);
+    expect(caught.request.url).toBe("http://example.com/");
+    expect(caught.request.method).toBe("DELETE");
+  });
+
+  it("silently drops stub-valued error properties without leaking capabilities", async () => {
+    class CounterFactory extends RpcTarget {
+      throwWithStub() {
+        let err = new Error("with-stub") as any;
+        // Attach a stub to the error. There's no sensible lifetime for this capability, so
+        // it must be dropped on the wire rather than leaked to the importer.
+        err.counter = new RpcStub(new Counter(10));
+        err.code = "E_STUB";
+        throw err;
+      }
+    }
+    await using harness = new TestHarness(new CounterFactory());
+    let stub = harness.stub as any;
+
+    let caught: any;
+    try {
+      await stub.throwWithStub();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught.message).toBe("with-stub");
+    expect(caught.code).toBe("E_STUB");
+    expect("counter" in caught).toBe(false);
+    // The harness's checkAllDisposed() in asyncDispose verifies no exports/imports leaked.
+  });
+
+  it("drops the whole error property when a stub is nested inside an unserializable value", async () => {
+    // Regression: when an Error is serialized inside a successful payload (source is set),
+    // a property whose value contains both a stub and an unserializable sibling must drop
+    // the entire property atomically. Previously the stub would be exported on the way down
+    // before the unserializable sibling triggered the failure, leaking a capability.
+    class MixedFactory extends RpcTarget {
+      makeError() {
+        let err = new Error("with-mixed") as any;
+        err.mixed = { counter: new RpcStub(new Counter(10)), bad: Object.create(null) };
+        err.code = "E_MIXED";
+        return { wrapped: err };
+      }
+    }
+    await using harness = new TestHarness(new MixedFactory());
+    let stub = harness.stub as any;
+
+    let result = await stub.makeError();
+    expect(result.wrapped).toBeInstanceOf(Error);
+    expect(result.wrapped.message).toBe("with-mixed");
+    expect(result.wrapped.code).toBe("E_MIXED");
+    expect("mixed" in result.wrapped).toBe(false);
+    // checkAllDisposed() in asyncDispose verifies no stub leaked through the failed prop.
+  });
+
+  it("drops the whole error property when a ReadableStream is nested inside an unserializable value", async () => {
+    // Regression: ReadableStream side-effects (createPipe + pump start) must not fire if the
+    // surrounding property will ultimately be dropped. A simple try/catch + unexport rollback
+    // can't undo a started pipe, which is why we pre-scan instead.
+    class StreamFactory extends RpcTarget {
+      makeError() {
+        let stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue("hello");
+            controller.close();
+          }
+        });
+        let err = new Error("with-stream") as any;
+        err.mixed = { stream, bad: Object.create(null) };
+        err.code = "E_STREAM";
+        return { wrapped: err };
+      }
+    }
+    await using harness = new TestHarness(new StreamFactory());
+    let stub = harness.stub as any;
+
+    let result = await stub.makeError();
+    expect(result.wrapped).toBeInstanceOf(Error);
+    expect(result.wrapped.message).toBe("with-stream");
+    expect(result.wrapped.code).toBe("E_STREAM");
+    expect("mixed" in result.wrapped).toBe(false);
+    // checkAllDisposed() in asyncDispose verifies no pipe leaked through the failed prop.
   });
 
   it("supports .then(), .catch(), and .finally() on RPC promises", async () => {
@@ -1463,6 +1817,68 @@ describe("error serialization", () => {
         return "caught";
       });
     expect(result).toBe("caught");
+  });
+
+  it("sends own properties from the rewritten error, not the original", async () => {
+    class ErrorTarget extends RpcTarget {
+      throwError() {
+        let err = new Error("original") as any;
+        err.code = "E_ORIGINAL";
+        throw err;
+      }
+    }
+    await using harness = new TestHarness(new ErrorTarget(), {
+      onSendError: _error => {
+        let rewritten = new TypeError("rewritten") as Error & Record<string, unknown>;
+        rewritten.code = "E_REWRITTEN";
+        return rewritten;
+      }
+    });
+    let stub = harness.stub as any;
+
+    let caught: unknown;
+    try {
+      await stub.throwError();
+    } catch (e) {
+      caught = e;
+    }
+
+    if (!(caught instanceof Error)) throw new Error("invariant");
+    expect(caught).toBeInstanceOf(TypeError);
+    expect(caught.message).toBe("rewritten");
+    expect((caught as Error & Record<string, unknown>).code).toBe("E_REWRITTEN");
+  });
+
+  it("respects in-place mutation by onSendError to scrub heavy properties", async () => {
+    class ErrorTarget extends RpcTarget {
+      throwError() {
+        let err = new Error("with-secret") as Error & Record<string, unknown>;
+        err.code = "E_OK";
+        err.secret = "super-sensitive-data";
+        throw err;
+      }
+    }
+    await using harness = new TestHarness(new ErrorTarget(), {
+      onSendError: error => {
+        // Returning the same error after mutating it is a documented escape hatch for
+        // scrubbing fields the caller doesn't want to send.
+        delete (error as any).secret;
+        return error;
+      }
+    });
+    let stub = harness.stub;
+
+    let caught: unknown;
+    try {
+      await stub.throwError();
+    } catch (e) {
+      caught = e;
+    }
+
+    if (!(caught instanceof Error)) throw new Error("invariant");
+    expect(caught.message).toBe("with-secret");
+    expect((caught as Error & Record<string, unknown>).code).toBe("E_OK");
+    expect("secret" in caught).toBe(false);
   });
 });
 

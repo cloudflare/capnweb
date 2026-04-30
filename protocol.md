@@ -180,11 +180,13 @@ A bigint value, represented as a decimal string.
 
 A JavaScript `Date` value. The number represents milliseconds since the Unix epoch.
 
-`["error", type, message, stack?]`
+`["error", type, message, stack?, props?]`
 
 A JavaScript `Error` value. `type` is the name of the specific well-known `Error` subclass, e.g. "TypeError". `message` is a string containing the error message. `stack` may optionally contain the stack trace, though by default stacks will be redacted for security reasons.
 
-_TODO: We should extend this to encode own properties that have been added to the error._
+`props` is an optional fifth element carrying any extra data attached to the error. It is a JSON object whose keys are the error's own enumerable properties (plus the standard non-enumerable `cause` slot, and `errors` for `AggregateError`), and whose values are themselves valid expressions of this protocol round-trip naturally. Property values that cannot be represented are silently dropped from `props`; the error itself always reaches the receiver.
+
+When `props` is present, `stack` is normalised to `null` if absent so that positional indexing for `props` is unambiguous. When there are no extras, the legacy 3- or 4-element form is emitted unchanged.
 
 `["headers", pairs]`
 
