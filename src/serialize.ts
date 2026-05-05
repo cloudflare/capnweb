@@ -304,13 +304,13 @@ export class Devaluator {
       }
 
       case "blob": {
-        // Blobs are always streamed through a pipe. Reading a Blob's bytes is inherently async,
-        // so there's no way to preserve send-side e-order regardless of encoding; always using
-        // the pipe keeps the encoder synchronous (matching the wire semantics of a payload
-        // containing a promise).
+        // Blobs are streamed through a pipe. This allows very large blobs to be sent without
+        // causing excessively large individual messages nor blocking other messages in the
+        // meantime.
         //
-        // When devaluating via NULL_EXPORTER (i.e. `serialize()`), createPipe() throws
-        // "Cannot create pipes without an RPC session." — same behaviour as streams and stubs.
+        // Ideally, small Blobs would be inlined. But, there is no way to read a blob
+        // synchronously, and we MUST serialize the message synchronously. Hence, we have no choice
+        // but to use streaming even for small blobs.
         let blob = value as Blob;
         let readable = blob.stream();
         let hook = streamImpl.createReadableStreamHook(readable);
@@ -481,10 +481,13 @@ function fixBrokenRequestBody(request: Request, body: ReadableStream): RpcPromis
   return new RpcPromise(new PromiseStubHook(promise), []);
 }
 
-// Assemble a Blob from a pipe ReadableStream asynchronously, wrapped in an RpcPromise so it plugs
-// into the existing payload-delivery substitution machinery. Same pattern as
-// fixBrokenRequestBody() above: the caller pushes the returned RpcPromise into the Evaluator's
-// `promises` list, and deliverTo() replaces it with the resolved Blob before user code runs.
+// Unfortuntaely, even though Blobs can only be read asynchronously, there is no way to create
+// a blob backed by an asynchronous source; the bytes MUST all be provided upfront. This
+// effectively makes it impossible to manitain e-order when sending Blobs.
+//
+// As a compromise, we deliver a message as if it contained an RpcPromise that resolves to the
+// Blob. This has the effect that the RPC system will wait for the whole Blob to stream in before
+// delivering the message -- reusing the existing machinery for handling promises.
 function streamToBlobPromise(stream: ReadableStream, type: string): RpcPromise {
   let promise = streamToBlob(stream, type).then(blob => {
     return new PayloadStubHook(RpcPayload.fromAppReturn(blob));
