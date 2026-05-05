@@ -48,9 +48,6 @@ const AsyncFunction = (async function () {}).constructor;
 let BUFFER_PROTOTYPE: object | undefined =
     typeof Buffer !== "undefined" ? Buffer.prototype : undefined;
 
-// Blob is available in every runtime we support (Node >=18, browsers, workerd).
-const BLOB_PROTOTYPE = Blob.prototype;
-
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
     case "boolean":
@@ -115,7 +112,7 @@ export function typeForRpc(value: unknown): TypeForRpc {
     case Response.prototype:
       return "response";
 
-    case BLOB_PROTOTYPE:
+    case Blob.prototype:
       return "blob";
 
     // TODO: All other structured clone types.
