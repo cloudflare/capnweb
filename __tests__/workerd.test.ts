@@ -298,4 +298,71 @@ describe("workerd RPC server", () => {
     expect(await Promise.all([promise1, promise2, promise3]))
         .toStrictEqual([36, 5, 9]);
   })
+
+  it("passes with a fresh websocket session per batch under the same load", async () => {
+    let entries = 6000;
+    let concurrency = 100;
+    let payload = "0".repeat(500_000);
+    let completed = 0;
+
+    while (completed < entries) {
+      let resp = await (<Env>env).testServer.fetch("http://foo", {headers: {Upgrade: "websocket"}});
+      let ws = resp.webSocket;
+      expect(ws).toBeTruthy();
+
+      ws!.accept();
+      let cap = newWebSocketRpcSession<WorkerdTestTarget>(ws!);
+
+      try {
+        let batchSize = Math.min(concurrency, entries - completed);
+
+        await Promise.all(
+            Array.from({length: batchSize}, (_, index) =>
+                cap.store(`key-${completed + index}`, payload))
+        );
+
+        completed += batchSize;
+      } finally {
+        cap[Symbol.dispose]();
+      }
+    }
+
+    expect(completed).toBe(entries);
+  }, 60_000)
+
+  it("fails with a shared websocket session under high byte volume", async () => {
+    let entries = 3000;
+    let concurrency = 100;
+    let payload = "0".repeat(500_000);
+    let completed = 0;
+
+    let resp = await (<Env>env).testServer.fetch("http://foo", {headers: {Upgrade: "websocket"}});
+    let ws = resp.webSocket;
+    expect(ws).toBeTruthy();
+
+    ws!.accept();
+    let cap = newWebSocketRpcSession<WorkerdTestTarget>(ws!);
+
+    let pending = new Set<Promise<void>>();
+
+    try {
+      for (let i = 0; i < entries; i++) {
+        while (pending.size >= concurrency) {
+          await Promise.race(pending);
+        }
+
+        let task = cap.store(`key-${i}`, payload)
+            .then(() => { completed += 1; })
+            .finally(() => pending.delete(task));
+
+        pending.add(task);
+      }
+
+      await Promise.all(pending);
+    } finally {
+      cap[Symbol.dispose]();
+    }
+
+    expect(completed).toBe(entries);
+  }, 240_000)
 });

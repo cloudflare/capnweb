@@ -52,6 +52,9 @@ export class TestTarget extends RpcTarget {
     this.env = env;
   }
 
+  // Accepts and discards a key/value pair. Used by the stress repro.
+  store(_key, _value) {}
+
   square(i) {
     return i * i;
   }
