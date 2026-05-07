@@ -46,6 +46,17 @@ class NullExporter implements Exporter {
 
 const NULL_EXPORTER = new NullExporter();
 
+// Collect all bytes from a ReadableStream into a Blob with the given MIME type. Used on the
+// receive side to assemble a Blob from a pipe stream before delivering to user code.
+//
+// `Response` is a standard global in every runtime we support (Node >=18, browsers, workerd), so
+// we can rely on `Response.blob()` for the heavy lifting. `Response.blob()` may discard the
+// caller-specified MIME type, so we `slice()` to reattach it if needed.
+async function streamToBlob(stream: ReadableStream, type: string): Promise<Blob> {
+  let b = await new Response(stream).blob();
+  return b.type === type ? b : b.slice(0, b.size, type);
+}
+
 // Maps error name to error class for deserialization.
 const ERROR_TYPES: Record<string, any> = {
   Error, EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError, AggregateError,
@@ -292,6 +303,21 @@ export class Devaluator {
         return ["response", body, init];
       }
 
+      case "blob": {
+        // Blobs are streamed through a pipe. This allows very large blobs to be sent without
+        // causing excessively large individual messages nor blocking other messages in the
+        // meantime.
+        //
+        // Ideally, small Blobs would be inlined. But, there is no way to read a blob
+        // synchronously, and we MUST serialize the message synchronously. Hence, we have no choice
+        // but to use streaming even for small blobs.
+        let blob = value as Blob;
+        let readable = blob.stream();
+        let hook = streamImpl.createReadableStreamHook(readable);
+        let importId = this.exporter.createPipe(readable, hook);
+        return ["blob", blob.type, ["readable", importId]];
+      }
+
       case "error": {
         let e = <Error>value;
 
@@ -451,6 +477,20 @@ function fixBrokenRequestBody(request: Request, body: ReadableStream): RpcPromis
     let bytes = new Uint8Array(arrayBuffer);
     let result = new Request(request, {body: bytes});
     return new PayloadStubHook(RpcPayload.fromAppReturn(result));
+  });
+  return new RpcPromise(new PromiseStubHook(promise), []);
+}
+
+// Unfortuntaely, even though Blobs can only be read asynchronously, there is no way to create
+// a blob backed by an asynchronous source; the bytes MUST all be provided upfront. This
+// effectively makes it impossible to manitain e-order when sending Blobs.
+//
+// As a compromise, we deliver a message as if it contained an RpcPromise that resolves to the
+// Blob. This has the effect that the RPC system will wait for the whole Blob to stream in before
+// delivering the message -- reusing the existing machinery for handling promises.
+function streamToBlobPromise(stream: ReadableStream, type: string): RpcPromise {
+  let promise = streamToBlob(stream, type).then(blob => {
+    return new PayloadStubHook(RpcPayload.fromAppReturn(blob));
   });
   return new RpcPromise(new PromiseStubHook(promise), []);
 }
@@ -624,6 +664,23 @@ export class Evaluator {
           }
 
           return new Response(body as BodyInit | null, init as ResponseInit);
+        }
+
+        case "blob": {
+          // Wire format is strictly ["blob", type, ["readable", id]] — the encoder always streams
+          // bytes through a pipe, so the content expression must evaluate to a ReadableStream.
+          if (value.length !== 3 || typeof value[1] !== "string") break;
+          let contentType = value[1] as string;
+          let content = this.evaluateImpl(value[2], parent, property);
+          if (!(content instanceof ReadableStream)) {
+            throw new TypeError("Blob content must be serialized as a ReadableStream.");
+          }
+          // Reuse the RpcPromise infrastructure (same pattern as fixBrokenRequestBody): the
+          // payload-delivery machinery resolves the promise and substitutes the real Blob before
+          // user code sees the value.
+          let promise = streamToBlobPromise(content, contentType);
+          this.promises.push({promise, parent, property});
+          return promise;
         }
 
         case "import":

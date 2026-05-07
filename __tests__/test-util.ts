@@ -66,4 +66,9 @@ export class TestTarget extends RpcTarget {
   returnNull() { return null; }
   returnUndefined() { return undefined; }
   returnNumber(i: number) { return i; }
+
+  async echoBlob(blob: Blob): Promise<Blob> {
+    let bytes = await blob.arrayBuffer();
+    return new Blob([bytes], {type: blob.type});
+  }
 }

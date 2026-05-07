@@ -87,6 +87,7 @@ type BaseType =
   | Date
   | Error
   | RegExp
+  | Blob
   | ReadableStream<Uint8Array>
   | WritableStream<any>  // Chunk type can be any RPC-compatible type
   | Request
