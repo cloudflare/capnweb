@@ -153,8 +153,10 @@ export class Devaluator {
       case "bigint":
         return ["bigint", (<bigint>value).toString()];
 
-      case "date":
-        return ["date", (<Date>value).getTime()];
+      case "date": {
+        const time = (<Date>value).getTime();
+        return ["date", Number.isNaN(time) ? null : time];
+      }
 
       case "bytes": {
         let bytes = value as Uint8Array;
@@ -536,6 +538,9 @@ export class Evaluator {
           }
           break;
         case "date":
+          if (value[1] === null) {
+            return new Date(NaN);
+          }
           if (typeof value[1] == "number") {
             return new Date(value[1]);
           }
