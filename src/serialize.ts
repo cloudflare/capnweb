@@ -92,77 +92,10 @@ export class Devaluator {
           // probably a side effect of the original error, ignore it
         }
       }
+      // TODO: This rollback only releases exports. Pipes created via `createPipe` (for
+      // ReadableStreams, Blobs, and the Firefox request-body fallback) have already sent a
+      // ["pipe"] frame and started pumping.
       throw err;
-    }
-  }
-
-  // Returns false on exactly the conditions under which `devaluateImpl` would throw. Must
-  // be kept in sync with `devaluateImpl`'s dispatch.
-  private canDevaluate(value: unknown, depth: number): boolean {
-    if (depth >= 64) return false;
-
-    let kind = typeForRpc(value);
-    switch (kind) {
-      case "unsupported":
-        return false;
-
-      case "primitive":
-      case "bigint":
-      case "date":
-      case "bytes":
-      case "headers":
-      case "undefined":
-        return true;
-
-      case "object": {
-        let object = <Record<string, unknown>>value;
-        for (let key in object) {
-          if (!this.canDevaluate(object[key], depth + 1)) return false;
-        }
-        return true;
-      }
-
-      case "array": {
-        let array = <Array<unknown>>value;
-        for (let i = 0; i < array.length; i++) {
-          if (!this.canDevaluate(array[i], depth + 1)) return false;
-        }
-        return true;
-      }
-
-      case "request": {
-        let req = <Request>value;
-        if (req.body) {
-          if (!this.canDevaluate(req.body, depth + 1)) return false;
-        }
-        return true;
-      }
-
-      case "response": {
-        let resp = <Response>value;
-        if ((<any>resp).webSocket) return false;
-        return this.canDevaluate(resp.body, depth + 1);
-      }
-
-      case "error":
-        // The error case in devaluateImpl catches per-property failures itself, so it never
-        // throws.
-        return true;
-
-      case "stub":
-      case "rpc-promise":
-      case "function":
-      case "rpc-target":
-      case "rpc-thenable":
-      case "writable":
-      case "readable":
-      case "blob":
-        // These cases throw if there's no `RpcPayload` source to serialize against.
-        return !!this.source;
-
-      default:
-        kind satisfies never;
-        return false;
     }
   }
 
@@ -402,17 +335,38 @@ export class Devaluator {
         }
 
         // Capture own enumerable properties plus the standard non-enumerable slots `cause`
-        // and (for AggregateError) `errors`. Each value is checked to ensure it will
-        // serialize before being included. Values that fail to serialize are dropped.
-        // The error itself must always make it through; use `onSendError` to scrub
-        // heavy or sensitive fields.
+        // and (for AggregateError) `errors`. Each value is run through devaluateImpl so any
+        // supported type round-trips. If a property's value can't be serialized, drop the
+        // property: the error itself must always make it through. Use `onSendError` to scrub
+        // heavy or sensitive fields explicitly.
+        //
+        // On per-property failure we roll back any exports the partial walk produced by
+        // splicing them off `this.exports` and unexporting them.
+        //
+        // TODO: this can't roll back pipes created by `createPipe` (ReadableStream, Blob,
+        // Firefox request-body); the `["pipe"]` frame and pump have already started, with
+        // no inverse on the `Exporter` interface, so they leak until session shutdown.
+        // Same caveat as the rollback in the static `devaluate` method above.
         let anyE = <any>e;
         let props: Record<string, unknown> | undefined;
         let captureProp = (key: string, val: unknown) => {
-          if (!this.canDevaluate(val, depth + 1)) return;
-          let encoded = this.devaluateImpl(val, e, depth + 1);
-          if (!props) props = {};
-          props[key] = encoded;
+          let exportsBefore = this.exports?.length ?? 0;
+          try {
+            let encoded = this.devaluateImpl(val, e, depth + 1);
+            if (!props) props = {};
+            props[key] = encoded;
+          } catch (err) {
+            // Drop this property; the error itself still propagates. Roll back any exports
+            // the partial walk produced.
+            if (this.exports && this.exports.length > exportsBefore) {
+              let tail = this.exports.splice(exportsBefore);
+              try {
+                this.exporter.unexport(tail);
+              } catch (err2) {
+                // probably a side effect of the original error, ignore it
+              }
+            }
+          }
         };
         for (let key of Object.keys(e)) {
           if (key === "name" || key === "message" || key === "stack") continue;

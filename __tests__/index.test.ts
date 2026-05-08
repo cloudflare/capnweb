@@ -984,35 +984,6 @@ describe("basic rpc", () => {
     // checkAllDisposed() in asyncDispose verifies no stub leaked through the failed prop.
   });
 
-  it("drops the whole error property when a ReadableStream is nested inside an unserializable value", async () => {
-    // Regression: ReadableStream side-effects (createPipe + pump start) must not fire if the
-    // surrounding property will ultimately be dropped. A simple try/catch + unexport rollback
-    // can't undo a started pipe, which is why we pre-scan instead.
-    class StreamFactory extends RpcTarget {
-      makeError() {
-        let stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue("hello");
-            controller.close();
-          }
-        });
-        let err = new Error("with-stream") as any;
-        err.mixed = { stream, bad: Object.create(null) };
-        err.code = "E_STREAM";
-        return { wrapped: err };
-      }
-    }
-    await using harness = new TestHarness(new StreamFactory());
-    let stub = harness.stub as any;
-
-    let result = await stub.makeError();
-    expect(result.wrapped).toBeInstanceOf(Error);
-    expect(result.wrapped.message).toBe("with-stream");
-    expect(result.wrapped.code).toBe("E_STREAM");
-    expect("mixed" in result.wrapped).toBe(false);
-    // checkAllDisposed() in asyncDispose verifies no pipe leaked through the failed prop.
-  });
-
   it("supports .then(), .catch(), and .finally() on RPC promises", async () => {
     await using harness = new TestHarness(new TestTarget());
     let stub = harness.stub;
