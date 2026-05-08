@@ -92,6 +92,9 @@ export class Devaluator {
           // probably a side effect of the original error, ignore it
         }
       }
+      // TODO: This rollback only releases exports. Pipes created via `createPipe` (for
+      // ReadableStreams, Blobs, and the Firefox request-body fallback) have already sent a
+      // ["pipe"] frame and started pumping.
       throw err;
     }
   }
@@ -325,16 +328,67 @@ export class Devaluator {
 
         // TODO:
         // - Determine type by checking prototype rather than `name`, which can be overridden?
-        // - Serialize cause / suppressed error / etc.
-        // - Serialize added properties.
 
         let rewritten = this.exporter.onSendError(e);
         if (rewritten) {
           e = rewritten;
         }
 
-        let result = ["error", e.name, e.message];
-        if (rewritten && rewritten.stack) {
+        // Capture own enumerable properties plus the standard non-enumerable slots `cause`
+        // and (for AggregateError) `errors`. Each value is run through devaluateImpl so any
+        // supported type round-trips. If a property's value can't be serialized, drop the
+        // property: the error itself must always make it through. Use `onSendError` to scrub
+        // heavy or sensitive fields explicitly.
+        //
+        // On per-property failure we roll back any exports the partial walk produced by
+        // splicing them off `this.exports` and unexporting them.
+        //
+        // TODO: this can't roll back pipes created by `createPipe` (ReadableStream, Blob,
+        // Firefox request-body); the `["pipe"]` frame and pump have already started, with
+        // no inverse on the `Exporter` interface, so they leak until session shutdown.
+        // Same caveat as the rollback in the static `devaluate` method above.
+        let anyE = <any>e;
+        let props: Record<string, unknown> | undefined;
+        let captureProp = (key: string, val: unknown) => {
+          let exportsBefore = this.exports?.length ?? 0;
+          try {
+            let encoded = this.devaluateImpl(val, e, depth + 1);
+            if (!props) props = {};
+            props[key] = encoded;
+          } catch (err) {
+            // Drop this property; the error itself still propagates. Roll back any exports
+            // the partial walk produced.
+            if (this.exports && this.exports.length > exportsBefore) {
+              let tail = this.exports.splice(exportsBefore);
+              try {
+                this.exporter.unexport(tail);
+              } catch (err2) {
+                // probably a side effect of the original error, ignore it
+              }
+            }
+          }
+        };
+        for (let key of Object.keys(e)) {
+          if (key === "name" || key === "message" || key === "stack") continue;
+          captureProp(key, anyE[key]);
+        }
+        // `cause` is normally non-enumerable, so Object.keys() misses it.
+        if ("cause" in e) {
+          captureProp("cause", anyE.cause);
+        }
+        if (e instanceof AggregateError) {
+          captureProp("errors", e.errors);
+        }
+
+        // Backwards-compat: only emit the new tail elements when there's something to add.
+        // Errors with no extras serialize to the legacy 3- or 4-element form, byte-identical
+        // to what previous versions produced.
+        let result: unknown[] = ["error", e.name, e.message];
+        if (props) {
+          // Normalize the stack slot to null so `props` is always at index 4.
+          result.push(rewritten && rewritten.stack ? rewritten.stack : null);
+          result.push(props);
+        } else if (rewritten && rewritten.stack) {
           result.push(rewritten.stack);
         }
         return result;
@@ -566,9 +620,25 @@ export class Evaluator {
         case "error":
           if (value.length >= 3 && typeof value[1] === "string" && typeof value[2] === "string") {
             let cls = ERROR_TYPES[value[1]] || Error;
-            let result = new cls(value[2]);
+            // AggregateError's constructor takes (errors, message); we pass an empty array
+            // and patch `errors` from the props bag below.
+            let result = cls === AggregateError ? new cls([], value[2]) : new cls(value[2]);
             if (typeof value[3] === "string") {
               result.stack = value[3];
+            }
+            // Optional 5th element: own properties bag. Unknown keys are assigned as own
+            // enumerable properties so the receiver sees what the sender attached.
+            if (value.length >= 5) {
+              let props = value[4];
+              if (!props || typeof props !== "object" || Array.isArray(props)) {
+                break;  // malformed; fall through to the "unknown special value" throw
+              }
+              let anyResult = <any>result;
+              let propsObj = <Record<string, unknown>>props;
+              for (let key of Object.keys(propsObj)) {
+                if (key === "name" || key === "message" || key === "stack") continue;
+                anyResult[key] = this.evaluateImpl(propsObj[key], result, key);
+              }
             }
             return result;
           }
