@@ -1,5 +1,19 @@
 # capnweb
 
+## 0.8.0
+
+### Minor Changes
+
+- [#155](https://github.com/cloudflare/capnweb/pull/155) [`48f4d49`](https://github.com/cloudflare/capnweb/commit/48f4d495ef66e947612e80f36f4f9570b439e407) Thanks [@G4brym](https://github.com/G4brym)! - Add `Blob` as a serializable type over RPC. `Blob` objects can now be passed as call arguments and return values. The MIME type (`blob.type`) is preserved across the wire.
+
+### Patch Changes
+
+- [#166](https://github.com/cloudflare/capnweb/pull/166) [`7413e43`](https://github.com/cloudflare/capnweb/commit/7413e43b251a0db79e9c59e67d37f01c725818fe) Thanks [@aron-cf](https://github.com/aron-cf)! - Errors properties, using `Object.keys()`, are now preserved across the wire. Attach fields like `code` or `details` to an `Error` and they propagate to the other side. The `cause` and `errors` (for `AggregateError`) properties will also be preserved.
+
+- [#168](https://github.com/cloudflare/capnweb/pull/168) [`25baebf`](https://github.com/cloudflare/capnweb/commit/25baebf7facfcdafb8cd46ea20b982cbc05557a4) Thanks [@kentonv](https://github.com/kentonv)! - Fix memory leak that kept all messages received in a session pinned in memory until the session ended, due to surprising implementation details of JavaScript Promises.
+
+- [#152](https://github.com/cloudflare/capnweb/pull/152) [`9e499e2`](https://github.com/cloudflare/capnweb/commit/9e499e2ac38dd4b57403d7e3d3294412bfbace14) Thanks [@VastBlast](https://github.com/VastBlast)! - Fix serialization for Invalid/NaN dates
+
 ## 0.7.0
 
 ### Minor Changes
