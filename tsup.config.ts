@@ -5,7 +5,15 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/index-workers.ts', 'src/index-bun.ts'],
+  entry: [
+    'src/index.ts',
+    'src/index-workers.ts',
+    'src/index-bun.ts',
+    // `internal-typecheck` is built only for its `.d.ts`; the `package.json`
+    // exports map points the runtime path of `capnweb/internal/typecheck` at
+    // `dist/index.js` so the validator runtime is shared with the main bundle.
+    'src/internal-typecheck.ts',
+  ],
   format: ['esm', 'cjs'],
   external: ['cloudflare:workers'],
   dts: true,

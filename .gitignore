@@ -3,3 +3,7 @@ node_modules
 examples/worker-react/web/dist/
 notes.txt
 /dist/
+packages/*/dist/
+.capnweb/
+examples/**/.capnweb/
+examples/worker-react/wrangler.typecheck-dev.toml

@@ -17,7 +17,7 @@ export default defineConfig({
           name: 'node',
           // We throw flow-control test under Node only because it's testing straightforward
           // JavaScript -- no need to run it on every runtime.
-          include: ['__tests__/index.test.ts', '__tests__/flow-control.test.ts'],
+          include: ['__tests__/index.test.ts', '__tests__/flow-control.test.ts', '__tests__/typecheck.test.ts', '__tests__/vite-plugin.test.ts'],
           environment: 'node',
         },
       },

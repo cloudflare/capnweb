@@ -1,0 +1,40 @@
+{
+  "name": "capnweb-typecheck",
+  "version": "0.7.0",
+  "description": "Build-time TypeScript RPC validation tooling for Cap'n Web",
+  "type": "module",
+  "author": "Kenton Varda <kenton@cloudflare.com>",
+  "license": "MIT",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js",
+      "require": "./dist/vite.cjs"
+    }
+  },
+  "bin": {
+    "capnweb-typecheck": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsup --config tsup.config.ts"
+  },
+  "peerDependencies": {
+    "capnweb": "^0.7.0"
+  },
+  "dependencies": {
+    "ts-morph": "^28.0.0",
+    "typia": "^9.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudflare/capnweb",
+    "directory": "packages/capnweb-typecheck"
+  }
+}

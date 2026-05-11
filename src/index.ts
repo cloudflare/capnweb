@@ -2,7 +2,22 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPromiseImpl } from "./core.js";
+import {
+  RpcTarget as RpcTargetImpl,
+  RpcStub as RpcStubImpl,
+  RpcPromise as RpcPromiseImpl,
+} from "./core.js";
+// Pulled in so the validator runtime is part of the main bundle. The actual
+// generator-facing surface for these functions lives at
+// `capnweb/internal/typecheck`, which resolves to this same file at runtime
+// (see `package.json` exports). The exports below are marked `@internal`, so
+// they're stripped from `dist/index.d.ts` but remain in `dist/index.js`.
+import {
+  __capnweb_registerRpcValidators as __capnweb_registerRpcValidatorsImpl,
+  __capnweb_bindClientValidator as __capnweb_bindClientValidatorImpl,
+  _validateReport as _validateReportImpl,
+  _createStandardSchema as _createStandardSchemaImpl,
+} from "./typecheck/runtime.js";
 import { serialize, deserialize } from "./serialize.js";
 import { RpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcTargetBranded, RpcCompatible, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
@@ -18,9 +33,34 @@ forceInitMap();
 forceInitStreams();
 
 // Re-export public API types.
-export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse };
+export {
+  serialize,
+  deserialize,
+  newWorkersWebSocketRpcResponse,
+  newHttpBatchRpcResponse,
+  nodeHttpBatchRpcResponse,
+};
 export type { RpcTransport, RpcSessionOptions, RpcCompatible };
+
+// Library-internal entry points. These are imported by code emitted by
+// `capnweb-typecheck gen` / the Vite plugin, never by user code. They live here so the
+// runtime registry stays in a single bundle (one shared WeakMap).
+//
+// `stripInternal` removes them from `dist/index.d.ts`, so they don't show up
+// in the user-facing API surface. The accompanying `capnweb/internal/typecheck`
+// subpath has its own `.d.ts` that re-exposes them for generated code.
+/** @internal */
+export const __capnweb_registerRpcValidators = __capnweb_registerRpcValidatorsImpl;
+/** @internal */
+export const __capnweb_bindClientValidator = __capnweb_bindClientValidatorImpl;
+/** @internal Vendored typia runtime helper. Imported by capnweb-typecheck's
+ * generated specs.js after the build-time import rewrite.
+ */
+export const _validateReport = _validateReportImpl;
+/** @internal Vendored typia runtime helper. Imported by capnweb-typecheck's
+ * generated specs.js after the build-time import rewrite.
+ */
+export const _createStandardSchema = _createStandardSchemaImpl;
 
 // Hack the type system to make RpcStub's types work nicely!
 /**

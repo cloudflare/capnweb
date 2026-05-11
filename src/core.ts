@@ -37,6 +37,45 @@ export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 
 export type PropertyPath = (string | number)[];
 
+export type RpcValidationOptions = {
+  isRpcPlaceholder?: (value: unknown) => boolean;
+};
+
+export type RpcMethodValidator = {
+  args?: (args: unknown[], options?: RpcValidationOptions) => void;
+  returns?: (value: unknown) => void | Promise<void>;
+};
+
+export type RpcClassValidators = Record<string | number, RpcMethodValidator>;
+
+const rpcValidators = new WeakMap<Function, RpcClassValidators>();
+
+export function setRpcMethodValidators(klass: Function, validators: RpcClassValidators): void {
+  let existing = rpcValidators.get(klass);
+  if (existing) {
+    Object.assign(existing, validators);
+  } else {
+    rpcValidators.set(klass, {...validators});
+  }
+}
+
+function getRpcValidator(
+    thisArg: object | undefined, methodName: string | number | undefined): RpcMethodValidator | undefined {
+  if (thisArg === undefined || methodName === undefined) return undefined;
+
+  let klass = (thisArg as {constructor?: Function}).constructor;
+  while (typeof klass === "function") {
+    let validator = rpcValidators.get(klass)?.[methodName];
+    if (validator) return validator;
+
+    let parentPrototype = klass.prototype ? Object.getPrototypeOf(klass.prototype) : undefined;
+    klass = parentPrototype?.constructor;
+    if (klass === Object) break;
+  }
+
+  return undefined;
+}
+
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
     "error" | "undefined" | "writable" | "readable" | "headers" | "request" | "response";
@@ -348,11 +387,59 @@ export interface RpcStub extends Disposable {
   [RAW_STUB]: this;
 }
 
+const rpcStubValidators = new WeakMap<object, RpcClassValidators>();
+const rpcReturnValidators = new WeakMap<object, RpcMethodValidator>();
+
+export function setRpcStubValidators(stub: object, validators: RpcClassValidators): void {
+  let raw = (stub as RpcStub)[RAW_STUB];
+  if (!raw || !(raw.hook instanceof StubHook)) {
+    throw new TypeError("Cap'n Web client validators can only be attached to RpcStub objects.");
+  }
+  rpcStubValidators.set(raw.hook, {...validators});
+}
+
+function getRpcStubValidator(stub: RpcStub): RpcMethodValidator | undefined {
+  if (!stub.pathIfPromise || stub.pathIfPromise.length === 0) return undefined;
+  let methodName = stub.pathIfPromise[stub.pathIfPromise.length - 1];
+  return rpcStubValidators.get(stub.hook)?.[methodName];
+}
+
+function setRpcPromiseReturnValidator(promise: RpcPromise, validator: RpcMethodValidator): void {
+  let {hook, pathIfPromise} = promise[RAW_STUB];
+  if (pathIfPromise && pathIfPromise.length === 0) {
+    rpcReturnValidators.set(hook, validator);
+  }
+}
+
+function withRpcPromiseReturnValidator(
+    promise: RpcPromise, validator: RpcMethodValidator): RpcPromise {
+  let {hook, pathIfPromise} = promise[RAW_STUB];
+  if (pathIfPromise && pathIfPromise.length > 0) {
+    promise = new RpcPromise(hook.get(pathIfPromise), []);
+  }
+  setRpcPromiseReturnValidator(promise, validator);
+  return promise;
+}
+
+function getRpcPromiseReturnValidator(promise: RpcPromise): RpcMethodValidator | undefined {
+  let {hook, pathIfPromise} = promise[RAW_STUB];
+  return pathIfPromise && pathIfPromise.length === 0 ? rpcReturnValidators.get(hook) : undefined;
+}
+
+function isRpcPromisePlaceholder(value: unknown): boolean {
+  if ((typeof value !== "object" && typeof value !== "function") || value === null) return false;
+  return (value as RpcStub)[RAW_STUB]?.pathIfPromise !== undefined;
+}
+
 const PROXY_HANDLERS: ProxyHandler<{raw: RpcStub}> = {
   apply(target: {raw: RpcStub}, thisArg: any, argumentsList: any[]) {
     let stub = target.raw;
-    return new RpcPromise(doCall(stub.hook,
-        stub.pathIfPromise || [], RpcPayload.fromAppParams(argumentsList)), []);
+    let validator = getRpcStubValidator(stub);
+    validator?.args?.(argumentsList, { isRpcPlaceholder: isRpcPromisePlaceholder });
+    let hook = doCall(stub.hook,
+        stub.pathIfPromise || [], RpcPayload.fromAppParams(argumentsList));
+    if (validator?.returns) rpcReturnValidators.set(hook, validator);
+    return new RpcPromise(hook, []);
   },
 
   get(target: {raw: RpcStub}, prop: string | symbol, receiver: any) {
@@ -497,11 +584,15 @@ export class RpcStub extends RpcTarget {
     //   in Workers RPC today? (Need to check.) Alternatively, should there be an optional
     //   parameter to specify promise vs. stub?
     let target = this[RAW_STUB];
+    let result: RpcStub;
     if (target.pathIfPromise) {
-      return new RpcStub(target.hook.get(target.pathIfPromise));
+      result = new RpcStub(target.hook.get(target.pathIfPromise));
     } else {
-      return new RpcStub(target.hook.dup());
+      result = new RpcStub(target.hook.dup());
+      let validators = rpcStubValidators.get(target.hook);
+      if (validators) setRpcStubValidators(result, validators);
     }
+    return result;
   }
 
   onRpcBroken(callback: (error: any) => void) {
@@ -618,6 +709,7 @@ export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise
 // payload. This is a helper used to implement the then/catch/finally methods of RpcPromise.
 async function pullPromise(promise: RpcPromise): Promise<unknown> {
   let {hook, pathIfPromise} = promise[RAW_STUB];
+  let validator = pathIfPromise!.length === 0 ? rpcReturnValidators.get(hook) : undefined;
   if (pathIfPromise!.length > 0) {
     // If this isn't the root promise, we have to clone it and pull the clone. This is a little
     // weird in terms of disposal: There's no way for the app to dispose/cancel the promise while
@@ -626,7 +718,7 @@ async function pullPromise(promise: RpcPromise): Promise<unknown> {
     hook = hook.get(pathIfPromise!);
   }
   let payload = await hook.pull();
-  return payload.deliverResolve();
+  return payload.deliverResolve(validator?.returns);
 }
 
 // =======================================================================================
@@ -1147,19 +1239,39 @@ export class RpcPayload {
       throw new Error("property promises should have been resolved earlier");
     }
 
+    let validator = RpcPayload.validatorForPromise(promise);
     let inner = hook.pull();
     if (inner instanceof RpcPayload) {
       // Immediately resolved to payload.
-      inner.deliverTo(parent, property, promises);
+      let subPromises: Promise<unknown>[] = [];
+      inner.deliverTo(parent, property, subPromises);
+      RpcPayload.finishDeliveredPromise(parent, property, subPromises, promises, validator);
     } else {
       // It's a promise.
       promises.push(inner.then(payload => {
         let subPromises: Promise<unknown>[] = [];
         payload.deliverTo(parent, property, subPromises);
         if (subPromises.length > 0) {
-          return Promise.all(subPromises);
+          return Promise.all(subPromises).then(() => validator?.returns?.((parent as any)[property]));
         }
+        return validator?.returns?.((parent as any)[property]);
       }));
+    }
+  }
+
+  private static validatorForPromise(promise: RpcPromise): RpcMethodValidator | undefined {
+    return getRpcPromiseReturnValidator(promise);
+  }
+
+  private static finishDeliveredPromise(
+      parent: object, property: string | number, subPromises: Promise<unknown>[],
+      promises: Promise<unknown>[], validator: RpcMethodValidator | undefined): void {
+    let validate = () => validator?.returns?.((parent as any)[property]);
+    if (subPromises.length > 0) {
+      promises.push(Promise.all(subPromises).then(validate));
+    } else {
+      let validation = validate();
+      if (validation instanceof Promise) promises.push(validation);
     }
   }
 
@@ -1170,7 +1282,9 @@ export class RpcPayload {
   //
   // The payload is automatically disposed after the call completes. The caller should not call
   // dispose().
-  public async deliverCall(func: Function, thisArg: object | undefined): Promise<RpcPayload> {
+  public async deliverCall(
+      func: Function, thisArg: object | undefined,
+      methodName?: string | number): Promise<RpcPayload> {
     try {
       let promises: Promise<void>[] = [];
       this.deliverTo(this, "value", promises);
@@ -1182,6 +1296,14 @@ export class RpcPayload {
         await Promise.all(promises);
       }
 
+      let validator = getRpcValidator(thisArg, methodName);
+      if (validator?.args) {
+        if (!Array.isArray(this.value)) {
+          throw new TypeError("RPC call arguments payload must be an array.");
+        }
+        validator.args(this.value);
+      }
+
       // Call the function.
       let result = Function.prototype.apply.call(func, thisArg, this.value);
 
@@ -1189,11 +1311,22 @@ export class RpcPayload {
         // Special case: If the function immediately returns RpcPromise, we don't want to await it,
         // since that will actually wait for the promise. Instead we want to construct a payload
         // around it directly.
+        //
+        // We deliberately do NOT run the return-value validator here. The
+        // `RpcPromise` is a placeholder for a remote call's eventual result;
+        // its declared return type is the resolved value's type (the generator
+        // unwraps `Promise<T>` to `T`), not the promise object itself.
+        // Validation will happen wherever the underlying value originates --
+        // either on another peer's `deliverCall` or, for in-process forwarding,
+        // when the resolved payload is actually delivered.
+        if (validator?.returns) result = withRpcPromiseReturnValidator(result, validator);
         return RpcPayload.fromAppReturn(result);
       } else {
         // In all other cases, await the result (which may or may not be a promise, but `await`
         // will just pass through non-promises).
-        return RpcPayload.fromAppReturn(await result);
+        let awaited = await result;
+        await validator?.returns?.(awaited);
+        return RpcPayload.fromAppReturn(awaited);
       }
     } finally {
       this.dispose();
@@ -1205,7 +1338,7 @@ export class RpcPayload {
   //
   // The returned object will have a disposer which disposes the payload. The caller should not
   // separately dispose it.
-  public async deliverResolve(): Promise<unknown> {
+  public async deliverResolve(validate?: (value: unknown) => void | Promise<void>): Promise<unknown> {
     try {
       let promises: Promise<void>[] = [];
       this.deliverTo(this, "value", promises);
@@ -1215,6 +1348,7 @@ export class RpcPayload {
       }
 
       let result = this.value;
+      await validate?.(result);
 
       // Add disposer to result.
       if (result instanceof Object) {
@@ -1638,7 +1772,8 @@ abstract class ValueStubHook extends StubHook {
       if (typeof followResult.value != "function") {
         throw new TypeError(`'${path.join('.')}' is not a function.`);
       }
-      let promise = args.deliverCall(followResult.value, followResult.parent);
+      let methodName = path.length > 0 ? path[path.length - 1] : undefined;
+      let promise = args.deliverCall(followResult.value, followResult.parent, methodName);
       return new PromiseStubHook(promise.then(payload => {
         return new PayloadStubHook(payload);
       }));

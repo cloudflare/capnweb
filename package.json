@@ -9,6 +9,9 @@
   "files": [
     "dist"
   ],
+  "workspaces": [
+    "packages/capnweb-typecheck"
+  ],
   "exports": {
     ".": {
       "workerd": {
@@ -24,6 +27,21 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./internal/typecheck": {
+      "workerd": {
+        "types": "./dist/internal-typecheck.d.ts",
+        "import": "./dist/index-workers.js",
+        "require": "./dist/index-workers.cjs"
+      },
+      "bun": {
+        "types": "./dist/internal-typecheck.d.ts",
+        "import": "./dist/index-bun.js",
+        "require": "./dist/index-bun.cjs"
+      },
+      "types": "./dist/internal-typecheck.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
     }
   },
   "type": "module",
@@ -31,7 +49,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsup",
+    "build": "npm run build:runtime && npm run build -w capnweb-typecheck",
+    "build:runtime": "tsup",
     "build:watch": "tsup --watch",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",
