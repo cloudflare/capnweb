@@ -4,8 +4,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 WEB_DIR="$SCRIPT_DIR/web"
+MODE="${1:-app}"
 TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/capnweb-worker-react-vite.XXXXXX")"
 TMP_CONFIG="$TMP_DIR/vite.config.mjs"
+TMP_WRANGLER_CONFIG="$TMP_DIR/wrangler.toml"
+TYPECHECK=false
+if [[ "$MODE" == "--typecheck" || "$MODE" == "typecheck" ]]; then
+  TYPECHECK=true
+elif [[ "$MODE" != "app" ]]; then
+  echo "Usage: $0 [--typecheck]" >&2
+  exit 1
+fi
 WORKER_PORT="${WORKER_PORT:-$(node - <<'NODE'
 const net = require('node:net');
 
@@ -45,14 +54,36 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
+if [[ "$TYPECHECK" == "true" ]]; then
+  cd "$REPO_ROOT"
+  env NODE_OPTIONS= npm run build
+
+  cd "$SCRIPT_DIR"
+  echo "Debugging capnweb-typecheck gen for examples/worker-react/src/worker.ts"
+  env NODE_OPTIONS= node --enable-source-maps --inspect=0 \
+    "$REPO_ROOT/packages/capnweb-typecheck/dist/cli.js" gen src/worker.ts --out .capnweb
+fi
+
+VITE_PLUGIN_IMPORT=""
+VITE_PLUGINS=""
+WORKER_MAIN="$SCRIPT_DIR/src/worker.ts"
+if [[ "$TYPECHECK" == "true" ]]; then
+  VITE_PLUGIN_IMPORT="import capnweb from '$REPO_ROOT/packages/capnweb-typecheck/dist/vite.js';"
+  VITE_PLUGINS="plugins: [capnweb({ input: '$SCRIPT_DIR/src/worker.ts', outDir: '$SCRIPT_DIR/.capnweb' })],"
+  WORKER_MAIN="$SCRIPT_DIR/.capnweb/worker.entry.ts"
+fi
+
 cat > "$TMP_CONFIG" <<EOF
 import path from 'node:path';
+$VITE_PLUGIN_IMPORT
 
 export default {
+  $VITE_PLUGINS
   resolve: {
-    alias: {
-      capnweb: path.resolve('$REPO_ROOT/dist/index.js'),
-    },
+    alias: [
+      { find: 'capnweb/internal/typecheck', replacement: path.resolve('$REPO_ROOT/dist/index.js') },
+      { find: 'capnweb', replacement: path.resolve('$REPO_ROOT/dist/index.js') },
+    ],
   },
   build: {
     target: 'esnext',
@@ -73,11 +104,29 @@ export default {
 };
 EOF
 
+cat > "$TMP_WRANGLER_CONFIG" <<EOF
+name = "capnweb-react-debug"
+main = "$WORKER_MAIN"
+compatibility_date = "2024-09-01"
+
+[assets]
+directory = "$SCRIPT_DIR/web/dist"
+
+[vars]
+DELAY_AUTH_MS = 80
+DELAY_PROFILE_MS = 120
+DELAY_NOTIFS_MS = 120
+SIMULATED_RTT_MS = 120
+SIMULATED_RTT_JITTER_MS = 40
+EOF
+
 cd "$REPO_ROOT"
-env NODE_OPTIONS= npm run build
+if [[ "$TYPECHECK" == "false" ]]; then
+  env NODE_OPTIONS= npm run build
+fi
 
 cd "$SCRIPT_DIR"
-env NODE_OPTIONS= npx wrangler dev --ip 127.0.0.1 --port "$WORKER_PORT" >/dev/null 2>&1 &
+env NODE_OPTIONS= npx wrangler dev --config "$TMP_WRANGLER_CONFIG" --ip 127.0.0.1 --port "$WORKER_PORT" >/dev/null 2>&1 &
 WRANGLER_PID=$!
 
 cd "$WEB_DIR"
