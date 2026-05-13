@@ -66,6 +66,10 @@ export default function capnweb(options: CapnwebVitePluginOptions = {}): VitePlu
     buildStart() { run(); },
     configureServer(server) {
       if (!generated) run();
+      // Re-runs full codegen on any TS file change. This is simple but
+      // re-creates the TypeScript program each time; acceptable for typical
+      // project sizes but could be optimized with incremental compilation
+      // or reachable-file filtering for very large codebases.
       server.watcher?.on("change", path => {
         if (!path.endsWith(".ts") && !path.endsWith(".tsx")) return;
         if (path === state.validatorsAbs || path === state.clientsAbs) return;
@@ -97,6 +101,8 @@ export default function capnweb(options: CapnwebVitePluginOptions = {}): VitePlu
 
 function jsImportPath(path: string): string {
   let normalized = path.split(sep).join("/");
+  let ext = normalized.match(/\.(ts|tsx|mts|cts)$/);
+  if (ext) normalized = normalized.slice(0, -ext[0].length) + ".js";
   if (!normalized.startsWith("./") && !normalized.startsWith("../")) normalized = "./" + normalized;
-  return normalized.replace(/\.ts$/, ".js");
+  return normalized;
 }
