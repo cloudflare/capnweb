@@ -9,21 +9,15 @@
 // validator state lives in a single bundle alongside the rest of the runtime.
 
 export {
-  // Generated-code entry points.
   __capnweb_registerRpcValidators,
   __capnweb_bindClientValidator,
-  // Vendored typia helpers. Generated validator modules import these (after
-  // our build-time import-rewrite step). They live here so the user's app
-  // resolves them through `capnweb` instead of needing `typia` at runtime.
-  _validateReport,
-  _createStandardSchema,
 } from "./typecheck/runtime.js";
 
 export type {
-  RpcMethodTypiaValidators,
-  RpcClassTypiaValidators,
-  RpcTypiaRegistry,
-  TypiaValidator,
-  TypiaValidationError,
-  TypiaValidationResult,
+  ClassSpec,
+  MethodSpec,
+  ObjectProp,
+  ParamSpec,
+  PrimitiveName,
+  TypeSpec,
 } from "./typecheck/runtime.js";

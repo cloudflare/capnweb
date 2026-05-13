@@ -24,10 +24,6 @@
   "peerDependencies": {
     "capnweb": "^0.7.0"
   },
-  "dependencies": {
-    "ts-morph": "^28.0.0",
-    "typia": "^9.0.0"
-  },
   "devDependencies": {
     "tsup": "^8.5.1",
     "typescript": "^5.9.3"

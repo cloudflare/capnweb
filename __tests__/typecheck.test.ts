@@ -23,15 +23,15 @@ import { RpcPayload, setRpcMethodValidators } from "../src/core.js";
 
 function inspectInput(input: string) {
   let project = createProject(input);
-  let sourceFile = project.addSourceFileAtPath(input);
-  let reachableFiles = collectReachableSourceFiles(sourceFile);
-  let classes = extractClasses(reachableFiles);
+  let sourceFile = project.sourceFile;
+  let reachableFiles = collectReachableSourceFiles(project);
+  let classes = extractClasses(project, reachableFiles);
   return { sourceFile, reachableFiles, classes };
 }
 
 function emitShadowFor(input: string, outDir: string): void {
   let { sourceFile, reachableFiles, classes } = inspectInput(input);
-  let root = commonDir(reachableFiles.map(file => file.getFilePath()));
+  let root = commonDir(reachableFiles.map(file => file.fileName));
   emitShadowSources(reachableFiles, sourceFile, outDir, root, classes.map(c => c.name));
 }
 
@@ -149,7 +149,7 @@ describe("runtime type validators", () => {
 
 // =====================================================================
 // RpcTarget class discovery and preflight type rejection. These exercise
-// `extractClasses` directly via `inspectInput`. No codegen, no Typia.
+// `extractClasses` directly via `inspectInput`; no validator codegen.
 
 describe("RpcTarget class extraction", () => {
   it("discovers classes reachable through re-exports", () => {
@@ -164,6 +164,34 @@ describe("RpcTarget class extraction", () => {
       `);
       let input = resolve(root, "worker.ts");
       writeFileSync(input, `export { Api } from "./api.js";`);
+      expect(inspectInput(input).classes.map(c => c.name)).toStrictEqual(["Api"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("honors tsconfig path aliases and aliased RpcTarget imports", () => {
+    let root = mkdtempSync(resolve(".capnweb-paths-"));
+    try {
+      writeFakeCapnweb(root);
+      mkdirSync(resolve(root, "api"), { recursive: true });
+      writeFileSync(resolve(root, "tsconfig.json"), JSON.stringify({
+        compilerOptions: {
+          baseUrl: ".",
+          paths: {
+            "@api/*": ["api/*"],
+            "fake-capnweb": ["fake-capnweb.ts"],
+          },
+        },
+      }));
+      writeFileSync(resolve(root, "api", "api.ts"), `
+        import { RpcTarget as BaseTarget } from "fake-capnweb";
+        export class Api extends BaseTarget {
+          ping(value: string): string { return value; }
+        }
+      `);
+      let input = resolve(root, "worker.ts");
+      writeFileSync(input, `export { Api } from "@api/api";`);
       expect(inspectInput(input).classes.map(c => c.name)).toStrictEqual(["Api"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -313,7 +341,7 @@ describe("preflight type rejection", () => {
 
 // =====================================================================
 // Shadow source emission. These exercise `emitShadowSources` directly --
-// no Typia, no `ts.createProgram`. They cover the CLI's client-rewrite path
+// no validator codegen. They cover the CLI's client-rewrite path
 // (the Vite plugin's in-memory rewrite is covered in vite-plugin.test.ts).
 
 describe("shadow source emission", () => {
@@ -392,13 +420,13 @@ describe("shadow source emission", () => {
 });
 
 // =====================================================================
-// End-to-end Typia codegen. ONE `generate()` call is shared by both the
+// End-to-end validator codegen. ONE `generate()` call is shared by both the
 // server-side validator integration tests and the client-side bound
 // validator integration tests, so we only pay the `ts.createProgram` cost
 // once per file. Everything before this point in the file avoids it
 // entirely.
 
-describe("end-to-end Typia codegen", () => {
+describe("end-to-end validator codegen", () => {
   let root: string;
   let api: any;
   let wrap: (stub: unknown) => any;
@@ -463,9 +491,9 @@ describe("end-to-end Typia codegen", () => {
       await expect(call("maybe", [null])).resolves.toBeUndefined();
     });
 
-    it("preserves the Typia error path on optional + nullable mismatches", async () => {
+    it("preserves the error path on optional + nullable mismatches", async () => {
       await expect(call("maybe", [123])).rejects.toThrow(
-          /Api\.maybe: value: expected \(null \| string \| undefined\), got number/);
+          /Api\.maybe: value: expected null \| string \| undefined, got number/);
     });
 
     it("counts required arity after optional leading params", async () => {

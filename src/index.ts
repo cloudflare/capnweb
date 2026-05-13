@@ -15,8 +15,6 @@ import {
 import {
   __capnweb_registerRpcValidators as __capnweb_registerRpcValidatorsImpl,
   __capnweb_bindClientValidator as __capnweb_bindClientValidatorImpl,
-  _validateReport as _validateReportImpl,
-  _createStandardSchema as _createStandardSchemaImpl,
 } from "./typecheck/runtime.js";
 import { serialize, deserialize } from "./serialize.js";
 import { RpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
@@ -53,14 +51,6 @@ export type { RpcTransport, RpcSessionOptions, RpcCompatible };
 export const __capnweb_registerRpcValidators = __capnweb_registerRpcValidatorsImpl;
 /** @internal */
 export const __capnweb_bindClientValidator = __capnweb_bindClientValidatorImpl;
-/** @internal Vendored typia runtime helper. Imported by capnweb-typecheck's
- * generated specs.js after the build-time import rewrite.
- */
-export const _validateReport = _validateReportImpl;
-/** @internal Vendored typia runtime helper. Imported by capnweb-typecheck's
- * generated specs.js after the build-time import rewrite.
- */
-export const _createStandardSchema = _createStandardSchemaImpl;
 
 // Hack the type system to make RpcStub's types work nicely!
 /**

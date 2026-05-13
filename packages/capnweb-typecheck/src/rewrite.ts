@@ -4,27 +4,9 @@
 
 import * as fs from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
-import {
-  CallExpression,
-  NewExpression,
-  Node,
-  Project,
-  ScriptTarget,
-  ts,
-  type SourceFile,
-} from "ts-morph";
-/**
- * Names of the wrap-factory functions the rewriter calls. Each is exported
- * from the generated `clients.ts`; the rewriter chooses one per typed factory
- * call in user source. Kept in sync with the matching emit in `generate.ts`.
- *
- * Two flavors:
- *   - `__capnweb_wrap_<ClassName>` accepts an `RpcStub<T>` and binds return
- *     validators directly on it. Used for the three stub-returning helpers.
- *   - `__capnweb_wrap_RpcSession_<ClassName>` accepts an `RpcSession<T>`,
- *     binds validators on `session.getRemoteMain()`, and returns the session
- *     unchanged so the caller still has `getRemoteMain`, `drain`, etc.
- */
+import * as ts from "typescript";
+import type { SourceFile } from "./extract.js";
+
 export function wrapFunctionName(className: string): string {
   return `__capnweb_wrap_${className}`;
 }
@@ -49,58 +31,72 @@ export function emitShadowSources(
   let entryShadow = "";
 
   for (let file of sourceFiles) {
-    let originalPath = file.getFilePath();
+    let originalPath = file.fileName;
     let relativePath = relative(commonRoot, originalPath);
     let shadowPath = join(shadowRoot, relativePath);
     fs.mkdirSync(dirname(shadowPath), { recursive: true });
 
-    let clientsImport = jsImportPath(
-        relative(dirname(shadowPath), join(outAbs, "clients.ts")));
+    let clientsImport = jsImportPath(relative(dirname(shadowPath), join(outAbs, "clients.ts")));
     let transformed = transformClientCalls(file, classSet, clientsImport);
     fs.writeFileSync(shadowPath, transformed);
     copyRelativeAssets(file, shadowPath, shadowRoot);
 
-    if (originalPath === entry.getFilePath()) {
-      entryShadow = shadowPath;
-    }
+    if (originalPath === entry.fileName) entryShadow = shadowPath;
   }
 
-  return entryShadow || entry.getFilePath();
+  return entryShadow || entry.fileName;
 }
 
 function copyRelativeAssets(file: SourceFile, shadowPath: string, shadowRoot: string): void {
-  let copySpecifier = (specifier: string, target: SourceFile | undefined) => {
+  let copySpecifier = (specifier: string) => {
     if (!specifier.startsWith(".")) return;
-    if (target && isTypeScriptSource(target.getFilePath())) return;
+    if (resolveTypeScriptImport(dirname(file.fileName), specifier)) return;
 
     let assetSpecifier = specifier.split(/[?#]/, 1)[0];
-    let sourcePath = target?.getFilePath() ?? resolve(dirname(file.getFilePath()), assetSpecifier);
+    let sourcePath = resolve(dirname(file.fileName), assetSpecifier);
     if (!fs.existsSync(sourcePath) || !fs.statSync(sourcePath).isFile()) {
       throw new Error(`Cannot copy relative asset import ${JSON.stringify(specifier)} ` +
-          `from ${file.getFilePath()}.`);
+          `from ${file.fileName}.`);
     }
 
     let destPath = resolve(dirname(shadowPath), assetSpecifier);
     if (!isPathInside(shadowRoot, destPath)) {
       throw new Error(`Relative asset import ${JSON.stringify(specifier)} from ` +
-          `${file.getFilePath()} would escape the generated shadow source tree.`);
+          `${file.fileName} would escape the generated shadow source tree.`);
     }
     fs.mkdirSync(dirname(destPath), { recursive: true });
     fs.copyFileSync(sourcePath, destPath);
   };
 
-  for (let importDecl of file.getImportDeclarations()) {
-    copySpecifier(importDecl.getModuleSpecifierValue(), importDecl.getModuleSpecifierSourceFile());
-  }
-  for (let exportDecl of file.getExportDeclarations()) {
-    let specifier = exportDecl.getModuleSpecifierValue();
-    if (specifier !== undefined) copySpecifier(specifier, exportDecl.getModuleSpecifierSourceFile());
+  for (let statement of file.statements) {
+    if (ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier)) {
+      copySpecifier(statement.moduleSpecifier.text);
+    } else if (ts.isExportDeclaration(statement) && statement.moduleSpecifier &&
+        ts.isStringLiteral(statement.moduleSpecifier)) {
+      copySpecifier(statement.moduleSpecifier.text);
+    }
   }
 }
 
+function resolveTypeScriptImport(baseDir: string, specifier: string): string | undefined {
+  let clean = specifier.split(/[?#]/, 1)[0];
+  let base = resolve(baseDir, clean);
+  let candidates = [base];
+  let ext = extname(base);
+  if (ext === ".js" || ext === ".jsx" || ext === ".mjs" || ext === ".cjs") {
+    candidates.push(base.slice(0, -ext.length) + ".ts");
+    candidates.push(base.slice(0, -ext.length) + ".tsx");
+    candidates.push(base.slice(0, -ext.length) + ".mts");
+    candidates.push(base.slice(0, -ext.length) + ".cts");
+  }
+  for (let candidate of candidates) {
+    if (isTypeScriptSource(candidate) && fs.existsSync(candidate)) return candidate;
+  }
+  return undefined;
+}
+
 function isTypeScriptSource(path: string): boolean {
-  return /\.(?:ts|tsx|mts|cts)$/.test(path) &&
-      !/\.d\.(?:ts|mts|cts)$/.test(path);
+  return /\.(?:ts|tsx|mts|cts)$/.test(path) && !/\.d\.(?:ts|mts|cts)$/.test(path);
 }
 
 function isPathInside(parent: string, child: string): boolean {
@@ -108,37 +104,17 @@ function isPathInside(parent: string, child: string): boolean {
   return rel === "" || (!rel.startsWith("..") && !rel.startsWith("/") && !/^[A-Za-z]:[\\/]/.test(rel));
 }
 
-/**
- * Rewrite typed RPC session creations so the returned stub or session gets
- * its return-value validators bound to it.
- *
- * Two shapes are recognized:
- *   - `newHttpBatchRpcSession<Api>(...)` / `newWebSocketRpcSession<Api>(...)` /
- *     `newMessagePortRpcSession<Api>(...)` -- the call returns an `RpcStub<Api>`;
- *     wrap with `__capnweb_wrap_Api(...)`, which binds validators on it.
- *   - `new RpcSession<Api>(transport, ...)` -- the constructor returns an
- *     `RpcSession<Api>` whose `getRemoteMain()` is the stub we care about;
- *     wrap with `__capnweb_wrap_RpcSession_Api(...)`, which calls
- *     `session.getRemoteMain()` once, binds validators on that stub, and
- *     returns the session unchanged so the caller still has `getRemoteMain`,
- *     `getStats`, `drain`, etc.
- *
- * Calls without a type argument, or with a type argument that isn't a known
- * RpcTarget class, are left alone. The TypeScript caller "opted out" of
- * typing, so we opt out of runtime validation in the same place.
- */
 export function transformClientCalls(
     source: string | SourceFile, knownClasses: Set<string>,
     clientsImport: string, fileName = "capnweb-rewrite-input.ts"): string {
-  let sourceFile = typeof source === "string" ? parseSource(source, fileName) : source;
+  let sourceFile = typeof source === "string"
+      ? ts.createSourceFile(fileName, source, ts.ScriptTarget.ES2023, true, ts.ScriptKind.TS)
+      : source;
   let code = sourceFile.getFullText();
   let imports = collectCapnwebImports(sourceFile);
   let rewrites = findClientRewrites(sourceFile, knownClasses, imports);
   if (rewrites.length === 0) return code;
 
-  // Collect the exact set of wrap names actually used so we only import what
-  // the file references. Separate stub-shape and session-shape so option-A
-  // dispatch stays statically typed.
   let usedNames = new Set<string>();
   for (let edit of rewrites) usedNames.add(nameForRewrite(edit));
 
@@ -146,77 +122,53 @@ export function transformClientCalls(
   let result = code;
   for (let edit of rewrites) {
     let original = result.slice(edit.start, edit.end);
-    result = result.slice(0, edit.start) +
-        `${nameForRewrite(edit)}(${original})` +
+    result = result.slice(0, edit.start) + `${nameForRewrite(edit)}(${original})` +
         result.slice(edit.end);
   }
 
-  let importsList = [...usedNames].sort().join(", ");
-  return `import { ${importsList} } from ${JSON.stringify(clientsImport)};\n` + result;
+  return `import { ${[...usedNames].sort().join(", ")} } from ${JSON.stringify(clientsImport)};\n` + result;
 }
 
 function nameForRewrite(edit: ClientRewrite): string {
-  return edit.kind === "session"
-      ? wrapSessionFunctionName(edit.className)
-      : wrapFunctionName(edit.className);
+  return edit.kind === "session" ? wrapSessionFunctionName(edit.className) :
+      wrapFunctionName(edit.className);
 }
 
-function parseSource(code: string, fileName: string): SourceFile {
-  let project = new Project({
-    useInMemoryFileSystem: true,
-    compilerOptions: { target: ScriptTarget.ES2023, jsx: ts.JsxEmit.ReactJSX },
-  });
-  return project.createSourceFile(fileName, code);
-}
+type ClientRewrite = { start: number; end: number; className: string; kind: "stub" | "session" };
 
-type ClientRewrite = {
-  start: number;
-  end: number;
-  className: string;
-  // "stub": typed call to a stub-returning helper, wrap is bound directly on
-  //   the returned RpcStub.
-  // "session": typed `new RpcSession<T>(...)`, wrap walks the session to its
-  //   cached `getRemoteMain()` stub and binds there.
-  kind: "stub" | "session";
-};
-
-type ImportedBinding = { original: string, binding: Node };
+type ImportedBinding = { original: string; alias: string };
 
 type ImportedFactories = {
-  // Alias -> original capnweb stub-returning helper name (e.g. "connect" -> "newHttpBatchRpcSession").
   stubAliasToName: Map<string, ImportedBinding>;
-  // Alias -> "RpcSession" if the user imported RpcSession (possibly renamed).
   sessionAliasToName: Map<string, ImportedBinding>;
-  // Any imported name -> its original name. Used to resolve `import type { Api as RemoteApi }`.
   typeAliasToName: Map<string, ImportedBinding>;
-  // Identifiers bound via `import * as ns from "capnweb"`.
-  namespaces: Map<string, Node>;
+  namespaces: Set<string>;
 };
 
 function collectCapnwebImports(sourceFile: SourceFile): ImportedFactories {
   let stubAliasToName = new Map<string, ImportedBinding>();
   let sessionAliasToName = new Map<string, ImportedBinding>();
   let typeAliasToName = new Map<string, ImportedBinding>();
-  let namespaces = new Map<string, Node>();
+  let namespaces = new Set<string>();
 
-  for (let importDecl of sourceFile.getImportDeclarations()) {
-    let isCapnweb = importDecl.getModuleSpecifierValue() === "capnweb";
+  for (let statement of sourceFile.statements) {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) ||
+        !statement.importClause) continue;
 
-    if (isCapnweb) {
-      let namespaceImport = importDecl.getNamespaceImport();
-      if (namespaceImport) namespaces.set(namespaceImport.getText(), namespaceImport);
-    }
+    let isCapnweb = statement.moduleSpecifier.text === "capnweb";
+    let named = statement.importClause.namedBindings;
+    if (isCapnweb && named && ts.isNamespaceImport(named)) namespaces.add(named.name.text);
+    if (!named || !ts.isNamedImports(named)) continue;
 
-    for (let spec of importDecl.getNamedImports()) {
-      let original = spec.getName();
-      let alias = spec.getAliasNode()?.getText() ?? original;
-      let binding = { original, binding: spec };
-      typeAliasToName.set(alias, binding);
+    for (let spec of named.elements) {
+      let original = (spec.propertyName ?? spec.name).text;
+      let alias = spec.name.text;
+      typeAliasToName.set(alias, { original, alias });
       if (!isCapnweb) continue;
       if (STUB_FACTORY_NAMES.has(original)) {
-        stubAliasToName.set(alias, binding);
+        stubAliasToName.set(alias, { original, alias });
       } else if (original === SESSION_CONSTRUCTOR_NAME) {
-        sessionAliasToName.set(alias, binding);
+        sessionAliasToName.set(alias, { original, alias });
       }
     }
   }
@@ -227,98 +179,78 @@ function collectCapnwebImports(sourceFile: SourceFile): ImportedFactories {
 function findClientRewrites(
     sourceFile: SourceFile, knownClasses: Set<string>, imports: ImportedFactories): ClientRewrite[] {
   let edits: ClientRewrite[] = [];
-
-  for (let node of sourceFile.getDescendants()) {
-    if (Node.isCallExpression(node)) {
-      let rewrite = rewriteForCall(node, knownClasses, imports);
+  let visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && callsKnownStubFactory(node.expression, imports)) {
+      let rewrite = rewriteForTypedExpression(node, knownClasses, imports, "stub");
       if (rewrite) edits.push(rewrite);
-    } else if (Node.isNewExpression(node)) {
-      let rewrite = rewriteForNew(node, knownClasses, imports);
+    } else if (ts.isNewExpression(node) && callsKnownSessionConstructor(node.expression, imports)) {
+      let rewrite = rewriteForTypedExpression(node, knownClasses, imports, "session");
       if (rewrite) edits.push(rewrite);
     }
-  }
-
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
   return edits;
 }
 
-function rewriteForCall(
-    node: CallExpression, knownClasses: Set<string>, imports: ImportedFactories): ClientRewrite | undefined {
-  if (!callsKnownStubFactory(node.getExpression(), imports)) return undefined;
-  return rewriteForTypedExpression(node, knownClasses, imports, "stub");
-}
-
-function rewriteForNew(
-    node: NewExpression, knownClasses: Set<string>, imports: ImportedFactories): ClientRewrite | undefined {
-  if (!callsKnownSessionConstructor(node.getExpression(), imports)) return undefined;
-  return rewriteForTypedExpression(node, knownClasses, imports, "session");
-}
-
-function callsKnownStubFactory(expr: Node, imports: ImportedFactories): boolean {
-  if (Node.isIdentifier(expr)) {
-    let imported = imports.stubAliasToName.get(expr.getText());
-    return imported !== undefined && symbolMatches(expr, imported.binding);
+function callsKnownStubFactory(expr: ts.Expression, imports: ImportedFactories): boolean {
+  if (ts.isIdentifier(expr)) {
+    return imports.stubAliasToName.has(expr.text) && !isShadowed(expr, expr.text);
   }
-  if (Node.isPropertyAccessExpression(expr)) {
-    let namespaceExpr = expr.getExpression();
-    if (!Node.isIdentifier(namespaceExpr)) return false;
-    let namespace = namespaceExpr.getText();
-    let name = expr.getName();
-    let imported = imports.namespaces.get(namespace);
-    return imported !== undefined && symbolMatches(namespaceExpr, imported) &&
-        STUB_FACTORY_NAMES.has(name);
+  if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) {
+    return imports.namespaces.has(expr.expression.text) && !isShadowed(expr.expression, expr.expression.text) &&
+        STUB_FACTORY_NAMES.has(expr.name.text);
   }
   return false;
 }
 
-function callsKnownSessionConstructor(expr: Node, imports: ImportedFactories): boolean {
-  if (Node.isIdentifier(expr)) {
-    let imported = imports.sessionAliasToName.get(expr.getText());
-    return imported !== undefined && symbolMatches(expr, imported.binding);
+function callsKnownSessionConstructor(expr: ts.Expression, imports: ImportedFactories): boolean {
+  if (ts.isIdentifier(expr)) {
+    return imports.sessionAliasToName.has(expr.text) && !isShadowed(expr, expr.text);
   }
-  if (Node.isPropertyAccessExpression(expr)) {
-    let namespaceExpr = expr.getExpression();
-    if (!Node.isIdentifier(namespaceExpr)) return false;
-    let namespace = namespaceExpr.getText();
-    let name = expr.getName();
-    let imported = imports.namespaces.get(namespace);
-    return imported !== undefined && symbolMatches(namespaceExpr, imported) &&
-        name === SESSION_CONSTRUCTOR_NAME;
+  if (ts.isPropertyAccessExpression(expr) && ts.isIdentifier(expr.expression)) {
+    return imports.namespaces.has(expr.expression.text) && !isShadowed(expr.expression, expr.expression.text) &&
+        expr.name.text === SESSION_CONSTRUCTOR_NAME;
   }
   return false;
 }
 
 function rewriteForTypedExpression(
-    node: CallExpression | NewExpression, knownClasses: Set<string>,
+    node: ts.CallExpression | ts.NewExpression, knownClasses: Set<string>,
     imports: ImportedFactories, kind: "stub" | "session"): ClientRewrite | undefined {
-  let typeArg = node.getTypeArguments()[0];
-  if (!typeArg || !Node.isTypeReference(typeArg)) return undefined;
-
-  let typeNameNode = typeArg.getTypeName();
-  let typeName = typeNameNode.getText();
+  let typeArg = node.typeArguments?.[0];
+  if (!typeArg || !ts.isTypeReferenceNode(typeArg) || !ts.isIdentifier(typeArg.typeName)) return undefined;
+  let typeName = typeArg.typeName.text;
   let importedType = imports.typeAliasToName.get(typeName);
-  if (importedType && Node.isIdentifier(typeNameNode) && symbolMatches(typeNameNode, importedType.binding)) {
-    typeName = importedType.original;
+  if (importedType) typeName = importedType.original;
+  if (!/^[$A-Z_a-z][$\w]*$/.test(typeName) || !knownClasses.has(typeName)) return undefined;
+  return { start: node.getStart(), end: node.getEnd(), className: typeName, kind };
+}
+
+function isShadowed(node: ts.Identifier, name: string): boolean {
+  let current: ts.Node | undefined = node.parent;
+  while (current) {
+    if ((ts.isFunctionLike(current) || ts.isSourceFile(current)) && declaresName(current, name, node.pos)) return true;
+    current = current.parent;
   }
-  if (!/^[$A-Z_a-z][$\w]*$/.test(typeName)) return undefined;
-  if (!knownClasses.has(typeName)) return undefined;
+  return false;
+}
 
-  return {
-    start: node.getStart(),
-    end: node.getEnd(),
-    className: typeName,
-    kind,
+function declaresName(scope: ts.Node, name: string, before: number): boolean {
+  let found = false;
+  let visit = (node: ts.Node) => {
+    if (found || node.pos > before) return;
+    if (ts.isImportDeclaration(node)) return;
+    if (ts.isParameter(node) || ts.isVariableDeclaration(node) || ts.isFunctionDeclaration(node) ||
+        ts.isClassDeclaration(node) || ts.isTypeAliasDeclaration(node) || ts.isInterfaceDeclaration(node)) {
+      let id = "name" in node && node.name && ts.isIdentifier(node.name) ? node.name : undefined;
+      if (id?.text === name) found = true;
+    }
+    if (node !== scope && (ts.isFunctionLike(node) || ts.isClassLike(node))) return;
+    ts.forEachChild(node, visit);
   };
-}
-
-function symbolMatches(use: Node, declaration: Node): boolean {
-  let symbol = use.getSymbol();
-  return symbol?.getDeclarations().some(candidate =>
-      candidate.getSourceFile().getFilePath() === declaration.getSourceFile().getFilePath() &&
-      rangesOverlap(candidate, declaration)) ?? false;
-}
-
-function rangesOverlap(a: Node, b: Node): boolean {
-  return a.getStart() <= b.getEnd() && b.getStart() <= a.getEnd();
+  ts.forEachChild(scope, visit);
+  return found;
 }
 
 function jsImportPath(path: string): string {

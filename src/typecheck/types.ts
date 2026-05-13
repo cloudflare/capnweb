@@ -1,9 +1,6 @@
 // Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
-//
-// Tooling-only option / result shapes plus the small validator metadata model
-// shared structurally with `capnweb/internal/typecheck`.
 
 export type PrimitiveName = "string" | "number" | "bigint" | "boolean" | "undefined" | "null" | "void";
 
@@ -26,28 +23,4 @@ export type TypeSpec =
 export type ObjectProp = { name: string, optional: boolean, type: TypeSpec };
 export type ParamSpec = { name: string, optional: boolean, type: TypeSpec };
 export type MethodSpec = { name: string, params: ParamSpec[], returns: TypeSpec };
-export type ClassSpec = ClassRegistration & { methods: MethodSpec[] };
-
-export type ClassRegistration = {
-  name: string;
-  valueName: string;
-  isDefault: boolean;
-  sourcePath: string;
-};
-
-export type GenResult = {
-  classes: string[];
-  registrations: ClassRegistration[];
-};
-
-export type GenOptions = {
-  input: string;
-  outDir: string;
-  /**
-   * @internal Override the package import emitted in generated modules.
-   * Defaults to `"capnweb/internal/typecheck"`. Test infrastructure points it
-   * at the in-tree runtime source so generated code can run before the
-   * package is built.
-   */
-  runtimeImport?: string;
-};
+export type ClassSpec = { name: string, methods: MethodSpec[] };

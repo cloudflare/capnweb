@@ -1,197 +1,161 @@
 // Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
-//
-// Runtime side of the typecheck feature. Consumes typia-generated validator
-// functions emitted at build time by `capnweb-typecheck` and adapts them to
-// Cap'n Web's `RpcMethodValidator` shape (throw on failure, preserve
-// `RpcPromise` placeholders to keep pipelining working).
-//
-// Imported by the main bundle so `capnweb/internal/typecheck` can share the
-// same validator state as normal `capnweb` imports.
 
 import {
+  RpcTarget,
   type RpcClassValidators,
   type RpcMethodValidator,
+  type RpcValidationOptions,
   setRpcMethodValidators,
   setRpcStubValidators,
 } from "../core.js";
-import type { TypiaValidationError, TypiaValidationResult } from "./typia-runtime.js";
+import type { ClassSpec, MethodSpec, TypeSpec } from "./types.js";
 
-// Re-export the vendored typia helpers under stable names so generated code
-// can resolve them through `capnweb/internal/typecheck`. The post-process
-// step in `capnweb-typecheck`'s build rewrites typia's `lib/internal/*`
-// imports to point here.
-export { _validateReport, _createStandardSchema } from "./typia-runtime.js";
-export type { TypiaValidationError, TypiaValidationResult } from "./typia-runtime.js";
+type RpcValidationFailure = { path: string[]; expected: string; actual: string; value: unknown };
 
-/**
- * Validator function signature emitted by `typia.createValidate<T>()`. We
- * treat these as opaque -- typia generates the body, we only call it and
- * inspect the `{success, errors}` result.
- */
-export type TypiaValidator = (input: unknown) => TypiaValidationResult;
-
-/**
- * Per-method validator set produced by the generator: one validator per
- * positional parameter (for per-arg pipelining-aware checks) plus a return
- * validator. `paramNames` is recorded so error messages can reference the
- * parameter by name instead of by index. `paramOptional` says whether each
- * positional parameter can be elided when calling the method.
- */
-export type RpcMethodTypiaValidators = {
-  paramNames: readonly string[];
-  paramOptional: readonly boolean[];
-  paramValidators: readonly TypiaValidator[];
-  returns: TypiaValidator;
-};
-
-export type RpcClassTypiaValidators = Record<string, RpcMethodTypiaValidators>;
-export type RpcTypiaRegistry = Record<string, RpcClassTypiaValidators>;
-
-/**
- * Shape of `err.rpcValidation` on the `TypeError`s thrown by registered
- * validators.
- */
-type RpcValidationFailure = {
-  path: string[];
-  expected: string;
-  actual: string;
-  value: unknown;
-};
-
-/**
- * Register per-method argument and return-value validators for a set of
- * `RpcTarget` classes. `classes` maps the spec class name (a string emitted
- * by generated code) to the runtime constructor. `registry` is the
- * typia-backed validator map produced by `capnweb-typecheck`.
- */
 export function __capnweb_registerRpcValidators(
-    classes: Record<string, Function>, registry: RpcTypiaRegistry): void {
-  for (let className in registry) {
-    let klass = classes[className];
-    if (!klass) {
-      throw new Error(`Missing class '${className}' for Cap'n Web validator.`);
-    }
-    let methodValidators: RpcClassValidators = {};
-    for (let methodName in registry[className]) {
-      methodValidators[methodName] = wrapTypiaValidators(
-          `${className}.${methodName}`, registry[className][methodName]);
-    }
-    setRpcMethodValidators(klass, methodValidators);
+    classes: Record<string, Function>, classSpecs: readonly ClassSpec[]): void {
+  for (let spec of classSpecs) {
+    let klass = classes[spec.name];
+    if (!klass) throw new Error(`Missing class '${spec.name}' for Cap'n Web validator.`);
+    let validators: RpcClassValidators = {};
+    for (let method of spec.methods) validators[method.name] = makeMethodValidator(spec.name, method);
+    setRpcMethodValidators(klass, validators);
   }
 }
 
-/**
- * Bind client-side argument and return validators to an existing `RpcStub`
- * and return that same stub. Generated code wraps typed factory calls with
- * this helper, so the application still receives the original Cap'n Web
- * proxy object and `RpcPromise` pipelining / disposal / `StubBase` methods
- * keep their normal behavior.
- */
-export function __capnweb_bindClientValidator<T extends object>(
-    stub: T, className: string, validators: RpcClassTypiaValidators): T {
-  let methodValidators: RpcClassValidators = {};
-  for (let methodName in validators) {
-    methodValidators[methodName] = wrapTypiaValidators(
-        `${className}.${methodName}`, validators[methodName]);
-  }
-  setRpcStubValidators(stub, methodValidators);
+export function __capnweb_bindClientValidator<T extends object>(stub: T, classSpec: ClassSpec): T {
+  let validators: RpcClassValidators = {};
+  for (let method of classSpec.methods) validators[method.name] = makeMethodValidator(classSpec.name, method);
+  setRpcStubValidators(stub, validators);
   return stub;
 }
 
-function wrapTypiaValidators(
-    prefix: string, raw: RpcMethodTypiaValidators): RpcMethodValidator {
-  let maxArgs = raw.paramValidators.length;
-  let minArgs = raw.paramOptional.reduce((min, optional, index) =>
-    optional ? min : index + 1, 0);
+function makeMethodValidator(className: string, method: MethodSpec): RpcMethodValidator {
+  let prefix = `${className}.${method.name}`;
+  let minArgs = method.params.reduce((min, param, index) => param.optional ? min : index + 1, 0);
   return {
-    args(argList, options) {
-      if (argList.length < minArgs || argList.length > maxArgs) {
-        let expected = minArgs === maxArgs ? `${maxArgs}` : `${minArgs}-${maxArgs}`;
-        throw new TypeError(
-            `${prefix} expected ${expected} argument(s), got ${argList.length}`);
+    args(args, options) {
+      if (args.length < minArgs || args.length > method.params.length) {
+        let expected = minArgs === method.params.length ? `${minArgs}` : `${minArgs}-${method.params.length}`;
+        throw new TypeError(`${prefix} expected ${expected} argument(s), got ${args.length}`);
       }
-      for (let i = 0; i < argList.length; i++) {
-        let arg = argList[i];
-        // Preserve RpcPromise pipelining: skip validation for pipelined
-        // placeholders. The eventual value will still be validated on the
-        // server when it's delivered.
-        if (options?.isRpcPlaceholder?.(arg)) continue;
-        let validator = raw.paramValidators[i];
-        if (!validator) continue;
-        let result = validator(arg);
-        if (!result.success) {
-          throw makeValidationError(prefix, raw.paramNames[i], result.errors, false);
-        }
+      for (let i = 0; i < args.length; i++) {
+        let param = method.params[i];
+        if (!param || (param.optional && args[i] === undefined)) continue;
+        let failure = validateTypeSpec(param.type, args[i], [param.name], options);
+        if (failure) throw makeValidationError(prefix, failure);
       }
     },
     returns(value) {
-      let result = raw.returns(value);
-      if (!result.success) {
-        throw makeValidationError(prefix, undefined, result.errors, true);
-      }
+      let failure = validateTypeSpec(method.returns, value, []);
+      if (failure) throw makeValidationError(`${prefix} return`, failure);
     },
   };
 }
 
-function makeValidationError(
-    prefix: string, paramName: string | undefined,
-    errors: TypiaValidationError[], isReturn: boolean): TypeError {
-  let first = errors[0];
-  let pathSegments = stripInputPrefix(first.path);
-  let actual = actualKind(first.value);
-  let where: string;
-  let publicPath: string[];
-
-  if (isReturn) {
-    publicPath = pathSegments;
-    where = pathSegments.length > 0 ? pathSegments.join(".") : "value";
-  } else {
-    publicPath = paramName ? [paramName, ...pathSegments] : pathSegments;
-    where = publicPath.length > 0 ? publicPath.join(".") : "value";
-  }
-
-  let header = isReturn ? `${prefix} return` : prefix;
-  let err = new TypeError(`${header}: ${where}: expected ${first.expected}, got ${actual}`);
-  (err as TypeError & { rpcValidation: RpcValidationFailure }).rpcValidation = {
-    path: publicPath, expected: first.expected, actual, value: first.value,
-  };
+function makeValidationError(prefix: string, failure: RpcValidationFailure): TypeError {
+  let where = failure.path.length > 0 ? failure.path.join(".") : "value";
+  let err = new TypeError(`${prefix}: ${where}: expected ${failure.expected}, got ${failure.actual}`);
+  (err as TypeError & { rpcValidation: RpcValidationFailure }).rpcValidation = failure;
   return err;
 }
 
-// Typia paths look like:
-//   $input            (the root)
-//   $input.user.name  (nested property)
-//   $input[0]         (numeric index)
-//   $input["k"]       (string-literal key)
-// Strip the `$input` head and split into a flat list of property/index segments.
-function stripInputPrefix(path: string): string[] {
-  let rest = path.startsWith("$input") ? path.slice("$input".length) : path;
-  let out: string[] = [];
-  let i = 0;
-  while (i < rest.length) {
-    let c = rest[i];
-    if (c === ".") {
-      let end = i + 1;
-      while (end < rest.length && rest[end] !== "." && rest[end] !== "[") end++;
-      out.push(rest.slice(i + 1, end));
-      i = end;
-    } else if (c === "[") {
-      let close = rest.indexOf("]", i);
-      if (close < 0) break;
-      let segment = rest.slice(i + 1, close);
-      if (segment.startsWith("\"") && segment.endsWith("\"")) {
-        out.push(JSON.parse(segment));
-      } else {
-        out.push(`[${segment}]`);
+function validateTypeSpec(
+    type: TypeSpec, value: unknown, path: string[],
+    options?: RpcValidationOptions): RpcValidationFailure | undefined {
+  if (options?.isRpcPlaceholder?.(value)) return undefined;
+  let mismatch = (): RpcValidationFailure => ({ path, expected: describeTypeSpec(type), actual: actualKind(value), value });
+  switch (type.kind) {
+    case "any": return undefined;
+    case "never": return mismatch();
+    case "primitive":
+      switch (type.name) {
+        case "string": return typeof value === "string" ? undefined : mismatch();
+        case "number": return typeof value === "number" ? undefined : mismatch();
+        case "bigint": return typeof value === "bigint" ? undefined : mismatch();
+        case "boolean": return typeof value === "boolean" ? undefined : mismatch();
+        case "undefined":
+        case "void": return value === undefined ? undefined : mismatch();
+        case "null": return value === null ? undefined : mismatch();
       }
-      i = close + 1;
-    } else {
-      i++;
+    case "literal": return value === type.value ? undefined : mismatch();
+    case "array": {
+      if (!Array.isArray(value)) return mismatch();
+      for (let i = 0; i < value.length; i++) {
+        let failure = validateTypeSpec(type.element, value[i], [...path, `[${i}]`], options);
+        if (failure) return failure;
+      }
+      return undefined;
     }
+    case "tuple": {
+      if (!Array.isArray(value) || value.length !== type.elements.length) return mismatch();
+      for (let i = 0; i < type.elements.length; i++) {
+        let failure = validateTypeSpec(type.elements[i], value[i], [...path, `[${i}]`], options);
+        if (failure) return failure;
+      }
+      return undefined;
+    }
+    case "object": {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return mismatch();
+      let record = value as Record<string, unknown>;
+      for (let prop of type.props) {
+        if (!Object.prototype.hasOwnProperty.call(record, prop.name)) {
+          if (prop.optional) continue;
+          return { path: [...path, prop.name], expected: describeTypeSpec(prop.type), actual: "missing", value: undefined };
+        }
+        if (record[prop.name] === undefined && prop.optional) continue;
+        let failure = validateTypeSpec(prop.type, record[prop.name], [...path, prop.name], options);
+        if (failure) return failure;
+      }
+      return undefined;
+    }
+    case "record": {
+      if (typeof value !== "object" || value === null || Array.isArray(value)) return mismatch();
+      for (let [key, item] of Object.entries(value as Record<string, unknown>)) {
+        let failure = validateTypeSpec(type.value, item, [...path, key], options);
+        if (failure) return failure;
+      }
+      return undefined;
+    }
+    case "union": {
+      let failures: RpcValidationFailure[] = [];
+      for (let variant of type.variants) {
+        let failure = validateTypeSpec(variant, value, path, options);
+        if (!failure) return undefined;
+        failures.push(failure);
+      }
+      return failures.find(failure => failure.path.length > path.length) ?? mismatch();
+    }
+    case "instance": {
+      let ctor = (globalThis as Record<string, unknown>)[type.name];
+      return typeof ctor === "function" && value instanceof ctor ? undefined : mismatch();
+    }
+    case "rpcTarget": return value instanceof RpcTarget ? undefined : mismatch();
+    case "stub": return value !== null && (typeof value === "object" || typeof value === "function") ? undefined : mismatch();
+    case "function": return typeof value === "function" ? undefined : mismatch();
+    case "unsupported": return mismatch();
   }
-  return out;
+}
+
+function describeTypeSpec(type: TypeSpec): string {
+  switch (type.kind) {
+    case "any": return "any";
+    case "never": return "never";
+    case "primitive": return type.name === "void" ? "undefined" : type.name;
+    case "literal": return typeof type.value === "string" ? JSON.stringify(type.value) : String(type.value);
+    case "array": return `${describeTypeSpec(type.element)}[]`;
+    case "tuple": return `[${type.elements.map(describeTypeSpec).join(", ")}]`;
+    case "object": return `{ ${type.props.map(p => `${p.name}${p.optional ? "?" : ""}: ${describeTypeSpec(p.type)}`).join(", ")} }`;
+    case "record": return `Record<string, ${describeTypeSpec(type.value)}>`;
+    case "union": return type.variants.map(describeTypeSpec).sort().join(" | ");
+    case "instance": return type.name;
+    case "rpcTarget": return "RpcTarget";
+    case "stub": return "RpcStub";
+    case "function": return "Function";
+    case "unsupported": return type.text;
+  }
 }
 
 function actualKind(value: unknown): string {
@@ -200,10 +164,12 @@ function actualKind(value: unknown): string {
   if (value instanceof Date) return "Date";
   if (value instanceof RegExp) return "RegExp";
   if (value instanceof Error) return "Error";
-  if (typeof value === "object" && value !== null) {
+  if (typeof value === "object") {
     let ctor = (value as object).constructor;
     if (ctor && ctor.name && ctor.name !== "Object") return ctor.name;
     return "object";
   }
   return typeof value;
 }
+
+export type { ClassSpec, MethodSpec, ObjectProp, ParamSpec, PrimitiveName, TypeSpec } from "./types.js";

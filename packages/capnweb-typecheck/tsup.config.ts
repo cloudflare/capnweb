@@ -18,5 +18,5 @@ export default defineConfig({
   splitting: false,
   treeshake: true,
   minify: false,
-  external: ["ts-morph", "typescript", "capnweb", "capnweb/internal/typecheck"],
+  external: ["typescript", "capnweb", "capnweb/internal/typecheck"],
 });
