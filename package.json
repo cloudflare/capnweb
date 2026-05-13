@@ -47,7 +47,7 @@
     }
   },
   "bin": {
-    "capnweb-typecheck": "./dist/cli.js"
+    "capnweb": "./dist/cli.js"
   },
   "type": "module",
   "publishConfig": {

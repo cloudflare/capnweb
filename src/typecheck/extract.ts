@@ -189,7 +189,7 @@ function propertyNameText(name: ts.PropertyName): string | undefined {
 function lowerType(
     checker: ts.TypeChecker, type: ts.Type, location: string, visiting: Set<ts.Type>): TypeSpec {
   if (visiting.has(type)) {
-    throw new Error(`${location}: recursive types are not supported by capnweb-typecheck yet.`);
+    throw new Error(`${location}: recursive types are not supported by capnweb typecheck yet.`);
   }
   visiting.add(type);
   try {

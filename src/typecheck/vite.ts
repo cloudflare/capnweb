@@ -60,7 +60,7 @@ export default function capnweb(options: CapnwebVitePluginOptions = {}): VitePlu
   };
 
   return {
-    name: "capnweb-typecheck",
+    name: "capnweb:typecheck",
     enforce: "pre",
     configResolved(config) { root = config.root ?? root; },
     buildStart() { run(); },

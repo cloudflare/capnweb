@@ -15,18 +15,21 @@ import { generate, type GenOptions } from "./generate.js";
 function usage(exitCode = 1): never {
   let out = exitCode === 0 ? console.log : console.error;
   out(`Usage:
-  capnweb-typecheck gen <input.ts> [--out <dir>]
+  capnweb typecheck gen <input.ts> [--out <dir>]
 
 Example:
-  capnweb-typecheck gen src/worker.ts --out .capnweb`);
+  capnweb typecheck gen src/worker.ts --out .capnweb`);
   process.exit(exitCode);
 }
 
 async function main() {
-  let [command, ...rest] = process.argv.slice(2);
+  let [command, subcommand, ...rest] = process.argv.slice(2);
   if (!command || command === "--help" || command === "-h") usage(0);
-  if (command !== "gen") usage();
+  if (command !== "typecheck") usage();
+  if (!subcommand || subcommand === "--help" || subcommand === "-h") usage(0);
+  if (subcommand !== "gen") usage();
 
+  if (rest.includes("--help") || rest.includes("-h")) usage(0);
   let options = parseGenArgs(rest);
   generate(options);
 }
