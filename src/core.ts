@@ -44,6 +44,7 @@ export type RpcValidationOptions = {
 export type RpcMethodValidator = {
   args?: (args: unknown[], options?: RpcValidationOptions) => void;
   returns?: (value: unknown) => void | Promise<void>;
+  returnsPath?: (path: PropertyPath, value: unknown, options?: RpcValidationOptions) => void | Promise<void>;
 };
 
 export type RpcClassValidators = Record<string | number, RpcMethodValidator>;
@@ -399,9 +400,8 @@ export function setRpcStubValidators(stub: object, validators: RpcClassValidator
 }
 
 function getRpcStubValidator(stub: RpcStub): RpcMethodValidator | undefined {
-  if (!stub.pathIfPromise || stub.pathIfPromise.length === 0) return undefined;
-  let methodName = stub.pathIfPromise[stub.pathIfPromise.length - 1];
-  return rpcStubValidators.get(stub.hook)?.[methodName];
+  if (!stub.pathIfPromise || stub.pathIfPromise.length !== 1) return undefined;
+  return rpcStubValidators.get(stub.hook)?.[stub.pathIfPromise[0]];
 }
 
 function setRpcPromiseReturnValidator(promise: RpcPromise, validator: RpcMethodValidator): void {
@@ -421,9 +421,21 @@ function withRpcPromiseReturnValidator(
   return promise;
 }
 
+function copyRpcPromiseReturnValidator(source: RpcPromise, target: RpcPromise): void {
+  let {hook, pathIfPromise} = source[RAW_STUB];
+  let validator = rpcReturnValidators.get(hook);
+  if (!validator) return;
+  if (!pathIfPromise || pathIfPromise.length === 0) {
+    setRpcPromiseReturnValidator(target, validator);
+  } else if (validator.returnsPath) {
+    setRpcPromiseReturnValidator(target, {
+      returns: value => validator.returnsPath!(pathIfPromise, value),
+    });
+  }
+}
+
 function getRpcPromiseReturnValidator(promise: RpcPromise): RpcMethodValidator | undefined {
-  let {hook, pathIfPromise} = promise[RAW_STUB];
-  return pathIfPromise && pathIfPromise.length === 0 ? rpcReturnValidators.get(hook) : undefined;
+  return rpcReturnValidators.get(promise[RAW_STUB].hook);
 }
 
 function isRpcPromisePlaceholder(value: unknown): boolean {
@@ -709,16 +721,20 @@ export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise
 // payload. This is a helper used to implement the then/catch/finally methods of RpcPromise.
 async function pullPromise(promise: RpcPromise): Promise<unknown> {
   let {hook, pathIfPromise} = promise[RAW_STUB];
-  let validator = pathIfPromise!.length === 0 ? rpcReturnValidators.get(hook) : undefined;
-  if (pathIfPromise!.length > 0) {
+  let path = pathIfPromise ?? [];
+  let validator = rpcReturnValidators.get(hook);
+  let validate = path.length === 0 ? validator?.returns :
+      validator?.returnsPath ? (value: unknown) => validator.returnsPath!(path, value) :
+      undefined;
+  if (path.length > 0) {
     // If this isn't the root promise, we have to clone it and pull the clone. This is a little
     // weird in terms of disposal: There's no way for the app to dispose/cancel the promise while
     // waiting because it never actually got a direct disposable reference. It has to dispose
     // the result.
-    hook = hook.get(pathIfPromise!);
+    hook = hook.get(path);
   }
   let payload = await hook.pull();
-  return payload.deliverResolve(validator?.returns);
+  return payload.deliverResolve(validate);
 }
 
 // =======================================================================================
@@ -1082,6 +1098,7 @@ export class RpcPayload {
         }
         if (stub instanceof RpcPromise) {
           let promise = new RpcPromise(hook, []);
+          copyRpcPromiseReturnValidator(stub, promise);
           this.promises!.push({parent, property, promise});
           return promise;
         } else {
@@ -1325,8 +1342,14 @@ export class RpcPayload {
         // In all other cases, await the result (which may or may not be a promise, but `await`
         // will just pass through non-promises).
         let awaited = await result;
-        await validator?.returns?.(awaited);
-        return RpcPayload.fromAppReturn(awaited);
+        let payload = RpcPayload.fromAppReturn(awaited);
+        try {
+          await validator?.returns?.(awaited);
+          return payload;
+        } catch (err) {
+          payload.dispose();
+          throw err;
+        }
       }
     } finally {
       this.dispose();

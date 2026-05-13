@@ -61,7 +61,7 @@ if [[ "$TYPECHECK" == "true" ]]; then
   cd "$SCRIPT_DIR"
   echo "Debugging capnweb typecheck gen for examples/worker-react/src/worker.ts"
   env NODE_OPTIONS= node --enable-source-maps --inspect=0 \
-    "$REPO_ROOT/dist/cli.js" typecheck gen src/worker.ts --out .capnweb
+    "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts --out .capnweb
 fi
 
 VITE_PLUGIN_IMPORT=""

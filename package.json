@@ -47,7 +47,7 @@
     }
   },
   "bin": {
-    "capnweb": "./dist/cli.js"
+    "capnweb": "./dist/cli.cjs"
   },
   "type": "module",
   "publishConfig": {
@@ -87,5 +87,13 @@
   "bugs": {
     "url": "https://github.com/cloudflare/capnweb/issues"
   },
-  "homepage": "https://github.com/cloudflare/capnweb#readme"
+  "homepage": "https://github.com/cloudflare/capnweb#readme",
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  }
 }

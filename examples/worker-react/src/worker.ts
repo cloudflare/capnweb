@@ -11,12 +11,15 @@ type Env = {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const jittered = (base: number, jitter: number) => base + (jitter ? Math.random() * jitter : 0);
 
-const USERS = new Map([
+type User = { id: string; name: string };
+type Profile = { id: string; bio: string };
+
+const USERS = new Map<string, User>([
   ['cookie-123', { id: 'u_1', name: 'Ada Lovelace' }],
   ['cookie-456', { id: 'u_2', name: 'Alan Turing' }],
 ]);
 
-const PROFILES = new Map([
+const PROFILES = new Map<string, Profile>([
   ['u_1', { id: 'u_1', bio: 'Mathematician & first programmer' }],
   ['u_2', { id: 'u_2', bio: 'Mathematician & CS pioneer' }],
 ]);
@@ -29,21 +32,21 @@ const NOTIFICATIONS = new Map([
 export class Api extends RpcTarget {
   constructor(private env: Env) { super(); }
 
-  async authenticate(sessionToken: string) {
+  async authenticate(sessionToken: string): Promise<User> {
     await sleep(Number(this.env.DELAY_AUTH_MS ?? 80));
     const user = USERS.get(sessionToken);
     if (!user) throw new Error('Invalid session');
     return user;
   }
 
-  async getUserProfile(userId: string) {
+  async getUserProfile(userId: string): Promise<Profile> {
     await sleep(Number(this.env.DELAY_PROFILE_MS ?? 120));
     const profile = PROFILES.get(userId);
     if (!profile) throw new Error('No such user');
     return profile;
   }
 
-  async getNotifications(userId: string) {
+  async getNotifications(userId: string): Promise<string[]> {
     await sleep(Number(this.env.DELAY_NOTIFS_MS ?? 120));
     return NOTIFICATIONS.get(userId) ?? [];
   }

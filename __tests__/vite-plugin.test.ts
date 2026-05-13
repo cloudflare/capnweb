@@ -34,6 +34,22 @@ function local(newHttpBatchRpcSession: any) {
     expect(wrapCalls).toBe(1);
   });
 
+
+  it("parses TSX and preserves directive prologues when rewriting", () => {
+    let userCode = `"use client";
+import { newHttpBatchRpcSession } from "capnweb";
+import type { Api } from "./api.js";
+const view = <div />;
+const api = newHttpBatchRpcSession<Api>("/rpc");
+`;
+
+    let code = transformClientCalls(userCode, new Set(["Api"]), "./clients.js", "client.tsx");
+    expect(code.startsWith(`"use client";
+import { __capnweb_wrap_Api } from "./clients.js";`)).toBe(true);
+    expect(code).toContain(`const view = <div />;`);
+    expect(code).toContain(`__capnweb_wrap_Api(newHttpBatchRpcSession<Api>("/rpc"))`);
+  });
+
   it("injects server validator registration into the Vite worker entry", () => {
     let root = mkdtempSync(resolve(".capnweb-vite-entry-"));
     try {

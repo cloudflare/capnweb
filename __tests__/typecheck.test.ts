@@ -268,6 +268,24 @@ describe("RpcTarget class extraction", () => {
     }
   });
 
+  it("skips static methods when extracting the RPC surface", () => {
+    let root = mkdtempSync(resolve(".capnweb-static-method-"));
+    try {
+      writeFakeCapnweb(root);
+      let input = resolve(root, "worker.ts");
+      writeFileSync(input, `
+        import { RpcTarget } from "./fake-capnweb.js";
+        export class Api extends RpcTarget {
+          static helper(value: any): void {}
+          ping(value: string): void {}
+        }
+      `);
+      expect(inspectInput(input).classes[0].methods.map(m => m.name)).toStrictEqual(["ping"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects non-exported RpcTarget classes", () => {
     let root = mkdtempSync(resolve(".capnweb-non-exported-"));
     try {
@@ -302,6 +320,10 @@ describe("preflight type rejection", () => {
         /Api\.badReturn return: type 'any' cannot be validated/],
     ["symbol", `symbolArg(value: symbol): void {}`,
         /Unsupported RPC type: symbol/],
+    ["bigint literal", `bigintLiteral(value: 1n): void {}`,
+        /bigint literal types are not supported/],
+    ["optional tuple element", `optionalTuple(value: [string, number?]): void {}`,
+        /optional and rest tuple elements are not supported/],
   ])("rejects %s", (_label, body, pattern) => {
     let root = mkdtempSync(resolve(".capnweb-preflight-"));
     try {
@@ -339,7 +361,7 @@ describe("preflight type rejection", () => {
 
   it.each([
     "ArrayBuffer", "DataView", "RegExp", "Uint16Array", "Float32Array",
-  ])("accepts structured-clone native declared by RpcCompatible: %s", type => {
+  ])("rejects native not currently serialized by Cap'n Web: %s", type => {
     let root = mkdtempSync(resolve(".capnweb-native-"));
     try {
       writeFakeCapnweb(root);
@@ -348,7 +370,23 @@ describe("preflight type rejection", () => {
         import { RpcTarget } from "./fake-capnweb.js";
         export class Api extends RpcTarget { valueArg(value: ${type}): void {} }
       `);
-      expect(inspectInput(input).classes[0].methods[0].params[0].type.kind).toBe("instance");
+      expect(() => inspectInput(input)).toThrow(/Unsupported RPC type/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects mixed string index signatures and named properties", () => {
+    let root = mkdtempSync(resolve(".capnweb-mixed-index-"));
+    try {
+      writeFakeCapnweb(root);
+      let input = resolve(root, "api.ts");
+      writeFileSync(input, `
+        import { RpcTarget } from "./fake-capnweb.js";
+        interface Dict { required: string; [key: string]: string; }
+        export class Api extends RpcTarget { valueArg(value: Dict): void {} }
+      `);
+      expect(() => inspectInput(input)).toThrow(/both string index signatures and named properties/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -477,9 +515,6 @@ describe("end-to-end validator codegen", () => {
           maybe: string | null;
           created: Date;
           bytes: Uint8Array;
-          buffer: ArrayBuffer;
-          view: DataView;
-          pattern: RegExp;
           literal: "ok";
         }): void {}
         getUser(token: string): { id: string } { return { id: token }; }
@@ -546,9 +581,6 @@ describe("end-to-end validator codegen", () => {
         maybe: null,
         created: new Date(0),
         bytes: new Uint8Array([1, 2, 3]),
-        buffer: new ArrayBuffer(1),
-        view: new DataView(new ArrayBuffer(1)),
-        pattern: /ok/,
         literal: "ok",
       }])).resolves.toBeUndefined();
 
@@ -564,9 +596,6 @@ describe("end-to-end validator codegen", () => {
         maybe: null,
         created: new Date(0),
         bytes: new Uint8Array(),
-        buffer: new ArrayBuffer(1),
-        view: new DataView(new ArrayBuffer(1)),
-        pattern: /ok/,
         literal: "ok",
       }])).rejects.toThrow(/value\.byId\.a\.active: expected boolean, got string/);
 
@@ -582,11 +611,38 @@ describe("end-to-end validator codegen", () => {
         maybe: null,
         created: new Date(0),
         bytes: new Uint8Array(),
-        buffer: new ArrayBuffer(1),
-        view: new DataView(new ArrayBuffer(1)),
-        pattern: /ok/,
         literal: "ok",
       }])).rejects.toThrow(/value\.map\.a\.active: expected boolean, got string/);
+
+      await expect(call("contract", [{
+        text: "ok",
+        count: 1,
+        flag: true,
+        tags: ["a"],
+        pair: ["x", 2],
+        byId: { a: { active: true } },
+        map: new Map([[1, { active: true }]]),
+        set: new Set(["a"]),
+        maybe: null,
+        created: new Date(0),
+        bytes: new Uint8Array(),
+        literal: "ok",
+      }])).rejects.toThrow(/value\.map\.<key>: expected string, got number/);
+
+      await expect(call("contract", [{
+        text: "ok",
+        count: 1,
+        flag: true,
+        tags: ["a"],
+        pair: ["x", 2],
+        byId: { a: { active: true } },
+        map: new Map([["a", { active: true }]]),
+        set: new Set([1]),
+        maybe: null,
+        created: new Date(0),
+        bytes: new Uint8Array(),
+        literal: "ok",
+      }])).rejects.toThrow(/value\.set\.\[0\]: expected string, got number/);
     });
   });
 
@@ -614,6 +670,24 @@ describe("end-to-end validator codegen", () => {
       expect(() => wrapped.hello(123)).toThrow(
           /Api\.hello: name: expected string, got number/);
       expect(sent).toBe(false);
+    });
+
+    it("rejects wrong return values consumed through pipelined properties", async () => {
+      class BadReturn extends RpcTarget {
+        getUser(_token: string) { return Promise.resolve({ id: 123 } as unknown); }
+        getProfile(id: string) { return Promise.resolve({ id, ok: true }); }
+      }
+      let wrapped = wrap(new RpcStub(new BadReturn()));
+      await expect(wrapped.getProfile(wrapped.getUser("token").id)).rejects.toThrow(
+          /Api.getUser return: id: expected string, got number/);
+    });
+
+    it("does not apply root validators to nested pipelined method calls", () => {
+      class Nested extends RpcTarget {
+        hello(_name: string) { return Promise.resolve({ value: "root" }); }
+      }
+      let wrapped = wrap(new RpcStub(new Nested()));
+      expect(() => wrapped.admin.hello(123)).not.toThrow();
     });
 
     it("passes through valid return values", async () => {

@@ -11,11 +11,13 @@ const OPAQUE_NATIVES = new Set([
   "Date", "Error", "EvalError", "RangeError", "ReferenceError", "SyntaxError",
   "TypeError", "URIError", "AggregateError",
   "ReadableStream", "WritableStream", "Request", "Response", "Headers",
-  "Blob", "ArrayBuffer", "DataView", "RegExp",
-  "Uint8Array", "Uint8ClampedArray", "Uint16Array", "Uint32Array",
-  "Int8Array", "Int16Array", "Int32Array",
-  "BigUint64Array", "BigInt64Array",
-  "Float32Array", "Float64Array",
+  "Blob", "Uint8Array",
+]);
+
+const SERIALIZER_UNSUPPORTED_NATIVES = new Set([
+  "ArrayBuffer", "DataView", "RegExp", "Uint8ClampedArray", "Uint16Array",
+  "Uint32Array", "Int8Array", "Int16Array", "Int32Array", "BigUint64Array",
+  "BigInt64Array", "Float32Array", "Float64Array",
 ]);
 
 export type SourceFile = ts.SourceFile;
@@ -155,7 +157,8 @@ function extractMethods(
   for (let member of klass.members) {
     if (!ts.isMethodDeclaration(member)) continue;
     if (hasModifier(member, ts.SyntaxKind.PrivateKeyword) ||
-        hasModifier(member, ts.SyntaxKind.ProtectedKeyword)) continue;
+        hasModifier(member, ts.SyntaxKind.ProtectedKeyword) ||
+        hasModifier(member, ts.SyntaxKind.StaticKeyword)) continue;
 
     let methodName = propertyNameText(member.name);
     if (methodName === undefined) throw new Error(`${className}: computed RPC method names are not supported.`);
@@ -202,6 +205,9 @@ function lowerType(
     if (type.flags & ts.TypeFlags.Never) return { kind: "never" };
     if (type.flags & ts.TypeFlags.String) return { kind: "primitive", name: "string" };
     if (type.flags & ts.TypeFlags.Number) return { kind: "primitive", name: "number" };
+    if (type.flags & ts.TypeFlags.BigIntLiteral) {
+      throw new Error(`${location}: bigint literal types are not supported by capnweb typecheck yet.`);
+    }
     if (type.flags & ts.TypeFlags.BigInt) return { kind: "primitive", name: "bigint" };
     if (type.flags & ts.TypeFlags.Boolean) return { kind: "primitive", name: "boolean" };
     if (type.flags & ts.TypeFlags.Undefined) return { kind: "primitive", name: "undefined" };
@@ -215,16 +221,22 @@ function lowerType(
       return variants.length === 1 ? variants[0] : { kind: "union", variants };
     }
     if (type.isIntersection()) return { kind: "object", props: objectProps(checker, type, location, visiting) };
-    if (checker.isArrayType(type)) {
-      let arg = checker.getTypeArguments(type as ts.TypeReference)[0];
-      return { kind: "array", element: arg ? lowerType(checker, arg, location, visiting) : { kind: "any" } };
-    }
     if (checker.isTupleType(type)) {
+      let tupleTarget = (type as ts.TypeReference).target as ts.TupleType | undefined;
+      let elementFlags = tupleTarget?.elementFlags ?? [];
+      if (elementFlags.some(flag =>
+          (flag & (ts.ElementFlags.Optional | ts.ElementFlags.Rest | ts.ElementFlags.Variadic)) !== 0)) {
+        throw new Error(`${location}: optional and rest tuple elements are not supported by capnweb typecheck yet.`);
+      }
       return {
         kind: "tuple",
         elements: checker.getTypeArguments(type as ts.TypeReference)
             .map(element => lowerType(checker, element, location, visiting)),
       };
+    }
+    if (checker.isArrayType(type)) {
+      let arg = checker.getTypeArguments(type as ts.TypeReference)[0];
+      return { kind: "array", element: arg ? lowerType(checker, arg, location, visiting) : { kind: "any" } };
     }
     if (type.getCallSignatures().length > 0) return { kind: "function" };
 
@@ -246,6 +258,9 @@ function lowerType(
         value: typeArgs[0] ? lowerType(checker, typeArgs[0], location, visiting) : { kind: "any" },
       };
     }
+    if (symbolName && SERIALIZER_UNSUPPORTED_NATIVES.has(symbolName)) {
+      throw new Error(`${location}: Unsupported RPC type: ${symbolName}`);
+    }
     if (symbolName && OPAQUE_NATIVES.has(symbolName)) return { kind: "instance", name: symbolName };
     if (symbolName === "Promise" || symbolName === "PromiseLike") {
       return typeArgs[0] ? lowerType(checker, typeArgs[0], location, visiting) : { kind: "any" };
@@ -257,7 +272,13 @@ function lowerType(
     let declaration = symbol?.declarations?.find(ts.isClassDeclaration);
     if (declaration && isRpcTargetExtender(checker, declaration)) return { kind: "rpcTarget" };
     let index = checker.getIndexTypeOfType(type, ts.IndexKind.String);
-    if (index) return { kind: "record", value: lowerType(checker, index, location, visiting) };
+    if (index) {
+      let props = checker.getPropertiesOfType(type);
+      if (props.length > 0) {
+        throw new Error(`${location}: object types with both string index signatures and named properties are not supported by capnweb typecheck yet.`);
+      }
+      return { kind: "record", value: lowerType(checker, index, location, visiting) };
+    }
     return { kind: "object", props: objectProps(checker, type, location, visiting) };
   } finally {
     visiting.delete(type);

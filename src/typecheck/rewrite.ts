@@ -108,7 +108,7 @@ export function transformClientCalls(
     source: string | SourceFile, knownClasses: Set<string>,
     clientsImport: string, fileName = "capnweb-rewrite-input.ts"): string {
   let sourceFile = typeof source === "string"
-      ? ts.createSourceFile(fileName, source, ts.ScriptTarget.ES2023, true, ts.ScriptKind.TS)
+      ? ts.createSourceFile(fileName, source, ts.ScriptTarget.ES2023, true, scriptKindFor(fileName))
       : source;
   let code = sourceFile.getFullText();
   let imports = collectCapnwebImports(sourceFile);
@@ -126,7 +126,33 @@ export function transformClientCalls(
         result.slice(edit.end);
   }
 
-  return `import { ${[...usedNames].sort().join(", ")} } from ${JSON.stringify(clientsImport)};\n` + result;
+  let importStatement = `import { ${[...usedNames].sort().join(", ")} } from ${JSON.stringify(clientsImport)};\n`;
+  let insertAt = importInsertionPoint(sourceFile);
+  let prefix = result.slice(0, insertAt);
+  if (prefix && !prefix.endsWith("\n")) prefix += "\n";
+  return prefix + importStatement + result.slice(insertAt);
+}
+
+function scriptKindFor(fileName: string): ts.ScriptKind {
+  return fileName.split(/[?#]/, 1)[0].endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+}
+
+function importInsertionPoint(sourceFile: SourceFile): number {
+  let code = sourceFile.getFullText();
+  let point = 0;
+  if (code.startsWith("#!")) {
+    let newline = code.indexOf("\n");
+    point = newline < 0 ? code.length : newline + 1;
+  }
+
+  for (let statement of sourceFile.statements) {
+    if (ts.isExpressionStatement(statement) && ts.isStringLiteral(statement.expression)) {
+      point = statement.end;
+    } else {
+      break;
+    }
+  }
+  return point;
 }
 
 function nameForRewrite(edit: ClientRewrite): string {

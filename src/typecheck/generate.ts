@@ -112,7 +112,8 @@ function emitSpecsModule(classes: ExtractedClassSpec[], runtimeImport: string): 
     let methodEntries = klass.methods.map(method => {
       let paramValidators = method.params.map(param => emitTypeValidator(param.type, emit));
       let returnValidator = emitTypeValidator(method.returns, emit);
-      return emitMethodValidator(klass.name, method, paramValidators, returnValidator);
+      let returnPathValidator = emitTypePathValidator(method.returns, emit);
+      return emitMethodValidator(klass.name, method, paramValidators, returnValidator, returnPathValidator);
     });
     classEntries.push("  " + JSON.stringify(klass.name) + ": {\n" +
         methodEntries.join(",\n") + "\n  }");
@@ -123,13 +124,13 @@ function emitSpecsModule(classes: ExtractedClassSpec[], runtimeImport: string): 
     "import { RpcTarget as __capnweb_RpcTarget } from " + JSON.stringify(runtimeImport) + ";",
     "",
     "type __CapnwebValidationOptions = { isRpcPlaceholder?: (value: unknown) => boolean };",
-    "type __CapnwebValidationFailure = { path: string[]; expected: string; actual: string; value: unknown };",
+    "type __CapnwebValidationFailure = { path: (string | number)[]; expected: string; actual: string; value: unknown };",
     "",
-    "function __capnweb_mismatch(path: string[], expected: string, value: unknown): __CapnwebValidationFailure {",
+    "function __capnweb_mismatch(path: (string | number)[], expected: string, value: unknown): __CapnwebValidationFailure {",
     "  return { path, expected, actual: __capnweb_actualKind(value), value };",
     "}",
     "",
-    "function __capnweb_missing(path: string[], expected: string): __CapnwebValidationFailure {",
+    "function __capnweb_missing(path: (string | number)[], expected: string): __CapnwebValidationFailure {",
     "  return { path, expected, actual: \"missing\", value: undefined };",
     "}",
     "",
@@ -169,7 +170,7 @@ function emitTypeValidator(type: TypeSpec, emit: ValidatorEmit): string {
   let name = "__capnweb_validate_" + emit.nextId++;
   let expected = JSON.stringify(typeDescription(type));
   let lines = [
-    "function " + name + "(value: unknown, path: string[], options?: __CapnwebValidationOptions): __CapnwebValidationFailure | undefined {",
+    "function " + name + "(value: unknown, path: (string | number)[], options?: __CapnwebValidationOptions): __CapnwebValidationFailure | undefined {",
     "  if (options?.isRpcPlaceholder?.(value)) return undefined;",
   ];
 
@@ -311,6 +312,83 @@ function emitTypeValidator(type: TypeSpec, emit: ValidatorEmit): string {
   return name;
 }
 
+function emitTypePathValidator(type: TypeSpec, emit: ValidatorEmit): string {
+  let name = "__capnweb_validate_path_" + emit.nextId++;
+  let fullValidator = emitTypeValidator(type, emit);
+  let lines = [
+    "function " + name + "(path: (string | number)[], value: unknown, offset = 0, options?: __CapnwebValidationOptions): __CapnwebValidationFailure | undefined {",
+    "  if (offset >= path.length) return " + fullValidator + "(value, path, options);",
+  ];
+
+  switch (type.kind) {
+    case "object": {
+      lines.push("  switch (path[offset]) {");
+      for (let prop of type.props) {
+        let child = emitTypePathValidator(prop.type, emit);
+        lines.push("    case " + JSON.stringify(prop.name) + ":");
+        if (prop.optional) {
+          lines.push("      return value === undefined ? undefined : " + child + "(path, value, offset + 1, options);");
+        } else {
+          lines.push("      return " + child + "(path, value, offset + 1, options);");
+        }
+      }
+      lines.push(
+          "    default: return undefined;",
+          "  }");
+      break;
+    }
+    case "array": {
+      let child = emitTypePathValidator(type.element, emit);
+      lines.push("  return " + child + "(path, value, offset + 1, options);");
+      break;
+    }
+    case "tuple": {
+      let elements = type.elements.map(element => emitTypePathValidator(element, emit));
+      lines.push("  switch (path[offset]) {");
+      elements.forEach((element, index) => {
+        lines.push(
+            "    case " + JSON.stringify(String(index)) + ":",
+            "    case " + index + ": return " + element + "(path, value, offset + 1, options);");
+      });
+      lines.push(
+          "    default: return undefined;",
+          "  }");
+      break;
+    }
+    case "record": {
+      let child = emitTypePathValidator(type.value, emit);
+      lines.push("  return " + child + "(path, value, offset + 1, options);");
+      break;
+    }
+    case "map": {
+      let child = emitTypePathValidator(type.value, emit);
+      lines.push("  return " + child + "(path, value, offset + 1, options);");
+      break;
+    }
+    case "union": {
+      let variants = type.variants.map(variant => emitTypePathValidator(variant, emit));
+      lines.push("  let failures: __CapnwebValidationFailure[] = [];");
+      for (let variant of variants) {
+        lines.push(
+            "  {",
+            "    let failure = " + variant + "(path, value, offset, options);",
+            "    if (!failure) return undefined;",
+            "    failures.push(failure);",
+            "  }");
+      }
+      lines.push("  return failures.find(failure => failure.path.length > offset) ?? failures[0];");
+      break;
+    }
+    default:
+      lines.push("  return undefined;");
+      break;
+  }
+
+  lines.push("}", "");
+  emit.lines.push(...lines);
+  return name;
+}
+
 function primitiveCheck(value: string, name: string): string {
   switch (name) {
     case "string": return "typeof " + value + " === \"string\"";
@@ -325,7 +403,8 @@ function primitiveCheck(value: string, name: string): string {
 }
 
 function emitMethodValidator(
-    className: string, method: MethodSpec, paramValidators: string[], returnValidator: string): string {
+    className: string, method: MethodSpec, paramValidators: string[],
+    returnValidator: string, returnPathValidator: string): string {
   let prefix = className + "." + method.name;
   let minArgs = method.params.reduce((min, param, index) => param.optional ? min : index + 1, 0);
   let expected = minArgs === method.params.length ? String(minArgs) : minArgs + "-" + method.params.length;
@@ -358,6 +437,10 @@ function emitMethodValidator(
       "      },",
       "      returns(value: unknown): void {",
       "        let failure = " + returnValidator + "(value, []);",
+      "        if (failure) throw __capnweb_makeValidationError(" + JSON.stringify(prefix + " return") + ", failure);",
+      "      },",
+      "      returnsPath(path: (string | number)[], value: unknown): void {",
+      "        let failure = " + returnPathValidator + "(path, value);",
       "        if (failure) throw __capnweb_makeValidationError(" + JSON.stringify(prefix + " return") + ", failure);",
       "      },",
       "    }");

@@ -4,7 +4,7 @@
 
 Add build-time TypeScript RPC validation codegen.
 
-A new opt-in `capnweb typecheck gen` CLI command and `capnweb/vite` plugin generate runtime validators for `RpcTarget` methods from your TypeScript types. The `capnweb` runtime and typecheck tooling stay dependency-free.
+A new opt-in `capnweb typecheck gen` CLI command and `capnweb/vite` plugin generate runtime validators for `RpcTarget` methods from your TypeScript types. The `capnweb` runtime stays dependency-free; the typecheck tooling uses the project's TypeScript compiler via an optional peer.
 
 - `capnweb typecheck gen`: `capnweb typecheck gen src/worker.ts --out .capnweb` for Wrangler-style builds.
 - `capnweb/vite` plugin: transforms client modules in memory and registers server validators via the worker entry module.
