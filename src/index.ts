@@ -7,7 +7,7 @@ import {
   RpcStub as RpcStubImpl,
   RpcPromise as RpcPromiseImpl,
 } from "./core.js";
-// Pulled in so the validator runtime is part of the main bundle. The actual
+// Pulled in so the validator registry hooks are part of the main bundle. The actual
 // generator-facing surface for these functions lives at
 // `capnweb/internal/typecheck`, which resolves to this same file at runtime
 // (see `package.json` exports). The exports below are marked `@internal`, so
@@ -42,7 +42,7 @@ export type { RpcTransport, RpcSessionOptions, RpcCompatible };
 
 // Library-internal entry points. These are imported by code emitted by
 // the typecheck generator / Vite plugin, never by user code. They live here so the
-// runtime registry stays in a single bundle (one shared WeakMap).
+// validator registry stays in a single bundle (one shared WeakMap).
 //
 // `stripInternal` removes them from `dist/index.d.ts`, so they don't show up
 // in the user-facing API surface. The accompanying `capnweb/internal/typecheck`

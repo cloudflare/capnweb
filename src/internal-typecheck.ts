@@ -9,15 +9,13 @@
 // validator state lives in a single bundle alongside the rest of the runtime.
 
 export {
+  RpcTarget,
   __capnweb_registerRpcValidators,
   __capnweb_bindClientValidator,
 } from "./typecheck/runtime.js";
 
 export type {
-  ClassSpec,
-  MethodSpec,
-  ObjectProp,
-  ParamSpec,
-  PrimitiveName,
-  TypeSpec,
+  RpcClassValidators,
+  RpcMethodValidator,
+  RpcValidationOptions,
 } from "./typecheck/runtime.js";

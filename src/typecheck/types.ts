@@ -25,7 +25,6 @@ export type TypeSpec =
 export type ObjectProp = { name: string, optional: boolean, type: TypeSpec };
 export type ParamSpec = { name: string, optional: boolean, type: TypeSpec };
 export type MethodSpec = { name: string, params: ParamSpec[], returns: TypeSpec };
-export type ClassSpec = { name: string, methods: MethodSpec[] };
 
 export type ClassRegistration = {
   name: string;
