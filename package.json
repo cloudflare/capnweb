@@ -9,9 +9,6 @@
   "files": [
     "dist"
   ],
-  "workspaces": [
-    "packages/capnweb-typecheck"
-  ],
   "exports": {
     ".": {
       "workerd": {
@@ -42,14 +39,22 @@
       "types": "./dist/internal-typecheck.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js",
+      "require": "./dist/vite.cjs"
     }
+  },
+  "bin": {
+    "capnweb-typecheck": "./dist/cli.js"
   },
   "type": "module",
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
-    "build": "npm run build:runtime && npm run build -w capnweb-typecheck",
+    "build": "tsup",
     "build:runtime": "tsup",
     "build:watch": "tsup --watch",
     "test": "vitest run",

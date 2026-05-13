@@ -97,6 +97,25 @@ function validateTypeSpec(
       }
       return undefined;
     }
+    case "map": {
+      if (!(value instanceof Map)) return mismatch();
+      for (let [key, item] of value) {
+        let keyFailure = validateTypeSpec(type.key, key, [...path, "<key>"], options);
+        if (keyFailure) return keyFailure;
+        let valueFailure = validateTypeSpec(type.value, item, [...path, String(key)], options);
+        if (valueFailure) return valueFailure;
+      }
+      return undefined;
+    }
+    case "set": {
+      if (!(value instanceof Set)) return mismatch();
+      let i = 0;
+      for (let item of value) {
+        let failure = validateTypeSpec(type.value, item, [...path, `[${i++}]`], options);
+        if (failure) return failure;
+      }
+      return undefined;
+    }
     case "object": {
       if (typeof value !== "object" || value === null || Array.isArray(value)) return mismatch();
       let record = value as Record<string, unknown>;
@@ -147,6 +166,8 @@ function describeTypeSpec(type: TypeSpec): string {
     case "literal": return typeof type.value === "string" ? JSON.stringify(type.value) : String(type.value);
     case "array": return `${describeTypeSpec(type.element)}[]`;
     case "tuple": return `[${type.elements.map(describeTypeSpec).join(", ")}]`;
+    case "map": return `Map<${describeTypeSpec(type.key)}, ${describeTypeSpec(type.value)}>`;
+    case "set": return `Set<${describeTypeSpec(type.value)}>`;
     case "object": return `{ ${type.props.map(p => `${p.name}${p.optional ? "?" : ""}: ${describeTypeSpec(p.type)}`).join(", ")} }`;
     case "record": return `Record<string, ${describeTypeSpec(type.value)}>`;
     case "union": return type.variants.map(describeTypeSpec).sort().join(" | ");

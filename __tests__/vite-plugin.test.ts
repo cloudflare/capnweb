@@ -5,11 +5,11 @@
 import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { emitViteRegistration } from "../packages/capnweb-typecheck/src/generate.js";
-import { transformClientCalls } from "../packages/capnweb-typecheck/src/rewrite.js";
-import capnweb from "../packages/capnweb-typecheck/src/vite.js";
+import { emitViteRegistration } from "../src/typecheck/generate.js";
+import { transformClientCalls } from "../src/typecheck/rewrite.js";
+import capnweb from "../src/typecheck/vite.js";
 
-describe("capnweb-typecheck/vite plugin client rewrite", () => {
+describe("capnweb/vite plugin client rewrite", () => {
   it("rewrites typed RPC factory calls in user source", () => {
     let userCode = `
 import { newHttpBatchRpcSession } from "capnweb";

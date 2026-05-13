@@ -61,14 +61,14 @@ if [[ "$TYPECHECK" == "true" ]]; then
   cd "$SCRIPT_DIR"
   echo "Debugging capnweb-typecheck gen for examples/worker-react/src/worker.ts"
   env NODE_OPTIONS= node --enable-source-maps --inspect=0 \
-    "$REPO_ROOT/packages/capnweb-typecheck/dist/cli.js" gen src/worker.ts --out .capnweb
+    "$REPO_ROOT/dist/cli.js" gen src/worker.ts --out .capnweb
 fi
 
 VITE_PLUGIN_IMPORT=""
 VITE_PLUGINS=""
 WORKER_MAIN="$SCRIPT_DIR/src/worker.ts"
 if [[ "$TYPECHECK" == "true" ]]; then
-  VITE_PLUGIN_IMPORT="import capnweb from '$REPO_ROOT/packages/capnweb-typecheck/dist/vite.js';"
+  VITE_PLUGIN_IMPORT="import capnweb from '$REPO_ROOT/dist/vite.js';"
   VITE_PLUGINS="plugins: [capnweb({ input: '$SCRIPT_DIR/src/worker.ts', outDir: '$SCRIPT_DIR/.capnweb' })],"
   WORKER_MAIN="$SCRIPT_DIR/.capnweb/worker.entry.ts"
 fi

@@ -10,6 +10,8 @@ export type TypeSpec =
   | { kind: "literal", value: string | number | boolean }
   | { kind: "array", element: TypeSpec }
   | { kind: "tuple", elements: TypeSpec[] }
+  | { kind: "map", key: TypeSpec, value: TypeSpec }
+  | { kind: "set", value: TypeSpec }
   | { kind: "object", props: ObjectProp[] }
   | { kind: "record", value: TypeSpec }
   | { kind: "union", variants: TypeSpec[] }
@@ -24,3 +26,24 @@ export type ObjectProp = { name: string, optional: boolean, type: TypeSpec };
 export type ParamSpec = { name: string, optional: boolean, type: TypeSpec };
 export type MethodSpec = { name: string, params: ParamSpec[], returns: TypeSpec };
 export type ClassSpec = { name: string, methods: MethodSpec[] };
+
+export type ClassRegistration = {
+  name: string;
+  valueName: string;
+  isDefault: boolean;
+  sourcePath: string;
+};
+
+export type ExtractedClassSpec = ClassRegistration & { methods: MethodSpec[] };
+
+export type GenResult = {
+  classes: string[];
+  registrations: ClassRegistration[];
+};
+
+export type GenOptions = {
+  input: string;
+  outDir: string;
+  /** @internal Override the import emitted in generated modules. */
+  runtimeImport?: string;
+};

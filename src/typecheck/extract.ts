@@ -5,22 +5,17 @@
 import { existsSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import * as ts from "typescript";
-import type { ClassSpec, MethodSpec, ParamSpec, TypeSpec } from "./types.js";
-
-const SERIALIZER_UNSUPPORTED = new Set([
-  "ArrayBuffer", "SharedArrayBuffer", "DataView", "RegExp",
-  "Map", "ReadonlyMap", "Set", "ReadonlySet", "WeakMap", "WeakSet",
-  "Uint8ClampedArray", "Uint16Array", "Uint32Array",
-  "Int8Array", "Int16Array", "Int32Array",
-  "BigUint64Array", "BigInt64Array",
-  "Float32Array", "Float64Array",
-]);
+import type { ExtractedClassSpec, MethodSpec, ParamSpec, TypeSpec } from "./types.js";
 
 const OPAQUE_NATIVES = new Set([
   "Date", "Error", "EvalError", "RangeError", "ReferenceError", "SyntaxError",
   "TypeError", "URIError", "AggregateError",
   "ReadableStream", "WritableStream", "Request", "Response", "Headers",
-  "Blob", "Uint8Array",
+  "Blob", "ArrayBuffer", "DataView", "RegExp",
+  "Uint8Array", "Uint8ClampedArray", "Uint16Array", "Uint32Array",
+  "Int8Array", "Int16Array", "Int32Array",
+  "BigUint64Array", "BigInt64Array",
+  "Float32Array", "Float64Array",
 ]);
 
 export type SourceFile = ts.SourceFile;
@@ -102,7 +97,7 @@ export function collectReachableSourceFiles(project: TypecheckProject): ts.Sourc
   return result;
 }
 
-export function extractClasses(project: TypecheckProject, sourceFiles: ts.SourceFile[]): ClassSpec[] {
+export function extractClasses(project: TypecheckProject, sourceFiles: ts.SourceFile[]): ExtractedClassSpec[] {
   return sourceFiles.flatMap(sourceFile => sourceFile.statements.filter(ts.isClassDeclaration))
       .filter(klass => isRpcTargetExtender(project.checker, klass))
       .map((klass, index) => extractClass(project.checker, klass, index));
@@ -129,7 +124,7 @@ function isRpcTargetExtender(checker: ts.TypeChecker, klass: ts.ClassDeclaration
   return false;
 }
 
-function extractClass(checker: ts.TypeChecker, klass: ts.ClassDeclaration, index: number): ClassSpec {
+function extractClass(checker: ts.TypeChecker, klass: ts.ClassDeclaration, index: number): ExtractedClassSpec {
   let name = klass.name?.text;
   if (!name) {
     throw new Error("Anonymous RpcTarget classes are not supported. Give the class a name " +
@@ -193,7 +188,9 @@ function propertyNameText(name: ts.PropertyName): string | undefined {
 
 function lowerType(
     checker: ts.TypeChecker, type: ts.Type, location: string, visiting: Set<ts.Type>): TypeSpec {
-  if (visiting.has(type)) return { kind: "any" };
+  if (visiting.has(type)) {
+    throw new Error(`${location}: recursive types are not supported by capnweb-typecheck yet.`);
+  }
   visiting.add(type);
   try {
     let text = checker.typeToString(type);
@@ -234,9 +231,21 @@ function lowerType(
     let symbol = type.aliasSymbol ?? type.getSymbol();
     let symbolName = symbol?.getName();
     let typeArgs = checker.getTypeArguments(type as ts.TypeReference);
-    if (symbolName && SERIALIZER_UNSUPPORTED.has(symbolName)) throw new Error(`${location}: Unsupported RPC type: ${text}`);
     if (symbolName === "RpcStub" || symbolName === "RpcPromise") return { kind: "stub" };
     if (symbolName === "RpcTarget") return { kind: "rpcTarget" };
+    if (symbolName === "Map" || symbolName === "ReadonlyMap") {
+      return {
+        kind: "map",
+        key: typeArgs[0] ? lowerType(checker, typeArgs[0], location, visiting) : { kind: "any" },
+        value: typeArgs[1] ? lowerType(checker, typeArgs[1], location, visiting) : { kind: "any" },
+      };
+    }
+    if (symbolName === "Set" || symbolName === "ReadonlySet") {
+      return {
+        kind: "set",
+        value: typeArgs[0] ? lowerType(checker, typeArgs[0], location, visiting) : { kind: "any" },
+      };
+    }
     if (symbolName && OPAQUE_NATIVES.has(symbolName)) return { kind: "instance", name: symbolName };
     if (symbolName === "Promise" || symbolName === "PromiseLike") {
       return typeArgs[0] ? lowerType(checker, typeArgs[0], location, visiting) : { kind: "any" };

@@ -12,9 +12,9 @@ import {
   commonDir,
   createProject,
   extractClasses,
-} from "../packages/capnweb-typecheck/src/extract.js";
-import { generate } from "../packages/capnweb-typecheck/src/generate.js";
-import { emitShadowSources } from "../packages/capnweb-typecheck/src/rewrite.js";
+} from "../src/typecheck/extract.js";
+import { generate } from "../src/typecheck/generate.js";
+import { emitShadowSources } from "../src/typecheck/rewrite.js";
 import { RpcStub, RpcTarget } from "../src/index.js";
 import { RpcPayload, setRpcMethodValidators } from "../src/core.js";
 
@@ -319,20 +319,36 @@ describe("preflight type rejection", () => {
     }
   });
 
-  it.each([
-    "ArrayBuffer", "DataView", "Map<string, number>", "RegExp", "Set<string>", "Uint16Array",
-  ])("rejects serializer-unsupported native: %s", type => {
-    let root = mkdtempSync(resolve(".capnweb-unsupported-"));
+  it("rejects recursive types", () => {
+    let root = mkdtempSync(resolve(".capnweb-recursive-"));
     try {
       writeFakeCapnweb(root);
       let input = resolve(root, "api.ts");
       writeFileSync(input, `
         import { RpcTarget } from "./fake-capnweb.js";
+        interface Tree { name: string; children: Tree[]; }
         export class Api extends RpcTarget {
-          valueArg(value: ${type}): void {}
+          tree(value: Tree): void {}
         }
       `);
-      expect(() => inspectInput(input)).toThrow(/Unsupported RPC type/);
+      expect(() => inspectInput(input)).toThrow(/recursive types are not supported/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([
+    "ArrayBuffer", "DataView", "RegExp", "Uint16Array", "Float32Array",
+  ])("accepts structured-clone native declared by RpcCompatible: %s", type => {
+    let root = mkdtempSync(resolve(".capnweb-native-"));
+    try {
+      writeFakeCapnweb(root);
+      let input = resolve(root, "api.ts");
+      writeFileSync(input, `
+        import { RpcTarget } from "./fake-capnweb.js";
+        export class Api extends RpcTarget { valueArg(value: ${type}): void {} }
+      `);
+      expect(inspectInput(input).classes[0].methods[0].params[0].type.kind).toBe("instance");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -449,6 +465,23 @@ describe("end-to-end validator codegen", () => {
         hello(name: string): { value: string } { return { value: name }; }
         maybe(value?: string | null): void {}
         leadingDefault(value = "default", required: string): void {}
+        contract(value: {
+          text: string;
+          count: number;
+          flag: boolean;
+          tags: string[];
+          pair: [string, number];
+          byId: Record<string, { active: boolean }>;
+          map: Map<string, { active: boolean }>;
+          set: Set<string>;
+          maybe: string | null;
+          created: Date;
+          bytes: Uint8Array;
+          buffer: ArrayBuffer;
+          view: DataView;
+          pattern: RegExp;
+          literal: "ok";
+        }): void {}
         getUser(token: string): { id: string } { return { id: token }; }
         getProfile(id: string): { id: string; ok: true } { return { id, ok: true }; }
         badReturn(): { value: string } { return { value: 123 } as any; }
@@ -498,6 +531,62 @@ describe("end-to-end validator codegen", () => {
 
     it("counts required arity after optional leading params", async () => {
       await expect(call("leadingDefault", ["only one"])).rejects.toThrow(/expected 2 argument/);
+    });
+
+    it("validates the supported Cap'n Web type contract", async () => {
+      await expect(call("contract", [{
+        text: "ok",
+        count: 1,
+        flag: true,
+        tags: ["a", "b"],
+        pair: ["x", 2],
+        byId: { a: { active: true } },
+        map: new Map([["a", { active: true }]]),
+        set: new Set(["a"]),
+        maybe: null,
+        created: new Date(0),
+        bytes: new Uint8Array([1, 2, 3]),
+        buffer: new ArrayBuffer(1),
+        view: new DataView(new ArrayBuffer(1)),
+        pattern: /ok/,
+        literal: "ok",
+      }])).resolves.toBeUndefined();
+
+      await expect(call("contract", [{
+        text: "ok",
+        count: 1,
+        flag: true,
+        tags: ["a"],
+        pair: ["x", 2],
+        byId: { a: { active: "no" } },
+        map: new Map([["a", { active: true }]]),
+        set: new Set(["a"]),
+        maybe: null,
+        created: new Date(0),
+        bytes: new Uint8Array(),
+        buffer: new ArrayBuffer(1),
+        view: new DataView(new ArrayBuffer(1)),
+        pattern: /ok/,
+        literal: "ok",
+      }])).rejects.toThrow(/value\.byId\.a\.active: expected boolean, got string/);
+
+      await expect(call("contract", [{
+        text: "ok",
+        count: 1,
+        flag: true,
+        tags: ["a"],
+        pair: ["x", 2],
+        byId: { a: { active: true } },
+        map: new Map([["a", { active: "no" }]]),
+        set: new Set(["a"]),
+        maybe: null,
+        created: new Date(0),
+        bytes: new Uint8Array(),
+        buffer: new ArrayBuffer(1),
+        view: new DataView(new ArrayBuffer(1)),
+        pattern: /ok/,
+        literal: "ok",
+      }])).rejects.toThrow(/value\.map\.a\.active: expected boolean, got string/);
     });
   });
 

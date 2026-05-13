@@ -41,7 +41,7 @@ export {
 export type { RpcTransport, RpcSessionOptions, RpcCompatible };
 
 // Library-internal entry points. These are imported by code emitted by
-// `capnweb-typecheck gen` / the Vite plugin, never by user code. They live here so the
+// the typecheck generator / Vite plugin, never by user code. They live here so the
 // runtime registry stays in a single bundle (one shared WeakMap).
 //
 // `stripInternal` removes them from `dist/index.d.ts`, so they don't show up

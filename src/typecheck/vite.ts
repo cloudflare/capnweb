@@ -1,10 +1,6 @@
 // Copyright (c) 2026 Cloudflare, Inc.
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
-//
-// Vite plugin entry. Runs validator generation once per build, rewrites typed
-// client factory/session calls in Vite's transform hook, and injects server
-// validator registration into the worker entry module.
 
 import { existsSync } from "node:fs";
 import { dirname, relative, resolve, sep } from "node:path";
@@ -57,10 +53,7 @@ export default function capnweb(options: CapnwebVitePluginOptions = {}): VitePlu
     state.outDirAbs = resolve(root, options.outDir ?? ".capnweb");
     state.validatorsAbs = resolve(state.outDirAbs, "validators.ts");
     state.clientsAbs = resolve(state.outDirAbs, "clients.ts");
-    let result: GenResult = generateValidatorsOnly({
-      input: state.inputAbs,
-      outDir: state.outDirAbs,
-    });
+    let result: GenResult = generateValidatorsOnly({ input: state.inputAbs, outDir: state.outDirAbs });
     state.knownClasses = new Set(result.classes);
     state.registrations = result.registrations;
     generated = true;
@@ -69,29 +62,18 @@ export default function capnweb(options: CapnwebVitePluginOptions = {}): VitePlu
   return {
     name: "capnweb-typecheck",
     enforce: "pre",
-
-    configResolved(config) {
-      root = config.root ?? root;
-    },
-
-    buildStart() {
-      run();
-    },
-
+    configResolved(config) { root = config.root ?? root; },
+    buildStart() { run(); },
     configureServer(server) {
       if (!generated) run();
       server.watcher?.on("change", path => {
         if (!path.endsWith(".ts") && !path.endsWith(".tsx")) return;
-        // Skip our own generated output, otherwise writing the generated files
-        // re-triggers `run()` in a loop.
         if (path === state.validatorsAbs || path === state.clientsAbs) return;
-        if (state.outDirAbs &&
-            (path === state.outDirAbs || path.startsWith(state.outDirAbs + sep))) return;
+        if (state.outDirAbs && (path === state.outDirAbs || path.startsWith(state.outDirAbs + sep))) return;
         generated = false;
         run();
       });
     },
-
     transform(code, id) {
       if (!id || id.startsWith("\0")) return null;
       let cleanId = id.split(/[?#]/, 1)[0];
@@ -100,12 +82,9 @@ export default function capnweb(options: CapnwebVitePluginOptions = {}): VitePlu
       if (!/\.(?:ts|tsx|mts|cts)$/.test(cleanId)) return null;
       if (cleanId.endsWith(".d.ts") || cleanId.endsWith(".d.cts") || cleanId.endsWith(".d.mts")) return null;
       if (state.knownClasses.size === 0) return null;
-      if (!existsSync(state.clientsAbs)) {
-        throw new Error("capnweb-typecheck/vite has not generated clients.ts yet.");
-      }
+      if (!existsSync(state.clientsAbs)) throw new Error("capnweb/vite has not generated clients.ts yet.");
 
       let clientsImport = jsImportPath(relative(dirname(cleanId), state.clientsAbs));
-
       let rewritten = transformClientCalls(code, state.knownClasses, clientsImport, cleanId);
       if (cleanId === state.inputAbs) {
         let registration = emitViteRegistration(state.registrations, state.inputAbs, state.validatorsAbs);
