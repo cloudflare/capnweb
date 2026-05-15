@@ -159,14 +159,19 @@ if [[ "$TYPECHECK" == "false" ]]; then
   env NODE_OPTIONS= npm run build
 fi
 
+cd "$WEB_DIR"
+if [[ ! -d node_modules ]]; then
+  env NODE_OPTIONS= npm install
+fi
+if [[ ! -d dist ]]; then
+  env NODE_OPTIONS= npx vite build --config "$TMP_CONFIG"
+fi
+
 cd "$SCRIPT_DIR"
 env NODE_OPTIONS= npx wrangler dev --config "$TMP_WRANGLER_CONFIG" --ip 127.0.0.1 --port "$WORKER_PORT" >/dev/null 2>&1 &
 WRANGLER_PID=$!
 
 cd "$WEB_DIR"
-if [[ ! -d node_modules ]]; then
-  env NODE_OPTIONS= npm install
-fi
 echo "Open this URL in VS Code Debug: Open Link:"
 echo "http://127.0.0.1:$VITE_PORT$VITE_BASE"
 env NODE_OPTIONS= npx vite --host 127.0.0.1 --port "$VITE_PORT" --strictPort --config "$TMP_CONFIG"
