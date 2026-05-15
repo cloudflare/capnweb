@@ -1664,6 +1664,36 @@ describe("stub disposal over RPC", () => {
   });
 });
 
+describe("callback calls", () => {
+  class CallbackTarget extends RpcTarget {
+    async callMany(callback: RpcStub<(text: string) => unknown>, count: number) {
+      let cb = callback.dup();
+      try {
+        for (let i = 0; i < count; ++i) {
+          cb(`value-${i}`);
+          await pumpMicrotasks();
+        }
+      } finally {
+        cb[Symbol.dispose]();
+      }
+    }
+  }
+
+  it("does not retain ignored synchronous callback results", async () => {
+    await using harness = new TestHarness(new CallbackTarget());
+    await harness.stub.callMany((_text: string) => {}, 5);
+    await pumpMicrotasks();
+    harness.checkAllDisposed();
+  });
+
+  it("does not retain ignored synchronous object callback results", async () => {
+    await using harness = new TestHarness(new CallbackTarget());
+    await harness.stub.callMany((text: string) => ({text}), 5);
+    await pumpMicrotasks();
+    harness.checkAllDisposed();
+  });
+});
+
 describe("e-order", () => {
   it("maintains e-order for concurrent calls on single stub", async () => {
     let callOrder: number[] = [];

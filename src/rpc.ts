@@ -581,6 +581,17 @@ class RpcSessionImpl implements Importer, Exporter {
     return msgText.length;
   }
 
+  private isDirectFunctionCall(expression: unknown): boolean {
+    if (!(expression instanceof Array)) return false;
+
+    let [kind, _id, path, args] = expression;
+    return kind === "pipeline" &&
+        expression.length === 4 &&
+        path instanceof Array &&
+        path.length === 0 &&
+        args instanceof Array;
+  }
+
   sendCall(id: ImportId, path: PropertyPath, args?: RpcPayload): RpcImportHook {
     if (this.abortReason) throw this.abortReason;
 
@@ -761,7 +772,13 @@ class RpcSessionImpl implements Importer, Exporter {
               // treated as an unhandled rejection on our end.
               hook.ignoreUnhandledRejections();
 
+              let exportId = this.exports.length;
               this.exports.push({ hook, refcount: 1 });
+              if (this.isDirectFunctionCall(msg[1])) {
+                // Direct function calls can be resolved immediately. This lets unused results
+                // be released right away instead of staying alive for the rest of the session.
+                this.ensureResolvingExport(exportId);
+              }
               continue;
             }
             break;
