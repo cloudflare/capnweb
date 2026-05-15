@@ -40,6 +40,32 @@ function isFree(port) {
 })();
 NODE
 )}"
+VITE_BASE="/examples/worker-react/web/"
+VITE_PORT="${VITE_PORT:-$(node - <<'NODE'
+const net = require('node:net');
+
+function isFree(port) {
+  return new Promise(resolve => {
+    const server = net.createServer();
+    server.unref();
+    server.once('error', () => resolve(false));
+    server.listen(port, '127.0.0.1', () => server.close(() => resolve(true)));
+  });
+}
+
+(async () => {
+  if (await isFree(5173)) {
+    console.log(5173);
+    return;
+  }
+  const server = net.createServer();
+  server.listen(0, '127.0.0.1', () => {
+    const address = server.address();
+    server.close(() => console.log(address.port));
+  });
+})();
+NODE
+)}"
 
 cleanup() {
   local status=$?
@@ -60,8 +86,14 @@ if [[ "$TYPECHECK" == "true" ]]; then
 
   cd "$SCRIPT_DIR"
   echo "Debugging capnweb typecheck gen for examples/worker-react/src/worker.ts"
-  env NODE_OPTIONS= node --enable-source-maps --inspect=0 \
-    "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts --out .capnweb
+  if [[ "${TYPECHECK_DEBUG:-true}" == "false" || "${TYPECHECK_DEBUG:-true}" == "0" ]]; then
+    env NODE_OPTIONS= node --enable-source-maps \
+      "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts --out .capnweb
+  else
+    echo "Typecheck generator is paused on start; attach the debugger, then continue."
+    node --enable-source-maps --inspect-brk=0 \
+      "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts --out .capnweb
+  fi
 fi
 
 VITE_PLUGIN_IMPORT=""
@@ -78,6 +110,7 @@ import path from 'node:path';
 $VITE_PLUGIN_IMPORT
 
 export default {
+  base: '$VITE_BASE',
   $VITE_PLUGINS
   resolve: {
     alias: [
@@ -96,7 +129,8 @@ export default {
   },
   server: {
     host: '127.0.0.1',
-    port: 5173,
+    port: $VITE_PORT,
+    strictPort: true,
     proxy: {
       '/api': 'http://127.0.0.1:$WORKER_PORT',
     },
@@ -134,5 +168,5 @@ if [[ ! -d node_modules ]]; then
   env NODE_OPTIONS= npm install
 fi
 echo "Open this URL in VS Code Debug: Open Link:"
-echo "http://127.0.0.1:5173"
-env NODE_OPTIONS= npx vite --host 127.0.0.1 --port 5173 --config "$TMP_CONFIG"
+echo "http://127.0.0.1:$VITE_PORT$VITE_BASE"
+env NODE_OPTIONS= npx vite --host 127.0.0.1 --port "$VITE_PORT" --strictPort --config "$TMP_CONFIG"
