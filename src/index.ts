@@ -40,6 +40,11 @@ export {
 };
 export type { RpcTransport, RpcSessionOptions, RpcCompatible };
 
+// Thrown by generated validators when an RPC argument or return value fails a
+// type check. Public so user code can `catch (e) { if (e instanceof RpcValidationError) ... }`.
+export { RpcValidationError } from "./core.js";
+export type { RpcValidationFailure } from "./core.js";
+
 // Library-internal entry points. These are imported by code emitted by
 // the typecheck generator / Vite plugin, never by user code. They live here so the
 // validator registry stays in a single bundle (one shared WeakMap).

@@ -70,6 +70,30 @@ describe("generateForPackage", () => {
     expect(mod.validators).toBeNull();
   });
 
+  it("throws RpcValidationError with structured payload on argument failures", async () => {
+    generateForPackage({ input: inputFile });
+    let m = await import("capnweb/_typecheck-validators?nocache=" + Date.now()) as any;
+    // Import RpcValidationError from `capnweb` (i.e., the built dist) — that's
+    // the same module the generated validators import from. Importing from
+    // `../src/index.js` would give a different class even though both
+    // construct errors with the same shape, and instanceof would fail.
+    let cw = await import("capnweb") as typeof import("../src/index.js");
+
+    try {
+      m.validators.Echo.ping.args([42]);
+      throw new Error("expected validator to throw");
+    } catch (err) {
+      expect(err).toBeInstanceOf(cw.RpcValidationError);
+      expect(err).toBeInstanceOf(TypeError);
+      let v = (err as InstanceType<typeof cw.RpcValidationError>);
+      expect(v.name).toBe("RpcValidationError");
+      expect(v.rpcValidation.expected).toBe("string");
+      expect(v.rpcValidation.actual).toBe("number");
+      expect(v.rpcValidation.path).toEqual(["input"]);
+      expect(v.rpcValidation.value).toBe(42);
+    }
+  });
+
   it("marks strict=true in the generated module when --strict is passed", async () => {
     generateForPackage({ input: inputFile, strict: true });
     let mod = await import("capnweb/_typecheck-validators?nocache=" + Date.now()) as any;

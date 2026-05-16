@@ -50,6 +50,46 @@ export type RpcMethodValidator = {
 
 export type RpcClassValidators = Record<string | number, RpcMethodValidator>;
 
+/**
+ * Structured detail attached to {@link RpcValidationError}. Lets a caller
+ * inspect *what* went wrong (which path, expected vs. actual type, original
+ * value) without parsing the error message.
+ */
+export type RpcValidationFailure = {
+  path: PropertyPath;
+  expected: string;
+  actual: string;
+  value: unknown;
+};
+
+/**
+ * Thrown by capnweb when RPC arguments or return values fail a generated
+ * validator. Extends {@link TypeError} so existing `instanceof TypeError`
+ * catches still match; adds `rpcValidation` for structured inspection.
+ *
+ * ```ts
+ * try {
+ *   await stub.method(badArg);
+ * } catch (e) {
+ *   if (e instanceof RpcValidationError) {
+ *     console.log(e.rpcValidation.path, e.rpcValidation.expected);
+ *   }
+ * }
+ * ```
+ */
+export class RpcValidationError extends TypeError {
+  readonly rpcValidation: RpcValidationFailure;
+
+  constructor(message: string, validation: RpcValidationFailure) {
+    super(message);
+    this.name = "RpcValidationError";
+    this.rpcValidation = validation;
+    if (typeof (Error as { captureStackTrace?: Function }).captureStackTrace === "function") {
+      (Error as { captureStackTrace: Function }).captureStackTrace(this, RpcValidationError);
+    }
+  }
+}
+
 const rpcValidators = new WeakMap<Function, RpcClassValidators>();
 
 export function setRpcMethodValidators(klass: Function, validators: RpcClassValidators): void {
