@@ -6,12 +6,13 @@
 // Build-time CLI for Cap'n Web RPC validation codegen.
 //
 // `capnweb typecheck gen <input.ts>` extracts RpcTarget classes from <input.ts>
-// and writes validators into the resolved `capnweb-typecheck` placeholder
-// package. The capnweb runtime auto-loads from there by class name, so user
-// code and bundler entry points stay untouched.
+// and writes validators into capnweb's internal placeholder subpaths
+// (`capnweb/_typecheck-validators` and `capnweb/_typecheck-clients`). The
+// capnweb runtime auto-loads from there by class name, so user code and
+// bundler entry points stay untouched.
 //
-// `capnweb typecheck reset` restores the placeholder to its stub state, which
-// disables runtime validation until the next `gen` run.
+// `capnweb typecheck reset` restores the placeholders to their stub state,
+// which disables runtime validation until the next `gen` run.
 
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";

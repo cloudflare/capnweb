@@ -34,40 +34,39 @@ export function generate(options: GenOptions): GenResult {
 }
 
 /**
- * Generate validators and write them to the resolved `capnweb-typecheck`
- * package location. This is the supported flow: users run
- * `capnweb typecheck gen src/worker.ts` once, validators are written into the
- * placeholder package, and the capnweb runtime picks them up automatically by
- * class name. No entry-point or import changes are required in user code.
+ * Generate validators and write them to capnweb's internal placeholder
+ * subpaths inside the resolved install (`capnweb/_typecheck-validators`,
+ * `capnweb/_typecheck-clients`). Users run `capnweb typecheck gen` once and
+ * the capnweb runtime picks the validators up by class name on next load.
+ * No entry-point or import changes are required in user code.
  *
- * Two files are produced inside the placeholder package directory:
- *   - `index.js` / `index.cjs` — exports `validators`. Pure data + helpers,
- *     no `capnweb` import, so loading the capnweb runtime does not create an
- *     import cycle.
- *   - `clients.js` / `clients.cjs` — exports `__capnweb_wrap_*` functions for
- *     the Vite plugin's client-side rewriting. Imports `capnweb` (safe: only
- *     pulled in when the frontend uses validated stubs).
+ * The validators file deliberately has no `capnweb` import, so the runtime
+ * importing it cannot create an import cycle. The clients file imports
+ * `capnweb/internal/typecheck` for the Vite plugin's client-side rewrites
+ * and is only pulled in when the frontend wraps validated stubs.
  */
 export function generateForPackage(options: { input: string }): GenResult {
-  let packageDir = resolveTypecheckPackageDir();
-  let prepared = prepare({ input: options.input, outDir: packageDir, runtimeImport: "capnweb/internal/typecheck" });
+  let { validatorsEsm, validatorsCjs, clientsEsm, clientsCjs } = resolveTypecheckTargets();
+  let prepared = prepare({
+    input: options.input,
+    outDir: dirname(validatorsEsm),
+    runtimeImport: "capnweb/internal/typecheck",
+  });
   let { classes, runtimeImport } = prepared;
 
   let specsTs = emitSpecsModule(classes, runtimeImport);
-  // Generated `clients.ts` imports `validators` from `./specs.js`; the package
-  // exposes the same export from its main entry instead, so point clients at
-  // it via the bare package name.
+  // Generated `clients.ts` imports `validators` from `./specs.js`; point that
+  // at the validators subpath instead so the two files are independent.
   let clientsTs = emitClientsModule(classes, runtimeImport)
-      .replace(/from "\.\/specs\.js"/g, `from "capnweb-typecheck"`);
+      .replace(/from "\.\/specs\.js"/g, `from "capnweb/_typecheck-validators"`);
 
-  safeWrite(join(packageDir, "index.js"), tsToEsm(specsTs));
-  safeWrite(join(packageDir, "index.cjs"), tsToCjs(specsTs));
-  safeWrite(join(packageDir, "clients.js"), tsToEsm(clientsTs));
-  safeWrite(join(packageDir, "clients.cjs"), tsToCjs(clientsTs));
-  log(packageDir, "index.js");
-  log(packageDir, "index.cjs");
-  log(packageDir, "clients.js");
-  log(packageDir, "clients.cjs");
+  safeWrite(validatorsEsm, tsToEsm(specsTs));
+  safeWrite(validatorsCjs, tsToCjs(specsTs));
+  safeWrite(clientsEsm, tsToEsm(clientsTs));
+  safeWrite(clientsCjs, tsToCjs(clientsTs));
+  for (let path of [validatorsEsm, validatorsCjs, clientsEsm, clientsCjs]) {
+    console.log(`Generated ${relative(process.cwd(), path)}`);
+  }
   return makeGenResult(classes);
 }
 
@@ -97,15 +96,15 @@ function tsToCjs(source: string): string {
 }
 
 /**
- * Restore the `capnweb-typecheck` placeholder to its stub state. Equivalent to
- * a fresh install — no validators are active.
+ * Restore the internal typecheck placeholder subpaths to their stub state.
+ * Equivalent to a fresh install — no validators are active.
  */
 export function resetTypecheckPackage(): void {
-  let packageDir = resolveTypecheckPackageDir();
-  safeWrite(join(packageDir, "index.js"), STUB_ESM);
-  safeWrite(join(packageDir, "index.cjs"), STUB_CJS);
-  safeWrite(join(packageDir, "clients.js"), STUB_CLIENTS_ESM);
-  safeWrite(join(packageDir, "clients.cjs"), STUB_CLIENTS_CJS);
+  let { validatorsEsm, validatorsCjs, clientsEsm, clientsCjs } = resolveTypecheckTargets();
+  safeWrite(validatorsEsm, STUB_ESM);
+  safeWrite(validatorsCjs, STUB_CJS);
+  safeWrite(clientsEsm, STUB_CLIENTS_ESM);
+  safeWrite(clientsCjs, STUB_CLIENTS_CJS);
 }
 
 const STUB_BANNER = `// Placeholder. Overwritten in-place by \`capnweb typecheck gen\`.\n` +
@@ -124,20 +123,39 @@ const STUB_CLIENTS_CJS = STUB_BANNER +
     `"use strict";\n` +
     `Object.defineProperty(exports, "__esModule", { value: true });\n`;
 
-function resolveTypecheckPackageDir(): string {
+type TypecheckTargets = {
+  validatorsEsm: string;
+  validatorsCjs: string;
+  clientsEsm: string;
+  clientsCjs: string;
+};
+
+function resolveTypecheckTargets(): TypecheckTargets {
   let req = createRequire(resolve(process.cwd(), "_"));
-  let indexPath = req.resolve("capnweb-typecheck");
-  if (isInsideYarnPnpZip(indexPath)) {
+  // `req.resolve` picks the `import` or `require` condition based on calling
+  // context. Use it only to locate capnweb's `dist` directory, then build the
+  // four sibling paths explicitly so we hit both ESM and CJS regardless of
+  // how the CLI was invoked. This stays agnostic to the install layout
+  // (npm flat, pnpm `.pnpm`, yarn classic).
+  let resolved = req.resolve("capnweb/_typecheck-validators");
+  if (isInsideYarnPnpZip(resolved)) {
     throw new Error(
-      `capnweb-typecheck resolves inside a Yarn Plug'n'Play archive ` +
-      `(${indexPath}). Writable files are required for codegen.\n` +
+      `capnweb resolves inside a Yarn Plug'n'Play archive (${resolved}). ` +
+      `\`capnweb typecheck gen\` needs to rewrite files inside the package, ` +
+      `which isn't possible while it's zipped.\n` +
       `\n` +
-      `Run \`yarn unplug capnweb-typecheck\` once, then re-run ` +
+      `Run \`yarn unplug capnweb\` once, then re-run ` +
       `\`capnweb typecheck gen\`. Yarn will keep the package unplugged on ` +
       `future installs so codegen continues to work.`
     );
   }
-  return dirname(indexPath);
+  let distDir = dirname(resolved);
+  return {
+    validatorsEsm: join(distDir, "_typecheck-validators.js"),
+    validatorsCjs: join(distDir, "_typecheck-validators.cjs"),
+    clientsEsm: join(distDir, "_typecheck-clients.js"),
+    clientsCjs: join(distDir, "_typecheck-clients.cjs"),
+  };
 }
 
 function isInsideYarnPnpZip(path: string): boolean {

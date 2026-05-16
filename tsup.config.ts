@@ -25,8 +25,13 @@ export default defineConfig([
       // exports map points the runtime path of `capnweb/internal/typecheck` at
       // `dist/index.js` so the validator runtime is shared with the main bundle.
       'src/internal-typecheck.ts',
+      // Internal placeholder subpaths overwritten by `capnweb typecheck gen`.
+      // Kept as separate entries so they emit standalone files the CLI can
+      // safely rewrite, and so the main bundle imports them as externals.
+      'src/_typecheck-validators.ts',
+      'src/_typecheck-clients.ts',
     ],
-    external: ['cloudflare:workers', 'capnweb-typecheck'],
+    external: ['cloudflare:workers', 'capnweb/_typecheck-validators', 'capnweb/_typecheck-clients'],
     clean: true,
     // Works in browsers, Node, and Cloudflare Workers
     platform: 'neutral',

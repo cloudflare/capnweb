@@ -4,7 +4,7 @@
 
 import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
 import { WORKERS_MODULE_SYMBOL } from "./symbols.js"
-import { validators as generatedValidators } from "capnweb-typecheck";
+import { validators as generatedValidators } from "capnweb/_typecheck-validators";
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
 if (!Symbol.dispose) {

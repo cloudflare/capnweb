@@ -44,20 +44,24 @@
       "types": "./dist/vite.d.ts",
       "import": "./dist/vite.js",
       "require": "./dist/vite.cjs"
+    },
+    "./_typecheck-validators": {
+      "types": "./dist/_typecheck-validators.d.ts",
+      "import": "./dist/_typecheck-validators.js",
+      "require": "./dist/_typecheck-validators.cjs"
+    },
+    "./_typecheck-clients": {
+      "types": "./dist/_typecheck-clients.d.ts",
+      "import": "./dist/_typecheck-clients.js",
+      "require": "./dist/_typecheck-clients.cjs"
     }
   },
   "bin": {
     "capnweb": "./dist/cli.cjs"
   },
   "type": "module",
-  "workspaces": [
-    "packages/*"
-  ],
   "publishConfig": {
     "access": "public"
-  },
-  "dependencies": {
-    "capnweb-typecheck": "0.0.1"
   },
   "scripts": {
     "build": "tsup",
