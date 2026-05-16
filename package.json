@@ -24,7 +24,40 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./internal/typecheck": {
+      "workerd": {
+        "types": "./dist/internal-typecheck.d.ts",
+        "import": "./dist/index-workers.js",
+        "require": "./dist/index-workers.cjs"
+      },
+      "bun": {
+        "types": "./dist/internal-typecheck.d.ts",
+        "import": "./dist/index-bun.js",
+        "require": "./dist/index-bun.cjs"
+      },
+      "types": "./dist/internal-typecheck.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "import": "./dist/vite.js",
+      "require": "./dist/vite.cjs"
+    },
+    "./_typecheck-validators": {
+      "types": "./dist/_typecheck-validators.d.ts",
+      "import": "./dist/_typecheck-validators.js",
+      "require": "./dist/_typecheck-validators.cjs"
+    },
+    "./_typecheck-clients": {
+      "types": "./dist/_typecheck-clients.d.ts",
+      "import": "./dist/_typecheck-clients.js",
+      "require": "./dist/_typecheck-clients.cjs"
     }
+  },
+  "bin": {
+    "capnweb": "./dist/cli.cjs"
   },
   "type": "module",
   "publishConfig": {
@@ -32,6 +65,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:runtime": "tsup",
     "build:watch": "tsup --watch",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",
@@ -63,5 +97,13 @@
   "bugs": {
     "url": "https://github.com/cloudflare/capnweb/issues"
   },
-  "homepage": "https://github.com/cloudflare/capnweb#readme"
+  "homepage": "https://github.com/cloudflare/capnweb#readme",
+  "peerDependencies": {
+    "typescript": ">=5.0.0"
+  },
+  "peerDependenciesMeta": {
+    "typescript": {
+      "optional": true
+    }
+  }
 }
