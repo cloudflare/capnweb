@@ -6,3 +6,11 @@
 import type { RpcClassValidators } from "./core.js";
 
 export const validators: Record<string, RpcClassValidators> | null = null;
+
+/**
+ * When true, the runtime throws on the first call into an `RpcTarget`
+ * subclass that has no entry in `validators` (instead of silently skipping
+ * validation). Set by `capnweb typecheck gen --strict` to catch missed
+ * regenerations after a class is renamed or a new class is added.
+ */
+export const strict: boolean = false;

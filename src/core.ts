@@ -4,7 +4,7 @@
 
 import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
 import { WORKERS_MODULE_SYMBOL } from "./symbols.js"
-import { validators as generatedValidators } from "capnweb/_typecheck-validators";
+import { validators as generatedValidators, strict as generatedStrict } from "capnweb/_typecheck-validators";
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
 if (!Symbol.dispose) {
@@ -65,7 +65,8 @@ function getRpcValidator(
     thisArg: object | undefined, methodName: string | number | undefined): RpcMethodValidator | undefined {
   if (thisArg === undefined || methodName === undefined) return undefined;
 
-  let klass = (thisArg as {constructor?: Function}).constructor;
+  let leafClass = (thisArg as {constructor?: Function}).constructor;
+  let klass = leafClass;
   while (typeof klass === "function") {
     let registered = rpcValidators.get(klass);
     if (!registered && generatedValidators) {
@@ -84,6 +85,18 @@ function getRpcValidator(
     let parentPrototype = klass.prototype ? Object.getPrototypeOf(klass.prototype) : undefined;
     klass = parentPrototype?.constructor;
     if (klass === Object) break;
+  }
+
+  // Strict mode: validators were generated but nothing in the prototype chain
+  // matches. Almost always means the class was renamed or added after the last
+  // `capnweb typecheck gen`. Surface it loudly instead of silently skipping
+  // validation — exactly the bug `--strict` exists to catch.
+  if (generatedValidators && generatedStrict && leafClass && leafClass.name) {
+    throw new TypeError(
+      `Cap'n Web strict typecheck: no generated validators for '${leafClass.name}'. ` +
+      `Re-run \`capnweb typecheck gen\` against the entry that exports this class, ` +
+      `or remove --strict to disable this assertion.`
+    );
   }
 
   return undefined;

@@ -21,13 +21,14 @@ import { generate, generateForPackage, resetTypecheckPackage, type GenOptions } 
 function usage(exitCode = 1): never {
   let out = exitCode === 0 ? console.log : console.error;
   out(`Usage:
-  capnweb typecheck gen <input.ts> [--out <dir>]
+  capnweb typecheck gen <input.ts> [--strict] [--out <dir>]
   capnweb typecheck reset
 
 Examples:
   capnweb typecheck gen src/worker.ts
-  capnweb typecheck gen src/worker.ts --out .capnweb   # legacy directory output
-  capnweb typecheck reset                              # restore stub validators`);
+  capnweb typecheck gen src/worker.ts --strict          # throw on any RpcTarget without validators
+  capnweb typecheck gen src/worker.ts --out .capnweb    # legacy directory output
+  capnweb typecheck reset                               # restore stub validators`);
   process.exit(exitCode);
 }
 
@@ -48,21 +49,24 @@ async function main() {
 
   let parsed = parseGenArgs(rest);
   if (parsed.outDir === undefined) {
-    generateForPackage({ input: parsed.input });
+    generateForPackage({ input: parsed.input, strict: parsed.strict });
   } else {
     generate({ input: parsed.input, outDir: parsed.outDir });
   }
 }
 
-function parseGenArgs(args: string[]): { input: string; outDir: string | undefined } {
+function parseGenArgs(args: string[]): { input: string; outDir: string | undefined; strict: boolean } {
   let input: string | undefined;
   let outDir: string | undefined;
+  let strict = false;
   for (let i = 0; i < args.length; i++) {
     let arg = args[i];
     if (arg === "--out" || arg === "-o") {
       let value = args[++i];
       if (value === undefined) throw new Error(`${arg} requires a directory argument.`);
       outDir = value;
+    } else if (arg === "--strict") {
+      strict = true;
     } else if (arg.startsWith("--")) {
       throw new Error(`Unknown option: ${arg}`);
     } else if (!input) {
@@ -73,7 +77,7 @@ function parseGenArgs(args: string[]): { input: string; outDir: string | undefin
   }
 
   if (!input) usage();
-  return { input, outDir };
+  return { input, outDir, strict };
 }
 
 if (isMain()) {

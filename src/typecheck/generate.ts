@@ -45,7 +45,7 @@ export function generate(options: GenOptions): GenResult {
  * `capnweb/internal/typecheck` for the Vite plugin's client-side rewrites
  * and is only pulled in when the frontend wraps validated stubs.
  */
-export function generateForPackage(options: { input: string }): GenResult {
+export function generateForPackage(options: { input: string; strict?: boolean }): GenResult {
   let { validatorsEsm, validatorsCjs, clientsEsm, clientsCjs } = resolveTypecheckTargets();
   let prepared = prepare({
     input: options.input,
@@ -53,8 +53,12 @@ export function generateForPackage(options: { input: string }): GenResult {
     runtimeImport: "capnweb/internal/typecheck",
   });
   let { classes, runtimeImport } = prepared;
+  let strict = Boolean(options.strict);
 
-  let specsTs = emitSpecsModule(classes, runtimeImport);
+  // Append a `strict` export so the runtime can flip into throw-on-miss mode
+  // without a separate file or env var.
+  let specsTs = emitSpecsModule(classes, runtimeImport) +
+      `\nexport const strict = ${strict ? "true" : "false"};\n`;
   // Generated `clients.ts` imports `validators` from `./specs.js`; point that
   // at the validators subpath instead so the two files are independent.
   let clientsTs = emitClientsModule(classes, runtimeImport)
@@ -110,12 +114,15 @@ export function resetTypecheckPackage(): void {
 const STUB_BANNER = `// Placeholder. Overwritten in-place by \`capnweb typecheck gen\`.\n` +
     `// While the placeholder is in place, capnweb skips RPC type checking.\n`;
 
-const STUB_ESM = STUB_BANNER + `export const validators = null;\n`;
+const STUB_ESM = STUB_BANNER +
+    `export const validators = null;\n` +
+    `export const strict = false;\n`;
 
 const STUB_CJS = STUB_BANNER +
     `"use strict";\n` +
     `Object.defineProperty(exports, "__esModule", { value: true });\n` +
-    `exports.validators = null;\n`;
+    `exports.validators = null;\n` +
+    `exports.strict = false;\n`;
 
 const STUB_CLIENTS_ESM = STUB_BANNER + `// No client wrappers until \`gen\` runs.\n`;
 

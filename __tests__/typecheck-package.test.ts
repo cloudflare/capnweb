@@ -70,6 +70,17 @@ describe("generateForPackage", () => {
     expect(mod.validators).toBeNull();
   });
 
+  it("marks strict=true in the generated module when --strict is passed", async () => {
+    generateForPackage({ input: inputFile, strict: true });
+    let mod = await import("capnweb/_typecheck-validators?nocache=" + Date.now()) as any;
+    expect(mod.strict).toBe(true);
+
+    // Default (no flag) should reset to non-strict.
+    generateForPackage({ input: inputFile });
+    let mod2 = await import("capnweb/_typecheck-validators?nocache=" + Date.now()) as any;
+    expect(mod2.strict).toBe(false);
+  });
+
   // pnpm installs packages as hardlinks to a content-addressable store. A
   // naive `writeFileSync` would truncate the shared inode, corrupting every
   // other project that depends on the same capnweb version. The generate
