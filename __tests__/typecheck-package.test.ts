@@ -70,6 +70,31 @@ describe("generateForPackage", () => {
     expect(mod.validators).toBeNull();
   });
 
+  it("validates recursive types through hoisted named validators", async () => {
+    let recursiveDir = mkdtempSync(join(tmpdir(), "capnweb-recursive-"));
+    let recursiveInput = join(recursiveDir, "worker.ts");
+    writeFileSync(recursiveInput, `
+import { RpcTarget } from "capnweb";
+
+interface Tree { name: string; children: Tree[]; }
+
+export class TreeApi extends RpcTarget {
+  size(value: Tree): number { return 0; }
+}
+`);
+    generateForPackage({ input: recursiveInput });
+    let m = await import("capnweb/_typecheck-validators?nocache=" + Date.now()) as any;
+
+    // Valid deeply nested tree.
+    let tree = { name: "root", children: [{ name: "leaf", children: [] }] };
+    expect(() => m.validators.TreeApi.size.args([tree])).not.toThrow();
+
+    // Invalid: bad type at a deep level. Must reach the validator via the
+    // hoisted named function calling itself recursively.
+    let bad = { name: "root", children: [{ name: 42, children: [] }] };
+    expect(() => m.validators.TreeApi.size.args([bad])).toThrow(/expected string/);
+  });
+
   it("throws RpcValidationError with structured payload on argument failures", async () => {
     generateForPackage({ input: inputFile });
     let m = await import("capnweb/_typecheck-validators?nocache=" + Date.now()) as any;

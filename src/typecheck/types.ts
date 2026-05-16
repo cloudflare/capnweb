@@ -20,7 +20,11 @@ export type TypeSpec =
   | { kind: "stub" }
   | { kind: "function" }
   | { kind: "never" }
-  | { kind: "unsupported", text: string };
+  | { kind: "unsupported", text: string }
+  // Reference to a hoisted named validator. Used for recursive types
+  // (e.g. `type JsonValue = ... | JsonValue[]`) so the validator can be
+  // emitted once and call itself instead of being inlined infinitely.
+  | { kind: "ref", id: string };
 
 export type ObjectProp = { name: string, optional: boolean, type: TypeSpec };
 export type ParamSpec = { name: string, optional: boolean, type: TypeSpec };

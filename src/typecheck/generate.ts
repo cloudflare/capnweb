@@ -52,12 +52,12 @@ export function generateForPackage(options: { input: string; strict?: boolean })
     outDir: dirname(validatorsEsm),
     runtimeImport: "capnweb/internal/typecheck",
   });
-  let { classes, runtimeImport } = prepared;
+  let { classes, named, runtimeImport } = prepared;
   let strict = Boolean(options.strict);
 
   // Append a `strict` export so the runtime can flip into throw-on-miss mode
   // without a separate file or env var.
-  let specsTs = emitSpecsModule(classes, runtimeImport) +
+  let specsTs = emitSpecsModule(classes, runtimeImport, named) +
       `\nexport const strict = ${strict ? "true" : "false"};\n`;
   // Generated `clients.ts` imports `validators` from `./specs.js`; point that
   // at the validators subpath instead so the two files are independent.
@@ -182,6 +182,7 @@ export function generateValidatorsOnly(options: GenOptions): GenResult {
 
 type Prepared = {
   classes: ExtractedClassSpec[];
+  named: Map<string, TypeSpec>;
   outAbs: string;
   runtimeImport: string;
   sourceFile: ReturnType<typeof createProject>["sourceFile"];
@@ -199,17 +200,19 @@ function prepare(options: GenOptions): Prepared {
   let sourceFile = project.sourceFile;
   let reachableFiles = collectReachableSourceFiles(project);
   let root = commonDir(reachableFiles.map(file => file.fileName));
-  let classes = extractClasses(project, reachableFiles);
+  let { classes, named } = extractClasses(project, reachableFiles);
   if (classes.length === 0) throw new Error(`No classes extending RpcTarget found in ${options.input}`);
   checkNameCollisions(classes);
+  let checkedRefs = new Set<string>();
   for (let klass of classes) {
     for (let method of klass.methods) {
-      for (let param of method.params) checkSupported(param.type);
-      checkSupported(method.returns);
+      for (let param of method.params) checkSupported(param.type, named, checkedRefs);
+      checkSupported(method.returns, named, checkedRefs);
     }
   }
+  for (let spec of named.values()) checkSupported(spec, named, checkedRefs);
   mkdirSync(outAbs, { recursive: true });
-  return { classes, outAbs, runtimeImport, sourceFile, reachableFiles, root };
+  return { classes, named, outAbs, runtimeImport, sourceFile, reachableFiles, root };
 }
 
 function checkNameCollisions(classes: ExtractedClassSpec[]): void {
@@ -224,21 +227,28 @@ function checkNameCollisions(classes: ExtractedClassSpec[]): void {
   }
 }
 
-function checkSupported(type: TypeSpec): void {
+function checkSupported(type: TypeSpec, named: Map<string, TypeSpec>, visited: Set<string>): void {
   switch (type.kind) {
     case "unsupported": throw new Error(`Unsupported RPC type: ${type.text}`);
-    case "array": checkSupported(type.element); break;
-    case "tuple": for (let element of type.elements) checkSupported(element); break;
-    case "map": checkSupported(type.key); checkSupported(type.value); break;
-    case "set": checkSupported(type.value); break;
-    case "object": for (let prop of type.props) checkSupported(prop.type); break;
-    case "record": checkSupported(type.value); break;
-    case "union": for (let variant of type.variants) checkSupported(variant); break;
+    case "array": checkSupported(type.element, named, visited); break;
+    case "tuple": for (let element of type.elements) checkSupported(element, named, visited); break;
+    case "map": checkSupported(type.key, named, visited); checkSupported(type.value, named, visited); break;
+    case "set": checkSupported(type.value, named, visited); break;
+    case "object": for (let prop of type.props) checkSupported(prop.type, named, visited); break;
+    case "record": checkSupported(type.value, named, visited); break;
+    case "union": for (let variant of type.variants) checkSupported(variant, named, visited); break;
+    case "ref": {
+      if (visited.has(type.id)) break;
+      visited.add(type.id);
+      let target = named.get(type.id);
+      if (target) checkSupported(target, named, visited);
+      break;
+    }
   }
 }
 
 function emitArtifacts(p: Prepared): void {
-  writeFileSync(join(p.outAbs, "specs.ts"), emitSpecsModule(p.classes, p.runtimeImport));
+  writeFileSync(join(p.outAbs, "specs.ts"), emitSpecsModule(p.classes, p.runtimeImport, p.named));
   log(p.outAbs, "specs.ts");
   writeFileSync(join(p.outAbs, "validators.ts"), emitValidatorsModule(p.runtimeImport));
   log(p.outAbs, "validators.ts");
@@ -246,8 +256,17 @@ function emitArtifacts(p: Prepared): void {
   log(p.outAbs, "clients.ts");
 }
 
-function emitSpecsModule(classes: ExtractedClassSpec[], runtimeImport: string): string {
-  let emit: ValidatorEmit = { lines: [], nextId: 0 };
+function emitSpecsModule(classes: ExtractedClassSpec[], runtimeImport: string, named: Map<string, TypeSpec> = new Map()): string {
+  let emit: ValidatorEmit = { lines: [], nextId: 0, refValueFns: new Map(), refPathFns: new Map() };
+  // Reserve function names for every hoisted type before emitting any
+  // bodies, so mutually recursive named types can resolve each other.
+  for (let id of named.keys()) {
+    emit.refValueFns.set(id, "__capnweb_validate_named_" + safeIdent(id));
+    emit.refPathFns.set(id, "__capnweb_validate_path_named_" + safeIdent(id));
+  }
+  for (let [id, spec] of named) {
+    emitNamedValidator(id, spec, emit);
+  }
   let classEntries: string[] = [];
 
   for (let klass of classes) {
@@ -309,7 +328,39 @@ function emitSpecsModule(classes: ExtractedClassSpec[], runtimeImport: string): 
   return lines.join("\n");
 }
 
-type ValidatorEmit = { lines: string[]; nextId: number };
+type ValidatorEmit = {
+  lines: string[];
+  nextId: number;
+  // Named-type ref id -> function name. Populated before any emit calls so a
+  // ref encountered inside a named body resolves cleanly even before the
+  // referent's own body has finished emitting (mutual recursion).
+  refValueFns: Map<string, string>;
+  refPathFns: Map<string, string>;
+};
+
+function safeIdent(id: string): string {
+  return id.replace(/[^A-Za-z0-9_]/g, "_");
+}
+
+function emitNamedValidator(id: string, spec: TypeSpec, emit: ValidatorEmit): void {
+  let fnName = emit.refValueFns.get(id)!;
+  // The body delegates to the spec's own validator; for a self-referential
+  // type, the inner ref resolves back to this same function name. JS hoists
+  // function declarations so the call works even though the body still emits.
+  let inner = emitTypeValidator(spec, emit);
+  emit.lines.push(
+      `function ${fnName}(value: unknown, path: (string | number)[], options?: __CapnwebValidationOptions): __CapnwebValidationFailure | undefined {`,
+      `  return ${inner}(value, path, options);`,
+      `}`,
+      "");
+  let pathName = emit.refPathFns.get(id)!;
+  let pathInner = emitTypePathValidator(spec, emit);
+  emit.lines.push(
+      `function ${pathName}(path: (string | number)[], value: unknown, offset = 0, options?: __CapnwebValidationOptions): __CapnwebValidationFailure | undefined {`,
+      `  return ${pathInner}(path, value, offset, options);`,
+      `}`,
+      "");
+}
 
 function emitTypeValidator(type: TypeSpec, emit: ValidatorEmit): string {
   let name = "__capnweb_validate_" + emit.nextId++;
@@ -450,6 +501,15 @@ function emitTypeValidator(type: TypeSpec, emit: ValidatorEmit): string {
     case "unsupported":
       lines.push("  return __capnweb_mismatch(path, " + expected + ", value);");
       break;
+    case "ref": {
+      // Delegate to the hoisted named validator. Function name is reserved
+      // before any body emits so this resolves for forward references and
+      // for self-referential types alike.
+      let target = emit.refValueFns.get(type.id);
+      if (!target) throw new Error(`Internal: no named validator for ref id '${type.id}'`);
+      lines.push("  return " + target + "(value, path, options);");
+      break;
+    }
   }
 
   lines.push("}", "");
@@ -522,6 +582,12 @@ function emitTypePathValidator(type: TypeSpec, emit: ValidatorEmit): string {
             "  }");
       }
       lines.push("  return failures.find(failure => failure.path.length > offset) ?? failures[0];");
+      break;
+    }
+    case "ref": {
+      let target = emit.refPathFns.get(type.id);
+      if (!target) throw new Error(`Internal: no named path validator for ref id '${type.id}'`);
+      lines.push("  return " + target + "(path, value, offset, options);");
       break;
     }
     default:
@@ -610,6 +676,12 @@ function typeDescription(type: TypeSpec): string {
     case "stub": return "RpcStub";
     case "function": return "Function";
     case "unsupported": return type.text;
+    case "ref": {
+      // Strip the disambiguating numeric suffix added by makeNamedId; the
+      // human-readable base is more useful in error messages.
+      let match = type.id.match(/^(.*)_\d+$/);
+      return match ? match[1] : type.id;
+    }
   }
 }
 

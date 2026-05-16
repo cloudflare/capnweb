@@ -25,8 +25,8 @@ function inspectInput(input: string) {
   let project = createProject(input);
   let sourceFile = project.sourceFile;
   let reachableFiles = collectReachableSourceFiles(project);
-  let classes = extractClasses(project, reachableFiles);
-  return { sourceFile, reachableFiles, classes };
+  let { classes, named } = extractClasses(project, reachableFiles);
+  return { sourceFile, reachableFiles, classes, named };
 }
 
 function emitShadowFor(input: string, outDir: string): void {
@@ -341,7 +341,7 @@ describe("preflight type rejection", () => {
     }
   });
 
-  it("rejects recursive types", () => {
+  it("accepts recursive types by hoisting named validators", () => {
     let root = mkdtempSync(resolve(".capnweb-recursive-"));
     try {
       writeFakeCapnweb(root);
@@ -353,7 +353,14 @@ describe("preflight type rejection", () => {
           tree(value: Tree): void {}
         }
       `);
-      expect(() => inspectInput(input)).toThrow(/recursive types are not supported/);
+      let result = inspectInput(input);
+      // The Tree -> Tree[] cycle should produce a `ref` somewhere in the
+      // method signature, and a matching entry in the hoisted-named table.
+      expect(result.named.size).toBeGreaterThan(0);
+      let params = result.classes[0].methods[0].params;
+      let value = params[0].type;
+      // The parameter resolves to a ref into the hoisted Tree type.
+      expect(value.kind === "object" || value.kind === "ref").toBe(true);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
