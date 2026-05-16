@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import * as ts from "typescript";
@@ -60,15 +60,28 @@ export function generateForPackage(options: { input: string }): GenResult {
   let clientsTs = emitClientsModule(classes, runtimeImport)
       .replace(/from "\.\/specs\.js"/g, `from "capnweb-typecheck"`);
 
-  writeFileSync(join(packageDir, "index.js"), tsToEsm(specsTs));
-  writeFileSync(join(packageDir, "index.cjs"), tsToCjs(specsTs));
-  writeFileSync(join(packageDir, "clients.js"), tsToEsm(clientsTs));
-  writeFileSync(join(packageDir, "clients.cjs"), tsToCjs(clientsTs));
+  safeWrite(join(packageDir, "index.js"), tsToEsm(specsTs));
+  safeWrite(join(packageDir, "index.cjs"), tsToCjs(specsTs));
+  safeWrite(join(packageDir, "clients.js"), tsToEsm(clientsTs));
+  safeWrite(join(packageDir, "clients.cjs"), tsToCjs(clientsTs));
   log(packageDir, "index.js");
   log(packageDir, "index.cjs");
   log(packageDir, "clients.js");
   log(packageDir, "clients.cjs");
   return makeGenResult(classes);
+}
+
+/**
+ * Replace a file without modifying any inode the system shares with other
+ * paths. pnpm hardlinks installed packages from its content-addressable store,
+ * so a plain `writeFileSync` would truncate the shared inode and silently
+ * corrupt every other project on the same store. Unlinking first leaves the
+ * store entry intact and lets us create a fresh file at the target path.
+ */
+function safeWrite(path: string, content: string): void {
+  try { unlinkSync(path); }
+  catch (err) { if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err; }
+  writeFileSync(path, content);
 }
 
 function tsToEsm(source: string): string {
@@ -89,10 +102,10 @@ function tsToCjs(source: string): string {
  */
 export function resetTypecheckPackage(): void {
   let packageDir = resolveTypecheckPackageDir();
-  writeFileSync(join(packageDir, "index.js"), STUB_ESM);
-  writeFileSync(join(packageDir, "index.cjs"), STUB_CJS);
-  writeFileSync(join(packageDir, "clients.js"), STUB_CLIENTS_ESM);
-  writeFileSync(join(packageDir, "clients.cjs"), STUB_CLIENTS_CJS);
+  safeWrite(join(packageDir, "index.js"), STUB_ESM);
+  safeWrite(join(packageDir, "index.cjs"), STUB_CJS);
+  safeWrite(join(packageDir, "clients.js"), STUB_CLIENTS_ESM);
+  safeWrite(join(packageDir, "clients.cjs"), STUB_CLIENTS_CJS);
 }
 
 const STUB_BANNER = `// Placeholder. Overwritten in-place by \`capnweb typecheck gen\`.\n` +
@@ -114,7 +127,25 @@ const STUB_CLIENTS_CJS = STUB_BANNER +
 function resolveTypecheckPackageDir(): string {
   let req = createRequire(resolve(process.cwd(), "_"));
   let indexPath = req.resolve("capnweb-typecheck");
+  if (isInsideYarnPnpZip(indexPath)) {
+    throw new Error(
+      `capnweb-typecheck resolves inside a Yarn Plug'n'Play archive ` +
+      `(${indexPath}). Writable files are required for codegen.\n` +
+      `\n` +
+      `Run \`yarn unplug capnweb-typecheck\` once, then re-run ` +
+      `\`capnweb typecheck gen\`. Yarn will keep the package unplugged on ` +
+      `future installs so codegen continues to work.`
+    );
+  }
   return dirname(indexPath);
+}
+
+function isInsideYarnPnpZip(path: string): boolean {
+  // Yarn PnP serves packages out of zip archives mounted by its loader. The
+  // resolved path looks like `…/cache/foo-npm-1.0.0-abc.zip/node_modules/foo/…`.
+  // process.versions.pnp is set when the PnP runtime is active.
+  if (process.versions.pnp !== undefined && /\.zip[\/\\]/.test(path)) return true;
+  return /[\/\\]\.yarn[\/\\]cache[\/\\][^\/\\]+\.zip[\/\\]/.test(path);
 }
 
 
