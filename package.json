@@ -50,8 +50,14 @@
     "capnweb": "./dist/cli.cjs"
   },
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "capnweb-typecheck": "0.0.1"
   },
   "scripts": {
     "build": "tsup",

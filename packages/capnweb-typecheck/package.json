@@ -1,0 +1,36 @@
+{
+  "name": "capnweb-typecheck",
+  "version": "0.0.1",
+  "description": "Internal placeholder package for Cap'n Web runtime type validators. Do not import directly — capnweb manages this for you.",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.cjs"
+    },
+    "./clients": {
+      "types": "./clients.d.ts",
+      "import": "./clients.js",
+      "require": "./clients.cjs"
+    }
+  },
+  "files": [
+    "index.js",
+    "index.cjs",
+    "index.d.ts",
+    "clients.js",
+    "clients.cjs",
+    "clients.d.ts"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudflare/capnweb"
+  }
+}

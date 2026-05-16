@@ -3,6 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import * as ts from "typescript";
 import {
@@ -31,6 +32,91 @@ export function generate(options: GenOptions): GenResult {
   log(outAbs, "worker.entry.ts");
   return makeGenResult(classes);
 }
+
+/**
+ * Generate validators and write them to the resolved `capnweb-typecheck`
+ * package location. This is the supported flow: users run
+ * `capnweb typecheck gen src/worker.ts` once, validators are written into the
+ * placeholder package, and the capnweb runtime picks them up automatically by
+ * class name. No entry-point or import changes are required in user code.
+ *
+ * Two files are produced inside the placeholder package directory:
+ *   - `index.js` / `index.cjs` — exports `validators`. Pure data + helpers,
+ *     no `capnweb` import, so loading the capnweb runtime does not create an
+ *     import cycle.
+ *   - `clients.js` / `clients.cjs` — exports `__capnweb_wrap_*` functions for
+ *     the Vite plugin's client-side rewriting. Imports `capnweb` (safe: only
+ *     pulled in when the frontend uses validated stubs).
+ */
+export function generateForPackage(options: { input: string }): GenResult {
+  let packageDir = resolveTypecheckPackageDir();
+  let prepared = prepare({ input: options.input, outDir: packageDir, runtimeImport: "capnweb/internal/typecheck" });
+  let { classes, runtimeImport } = prepared;
+
+  let specsTs = emitSpecsModule(classes, runtimeImport);
+  // Generated `clients.ts` imports `validators` from `./specs.js`; the package
+  // exposes the same export from its main entry instead, so point clients at
+  // it via the bare package name.
+  let clientsTs = emitClientsModule(classes, runtimeImport)
+      .replace(/from "\.\/specs\.js"/g, `from "capnweb-typecheck"`);
+
+  writeFileSync(join(packageDir, "index.js"), tsToEsm(specsTs));
+  writeFileSync(join(packageDir, "index.cjs"), tsToCjs(specsTs));
+  writeFileSync(join(packageDir, "clients.js"), tsToEsm(clientsTs));
+  writeFileSync(join(packageDir, "clients.cjs"), tsToCjs(clientsTs));
+  log(packageDir, "index.js");
+  log(packageDir, "index.cjs");
+  log(packageDir, "clients.js");
+  log(packageDir, "clients.cjs");
+  return makeGenResult(classes);
+}
+
+function tsToEsm(source: string): string {
+  return ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+}
+
+function tsToCjs(source: string): string {
+  return ts.transpileModule(source, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+}
+
+/**
+ * Restore the `capnweb-typecheck` placeholder to its stub state. Equivalent to
+ * a fresh install — no validators are active.
+ */
+export function resetTypecheckPackage(): void {
+  let packageDir = resolveTypecheckPackageDir();
+  writeFileSync(join(packageDir, "index.js"), STUB_ESM);
+  writeFileSync(join(packageDir, "index.cjs"), STUB_CJS);
+  writeFileSync(join(packageDir, "clients.js"), STUB_CLIENTS_ESM);
+  writeFileSync(join(packageDir, "clients.cjs"), STUB_CLIENTS_CJS);
+}
+
+const STUB_BANNER = `// Placeholder. Overwritten in-place by \`capnweb typecheck gen\`.\n` +
+    `// While the placeholder is in place, capnweb skips RPC type checking.\n`;
+
+const STUB_ESM = STUB_BANNER + `export const validators = null;\n`;
+
+const STUB_CJS = STUB_BANNER +
+    `"use strict";\n` +
+    `Object.defineProperty(exports, "__esModule", { value: true });\n` +
+    `exports.validators = null;\n`;
+
+const STUB_CLIENTS_ESM = STUB_BANNER + `// No client wrappers until \`gen\` runs.\n`;
+
+const STUB_CLIENTS_CJS = STUB_BANNER +
+    `"use strict";\n` +
+    `Object.defineProperty(exports, "__esModule", { value: true });\n`;
+
+function resolveTypecheckPackageDir(): string {
+  let req = createRequire(resolve(process.cwd(), "_"));
+  let indexPath = req.resolve("capnweb-typecheck");
+  return dirname(indexPath);
+}
+
 
 export function generateValidatorsOnly(options: GenOptions): GenResult {
   let prepared = prepare(options);

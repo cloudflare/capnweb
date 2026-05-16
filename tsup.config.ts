@@ -26,7 +26,7 @@ export default defineConfig([
       // `dist/index.js` so the validator runtime is shared with the main bundle.
       'src/internal-typecheck.ts',
     ],
-    external: ['cloudflare:workers'],
+    external: ['cloudflare:workers', 'capnweb-typecheck'],
     clean: true,
     // Works in browsers, Node, and Cloudflare Workers
     platform: 'neutral',

@@ -80,38 +80,33 @@ cleanup() {
 
 trap cleanup EXIT INT TERM
 
-if [[ "$TYPECHECK" == "true" ]]; then
-  cd "$REPO_ROOT"
-  env NODE_OPTIONS= npm run build
+cd "$REPO_ROOT"
+env NODE_OPTIONS= npm run build
 
-  cd "$SCRIPT_DIR"
-  echo "Debugging capnweb typecheck gen for examples/worker-react/src/worker.ts"
-  if [[ "${TYPECHECK_DEBUG:-true}" == "false" || "${TYPECHECK_DEBUG:-true}" == "0" ]]; then
+# Runtime type validation toggles via the `capnweb-typecheck` placeholder
+# package. `gen` overwrites it with real validators; `reset` puts the stub back
+# so no validation runs. The worker entry never changes either way.
+cd "$SCRIPT_DIR"
+if [[ "$TYPECHECK" == "true" ]]; then
+  echo "Generating RPC validators into capnweb-typecheck..."
+  if [[ "${TYPECHECK_DEBUG:-false}" == "false" || "${TYPECHECK_DEBUG:-false}" == "0" ]]; then
     env NODE_OPTIONS= node --enable-source-maps \
-      "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts --out .capnweb
+      "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts
   else
     echo "Typecheck generator is paused on start; attach the debugger, then continue."
     node --enable-source-maps --inspect-brk=0 \
-      "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts --out .capnweb
+      "$REPO_ROOT/dist/cli.cjs" typecheck gen src/worker.ts
   fi
-fi
-
-VITE_PLUGIN_IMPORT=""
-VITE_PLUGINS=""
-WORKER_MAIN="$SCRIPT_DIR/src/worker.ts"
-if [[ "$TYPECHECK" == "true" ]]; then
-  VITE_PLUGIN_IMPORT="import capnweb from '$REPO_ROOT/dist/vite.js';"
-  VITE_PLUGINS="plugins: [capnweb({ input: '$SCRIPT_DIR/src/worker.ts', outDir: '$SCRIPT_DIR/.capnweb' })],"
-  WORKER_MAIN="$SCRIPT_DIR/.capnweb/worker.entry.ts"
+else
+  echo "Resetting capnweb-typecheck placeholder (validators disabled)..."
+  env NODE_OPTIONS= node "$REPO_ROOT/dist/cli.cjs" typecheck reset
 fi
 
 cat > "$TMP_CONFIG" <<EOF
 import path from 'node:path';
-$VITE_PLUGIN_IMPORT
 
 export default {
   base: '$VITE_BASE',
-  $VITE_PLUGINS
   resolve: {
     alias: [
       { find: 'capnweb/internal/typecheck', replacement: path.resolve('$REPO_ROOT/dist/index.js') },
@@ -140,7 +135,7 @@ EOF
 
 cat > "$TMP_WRANGLER_CONFIG" <<EOF
 name = "capnweb-react-debug"
-main = "$WORKER_MAIN"
+main = "$SCRIPT_DIR/src/worker.ts"
 compatibility_date = "2024-09-01"
 
 [assets]
@@ -153,11 +148,6 @@ DELAY_NOTIFS_MS = 120
 SIMULATED_RTT_MS = 120
 SIMULATED_RTT_JITTER_MS = 40
 EOF
-
-cd "$REPO_ROOT"
-if [[ "$TYPECHECK" == "false" ]]; then
-  env NODE_OPTIONS= npm run build
-fi
 
 cd "$WEB_DIR"
 if [[ ! -d node_modules ]]; then
