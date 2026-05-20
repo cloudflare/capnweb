@@ -2,10 +2,9 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { defineConfig } from 'tsup'
+import { defineConfig, type Options } from 'tsdown'
 
-export default defineConfig({
-  entry: ['src/index.ts', 'src/index-workers.ts', 'src/index-bun.ts'],
+const common = {
   format: ['esm', 'cjs'],
   external: ['cloudflare:workers'],
   dts: true,
@@ -20,7 +19,24 @@ export default defineConfig({
   // Works in browsers, Node, and Cloudflare Workers
   platform: 'neutral',
 
-  splitting: false,
   treeshake: true,
   minify: false, // Keep readable for debugging
-})
+} satisfies Omit<Options, 'entry'>
+
+// Build each entry independently so the published runtime entry points stay self-contained.
+// In particular, workerd loads dist/index-workers.js directly and cannot resolve generated
+// shared chunks that are emitted when multiple entries are bundled together.
+export default defineConfig([
+  {
+    ...common,
+    entry: ['src/index.ts'],
+  },
+  {
+    ...common,
+    entry: ['src/index-workers.ts'],
+  },
+  {
+    ...common,
+    entry: ['src/index-bun.ts'],
+  },
+])
