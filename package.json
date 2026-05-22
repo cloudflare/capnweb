@@ -31,8 +31,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "tsdown",
-    "build:watch": "tsdown --watch",
+    "build": "tsdown --config-loader tsx",
+    "build:watch": "tsdown --config-loader tsx --watch",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",
     "test:ci": "vitest run && bun test __tests__/bun.test.ts",
@@ -50,7 +50,7 @@
     "@vitest/browser": "^3.2.4",
     "pkg-pr-new": "^0.0.60",
     "playwright": "^1.56.1",
-    "tsdown": "^0.15.4",
+    "tsdown": "^0.22.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.4",
