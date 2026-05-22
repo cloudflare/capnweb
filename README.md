@@ -352,6 +352,20 @@ Stubs integrate with JavaScript's [explicit resource management](https://v8.dev/
 * Disposable objects (including stubs) have a method `[Symbol.dispose]`. You can call this like `stub[Symbol.dispose]()`.
 * You can arrange for a stub to be disposed automatically at the end of a function scope by assigning it to a `using` variable, like `using stub = api.getStub();`. The disposer will automatically be invoked when the variable goes out-of-scope.
 
+If your `tsconfig.json` sets `lib` explicitly and `skipLibCheck` is `false`, add TypeScript's explicit resource management lib to your existing list so Cap'n Web's `Disposable` references are available. For example, in a browser project:
+
+```jsonc
+{
+  "compilerOptions": {
+    "lib": ["ES2023", "DOM", "ESNext.Disposable"]
+  }
+}
+```
+
+`ESNext.Disposable` is the specific component lib TypeScript 5.x uses for `Disposable`; `ES2023` and `ES2024` alone do not include it. There is no Cap'n Web-specific `target` requirement. If your code uses `using`, set `target` according to whether you want TypeScript to downlevel that syntax or leave it for your runtime.
+
+`DOM` is not required for `Disposable`; it is shown because browser projects usually get web platform types like `Request`, `Response`, `Headers`, `ReadableStream`, `WebSocket`, and `MessagePort` from `DOM`. Use the environment lib or ambient types for your runtime instead, such as `WebWorker` for Workers or modern Node types for Node.
+
 ### Automatic disposal
 
 This library implements several rules to help make resource management more manageable. These rules may appear a bit complicated, but are intended to implement the behavior you would naturally expect.
