@@ -2,11 +2,12 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { defineConfig, type Options } from 'tsdown'
+import { defineConfig, type UserConfig } from 'tsdown'
 
 const common = {
   format: ['esm', 'cjs'],
-  external: ['cloudflare:workers'],
+  // Bun is type-only in source, but emitted declarations import it.
+  deps: { neverBundle: ['cloudflare:workers', 'bun'] },
   dts: true,
   sourcemap: true,
   clean: true,
@@ -21,7 +22,7 @@ const common = {
 
   treeshake: true,
   minify: false, // Keep readable for debugging
-} satisfies Omit<Options, 'entry'>
+} satisfies Omit<UserConfig, 'entry'>
 
 // Build each entry independently so the published runtime entry points stay self-contained.
 // In particular, workerd loads dist/index-workers.js directly and cannot resolve generated
