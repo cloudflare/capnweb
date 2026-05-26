@@ -30,9 +30,12 @@
   "publishConfig": {
     "access": "public"
   },
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "build": "tsdown --config-loader tsx",
-    "build:watch": "tsdown --config-loader tsx --watch",
+    "build": "tsdown --config-loader native && npm run -w capnweb-typecheck build",
+    "build:watch": "tsdown --config-loader native --watch",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",
     "test:ci": "vitest run && bun test __tests__/bun.test.ts",

@@ -1,0 +1,45 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "typecheck: Worker dev server",
+      "type": "shell",
+      "command": "examples/worker-react-typecheck/dev-debug-server.sh",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typecheck-worker",
+        "pattern": { "regexp": "$^" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "Ready on http://127\\.0\\.0\\.1:8787"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    },
+    {
+      "label": "typecheck: client dev server",
+      "type": "shell",
+      "command": "examples/worker-react-typecheck/dev-debug-client.sh",
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "typecheck-client",
+        "pattern": { "regexp": "$^" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".*",
+          "endsPattern": "Local:\\s+http://127\\.0\\.0\\.1:5173/"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}
