@@ -3,3 +3,5 @@ node_modules
 examples/worker-react/web/dist/
 notes.txt
 /dist/
+examples/**/capnweb.typecheck.generated.ts
+packages/*/dist/

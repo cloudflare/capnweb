@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "typecheck: Worker",
+      "address": "127.0.0.1",
+      "port": 9229,
+      "timeout": 60000,
+      "restart": true,
+      "preLaunchTask": "typecheck: Worker dev server",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "typecheck: client",
+      "url": "http://127.0.0.1:5173",
+      "webRoot": "${workspaceFolder}/examples/worker-react-typecheck/.wrangler/typecheck-web",
+      "sourceMaps": true,
+      "preLaunchTask": "typecheck: client dev server",
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "typecheck: debug all",
+      "configurations": [
+        "typecheck: Worker",
+        "typecheck: client"
+      ],
+      "stopAll": true
+    }
+  ]
+}
