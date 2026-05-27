@@ -12,6 +12,7 @@ import type ts from "typescript";
 export type ServiceShape = {
   /** User-visible name (the class name when known). */
   name: string;
+  targetKind?: "workerEntrypoint";
   methods: MethodShape[];
   /** Validator fragments that must be hoisted because refs point at them. */
   namedShapes: Map<number, TypeShape>;
@@ -45,21 +46,27 @@ export type TypeShape =
   // ----- pass-by-value containers -----
   | { kind: "array"; id?: number; element: TypeShape }
   | { kind: "tuple"; id?: number; elements: TypeShape[] }
-  | { kind: "object"; id?: number; name?: string; properties: Record<string, TypeShape>; index?: TypeShape }
+  | {
+      kind: "object";
+      id?: number;
+      name?: string;
+      properties: Record<string, TypeShape>;
+      index?: TypeShape;
+    }
   | { kind: "union"; id?: number; branches: TypeShape[] }
   | { kind: "ref"; id: number; name?: string }
   // ----- pass-by-value built-in classes the wire understands -----
   | { kind: "date" }
-  | { kind: "bytes" }              // Uint8Array
-  | { kind: "error" }              // Error & well-known subclasses
-  | { kind: "blob" }               // Blob (and File, which extends Blob)
+  | { kind: "bytes" } // Uint8Array
+  | { kind: "error" } // Error & well-known subclasses
+  | { kind: "blob" } // Blob (and File, which extends Blob)
   | { kind: "readableStream" }
   | { kind: "writableStream" }
   | { kind: "headers" }
   | { kind: "request" }
   | { kind: "response" }
   // ----- pass-by-reference -----
-  | { kind: "function" }           // plain functions
+  | { kind: "function" } // plain functions
   | { kind: "stub"; service?: ServiceShape } // RpcStub<T>, RpcPromise<T>, RpcTarget subclasses
   // ----- rejected / unrepresentable -----
   | { kind: "unsupported"; reason: string };
@@ -71,14 +78,18 @@ export type TypeShape =
  * call site.
  */
 export function resolveServiceShape(
-    tsm: typeof ts, checker: ts.TypeChecker, type: ts.Type,
+  tsm: typeof ts,
+  checker: ts.TypeChecker,
+  type: ts.Type
 ): ServiceShape | null {
   let ctx = createResolveContext(tsm, checker);
   return resolveServiceShapeInner(ctx, type);
 }
 
 function resolveServiceShapeInner(
-    ctx: ResolveContext, type: ts.Type): ServiceShape | null {
+  ctx: ResolveContext,
+  type: ts.Type
+): ServiceShape | null {
   let existing = ctx.services.get(type);
   if (existing) return existing.resolving ? null : existing.shape;
 
@@ -101,9 +112,9 @@ function resolveServiceShapeInner(
     if (!decl) continue;
     let propType = checker.getTypeOfSymbolAtLocation(prop, decl);
     let sigs = propType.getCallSignatures();
-    if (sigs.length === 0) continue;          // not a method
+    if (sigs.length === 0) continue; // not a method
     if (isPrivateOrProtected(tsm, decl)) continue;
-    if (prop.getName().startsWith("#")) continue;     // private fields
+    if (prop.getName().startsWith("#")) continue; // private fields
     if (prop.getName() === "constructor") continue;
     // Use the first call signature; overloads are not represented separately.
     if (hasSkipRpcValidationDecorator(ctx, decl)) {
@@ -133,7 +144,10 @@ function resolveServiceShapeInner(
         params.push(shape);
       }
     }
-    let returns = resolveType(ctx, unwrapPromise(tsm, checker, sig.getReturnType()));
+    let returns = resolveType(
+      ctx,
+      unwrapPromise(tsm, checker, sig.getReturnType())
+    );
     service.methods.push({ name: prop.getName(), params, rest, returns });
   }
 
@@ -161,7 +175,9 @@ type ResolveContext = {
 };
 
 function createResolveContext(
-    tsm: typeof ts, checker: ts.TypeChecker): ResolveContext {
+  tsm: typeof ts,
+  checker: ts.TypeChecker
+): ResolveContext {
   return {
     tsm,
     checker,
@@ -186,7 +202,10 @@ function isPrivateOrProtected(tsm: typeof ts, decl: ts.Declaration): boolean {
   return false;
 }
 
-function hasSkipRpcValidationDecorator(ctx: ResolveContext, decl: ts.Declaration): boolean {
+function hasSkipRpcValidationDecorator(
+  ctx: ResolveContext,
+  decl: ts.Declaration
+): boolean {
   let tsm = ctx.tsm;
   if (!tsm.canHaveDecorators?.(decl)) return false;
   for (let decorator of tsm.getDecorators?.(decl) ?? []) {
@@ -194,10 +213,13 @@ function hasSkipRpcValidationDecorator(ctx: ResolveContext, decl: ts.Declaration
     if (tsm.isCallExpression(expression)) expression = expression.expression;
     if (!tsm.isIdentifier(expression)) continue;
     let sym = ctx.checker.getSymbolAtLocation(expression);
-    if (sym && (sym.flags & tsm.SymbolFlags.Alias)) {
+    if (sym && sym.flags & tsm.SymbolFlags.Alias) {
       sym = ctx.checker.getAliasedSymbol(sym);
     }
-    if (sym?.getName() === "skipRpcValidation" && isCapnwebValidateSymbol(sym)) {
+    if (
+      sym?.getName() === "skipRpcValidation" &&
+      isCapnwebValidateSymbol(sym)
+    ) {
       return true;
     }
   }
@@ -205,7 +227,10 @@ function hasSkipRpcValidationDecorator(ctx: ResolveContext, decl: ts.Declaration
 }
 
 function unwrapPromise(
-    tsm: typeof ts, checker: ts.TypeChecker, type: ts.Type): ts.Type {
+  tsm: typeof ts,
+  checker: ts.TypeChecker,
+  type: ts.Type
+): ts.Type {
   let sym = type.getSymbol();
   if (sym && sym.getName() === "Promise") {
     let args = checker.getTypeArguments(type as ts.TypeReference);
@@ -218,7 +243,7 @@ function unwrapPromise(
  * Names the capnweb wire format passes by reference. User classes that extend
  * `RpcTarget` are detected via base-type walk, not by name.
  */
-const CAPNWEB_STUB_NAMES = new Set(["RpcStub", "RpcPromise"]);
+const RPC_STUB_NAMES = new Set(["RpcStub", "RpcPromise"]);
 
 /**
  * Built-in classes the capnweb wire format passes by value. Each entry maps a
@@ -257,18 +282,26 @@ const BUILTIN_REJECTED_TYPES: Record<string, string> = {
   Set: "Set is not a capnweb wire type. Use an array instead.",
   WeakMap: "WeakMap is not a capnweb wire type.",
   WeakSet: "WeakSet is not a capnweb wire type.",
-  ArrayBuffer: "ArrayBuffer is not a capnweb wire type. Use Uint8Array instead.",
+  ArrayBuffer:
+    "ArrayBuffer is not a capnweb wire type. Use Uint8Array instead.",
   SharedArrayBuffer: "SharedArrayBuffer is not a capnweb wire type.",
   Int8Array: "Int8Array is not a capnweb wire type. Use Uint8Array instead.",
-  Uint8ClampedArray: "Uint8ClampedArray is not a capnweb wire type. Use Uint8Array instead.",
+  Uint8ClampedArray:
+    "Uint8ClampedArray is not a capnweb wire type. Use Uint8Array instead.",
   Int16Array: "Int16Array is not a capnweb wire type. Use Uint8Array instead.",
-  Uint16Array: "Uint16Array is not a capnweb wire type. Use Uint8Array instead.",
+  Uint16Array:
+    "Uint16Array is not a capnweb wire type. Use Uint8Array instead.",
   Int32Array: "Int32Array is not a capnweb wire type. Use Uint8Array instead.",
-  Uint32Array: "Uint32Array is not a capnweb wire type. Use Uint8Array instead.",
-  Float32Array: "Float32Array is not a capnweb wire type. Use Uint8Array instead.",
-  Float64Array: "Float64Array is not a capnweb wire type. Use Uint8Array instead.",
-  BigInt64Array: "BigInt64Array is not a capnweb wire type. Use Uint8Array instead.",
-  BigUint64Array: "BigUint64Array is not a capnweb wire type. Use Uint8Array instead.",
+  Uint32Array:
+    "Uint32Array is not a capnweb wire type. Use Uint8Array instead.",
+  Float32Array:
+    "Float32Array is not a capnweb wire type. Use Uint8Array instead.",
+  Float64Array:
+    "Float64Array is not a capnweb wire type. Use Uint8Array instead.",
+  BigInt64Array:
+    "BigInt64Array is not a capnweb wire type. Use Uint8Array instead.",
+  BigUint64Array:
+    "BigUint64Array is not a capnweb wire type. Use Uint8Array instead.",
   RegExp: "RegExp is not a capnweb wire type.",
   DataView: "DataView is not a capnweb wire type. Use Uint8Array instead.",
 };
@@ -325,8 +358,9 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     let entryOrShape = beginResolve(ctx, type);
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
-    let branches = (type as ts.UnionType).types
-      .map((t) => resolveType(ctx, t, depth + 1));
+    let branches = (type as ts.UnionType).types.map((t) =>
+      resolveType(ctx, t, depth + 1)
+    );
     let shape = collapseUnion(branches);
     if (shape.kind === "union") shape.id = entry.id;
     return finishResolve(ctx, type, entry, shape);
@@ -336,7 +370,12 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     let entryOrShape = beginResolve(ctx, type);
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
-    return finishResolve(ctx, type, entry, resolveObjectShape(ctx, type, entry, depth));
+    return finishResolve(
+      ctx,
+      type,
+      entry,
+      resolveObjectShape(ctx, type, entry, depth)
+    );
   }
 
   if (checker.isTupleType?.(type)) {
@@ -345,7 +384,11 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     let entry = entryOrShape;
     let args = checker.getTypeArguments(type as ts.TypeReference);
     let elements = args.map((t) => resolveType(ctx, t, depth + 1));
-    return finishResolve(ctx, type, entry, { kind: "tuple", id: entry.id, elements });
+    return finishResolve(ctx, type, entry, {
+      kind: "tuple",
+      id: entry.id,
+      elements,
+    });
   }
 
   // Array detection. Use the checker's well-known helper symbol.
@@ -354,10 +397,15 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
     let args = checker.getTypeArguments(type as ts.TypeReference);
-    let element = args.length > 0
-      ? resolveType(ctx, args[0]!, depth + 1)
-      : { kind: "any" } as TypeShape;
-    return finishResolve(ctx, type, entry, { kind: "array", id: entry.id, element });
+    let element =
+      args.length > 0
+        ? resolveType(ctx, args[0]!, depth + 1)
+        : ({ kind: "any" } as TypeShape);
+    return finishResolve(ctx, type, entry, {
+      kind: "array",
+      id: entry.id,
+      element,
+    });
   }
 
   if (flags & TypeFlags.Object) {
@@ -377,15 +425,23 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
       return finishResolve(ctx, type, entry, { kind: "function" });
     }
 
-    return finishResolve(ctx, type, entry, resolveObjectShape(ctx, type, entry, depth));
+    return finishResolve(
+      ctx,
+      type,
+      entry,
+      resolveObjectShape(ctx, type, entry, depth)
+    );
   }
 
   return { kind: "unsupported", reason: `unsupported type (flags=${flags})` };
 }
 
 function resolveObjectShape(
-    ctx: ResolveContext, type: ts.Type, entry: ResolveEntry,
-    depth: number): TypeShape {
+  ctx: ResolveContext,
+  type: ts.Type,
+  entry: ResolveEntry,
+  depth: number
+): TypeShape {
   let tsm = ctx.tsm;
   let checker = ctx.checker;
   // Generic object: enumerate properties. Methods declared on the type are
@@ -416,7 +472,10 @@ function resolveObjectShape(
   };
 }
 
-function beginResolve(ctx: ResolveContext, type: ts.Type): ResolveEntry | TypeShape {
+function beginResolve(
+  ctx: ResolveContext,
+  type: ts.Type
+): ResolveEntry | TypeShape {
   let existing = ctx.memo.get(type);
   if (existing) {
     if (existing.resolving) {
@@ -435,7 +494,9 @@ function beginResolve(ctx: ResolveContext, type: ts.Type): ResolveEntry | TypeSh
   return entry;
 }
 
-function isResolveEntry(value: ResolveEntry | TypeShape): value is ResolveEntry {
+function isResolveEntry(
+  value: ResolveEntry | TypeShape
+): value is ResolveEntry {
   return !("kind" in value);
 }
 
@@ -446,8 +507,11 @@ function typeName(type: ts.Type): string | undefined {
 }
 
 function finishResolve(
-    ctx: ResolveContext, type: ts.Type, entry: ResolveEntry,
-    shape: TypeShape): TypeShape {
+  ctx: ResolveContext,
+  type: ts.Type,
+  entry: ResolveEntry,
+  shape: TypeShape
+): TypeShape {
   entry.resolving = false;
   entry.shape = shape;
   ctx.memo.set(type, entry);
@@ -489,7 +553,10 @@ function isLibSymbol(sym: ts.Symbol): boolean {
   return false;
 }
 
-function getStubServiceType(ctx: ResolveContext, type: ts.Type): ts.Type | null {
+function getStubServiceType(
+  ctx: ResolveContext,
+  type: ts.Type
+): ts.Type | null {
   let checker = ctx.checker;
   let flags = type.getFlags();
   let { TypeFlags } = ctx.tsm;
@@ -499,12 +566,13 @@ function getStubServiceType(ctx: ResolveContext, type: ts.Type): ts.Type | null 
 
   let sym = type.getSymbol();
   let name = sym?.getName();
-  if (name && CAPNWEB_STUB_NAMES.has(name) && isCapnwebSymbol(sym!)) {
+  if (name && RPC_STUB_NAMES.has(name) && isRpcRuntimeSymbol(sym!)) {
     let args = checker.getTypeArguments(type as ts.TypeReference);
     if (args.length === 1) return args[0]!;
   }
 
-  let brand = checker.getPropertiesOfType(type)
+  let brand = checker
+    .getPropertiesOfType(type)
     .find((prop) => prop.getName() === "__RPC_STUB_BRAND");
   let decl = brand?.valueDeclaration ?? brand?.declarations?.[0];
   if (brand && decl) {
@@ -514,20 +582,21 @@ function getStubServiceType(ctx: ResolveContext, type: ts.Type): ts.Type | null 
   // Walk base types looking for RpcTarget. `getBaseTypes` is only defined on
   // interface/class types; the cast is safe because callers filtered to
   // object-like types upstream.
-  if (extendsRpcTarget(checker, type)) return type;
+  if (extendsRpcReferenceTarget(checker, type)) return type;
   return null;
 }
 
-
 function resolveStubServiceShape(
-    ctx: ResolveContext, type: ts.Type): ServiceShape | undefined {
+  ctx: ResolveContext,
+  type: ts.Type
+): ServiceShape | undefined {
   let flags = type.getFlags();
   let { TypeFlags } = ctx.tsm;
   if (flags & TypeFlags.TypeParameter) return undefined;
   if (flags & TypeFlags.Any) return undefined;
   if (flags & TypeFlags.Unknown) return undefined;
   if (flags & TypeFlags.Never) return undefined;
-  if (type.getSymbol()?.getName() === "RpcTarget") return undefined;
+  if (isBareRpcBaseType(ctx.checker, type)) return undefined;
   return resolveServiceShapeInner(ctx, type) ?? undefined;
 }
 
@@ -537,43 +606,86 @@ function isCapnwebValidateSymbol(sym: ts.Symbol): boolean {
     if (/[\\/]capnweb-validate[\\/]/.test(fileName)) return true;
   }
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
-  return parent !== undefined && (parent.escapedName as string) === '"capnweb-validate"';
+  if (!parent) return false;
+  let name = parent.escapedName as string;
+  return (
+    name === '"capnweb-validate"' || name === '"capnweb-validate/capnweb"'
+  );
 }
 
-function isCapnwebSymbol(sym: ts.Symbol): boolean {
+function isRpcRuntimeSymbol(sym: ts.Symbol): boolean {
   for (let decl of sym.getDeclarations() ?? []) {
     let fileName = decl.getSourceFile().fileName;
-    // Fast path: published package (`node_modules/capnweb/...`) and the
-    // workspace symlink (`packages/capnweb/...`) both put a `capnweb` segment
-    // in the path.
+    // Published/workspace capnweb, and generated Workers types that back
+    // `cloudflare:workers`.
     if (/[\\/]capnweb[\\/]/.test(fileName)) return true;
   }
   // Ambient `declare module "capnweb" { ... }` - covers test fixtures and any
   // user augmentation. Module symbols' `escapedName` is the quoted specifier.
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
   if (parent && (parent.escapedName as string) === '"capnweb"') return true;
+  if (parent && (parent.escapedName as string) === '"cloudflare:workers"')
+    return true;
+  if (parent && (parent.escapedName as string) === "CloudflareWorkersModule")
+    return true;
   return false;
 }
 
-function extendsRpcTarget(checker: ts.TypeChecker, type: ts.Type): boolean {
+function isRpcBaseSymbol(sym: ts.Symbol): boolean {
+  let name = sym.getName();
+  return (
+    (name === "RpcTarget" || name === "WorkerEntrypoint") &&
+    isRpcRuntimeSymbol(sym)
+  );
+}
+
+export function isWorkerEntrypointType(
+  checker: ts.TypeChecker,
+  type: ts.Type
+): boolean {
+  return extendsNamedRpcBase(checker, type, "WorkerEntrypoint");
+}
+
+function isBareRpcBaseType(checker: ts.TypeChecker, type: ts.Type): boolean {
+  let sym = type.getSymbol();
+  return !!sym && isRpcBaseSymbol(sym) && !hasOwnRpcBaseSubclass(checker, type);
+}
+
+function extendsRpcReferenceTarget(
+  checker: ts.TypeChecker,
+  type: ts.Type
+): boolean {
+  return (
+    extendsNamedRpcBase(checker, type, "RpcTarget") ||
+    extendsNamedRpcBase(checker, type, "WorkerEntrypoint")
+  );
+}
+
+function hasOwnRpcBaseSubclass(
+  checker: ts.TypeChecker,
+  type: ts.Type
+): boolean {
+  return extendsRpcReferenceTarget(checker, type);
+}
+
+function extendsNamedRpcBase(
+  _checker: ts.TypeChecker,
+  type: ts.Type,
+  baseName: "RpcTarget" | "WorkerEntrypoint"
+): boolean {
   let seen = new Set<ts.Type>();
   function walk(t: ts.Type): boolean {
     if (seen.has(t)) return false;
     seen.add(t);
     let sym = t.getSymbol();
-    if (sym && sym.getName() === "RpcTarget" && isCapnwebSymbol(sym)) {
+    if (sym && sym.getName() === baseName && isRpcRuntimeSymbol(sym))
       return true;
-    }
     let bases = (t as ts.InterfaceType).getBaseTypes?.() ?? [];
     for (let b of bases) {
       if (walk(b)) return true;
     }
     return false;
   }
-  // Don't treat `RpcTarget` itself as stub-like - that's used as the marker
-  // class on the server side and resolveServiceShape needs to enumerate it.
-  // The check at the call site (`isTooGeneric`) already rejects bare
-  // `RpcTarget`. Here we only flag *subclasses*.
   let bases = (type as ts.InterfaceType).getBaseTypes?.() ?? [];
   for (let b of bases) {
     if (walk(b)) return true;
@@ -582,7 +694,8 @@ function extendsRpcTarget(checker: ts.TypeChecker, type: ts.Type): boolean {
 }
 
 function collapseUnion(branches: TypeShape[]): TypeShape {
-  if (branches.length === 0) return { kind: "unsupported", reason: "empty union" };
+  if (branches.length === 0)
+    return { kind: "unsupported", reason: "empty union" };
   if (branches.length === 1) return branches[0]!;
   return { kind: "union", branches };
 }
@@ -593,7 +706,8 @@ function collapseUnion(branches: TypeShape[]): TypeShape {
  * user sees every offending field at once, with a JSON-pointer-style path.
  */
 export function collectUnsupported(
-    service: ServiceShape): { path: string; reason: string }[] {
+  service: ServiceShape
+): { path: string; reason: string }[] {
   let out: { path: string; reason: string }[] = [];
   let seenServices = new Set<ServiceShape>();
   walkService(service, "");

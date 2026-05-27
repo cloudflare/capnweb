@@ -71,7 +71,7 @@ type TestServiceValidator = {
 
 async function loadValidator(code: string, binding: string): Promise<TestServiceValidator> {
   let rt = await import("../src/internal/runtime.js");
-  let prelude = code.match(/import \* as __rt from "capnweb-validate\/internal";\n([\s\S]*?)\n\s*import\s+/);
+  let prelude = code.match(/import \* as __rt from "capnweb-validate\/internal(?:\/(?:core|capnweb))?";\n([\s\S]*?)\n\s*import\s+/);
   expect(prelude, "validator prelude not found in:\n" + code).not.toBeNull();
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
   return new Function("__rt", `${prelude![1]!}\nreturn ${binding};`)(rt) as TestServiceValidator;
@@ -89,14 +89,31 @@ declare module "capnweb" {
   type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
   type Provider<T> = { readonly [K in keyof T]: T[K] };
   export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
+  export function newHttpBatchRpcSession<T>(
+      url: string | Request, options?: unknown): RpcStub<T>;
+  export function newWebSocketRpcSession<T>(
+      webSocket: WebSocket | string, localMain?: unknown, options?: unknown): RpcStub<T>;
+  export function newMessagePortRpcSession<T>(
+      port: MessagePort, localMain?: unknown, options?: unknown): RpcStub<T>;
   export class RpcSession<T = unknown> {
     constructor(transport: RpcTransport, localMain?: unknown, options?: unknown);
     getRemoteMain(): RpcStub<T>;
   }
 }
+declare module "cloudflare:workers" {
+  export class WorkerEntrypoint<Env = unknown> {}
+  type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
+  type Provider<T> = { readonly [K in keyof T]: T[K] };
+  export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
+}
 declare module "capnweb-validate" {
+  export function validateRpc(...args: unknown[]): unknown;
+  export function skipRpcValidation(...args: unknown[]): unknown;
+}
+declare module "capnweb-validate/capnweb" {
   import type { RpcStub, RpcTransport } from "capnweb";
   export { RpcStub, RpcTransport };
+  export function validateRpc(...args: unknown[]): unknown;
   export function skipRpcValidation(...args: unknown[]): unknown;
   export function newWorkersRpcResponse(
       request: Request, target: object): Promise<Response>;
@@ -124,7 +141,7 @@ describe("transformModule: server boundary rewrite", () => {
   it("rewrites newWorkersRpcResponse and emits a validator for the target type", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("worker.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
         greet(name: string): string { return "hi " + name; }
@@ -139,7 +156,7 @@ describe("transformModule: server boundary rewrite", () => {
     // Marker call site rewritten to the runtime helper.
     expect(code).toContain("__rt.__newWorkersRpcResponseWithValidation(req, new Api()");
     // Runtime import injected.
-    expect(code).toContain(`import * as __rt from "capnweb-validate/internal"`);
+    expect(code).toContain(`import * as __rt from "capnweb-validate/internal/capnweb"`);
     // Server-side validator emitted for the Api shape.
     expect(code).toContain("const __capnweb_validate_Api_server");
     // Greet method's args validator includes the string primitive.
@@ -151,7 +168,7 @@ describe("transformModule: client session rewrite", () => {
   it("rewrites newHttpBatchRpcSession using the explicit type argument", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("client.ts", `
-      import { newHttpBatchRpcSession } from "capnweb-validate";
+      import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Api extends RpcTarget {
         echo(value: string): Promise<string>;
@@ -169,10 +186,27 @@ describe("transformModule: client session rewrite", () => {
     expect(code).toMatch(/echo[^}]*returns:\s*__rt\.v\.string/s);
   });
 
+  it("rewrites Cap'n Web client imports without marker APIs", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("client-capnweb.ts", `
+      import { newHttpBatchRpcSession, RpcTarget } from "capnweb";
+      interface Api extends RpcTarget {
+        echo(value: string): Promise<string>;
+      }
+      export const api = newHttpBatchRpcSession<Api>("/rpc");
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toMatch(/__rt\.__newHttpBatchRpcSessionWithValidation<Api>\("\/rpc"/);
+    expect(code).toContain("const __capnweb_validate_Api_client");
+    expect(code).toMatch(/echo[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
+  });
+
   it("rewrites `new RpcSession<T>(transport)` into a call helper", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("session.ts", `
-      import { RpcSession, RpcTransport } from "capnweb-validate";
+      import { RpcSession, RpcTransport } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Api extends RpcTarget {
         ping(value: number): Promise<number>;
@@ -195,7 +229,7 @@ describe("transformModule: client session rewrite", () => {
   it("throws when `new RpcSession` has no resolvable type argument", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("bad-session.ts", `
-      import { RpcSession, RpcTransport } from "capnweb-validate";
+      import { RpcSession, RpcTransport } from "capnweb-validate/capnweb";
       export function open(t: RpcTransport) {
         return new RpcSession(t);
       }
@@ -204,12 +238,119 @@ describe("transformModule: client session rewrite", () => {
   });
 });
 
+describe("transformModule: decorator rewrite", () => {
+  it("rewrites @validateRpc() and uses the capnweb-free runtime", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("decorator.ts", `
+      import { validateRpc } from "capnweb-validate";
+      import { RpcTarget } from "capnweb";
+      @validateRpc()
+      class Api extends RpcTarget {
+        greet(name: string): string { return "hi " + name; }
+      }
+      export { Api };
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toContain(`import * as __rt from "capnweb-validate/internal/core"`);
+    expect(code).toContain("@__rt.__validateRpcClass(__capnweb_validate_Api_server)");
+    expect(code).toContain("const __capnweb_validate_Api_server");
+    expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
+  });
+
+  it("supports the bare @validateRpc spelling", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("bare-decorator.ts", `
+      import { validateRpc } from "capnweb-validate";
+      import { RpcTarget } from "capnweb";
+      @validateRpc
+      class Api extends RpcTarget {
+        ping(): string { return "pong"; }
+      }
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toContain("@__rt.__validateRpcClass(__capnweb_validate_Api_server)");
+    expect(code).toMatch(/ping[^}]*returns:\s*__rt\.v\.string/s);
+  });
+
+  it("uses an explicit decorator type argument as the RPC surface", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("decorator-interface.ts", `
+      import { validateRpc } from "capnweb-validate";
+      import { RpcTarget } from "capnweb";
+      interface PublicApi {
+        greet(name: string): string;
+      }
+      @validateRpc<PublicApi>()
+      class Api extends RpcTarget {
+        greet(name: string): string { return "hi " + name; }
+        helper(value: number): number { return value; }
+      }
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toContain("const __capnweb_validate_PublicApi_server");
+    expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
+    expect(code).not.toMatch(/helper[^}]*args:/s);
+  });
+
+  it("uses a single implemented interface and applies method opt-outs", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("decorator-implements.ts", `
+      import { validateRpc, skipRpcValidation } from "capnweb-validate";
+      import { RpcTarget } from "capnweb";
+      interface PublicApi {
+        greet(name: string): string;
+        unsafe(value: Map<string, number>): number;
+      }
+      @validateRpc()
+      class Api extends RpcTarget implements PublicApi {
+        greet(name: string): string { return "hi " + name; }
+        @skipRpcValidation()
+        unsafe(value: Map<string, number>): number { return value.size; }
+        helper(value: number): number { return value; }
+      }
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toContain('"unsafe": { unchecked: true }');
+    expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
+    expect(code).not.toMatch(/helper[^}]*args:/s);
+  });
+
+  it("emits worker entrypoint metadata for lifecycle pass-through", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("worker-entrypoint.ts", `
+      import { validateRpc } from "capnweb-validate";
+      import { WorkerEntrypoint } from "cloudflare:workers";
+      interface Env {}
+      interface PublicApi {
+        describe(): string;
+      }
+      @validateRpc()
+      export class Api extends WorkerEntrypoint<Env> implements PublicApi {
+        describe(): string { return "ok"; }
+      }
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toContain('targetKind: "workerEntrypoint"');
+    expect(code).toMatch(/describe[^}]*returns:\s*__rt\.v\.string/s);
+  });
+});
+
 // One fixture per kind keeps assertions focused; the file-per-test pattern
 // matches the rest of this suite.
 describe("transformModule: wire-supported kinds", () => {
   function buildServer(name: string, fields: string): string {
     return `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class ${name} extends RpcTarget {
         ${fields}
@@ -248,7 +389,7 @@ describe("transformModule: wire-supported kinds", () => {
   it("accepts RpcTarget subclasses as `stub`", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("stub.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Inner extends RpcTarget {
         ping(): string { return "pong"; }
@@ -270,7 +411,7 @@ describe("transformModule: wire-supported kinds", () => {
   it("recognizes RpcStub aliases as pass-by-reference stubs", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("stub-alias.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       import type { RpcStub as Stub } from "capnweb";
       interface Inner extends RpcTarget {
@@ -292,7 +433,7 @@ describe("transformModule: wire-supported kinds", () => {
   it("widens optional properties to `T | undefined` in plain objects", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("optional.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Profile { name: string; nickname?: string; }
       class Api extends RpcTarget {
@@ -322,7 +463,7 @@ describe("transformModule: marker helper coverage", () => {
     it(`rewrites ${marker}`, () => {
       write("capnweb.d.ts", CAPNWEB_SHIM);
       let src = write(`${marker}.ts`, `
-        import { ${marker} } from "capnweb-validate";
+        import { ${marker} } from "capnweb-validate/capnweb";
         import { RpcTarget } from "capnweb";
         class Api extends RpcTarget {
           ping(value: string): string { return value; }
@@ -352,7 +493,7 @@ describe("transformModule: marker helper coverage", () => {
       write("capnweb.d.ts", CAPNWEB_SHIM);
       let importName = marker === "RpcSession" ? "RpcSession, RpcTransport" : marker;
       let src = write(`${marker}.ts`, `
-        import { ${importName} } from "capnweb-validate";
+        import { ${importName} } from "capnweb-validate/capnweb";
         import { RpcTarget } from "capnweb";
         interface Api extends RpcTarget {
           ping(value: string): Promise<string>;
@@ -378,7 +519,7 @@ describe("transformModule: primitive matrix", () => {
   it("emits runtime validators for primitive and permissive leaves", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("primitive-matrix.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       type Literal = "ok" | 7 | true;
       class Api extends RpcTarget {
@@ -424,7 +565,7 @@ describe("transformModule: container validation", () => {
   it("validates nested arrays, objects, unions, and tuples", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("containers.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Meta { active: boolean; }
       interface Profile { name: string; meta: Meta; }
@@ -463,7 +604,7 @@ describe("transformModule: rest parameters", () => {
   it("validates rest parameters as variadic RPC arguments", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("rest.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
         join(prefix: string, ...parts: string[]): string { return prefix + parts.join(""); }
@@ -488,7 +629,7 @@ describe("transformModule: rest parameters", () => {
   it("expands tuple rest parameters into positional validators", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("tuple-rest.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
         pair(...args: [string, number]): void {}
@@ -516,7 +657,7 @@ describe("transformModule: resolved TypeScript shapes", () => {
   it("lowers Omit, Pick, Partial, intersections, and aliases", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("utility-types.ts", `
-      import { newHttpBatchRpcSession } from "capnweb-validate";
+      import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       type User = { id: string; name: string; secret: boolean };
       type PublicUser = Omit<User, "secret">;
@@ -551,7 +692,7 @@ describe("transformModule: dictionary shapes", () => {
   it("supports string dictionaries and documents numeric index signatures", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("dictionary.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Bag { known: string; [key: string]: string; }
       interface NumericBag { length: number; [index: number]: string; }
@@ -609,7 +750,7 @@ describe("transformModule: rejected built-ins", () => {
     it(`rejects ${label} with a pointed error`, () => {
       write("capnweb.d.ts", CAPNWEB_SHIM);
       let src = write(`reject-${label}.ts`, `
-        import { newWorkersRpcResponse } from "capnweb-validate";
+        import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
         import { RpcTarget } from "capnweb";
         class Api extends RpcTarget {
           ${sig} {}
@@ -625,7 +766,7 @@ describe("transformModule: rejected built-ins", () => {
   it("allows a method to opt out with @skipRpcValidation", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("skip-validation.ts", `
-      import { newWorkersRpcResponse, skipRpcValidation } from "capnweb-validate";
+      import { newWorkersRpcResponse, skipRpcValidation } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
         @skipRpcValidation
@@ -667,7 +808,7 @@ describe("transformModule: recursive types", () => {
   it("emits lazy validators for direct object recursion", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("recursive-node.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Node {
         value: string;
@@ -691,7 +832,7 @@ describe("transformModule: recursive types", () => {
   it("emits lazy validators for mutual recursion", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("mutual-recursive.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface User { name: string; group: Group; }
       interface Group { name: string; members: User[]; }
@@ -712,7 +853,7 @@ describe("transformModule: recursive types", () => {
   it("emits lazy validators for recursive union aliases", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("recursive-union.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       type Json = string | Json[];
       class Api extends RpcTarget {
@@ -733,7 +874,7 @@ describe("transformModule: recursive types", () => {
   it("still reports unsupported leaves inside recursive types", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("recursive-unsupported.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Node {
         children: Node[];
@@ -753,7 +894,7 @@ describe("transformModule: recursive types", () => {
   it("still reports unsupported union branches", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("unsupported-union.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
         set(value: string | Map<string, number>): void {}
@@ -771,7 +912,7 @@ describe("transformModule: dedup", () => {
   it("emits a single validator when one service is referenced twice", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("twice.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
         ping(): string { return "pong"; }
@@ -796,7 +937,7 @@ describe("transformModule: dedup", () => {
   it("suffixes validators for same-name service collisions", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("same-name.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       namespace One {
         export class Api extends RpcTarget {
@@ -831,7 +972,7 @@ describe("transformModule: failure modes", () => {
   it("throws when the server target is a bare RpcTarget", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("bad-server.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       export function h(req: Request, t: RpcTarget): Response {
         return newWorkersRpcResponse(req, t);
@@ -844,7 +985,7 @@ describe("transformModule: failure modes", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     // No type argument and no contextual type, so T stays generic.
     let src = write("bad-client.ts", `
-      import { newHttpBatchRpcSession } from "capnweb-validate";
+      import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
       export const api = newHttpBatchRpcSession("/rpc");
     `);
     expect(() => transform(src)).toThrow(/could not resolve a concrete service type/);
@@ -859,7 +1000,7 @@ describe("transformModule: runtime behavior", () => {
   it("emitted server validator rejects mistyped args", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("server.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
         greet(name: string): string { return "hi " + name; }
@@ -945,6 +1086,23 @@ describe("transformModule: runtime behavior", () => {
   });
 
 
+
+  it("server wrapper passes through WorkerEntrypoint lifecycle methods", async () => {
+    let rt = await import("../src/internal/runtime.js");
+    let target = {
+      fetch(): string { return "ok"; },
+      rpc(): string { return "bad"; },
+    };
+    let validator = {
+      serviceName: "Api",
+      targetKind: "workerEntrypoint" as const,
+      methods: {},
+    };
+    let wrapped = rt.wrapServerTarget(target, validator);
+
+    expect(wrapped.fetch()).toBe("ok");
+    expect(() => wrapped.rpc()).toThrow(RpcValidationError);
+  });
 
   it("client wrapper rejects methods missing from the validator", async () => {
     let rt = await import("../src/internal/runtime.js");
@@ -1134,7 +1292,7 @@ describe("transformModule: runtime behavior", () => {
   it("emitted recursive validator follows lazy back-references", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("recursive-runtime.ts", `
-      import { newWorkersRpcResponse } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Node { value: string; children: Node[]; }
       class Api extends RpcTarget {
@@ -1147,7 +1305,7 @@ describe("transformModule: runtime behavior", () => {
 
     let { code } = transform(src);
     let rt = await import("../src/internal/runtime.js");
-    let prelude = code.match(/import \* as __rt from "capnweb-validate\/internal";\n([\s\S]*?)\n\s*import\s+/);
+    let prelude = code.match(/import \* as __rt from "capnweb-validate\/internal(?:\/(?:core|capnweb))?";\n([\s\S]*?)\n\s*import\s+/);
     expect(prelude, "validator prelude not found in:\n" + code).not.toBeNull();
     // eslint-disable-next-line @typescript-eslint/no-implied-eval
     let validator = new Function("__rt", `${prelude![1]!}\nreturn __capnweb_validate_Api_server;`)(rt) as {

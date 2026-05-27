@@ -13,7 +13,10 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
+      'capnweb-validate/internal/capnweb': path.resolve(repoRoot, 'packages/capnweb-validate/src/internal/capnweb.ts'),
+      'capnweb-validate/internal/core': path.resolve(repoRoot, 'packages/capnweb-validate/src/internal/core.ts'),
       'capnweb-validate/internal': path.resolve(repoRoot, 'packages/capnweb-validate/src/internal/runtime.ts'),
+      'capnweb-validate/capnweb': path.resolve(repoRoot, 'packages/capnweb-validate/src/capnweb.ts'),
       'capnweb-validate': path.resolve(repoRoot, 'packages/capnweb-validate/src/index.ts'),
       'capnweb': path.resolve(repoRoot, 'src/index.ts'),
     },

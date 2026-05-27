@@ -7,6 +7,7 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   entry: [
     "src/index.ts",
+    "src/capnweb.ts",
     "src/cli.ts",
     // Universal plugin and per-bundler shim entry points. Each shim re-
     // exports the matching adapter from `unplugin` so users can pick the
@@ -22,6 +23,8 @@ export default defineConfig({
     // "capnweb-validate/internal" into user modules; users never import
     // this subpath directly.
     "src/internal/runtime.ts",
+    "src/internal/core.ts",
+    "src/internal/capnweb.ts",
   ],
   format: ["esm", "cjs"],
   dts: true,

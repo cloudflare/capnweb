@@ -44,6 +44,7 @@ The Vite dev server proxies `/api` to `http://127.0.0.1:8787`.
 Use the `validate: debug all` launch configuration. It starts Wrangler and Vite without the old helper shell scripts.
 
 Worker validation output is generated under `.wrangler/validate/worker.ts`.
+The React client is transformed by the Vite plugin, not by the Wrangler CLI build step.
 
 ## Tuning delays
 

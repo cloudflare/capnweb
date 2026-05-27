@@ -2,9 +2,9 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// Per-module transform for marker imports from "capnweb-validate". It
-// resolves the service type, emits a private validator, imports the internal
-// runtime, and rewrites marker calls to runtime helpers.
+// Per-module transform for capnweb-validate decorators and Cap'n Web client
+// session calls. It resolves service types, emits private validators, imports
+// the internal runtime, and rewrites marker syntax to runtime helpers.
 
 import ts from "typescript";
 
@@ -12,6 +12,7 @@ import type { TransformContext } from "./context.js";
 import { emitValidator } from "./emit.js";
 import {
   collectUnsupported,
+  isWorkerEntrypointType,
   resolveServiceShape,
   type ServiceShape,
   type TypeShape,
@@ -28,10 +29,9 @@ type TextEdit = {
 };
 
 function applyTextEdits(code: string, edits: TextEdit[]): string {
-  // The transform emits plain code without a source map. The CLI writes the
-  // transformed files to disk, and plugin users see diagnostics in the
-  // transformed module.
-  let ordered = edits.slice().sort((a, b) => b.start - a.start || b.end - a.end);
+  let ordered = edits
+    .slice()
+    .sort((a, b) => b.start - a.start || b.end - a.end);
   assertValidTextEdits(code, ordered);
 
   let out = code;
@@ -44,7 +44,9 @@ function applyTextEdits(code: string, edits: TextEdit[]): string {
 function assertValidTextEdits(code: string, ordered: TextEdit[]): void {
   for (let edit of ordered) {
     if (edit.start < 0 || edit.end < edit.start || edit.end > code.length) {
-      throw new Error(`capnweb-validate: invalid text edit [${edit.start},${edit.end})`);
+      throw new Error(
+        `capnweb-validate: invalid text edit [${edit.start},${edit.end})`
+      );
     }
   }
   for (let i = 1; i < ordered.length; i++) {
@@ -56,121 +58,162 @@ function assertValidTextEdits(code: string, ordered: TextEdit[]): void {
     if (left.end > right.start) {
       throw new Error(
         `capnweb-validate: overlapping text edits ` +
-        `[${left.start},${left.end}) and [${right.start},${right.end})`,
+          `[${left.start},${left.end}) and [${right.start},${right.end})`
       );
     }
   }
 }
 
-/**
- * Marker imports we recognise. `side` picks which Proxy to install (server
- * wraps the target; client wraps the returned stub). `form` distinguishes
- * factory calls (`fn(...)`) from the one constructor (`new RpcSession<T>(...)`).
- * `targetArgIndex` only matters on the server side; client sites read the
- * service type from the call's type argument / return type instead.
- */
-const MARKERS: Record<string, {
-  side: "server" | "client";
-  helper: string;
-  targetArgIndex: number;
-  form: "call" | "new";
-}> = {
-  // Server boundaries: target argument is the user's RpcTarget instance.
-  newWorkersRpcResponse:           { side: "server", form: "call", helper: "__newWorkersRpcResponseWithValidation",           targetArgIndex: 1 },
-  newWorkersWebSocketRpcResponse:  { side: "server", form: "call", helper: "__newWorkersWebSocketRpcResponseWithValidation",  targetArgIndex: 1 },
-  newHttpBatchRpcResponse:         { side: "server", form: "call", helper: "__newHttpBatchRpcResponseWithValidation",         targetArgIndex: 1 },
-  nodeHttpBatchRpcResponse:        { side: "server", form: "call", helper: "__nodeHttpBatchRpcResponseWithValidation",        targetArgIndex: 2 },
-  // Client sessions: the remote service type is the explicit type argument
-  // (or contextual). The call's return type is `RpcStub<T>`.
-  newHttpBatchRpcSession:    { side: "client", form: "call", helper: "__newHttpBatchRpcSessionWithValidation",    targetArgIndex: -1 },
-  newWebSocketRpcSession:    { side: "client", form: "call", helper: "__newWebSocketRpcSessionWithValidation",    targetArgIndex: -1 },
-  newMessagePortRpcSession:  { side: "client", form: "call", helper: "__newMessagePortRpcSessionWithValidation",  targetArgIndex: -1 },
-  // The one constructor form: `new RpcSession<T>(transport)` becomes a plain
-  // call to a helper that returns a session-shaped Proxy (so users keep
-  // `.getRemoteMain()` / `.drain()` etc). Return type of the call is the
-  // session itself, not `RpcStub<T>`, so the client resolver unwraps the
-  // session's `getRemoteMain` return rather than the call return directly.
-  RpcSession:                { side: "client", form: "new",  helper: "__newRpcSessionWithValidation",              targetArgIndex: -1 },
+const PACKAGE_NAME = "capnweb-validate";
+const CAPNWEB_MARKER_PACKAGE_NAME = "capnweb-validate/capnweb";
+const CAPNWEB_PACKAGE_NAME = "capnweb";
+const RUNTIME_NAMESPACE = "__rt";
+
+const CORE_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/core";\n`;
+const CAPNWEB_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/capnweb";\n`;
+
+const MARKERS: Record<
+  string,
+  {
+    side: "server" | "client";
+    helper: string;
+    targetArgIndex: number;
+    form: "call" | "new";
+  }
+> = {
+  newWorkersRpcResponse: {
+    side: "server",
+    form: "call",
+    helper: "__newWorkersRpcResponseWithValidation",
+    targetArgIndex: 1,
+  },
+  newWorkersWebSocketRpcResponse: {
+    side: "server",
+    form: "call",
+    helper: "__newWorkersWebSocketRpcResponseWithValidation",
+    targetArgIndex: 1,
+  },
+  newHttpBatchRpcResponse: {
+    side: "server",
+    form: "call",
+    helper: "__newHttpBatchRpcResponseWithValidation",
+    targetArgIndex: 1,
+  },
+  nodeHttpBatchRpcResponse: {
+    side: "server",
+    form: "call",
+    helper: "__nodeHttpBatchRpcResponseWithValidation",
+    targetArgIndex: 2,
+  },
+  newHttpBatchRpcSession: {
+    side: "client",
+    form: "call",
+    helper: "__newHttpBatchRpcSessionWithValidation",
+    targetArgIndex: -1,
+  },
+  newWebSocketRpcSession: {
+    side: "client",
+    form: "call",
+    helper: "__newWebSocketRpcSessionWithValidation",
+    targetArgIndex: -1,
+  },
+  newMessagePortRpcSession: {
+    side: "client",
+    form: "call",
+    helper: "__newMessagePortRpcSessionWithValidation",
+    targetArgIndex: -1,
+  },
+  RpcSession: {
+    side: "client",
+    form: "new",
+    helper: "__newRpcSessionWithValidation",
+    targetArgIndex: -1,
+  },
 };
 
-const PACKAGE_NAME = "capnweb-validate";
-const RUNTIME_NAMESPACE = "__rt";
-const RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal";\n`;
+const CAPNWEB_CLIENT_MARKERS = new Set([
+  "newHttpBatchRpcSession",
+  "newWebSocketRpcSession",
+  "newMessagePortRpcSession",
+  "RpcSession",
+]);
 
 export function transformModule(
-    context: TransformContext, id: string, code: string): TransformResult | null {
-  // Fast bail-out: handled by the plugin too, but cheap to re-check.
-  if (!code.includes(PACKAGE_NAME)) return null;
-
-  let sourceFile = context.getSourceFile(id);
-  if (!sourceFile) {
-    // The file isn't in the Program (e.g. it's a virtual module Vite handed
-    // us that tsc never saw). Skip rather than fabricate a parse.
+  context: TransformContext,
+  id: string,
+  code: string
+): TransformResult | null {
+  if (!code.includes(PACKAGE_NAME) && !code.includes(CAPNWEB_PACKAGE_NAME)) {
     return null;
   }
+
+  let sourceFile = context.getSourceFile(id);
+  if (!sourceFile) return null;
   let checker = context.getChecker();
 
-  // Step 2: collect marker bindings imported from the package.
-  let bindings = collectMarkerBindings(sourceFile);
-  if (bindings.size === 0) return null;
+  let markerBindings = collectMarkerBindings(sourceFile);
+  let decoratorBindings = collectDecoratorBindings(sourceFile);
 
-  // Step 3+4: find call sites and resolve service shapes.
-  let callSites = collectCallSites(sourceFile, bindings, checker);
-  if (callSites.length === 0) return null;
+  let callSites = [
+    ...collectMarkerCallSites(sourceFile, markerBindings, checker),
+    ...collectCapnwebClientCallSites(sourceFile, checker),
+  ];
+  let decoratorSites = collectDecoratorSites(
+    sourceFile,
+    decoratorBindings,
+    checker
+  );
 
-  // Step 5: dedup validators by (serviceName, side). Same-name collisions
-  // within a module across distinct types are resolved with a numeric suffix.
+  if (callSites.length === 0 && decoratorSites.length === 0) return null;
+
   let dedup = new ValidatorDedup();
-  for (let cs of callSites) {
-    cs.bindingName = dedup.bind(cs.shape, cs.side);
+  for (let site of callSites) {
+    site.bindingName = dedup.bind(site.shape, site.side);
+  }
+  for (let site of decoratorSites) {
+    site.bindingName = dedup.bind(site.shape, "server");
   }
 
   let edits: TextEdit[] = [];
-
-  // Prepend the runtime import and emitted validators. Source outside this
-  // prelude is left intact.
-  let prelude = RUNTIME_IMPORT;
+  let needsCapnwebRuntime = callSites.length > 0;
+  let prelude = needsCapnwebRuntime
+    ? CAPNWEB_RUNTIME_IMPORT
+    : CORE_RUNTIME_IMPORT;
   for (let entry of dedup.emitOrder()) {
     prelude += emitValidator(entry.bindingName, entry.shape) + "\n";
   }
   edits.push({ start: 0, end: 0, text: prelude });
 
-  // Rewrite each call site:  marker(...args)  →  __rt.helper(...args, validator)
-  // The same rewrite handles the `new RpcSession<T>(...)` form because we
-  // overwrite from `new`'s start through the callee identifier's end, turning
-  // the whole NewExpression head into a function call. Type arguments and
-  // the original argument list (including any trailing whitespace / comments
-  // we don't want to disturb) survive untouched.
   for (let cs of callSites) {
     let callee = cs.call.expression;
-    let headStart = cs.marker.form === "new"
-        ? cs.call.getStart(sourceFile)   // includes the `new ` keyword
+    let headStart =
+      cs.marker.form === "new"
+        ? cs.call.getStart(sourceFile)
         : callee.getStart(sourceFile);
     edits.push({
       start: headStart,
       end: callee.getEnd(),
       text: `${RUNTIME_NAMESPACE}.${cs.marker.helper}`,
     });
-    // Append the validator before the closing paren. NewExpression may omit
-    // parens entirely (`new Foo`); the resolver rejected those upstream, so
-    // by this point `arguments` is defined and the call ends with `)`.
     let closeParenPos = cs.call.getEnd() - 1;
     let hasArgs = (cs.call.arguments?.length ?? 0) > 0;
     let insertion = hasArgs ? `, ${cs.bindingName!}` : `${cs.bindingName!}`;
     edits.push({ start: closeParenPos, end: closeParenPos, text: insertion });
   }
 
+  for (let site of decoratorSites) {
+    edits.push({
+      start: site.decorator.expression.getStart(sourceFile),
+      end: site.decorator.expression.getEnd(),
+      text: `${RUNTIME_NAMESPACE}.__validateRpcClass(${site.bindingName!})`,
+    });
+  }
+
   return { code: applyTextEdits(code, edits) };
 }
 
-// ---------------------------------------------------------------------------
-// Step 2: marker bindings.
-// ---------------------------------------------------------------------------
-
 type MarkerBinding = {
-  /** Local name as used in this file (after `import { foo as bar }`). */
   localName: string;
-  /** The marker as exported by the package. */
   markerName: keyof typeof MARKERS;
 };
 
@@ -179,10 +222,12 @@ function collectMarkerBindings(sf: ts.SourceFile): Map<string, MarkerBinding> {
   for (let stmt of sf.statements) {
     if (!ts.isImportDeclaration(stmt)) continue;
     let mod = stmt.moduleSpecifier;
-    if (!ts.isStringLiteral(mod) || mod.text !== PACKAGE_NAME) continue;
+    if (!ts.isStringLiteral(mod)) continue;
+    if (mod.text !== CAPNWEB_MARKER_PACKAGE_NAME && mod.text !== PACKAGE_NAME)
+      continue;
     let clause = stmt.importClause;
-    if (!clause || !clause.namedBindings) continue;
-    if (!ts.isNamedImports(clause.namedBindings)) continue;
+    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings))
+      continue;
     for (let spec of clause.namedBindings.elements) {
       let imported = (spec.propertyName ?? spec.name).text;
       if (!(imported in MARKERS)) continue;
@@ -195,82 +240,93 @@ function collectMarkerBindings(sf: ts.SourceFile): Map<string, MarkerBinding> {
   return result;
 }
 
-// ---------------------------------------------------------------------------
-// Step 3 + 4: call sites + service shape resolution.
-// ---------------------------------------------------------------------------
+function collectDecoratorBindings(sf: ts.SourceFile): Set<string> {
+  let result = new Set<string>();
+  for (let stmt of sf.statements) {
+    if (!ts.isImportDeclaration(stmt)) continue;
+    let mod = stmt.moduleSpecifier;
+    if (!ts.isStringLiteral(mod)) continue;
+    if (mod.text !== PACKAGE_NAME && mod.text !== CAPNWEB_MARKER_PACKAGE_NAME)
+      continue;
+    let clause = stmt.importClause;
+    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings))
+      continue;
+    for (let spec of clause.namedBindings.elements) {
+      let imported = (spec.propertyName ?? spec.name).text;
+      if (imported === "validateRpc") result.add(spec.name.text);
+    }
+  }
+  return result;
+}
 
 type CallSite = {
-  /**
-   * Either `marker(...)` or `new RpcSession<T>(...)`. Both nodes expose the
-   * same `expression` / `typeArguments` / `arguments` / position APIs the
-   * rewriter uses, so the rest of the pipeline doesn't branch on form.
-   */
   call: ts.CallExpression | ts.NewExpression;
   marker: (typeof MARKERS)[keyof typeof MARKERS];
   side: "server" | "client";
   shape: ServiceShape;
-  /** Filled in during dedup. */
   bindingName?: string;
 };
 
-function collectCallSites(
-    sf: ts.SourceFile,
-    bindings: Map<string, MarkerBinding>,
-    checker: ts.TypeChecker): CallSite[] {
-  let out: CallSite[] = [];
+type DecoratorSite = {
+  decorator: ts.Decorator;
+  cls: ts.ClassDeclaration;
+  shape: ServiceShape;
+  bindingName?: string;
+};
 
+function collectMarkerCallSites(
+  sf: ts.SourceFile,
+  bindings: Map<string, MarkerBinding>,
+  checker: ts.TypeChecker
+): CallSite[] {
+  let out: CallSite[] = [];
   function visit(node: ts.Node): void {
-    // Both call and new sites share the same identifier-callable shape; the
-    // marker entry's `form` tells us which one we expect. A `new` site
-    // without parens (`new RpcSession`) is rejected as unresolvable because
-    // we can't append a validator with no argument list to anchor on.
     let isCall = ts.isCallExpression(node) && ts.isIdentifier(node.expression);
-    let isNew  = ts.isNewExpression(node)  && ts.isIdentifier(node.expression)
-                  && node.arguments !== undefined;
+    let isNew =
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.arguments !== undefined;
     if (isCall || isNew) {
       let call = node as ts.CallExpression | ts.NewExpression;
       let binding = bindings.get((call.expression as ts.Identifier).text);
-      if (binding) {
-        let marker = MARKERS[binding.markerName];
-        let expected = marker.form;
+      if (binding)
+        pushCallSite(
+          out,
+          sf,
+          call,
+          MARKERS[binding.markerName],
+          binding.localName,
+          checker
+        );
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return out;
+}
+
+function collectCapnwebClientCallSites(
+  sf: ts.SourceFile,
+  checker: ts.TypeChecker
+): CallSite[] {
+  let out: CallSite[] = [];
+  function visit(node: ts.Node): void {
+    let isCall = ts.isCallExpression(node) && ts.isIdentifier(node.expression);
+    let isNew =
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.arguments !== undefined;
+    if (isCall || isNew) {
+      let call = node as ts.CallExpression | ts.NewExpression;
+      let name = (call.expression as ts.Identifier).text;
+      if (
+        CAPNWEB_CLIENT_MARKERS.has(name) &&
+        isCapnwebSymbolAt(checker, call.expression)
+      ) {
+        let marker = MARKERS[name]!;
         let actual: "call" | "new" = isNew ? "new" : "call";
-        // Mismatch is a real user error - `new newWorkersRpcResponse(...)`
-        // or calling `RpcSession(...)` without `new` both leave us nothing
-        // sensible to do. Fall through (don't push) so TypeScript surfaces
-        // the underlying signature error instead of a confusing transform
-        // error; the value-side import is `uncompiledMarker`, which throws
-        // at runtime if a misuse somehow reaches it.
-        if (expected !== actual) {
-          ts.forEachChild(node, visit);
-          return;
-        }
-        let shape = resolveCallSiteShape(call, marker, checker);
-        if (shape === null) {
-          let hint = marker.side === "server"
-            ? `Annotate the target argument with a specific RPC service type ` +
-              `(e.g. \`new MyApi(env)\` or \`const target: MyApi = ...\`).`
-            : marker.form === "new"
-              ? `Annotate the constructor with a specific RPC service type ` +
-                `(e.g. \`new ${binding.localName}<MyApi>(transport)\`).`
-              : `Annotate the call with a specific RPC service type ` +
-                `(e.g. \`${binding.localName}<MyApi>("/rpc")\` or ` +
-                `\`const api: RpcStub<MyApi> = ...\`).`;
-          throw buildError(sf, call,
-            `capnweb-validate: could not resolve a concrete service type for ` +
-            `\`${binding.localName}(...)\`. ${hint}`,
-          );
-        }
-        let bad = collectUnsupported(shape);
-        if (bad.length > 0) {
-          // List every offending leaf so the user can fix them in one pass
-          // rather than rebuilding once per field.
-          let detail = bad.map(b => `  - ${b.path}: ${b.reason}`).join("\n");
-          throw buildError(sf, call,
-            `capnweb-validate: \`${binding.localName}(...)\` references types ` +
-            `that capnweb cannot transport. Fix or replace these fields:\n${detail}`,
-          );
-        }
-        out.push({ call, marker, side: marker.side, shape });
+        if (marker.form === actual)
+          pushCallSite(out, sf, call, marker, name, checker);
       }
     }
     ts.forEachChild(node, visit);
@@ -279,19 +335,247 @@ function collectCallSites(
   return out;
 }
 
+function pushCallSite(
+  out: CallSite[],
+  sf: ts.SourceFile,
+  call: ts.CallExpression | ts.NewExpression,
+  marker: (typeof MARKERS)[keyof typeof MARKERS],
+  localName: string,
+  checker: ts.TypeChecker
+): void {
+  let expected = marker.form;
+  let actual: "call" | "new" = ts.isNewExpression(call) ? "new" : "call";
+  if (expected !== actual) return;
+  let shape = resolveCallSiteShape(call, marker, checker);
+  if (shape === null) {
+    throw buildError(
+      sf,
+      call,
+      `capnweb-validate: could not resolve a concrete service type for ` +
+        `\`${localName}(...)\`. Annotate the call with a specific RPC service type.`
+    );
+  }
+  rejectUnsupported(sf, call, localName, shape);
+  out.push({ call, marker, side: marker.side, shape });
+}
+
+function collectDecoratorSites(
+  sf: ts.SourceFile,
+  decoratorBindings: Set<string>,
+  checker: ts.TypeChecker
+): DecoratorSite[] {
+  let out: DecoratorSite[] = [];
+  if (decoratorBindings.size === 0) return out;
+
+  function visit(node: ts.Node): void {
+    if (ts.isClassDeclaration(node)) {
+      for (let decorator of ts.getDecorators(node) ?? []) {
+        if (!isValidateRpcDecorator(decorator, decoratorBindings)) continue;
+        let shape = resolveDecoratorShape(sf, node, decorator, checker);
+        rejectUnsupported(sf, decorator, "validateRpc", shape);
+        out.push({ decorator, cls: node, shape });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return out;
+}
+
+function isValidateRpcDecorator(
+  decorator: ts.Decorator,
+  bindings: Set<string>
+): boolean {
+  let expression = decorator.expression;
+  if (ts.isCallExpression(expression)) expression = expression.expression;
+  return ts.isIdentifier(expression) && bindings.has(expression.text);
+}
+
+function resolveDecoratorShape(
+  sf: ts.SourceFile,
+  cls: ts.ClassDeclaration,
+  decorator: ts.Decorator,
+  checker: ts.TypeChecker
+): ServiceShape {
+  let classType = getClassInstanceType(cls, checker);
+  let type =
+    getDecoratorTypeArgument(decorator, checker) ??
+    getSingleImplementedType(sf, cls, decorator, checker) ??
+    classType;
+  if (isTooGeneric(type)) {
+    throw buildError(
+      sf,
+      decorator,
+      `capnweb-validate: could not resolve a concrete service type for @validateRpc.`
+    );
+  }
+  let resolved = resolveServiceShape(ts, checker, type);
+  if (resolved === null) {
+    throw buildError(
+      sf,
+      decorator,
+      `capnweb-validate: could not resolve a concrete service type for @validateRpc.`
+    );
+  }
+  let shape = cloneServiceShape(resolved);
+  let skipped = collectClassSkipRpcValidationMethods(cls, checker);
+  if (skipped.size > 0) shape = applySkippedMethods(shape, skipped);
+  if (isWorkerEntrypointType(checker, classType)) {
+    shape.targetKind = "workerEntrypoint";
+  }
+  return shape;
+}
+
+function getDecoratorTypeArgument(
+  decorator: ts.Decorator,
+  checker: ts.TypeChecker
+): ts.Type | null {
+  let expression = decorator.expression;
+  if (!ts.isCallExpression(expression)) return null;
+  let arg = expression.typeArguments?.[0];
+  return arg ? checker.getTypeFromTypeNode(arg) : null;
+}
+
+function getSingleImplementedType(
+  sf: ts.SourceFile,
+  cls: ts.ClassDeclaration,
+  decorator: ts.Decorator,
+  checker: ts.TypeChecker
+): ts.Type | null {
+  let impls: ts.ExpressionWithTypeArguments[] = [];
+  for (let clause of cls.heritageClauses ?? []) {
+    if (clause.token === ts.SyntaxKind.ImplementsKeyword)
+      impls.push(...clause.types);
+  }
+  if (impls.length === 1) return checker.getTypeAtLocation(impls[0]!);
+  if (impls.length > 1) {
+    let { line, character } = sf.getLineAndCharacterOfPosition(
+      decorator.getStart(sf)
+    );
+    console.warn(
+      `${sf.fileName}:${line + 1}:${character + 1}: capnweb-validate: ` +
+        `class implements multiple interfaces. Specify @validateRpc<Interface>() ` +
+        `to restrict the RPC surface.`
+    );
+  }
+  return null;
+}
+
+function getClassInstanceType(
+  cls: ts.ClassDeclaration,
+  checker: ts.TypeChecker
+): ts.Type {
+  let name = cls.name;
+  if (name) {
+    let sym = checker.getSymbolAtLocation(name);
+    if (sym) return checker.getDeclaredTypeOfSymbol(sym);
+  }
+  return checker.getTypeAtLocation(cls);
+}
+
+function cloneServiceShape(shape: ServiceShape): ServiceShape {
+  return {
+    ...shape,
+    methods: shape.methods.map((method) =>
+      method.skipValidation
+        ? { ...method }
+        : {
+            ...method,
+            params: method.params.slice(),
+          }
+    ),
+  };
+}
+
+function applySkippedMethods(
+  shape: ServiceShape,
+  skipped: Set<string>
+): ServiceShape {
+  return {
+    ...shape,
+    methods: shape.methods.map((method) =>
+      skipped.has(method.name)
+        ? { name: method.name, skipValidation: true }
+        : method
+    ),
+  };
+}
+
+function collectClassSkipRpcValidationMethods(
+  cls: ts.ClassDeclaration,
+  checker: ts.TypeChecker
+): Set<string> {
+  let skipped = new Set<string>();
+  for (let member of cls.members) {
+    if (!ts.isMethodDeclaration(member)) continue;
+    let name = methodName(member.name);
+    if (!name) continue;
+    for (let decorator of ts.getDecorators(member) ?? []) {
+      let expression = decorator.expression;
+      if (ts.isCallExpression(expression)) expression = expression.expression;
+      if (!ts.isIdentifier(expression)) continue;
+      let sym = checker.getSymbolAtLocation(expression);
+      if (sym && sym.flags & ts.SymbolFlags.Alias) {
+        sym = checker.getAliasedSymbol(sym);
+      }
+      if (
+        sym?.getName() === "skipRpcValidation" &&
+        isValidatePackageSymbol(sym)
+      ) {
+        skipped.add(name);
+      }
+    }
+  }
+  return skipped;
+}
+
+function methodName(name: ts.PropertyName): string | null {
+  if (ts.isIdentifier(name)) return name.text;
+  if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
+  return null;
+}
+
+function isValidatePackageSymbol(sym: ts.Symbol): boolean {
+  for (let decl of sym.getDeclarations() ?? []) {
+    let fileName = decl.getSourceFile().fileName;
+    if (/[\\/]capnweb-validate[\\/]/.test(fileName)) return true;
+  }
+  let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
+  if (!parent) return false;
+  let name = parent.escapedName as string;
+  return (
+    name === '"capnweb-validate"' || name === '"capnweb-validate/capnweb"'
+  );
+}
+
+function rejectUnsupported(
+  sf: ts.SourceFile,
+  node: ts.Node,
+  label: string,
+  shape: ServiceShape
+): void {
+  let bad = collectUnsupported(shape);
+  if (bad.length === 0) return;
+  let detail = bad.map((b) => `  - ${b.path}: ${b.reason}`).join("\n");
+  throw buildError(
+    sf,
+    node,
+    `capnweb-validate: \`${label}\` references types that capnweb cannot ` +
+      `transport. Fix or replace these fields:\n${detail}`
+  );
+}
+
 function resolveCallSiteShape(
-    call: ts.CallExpression | ts.NewExpression,
-    marker: (typeof MARKERS)[keyof typeof MARKERS],
-    checker: ts.TypeChecker): ServiceShape | null {
+  call: ts.CallExpression | ts.NewExpression,
+  marker: (typeof MARKERS)[keyof typeof MARKERS],
+  checker: ts.TypeChecker
+): ServiceShape | null {
   let type: ts.Type;
   if (marker.side === "server") {
     let arg = call.arguments?.[marker.targetArgIndex];
     if (!arg) return null;
     type = checker.getTypeAtLocation(arg);
   } else if (marker.form === "new") {
-    // `new RpcSession<T>(transport)` names the service directly. Prefer the
-    // explicit type argument because real capnweb aliases `RpcStub<T>` to an
-    // intersection type, so return-type unwrapping cannot always recover `T`.
     let explicit = getExplicitTypeArgument(call, checker);
     if (explicit) {
       type = unwrapRpcStub(checker, explicit);
@@ -304,9 +588,6 @@ function resolveCallSiteShape(
       type = unwrapRpcStub(checker, args[0]!);
     }
   } else {
-    // Client factory calls normally name the remote service as
-    // `newHttpBatchRpcSession<Api>(...)`. Fall back to the resolved return
-    // type for declarations that can still expose an unexpanded `RpcStub<T>`.
     let explicit = getExplicitTypeArgument(call, checker);
     if (explicit) {
       type = unwrapRpcStub(checker, explicit);
@@ -319,13 +600,14 @@ function resolveCallSiteShape(
       type = unwrapped;
     }
   }
-  // Skip purely generic / non-specific types (parameters, unknowns, etc.).
   if (isTooGeneric(type)) return null;
   return resolveServiceShape(ts, checker, type);
 }
 
 function getExplicitTypeArgument(
-    call: ts.CallExpression | ts.NewExpression, checker: ts.TypeChecker): ts.Type | null {
+  call: ts.CallExpression | ts.NewExpression,
+  checker: ts.TypeChecker
+): ts.Type | null {
   let arg = call.typeArguments?.[0];
   return arg ? checker.getTypeFromTypeNode(arg) : null;
 }
@@ -341,25 +623,33 @@ function unwrapRpcStub(checker: ts.TypeChecker, type: ts.Type): ts.Type {
 
 function isTooGeneric(type: ts.Type): boolean {
   let flags = type.getFlags();
-  // Bare type parameters, `any`, `unknown`, `never`, and `RpcTarget` itself
-  // all fail to identify a concrete service. `unknown` is what you get from
-  // a client call with no explicit type argument and no inference source.
   if (flags & ts.TypeFlags.TypeParameter) return true;
   if (flags & ts.TypeFlags.Any) return true;
   if (flags & ts.TypeFlags.Unknown) return true;
   if (flags & ts.TypeFlags.Never) return true;
   let name = type.getSymbol()?.getName();
-  if (name === "RpcTarget") return true;
+  if (name === "RpcTarget" || name === "WorkerEntrypoint") return true;
   return false;
 }
 
-// ---------------------------------------------------------------------------
-// Step 5: dedup.
-// ---------------------------------------------------------------------------
+function isCapnwebSymbolAt(checker: ts.TypeChecker, node: ts.Node): boolean {
+  let sym = checker.getSymbolAtLocation(node);
+  if (sym && sym.flags & ts.SymbolFlags.Alias)
+    sym = checker.getAliasedSymbol(sym);
+  if (!sym) return false;
+  for (let decl of sym.getDeclarations() ?? []) {
+    let fileName = decl.getSourceFile().fileName;
+    if (/[\\/]capnweb[\\/]/.test(fileName)) return true;
+  }
+  let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
+  return !!parent && (parent.escapedName as string) === '"capnweb"';
+}
 
 class ValidatorDedup {
-  /** Key: `<side>:<serviceName>`. Distinct shapes with the same name get suffixed. */
-  #emitted = new Map<string, { bindingName: string; shape: ServiceShape; signature: string }[]>();
+  #emitted = new Map<
+    string,
+    { bindingName: string; shape: ServiceShape; signature: string }[]
+  >();
   #order: { bindingName: string; shape: ServiceShape }[] = [];
 
   bind(shape: ServiceShape, side: "server" | "client"): string {
@@ -369,7 +659,9 @@ class ValidatorDedup {
     let existing = entries.find((entry) => entry.signature === signature);
     if (existing) return existing.bindingName;
     let suffix = entries.length === 0 ? "" : `_${entries.length + 1}`;
-    let bindingName = `__capnweb_validate_${sanitize(shape.name)}_${side}${suffix}`;
+    let bindingName = `__capnweb_validate_${sanitize(
+      shape.name
+    )}_${side}${suffix}`;
     let entry = { bindingName, shape, signature };
     entries.push(entry);
     this.#emitted.set(key, entries);
@@ -387,15 +679,22 @@ function sanitize(name: string): string {
 }
 
 function serviceSignature(shape: ServiceShape): string {
-  return JSON.stringify(shape.methods.map((method) => method.skipValidation ? {
-    name: method.name,
-    unchecked: true,
-  } : {
-    name: method.name,
-    params: method.params.map((param) => typeSignature(param)),
-    rest: method.rest ? typeSignature(method.rest) : null,
-    returns: typeSignature(method.returns),
-  }));
+  return JSON.stringify({
+    targetKind: shape.targetKind ?? null,
+    methods: shape.methods.map((method) =>
+      method.skipValidation
+        ? {
+            name: method.name,
+            unchecked: true,
+          }
+        : {
+            name: method.name,
+            params: method.params.map((param) => typeSignature(param)),
+            rest: method.rest ? typeSignature(method.rest) : null,
+            returns: typeSignature(method.returns),
+          }
+    ),
+  });
 }
 
 function typeSignature(shape: TypeShape): unknown {
@@ -405,16 +704,29 @@ function typeSignature(shape: TypeShape): unknown {
     case "array":
       return [shape.kind, typeSignature(shape.element)];
     case "tuple":
-      return [shape.kind, shape.elements.map((element) => typeSignature(element))];
+      return [
+        shape.kind,
+        shape.elements.map((element) => typeSignature(element)),
+      ];
     case "object":
-      return [shape.kind, shape.name, sortedEntries(shape.properties),
-        shape.index ? typeSignature(shape.index) : null];
+      return [
+        shape.kind,
+        shape.name,
+        sortedEntries(shape.properties),
+        shape.index ? typeSignature(shape.index) : null,
+      ];
     case "union":
-      return [shape.kind, shape.branches.map((branch) => typeSignature(branch))];
+      return [
+        shape.kind,
+        shape.branches.map((branch) => typeSignature(branch)),
+      ];
     case "ref":
       return [shape.kind, shape.id];
     case "stub":
-      return [shape.kind, shape.service ? serviceSignature(shape.service) : null];
+      return [
+        shape.kind,
+        shape.service ? serviceSignature(shape.service) : null,
+      ];
     case "unsupported":
       return [shape.kind, shape.reason];
     default:
@@ -427,10 +739,6 @@ function sortedEntries(properties: Record<string, TypeShape>): unknown[] {
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([key, value]) => [key, typeSignature(value)]);
 }
-
-// ---------------------------------------------------------------------------
-// Error formatting.
-// ---------------------------------------------------------------------------
 
 function buildError(sf: ts.SourceFile, node: ts.Node, message: string): Error {
   let { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));

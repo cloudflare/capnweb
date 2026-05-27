@@ -15,6 +15,11 @@
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
     },
+    "./capnweb": {
+      "types": "./dist/capnweb.d.mts",
+      "import": "./dist/capnweb.mjs",
+      "require": "./dist/capnweb.cjs"
+    },
     "./vite": {
       "types": "./dist/plugins/vite.d.mts",
       "import": "./dist/plugins/vite.mjs",
@@ -49,6 +54,16 @@
       "types": "./dist/internal/runtime.d.mts",
       "import": "./dist/internal/runtime.mjs",
       "require": "./dist/internal/runtime.cjs"
+    },
+    "./internal/core": {
+      "types": "./dist/internal/core.d.mts",
+      "import": "./dist/internal/core.mjs",
+      "require": "./dist/internal/core.cjs"
+    },
+    "./internal/capnweb": {
+      "types": "./dist/internal/capnweb.d.mts",
+      "import": "./dist/internal/capnweb.mjs",
+      "require": "./dist/internal/capnweb.cjs"
     }
   },
   "bin": {
@@ -76,5 +91,10 @@
   },
   "dependencies": {
     "unplugin": "^3.0.0"
+  },
+  "peerDependenciesMeta": {
+    "capnweb": {
+      "optional": true
+    }
   }
 }

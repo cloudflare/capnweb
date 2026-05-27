@@ -1,13 +1,14 @@
 # capnweb-validate
 
-Build-time runtime validation for [capnweb](https://github.com/cloudflare/capnweb) RPC services.
+Build-time runtime validation for Cap'n Web RPC services.
 
 `capnweb-validate` keeps TypeScript method signatures as the source of
-truth. You import RPC boundary APIs from `capnweb-validate`; a bundler plugin
-or CLI rewrites those call sites and injects validators generated from the
-resolved TypeScript types.
+truth. Add `@validateRpc()` to the service class and keep importing Cap'n Web
+APIs from `capnweb`. A bundler plugin or CLI rewrites the decorator and client
+session calls, then injects validators generated from the resolved TypeScript
+types.
 
-If the transform does not run, the marker APIs throw with a configuration
+If a validation decorator is left untransformed, it throws with a configuration
 error instead of silently running without validation.
 
 ## Install
@@ -16,13 +17,19 @@ error instead of silently running without validation.
 npm install capnweb capnweb-validate
 ```
 
+Workers RPC users can install `capnweb-validate` without installing `capnweb`.
+The root package has no runtime dependency on `capnweb`; Cap'n Web-specific
+helpers live under `capnweb-validate/capnweb` and internal transform outputs.
+
 ## Server Usage
 
 ```ts
-import { newWorkersRpcResponse, RpcTarget } from "capnweb-validate";
+import { newWorkersRpcResponse, RpcTarget } from "capnweb";
+import { validateRpc } from "capnweb-validate";
 
 type User = { id: string; name: string };
 
+@validateRpc()
 export class Api extends RpcTarget {
   async authenticate(sessionToken: string): Promise<User> {
     // ...
@@ -36,34 +43,36 @@ export default {
 };
 ```
 
-The transform resolves the concrete service type at `newWorkersRpcResponse(...)`,
-emits a private validator for `Api`, and rewrites the call to an internal helper.
+The transform resolves the concrete service type from `@validateRpc()`, emits a
+private validator for `Api`, and rewrites the decorator to pass that validator
+to the runtime wrapper. The same decorator shape also works for native Workers
+RPC entrypoints.
 
 ## Client Usage
 
 ```ts
-import { newHttpBatchRpcSession } from "capnweb-validate";
+import { newHttpBatchRpcSession } from "capnweb";
 
 import type { Api } from "./worker";
 
 export const api = newHttpBatchRpcSession<Api>("/rpc");
 ```
 
+The transform recognizes Cap'n Web client session constructors by TypeScript
+symbol resolution. Client calls validate outgoing arguments before transport
+and validate resolved return values before application code receives them.
+
 For custom transports built on top of `RpcSession`, the constructor form is
-also a marker:
+also recognized:
 
 ```ts
-import { RpcSession } from "capnweb-validate";
+import { RpcSession } from "capnweb";
 
 import type { Api } from "./worker";
 
 const session = new RpcSession<Api>(myTransport);
 const api = session.getRemoteMain();
 ```
-
-Either form drives the same validator. Client calls validate outgoing arguments
-before transport and validate resolved return values before application code
-receives them.
 
 ## Bundler Plugins
 
@@ -104,14 +113,16 @@ Point the downstream build tool at the generated entry under `--out`.
 
 ## Opting out per method
 
-Use `@skipRpcValidation` when one RPC method should not get generated
+Use `@skipRpcValidation()` when one RPC method should not get generated
 argument or return validators:
 
 ```ts
-import { RpcTarget, skipRpcValidation } from "capnweb-validate";
+import { RpcTarget } from "capnweb";
+import { skipRpcValidation, validateRpc } from "capnweb-validate";
 
+@validateRpc()
 class Api extends RpcTarget {
-  @skipRpcValidation
+  @skipRpcValidation()
   unsafe(payload: unknown): unknown {
     return payload;
   }

@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react'
-import { newHttpBatchRpcSession } from 'capnweb-validate'
+import { newHttpBatchRpcSession } from 'capnweb'
 import type { Api } from '../../../server/worker'
 import './App.css'
 

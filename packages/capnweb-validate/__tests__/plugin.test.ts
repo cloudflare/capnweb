@@ -22,7 +22,7 @@ import {
   nodeHttpBatchRpcResponse,
   RpcSession,
   RpcValidationError,
-} from "../src/index.js";
+} from "../src/capnweb.js";
 import { capnwebValidate } from "../src/plugin.js";
 import { createTransformContext } from "../src/transform/context.js";
 import { runBuild } from "../src/transform/run.js";

@@ -6,7 +6,11 @@
 // matching the contract in `src/internal/runtime.ts`. Output is plain text;
 // the transform stitches it into the module via TypeScript's printer.
 
-import type { MethodShape, ServiceShape, TypeShape } from "./type-introspector.js";
+import type {
+  MethodShape,
+  ServiceShape,
+  TypeShape,
+} from "./type-introspector.js";
 
 /**
  * Emit a `const <name> = { serviceName, methods: { ... } };` declaration as a
@@ -14,10 +18,12 @@ import type { MethodShape, ServiceShape, TypeShape } from "./type-introspector.j
  * service, deduped by service type within a module).
  *
  * The emitted code references `__rt` as the runtime namespace; the transform
- * adds `import * as __rt from "capnweb-validate/internal"` at the top of
- * every transformed module.
+ * adds an internal runtime import at the top of every transformed module.
  */
-export function emitValidator(bindingName: string, shape: ServiceShape): string {
+export function emitValidator(
+  bindingName: string,
+  shape: ServiceShape
+): string {
   let lines: string[] = [];
   let ctx: EmitContext = {
     bindingName,
@@ -29,14 +35,21 @@ export function emitValidator(bindingName: string, shape: ServiceShape): string 
   }
   for (let [id, namedShape] of shape.namedShapes) {
     ctx.definingId = id;
-    lines.push(`${shapeBinding(bindingName, id)} = ${emitValidator_(namedShape, ctx)};`);
+    lines.push(
+      `${shapeBinding(bindingName, id)} = ${emitValidator_(namedShape, ctx)};`
+    );
   }
   ctx.definingId = undefined;
   lines.push(`const ${bindingName} = {`);
   lines.push(`  serviceName: ${JSON.stringify(shape.name)},`);
+  if (shape.targetKind) {
+    lines.push(`  targetKind: ${JSON.stringify(shape.targetKind)},`);
+  }
   lines.push(`  methods: {`);
   for (let method of shape.methods) {
-    lines.push(`    ${JSON.stringify(method.name)}: ${emitMethod(method, ctx)},`);
+    lines.push(
+      `    ${JSON.stringify(method.name)}: ${emitMethod(method, ctx)},`
+    );
   }
   lines.push(`  },`);
   lines.push(`};`);
@@ -77,26 +90,44 @@ function emitMethod(method: MethodShape, ctx: EmitContext): string {
   if (method.skipValidation) return `{ unchecked: true }`;
   let args = method.params.map((p) => emitValidator_(p, ctx)).join(", ");
   let rest = method.rest ? `, rest: ${emitValidator_(method.rest, ctx)}` : "";
-  return `{ args: [${args}]${rest}, returns: ${emitValidator_(method.returns, ctx)} }`;
+  return `{ args: [${args}]${rest}, returns: ${emitValidator_(
+    method.returns,
+    ctx
+  )} }`;
 }
 
 function emitServiceLiteral(shape: ServiceShape, ctx: EmitContext): string {
-  let methods = shape.methods.map((method) =>
-    `${JSON.stringify(method.name)}: ${emitMethod(method, ctx)}`,
-  ).join(", ");
-  return `({ serviceName: ${JSON.stringify(shape.name)}, methods: { ${methods} } })`;
+  let methods = shape.methods
+    .map(
+      (method) => `${JSON.stringify(method.name)}: ${emitMethod(method, ctx)}`
+    )
+    .join(", ");
+  let targetKind = shape.targetKind
+    ? `, targetKind: ${JSON.stringify(shape.targetKind)}`
+    : "";
+  return `({ serviceName: ${JSON.stringify(
+    shape.name
+  )}${targetKind}, methods: { ${methods} } })`;
 }
 
 function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
   switch (shape.kind) {
-    case "string": return `__rt.v.string`;
-    case "number": return `__rt.v.number`;
-    case "boolean": return `__rt.v.boolean`;
-    case "bigint": return `__rt.v.bigint`;
-    case "null": return `__rt.v.null_`;
-    case "undefined": return `__rt.v.undefined_`;
-    case "void": return `__rt.v.undefined_`;
-    case "any": return `__rt.v.any`;
+    case "string":
+      return `__rt.v.string`;
+    case "number":
+      return `__rt.v.number`;
+    case "boolean":
+      return `__rt.v.boolean`;
+    case "bigint":
+      return `__rt.v.bigint`;
+    case "null":
+      return `__rt.v.null_`;
+    case "undefined":
+      return `__rt.v.undefined_`;
+    case "void":
+      return `__rt.v.undefined_`;
+    case "any":
+      return `__rt.v.any`;
     case "literal":
       return `__rt.v.literal(${JSON.stringify(shape.value)})`;
     case "array": {
@@ -107,44 +138,62 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
     case "tuple": {
       let hoisted = hoistedBinding(shape, ctx);
       if (hoisted) return hoisted;
-      let elements = shape.elements.map((e) => emitValidator_(e, ctx)).join(", ");
+      let elements = shape.elements
+        .map((e) => emitValidator_(e, ctx))
+        .join(", ");
       return `__rt.v.tuple([${elements}])`;
     }
     case "object": {
       let hoisted = hoistedBinding(shape, ctx);
       if (hoisted) return hoisted;
       let entries = Object.entries(shape.properties).map(
-        ([key, value]) => `${JSON.stringify(key)}: ${emitValidator_(value, ctx)}`,
+        ([key, value]) =>
+          `${JSON.stringify(key)}: ${emitValidator_(value, ctx)}`
       );
       let nameArg = shape.name ? `, ${JSON.stringify(shape.name)}` : "";
       let indexArg = shape.index
-        ? `${shape.name ? "" : ", undefined"}, ${emitValidator_(shape.index, ctx)}`
+        ? `${shape.name ? "" : ", undefined"}, ${emitValidator_(
+            shape.index,
+            ctx
+          )}`
         : "";
       return `__rt.v.object({ ${entries.join(", ")} }${nameArg}${indexArg})`;
     }
     case "union": {
       let hoisted = hoistedBinding(shape, ctx);
       if (hoisted) return hoisted;
-      let branches = shape.branches.map((b) => emitValidator_(b, ctx)).join(", ");
+      let branches = shape.branches
+        .map((b) => emitValidator_(b, ctx))
+        .join(", ");
       return `__rt.v.union([${branches}])`;
     }
     case "ref":
       return `__rt.v.lazy(() => ${shapeBinding(ctx.bindingName, shape.id)})`;
     // Built-in pass-by-value types. The runtime checks each by brand
     // (`instanceof`) since the wire deserialises real instances.
-    case "date": return `__rt.v.date`;
-    case "bytes": return `__rt.v.bytes`;
-    case "error": return `__rt.v.error`;
-    case "blob": return `__rt.v.blob`;
-    case "readableStream": return `__rt.v.readableStream`;
-    case "writableStream": return `__rt.v.writableStream`;
-    case "headers": return `__rt.v.headers`;
-    case "request": return `__rt.v.request`;
-    case "response": return `__rt.v.response`;
+    case "date":
+      return `__rt.v.date`;
+    case "bytes":
+      return `__rt.v.bytes`;
+    case "error":
+      return `__rt.v.error`;
+    case "blob":
+      return `__rt.v.blob`;
+    case "readableStream":
+      return `__rt.v.readableStream`;
+    case "writableStream":
+      return `__rt.v.writableStream`;
+    case "headers":
+      return `__rt.v.headers`;
+    case "request":
+      return `__rt.v.request`;
+    case "response":
+      return `__rt.v.response`;
     // Pass-by-reference: the wire ships a stub or function. When the resolver
     // knows the stub service, keep that method shape so pipelined calls can be
     // validated too.
-    case "function": return `__rt.v.func`;
+    case "function":
+      return `__rt.v.func`;
     case "stub":
       return shape.service
         ? `__rt.v.stubOf(${emitServiceLiteral(shape.service, ctx)})`

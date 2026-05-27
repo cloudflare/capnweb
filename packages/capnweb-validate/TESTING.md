@@ -1,16 +1,11 @@
 # Testing `capnweb-validate` by hand
 
-This package is a build-time transform. Users import marker APIs from
-`capnweb-validate`; the bundler plugin or CLI rewrites those call sites and
-injects validators that run at runtime.
+This package is a build-time transform. Users mark RPC service classes with
+`@validateRpc()` and keep importing Cap'n Web APIs from `capnweb`. The bundler
+plugin or CLI rewrites validation decorators and Cap'n Web client session calls,
+then injects generated validators.
 
-This doc covers two things:
-
-1. How to run the package's own test + build pipeline.
-2. How to drive the transform against a one-file fixture by hand so you can
-   read the rewritten output and confirm a real validator was emitted.
-
-## 1. Run the build + tests
+## 1. Run the build and tests
 
 From the repo root:
 
@@ -19,10 +14,10 @@ npm run -w capnweb-validate build
 npm run -w capnweb-validate test
 ```
 
-`build` runs `tsdown` and emits `dist/` (one file per entry: root,
-`/internal`, `/vite`, `/rollup`, `/webpack`, `/rspack`, `/esbuild`, `/farm`,
-and the `cli`). `test` runs the package's vitest project from the repo root
-so the shared `vitest.config.ts` resolves.
+`build` runs `tsdown` and emits `dist/` entries for the root decorators,
+`/capnweb`, `/internal`, `/internal/core`, `/internal/capnweb`, the bundler
+adapters, and the CLI. `test` runs the package's Vitest project from the repo
+root so the shared `vitest.config.ts` resolves.
 
 The test suite is two files:
 
@@ -30,13 +25,9 @@ The test suite is two files:
   transform context, bundler adapters, and `runBuild` orchestration.
 - `__tests__/transform-module.test.ts` writes small fixtures to a tempdir,
   builds a real `TransformContext`, runs `transformModule()`, and asserts on
-  the rewritten code. One case evaluates the emitted validator against the live
-  runtime to prove `RpcValidationError` fires.
+  decorator rewrites, client session rewrites, and emitted validator behavior.
 
 ## 2. Drive the transform against a fixture by hand
-
-The simplest path is to write a `.ts` file, point the CLI at it, and read
-`./out/`.
 
 ### 2a. Build the package once
 
@@ -44,8 +35,7 @@ The simplest path is to write a `.ts` file, point the CLI at it, and read
 npm run -w capnweb-validate build
 ```
 
-This produces `packages/capnweb-validate/dist/cli.cjs`, which is what `npm`
-links as the `capnweb-validate` bin.
+This produces `packages/capnweb-validate/dist/cli.cjs`.
 
 ### 2b. Write a fixture
 
@@ -76,23 +66,29 @@ resolve types without installing `capnweb`:
 ```ts
 declare module "capnweb" {
   export class RpcTarget {}
-}
-declare module "capnweb-validate" {
+  type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
+  type Provider<T> = { readonly [K in keyof T]: T[K] };
+  export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
   export function newWorkersRpcResponse(
     request: Request, target: object, options?: unknown,
   ): Response;
   export function newHttpBatchRpcSession<T>(
     url: string, options?: unknown,
-  ): T;
+  ): RpcStub<T>;
+}
+declare module "capnweb-validate" {
+  export function validateRpc(...args: unknown[]): unknown;
+  export function skipRpcValidation(...args: unknown[]): unknown;
 }
 ```
 
 `/tmp/cwt-demo/src/worker.ts`:
 
 ```ts
-import { newWorkersRpcResponse } from "capnweb-validate";
-import { RpcTarget } from "capnweb";
+import { newWorkersRpcResponse, RpcTarget } from "capnweb";
+import { validateRpc } from "capnweb-validate";
 
+@validateRpc()
 class Api extends RpcTarget {
   greet(name: string): string {
     return "hi " + name;
@@ -116,23 +112,24 @@ node packages/capnweb-validate/dist/cli.cjs build \
 ```
 
 You should see `capnweb-validate: 1 transformed, 0 copied -> /tmp/cwt-demo/out`.
-`capnweb.d.ts` is a declaration file, so it is not transformed or copied.
+Declaration files are not transformed or copied.
 
 ### 2d. Read the output
 
 `/tmp/cwt-demo/out/src/worker.ts` will contain something like:
 
 ```ts
-import * as __rt from "capnweb-validate/internal";
+import * as __rt from "capnweb-validate/internal/core";
 const __capnweb_validate_Api_server = {
   serviceName: "Api",
   methods: {
     "greet": { args: [__rt.v.string], returns: __rt.v.string },
   },
 };
-import { newWorkersRpcResponse } from "capnweb-validate";
-import { RpcTarget } from "capnweb";
+import { newWorkersRpcResponse, RpcTarget } from "capnweb";
+import { validateRpc } from "capnweb-validate";
 
+@__rt.__validateRpcClass(__capnweb_validate_Api_server)
 class Api extends RpcTarget {
   greet(name: string): string {
     return "hi " + name;
@@ -140,48 +137,24 @@ class Api extends RpcTarget {
 }
 
 export function handler(req: Request): Response {
-  return __rt.__newWorkersRpcResponseWithValidation(req, new Api(), __capnweb_validate_Api_server);
+  return newWorkersRpcResponse(req, new Api());
 }
 ```
 
-Things worth checking on that output:
+Things worth checking:
 
 - Source outside edit ranges is preserved by the transform.
-- The marker call site is rewritten to an internal helper with one added
-  validator argument.
+- The decorator is rewritten to an internal helper with one validator argument.
 - The validator literal is a plain JS object built from `__rt.v.*` primitives.
-- The internal runtime import is inserted by the transform.
+- The decorator path imports `capnweb-validate/internal/core`, which has no
+  runtime dependency on `capnweb`.
 
-### 2e. Make it fail to see the error path
-
-Change the call site so the checker can't pin a concrete service type:
-
-```ts
-export function handler(req: Request, target: RpcTarget): Response {
-  return newWorkersRpcResponse(req, target); // type RpcTarget: too generic
-}
-```
-
-Re-running the CLI prints a build error pointing at the file, line, and column:
-
-```txt
-capnweb-validate: /tmp/cwt-demo/src/worker.ts:5:10: capnweb-validate:
-could not resolve a concrete service type for
-`newWorkersRpcResponse(...)`. Annotate the target argument with a
-specific RPC service type (e.g. `new MyApi(env)` or
-`const target: MyApi = ...`).
-```
-
-This is covered by `transformModule: failure modes` in
-`__tests__/transform-module.test.ts`.
-
-### 2f. Try the client-side rewrite too
+### 2e. Try the client-side rewrite too
 
 `/tmp/cwt-demo/src/client.ts`:
 
 ```ts
-import { newHttpBatchRpcSession } from "capnweb-validate";
-import { RpcTarget } from "capnweb";
+import { newHttpBatchRpcSession, RpcTarget } from "capnweb";
 
 interface Api extends RpcTarget {
   echo(value: string): Promise<string>;
@@ -194,7 +167,7 @@ Re-run the build. `out/src/client.ts` should rewrite the callee to
 `__rt.__newHttpBatchRpcSessionWithValidation<Api>("/rpc", __capnweb_validate_Api_client)`.
 The `<Api>` type argument is preserved.
 
-### 2g. See the wire-type catalogue at work
+### 2f. See the wire-type catalogue at work
 
 Add a method that uses a built-in capnweb supports (`Uint8Array`) and one
 capnweb rejects (`Map`):
@@ -206,62 +179,35 @@ class Api extends RpcTarget {
 }
 ```
 
-Re-run the build. The transform emits:
+Re-run the build. The `Map` return type makes the build fail before writing a
+validator:
 
-```ts
-const __capnweb_validate_Api_server = {
-  serviceName: "Api",
-  methods: {
-    "sign":  { args: [__rt.v.bytes], returns: __rt.v.bytes },
-    "index": { args: [], returns: /* ...error... */ },
-  },
-};
+```txt
+capnweb-validate: /tmp/cwt-demo/src/worker.ts:5:1: capnweb-validate:
+`validateRpc` references types that capnweb cannot transport. Fix or replace
+these fields:
+  - index.return: Map is not a capnweb wire type. Use a plain object or an
+    array of entries instead.
 ```
 
-— actually the `Map` return type makes the build _fail_ before printing
-anything:
-
-```
-capnweb-validate: /tmp/cwt-demo/src/worker.ts:10:10: capnweb-validate:
-  `newWorkersRpcResponse(...)` references types that capnweb cannot transport.
-  Fix or replace these fields:
-    - index.return: Map is not a capnweb wire type. Use a plain object or an
-      array of entries instead.
-```
-
-The error lists every offending leaf in one pass (e.g. `args[0].userId`,
-`return.results[].when`), so a service with five bad fields needs one
-fix-and-rebuild cycle, not five. Replace `Map<string, number>` with
-`{ [key: string]: number }` and the build is clean. The `sign` method then
-emits `args: [__rt.v.bytes], returns: __rt.v.bytes` — at runtime that calls
-`value instanceof Uint8Array`, so any of the typed-array siblings the checker
-recognised as `bytes` validate the same way.
-
-For the matching client-side picture, declare the same shape on a
-`newHttpBatchRpcSession<Api>("/rpc")` call and read the rewritten
-`out/src/client.ts`. The `_client` validator is structurally identical to
-`_server` — same `bytes` leaves, same path-aware error if the remote ever
-returns a non-`Uint8Array`.
+Replace `Map<string, number>` with `{ [key: string]: number }` and the build is
+clean. The `sign` method emits `args: [__rt.v.bytes], returns: __rt.v.bytes`.
 
 ## 3. What to look at if something goes wrong
 
-- **"Module is in the program but no rewrite happens"** — the transform
-  short-circuits on files whose raw text does not contain
-  `"capnweb-validate"`. Confirm your import string is exact.
-- **"Could not resolve a concrete service type"** — annotate the call site so
-  the checker can pin one. Construct the target inline (`new Api()`), pass an
-  explicit client type argument (`newHttpBatchRpcSession<Api>(...)`), or
-  annotate the variable.
-- **"References types that capnweb cannot transport"** — your service mentions
-  a type the wire format does not support (`Map`, `Set`, `RegExp`, etc.) or
-  contains an unresolvable leaf (a generic parameter, a bare `unknown`). The
-  README's "Current Type Coverage" table lists the rejected built-ins with the
-  suggested replacement. This is by design — silently downgrading to a
-  permissive validator would let bad data ship.
-- **"Validator validates the wrong thing"** — `src/transform/type-introspector.ts`
-  lowers `ts.Type` values into `ServiceShape`; start there.
-- **"The transform crashed mid-build"** — crashes are intentionally surfaced as
-  build errors. The plugin does not swallow `transformModule` errors.
+- **"Module is in the program but no rewrite happens"**: the transform only
+  considers files whose raw text mentions `capnweb-validate` or `capnweb`.
+- **"Could not resolve a concrete service type"**: add `@validateRpc<T>()`,
+  make the class implement exactly one public RPC interface, or pass an
+  explicit client type argument such as `newHttpBatchRpcSession<Api>(...)`.
+- **"References types that capnweb cannot transport"**: your service mentions
+  a type the wire format does not support (`Map`, `Set`, `RegExp`, etc.) or an
+  unresolvable leaf. The README's type coverage table lists replacements.
+- **"Validator validates the wrong thing"**: start in
+  `src/transform/type-introspector.ts`, which lowers `ts.Type` values into
+  `ServiceShape`.
+- **"The transform crashed mid-build"**: crashes are surfaced as build errors.
+  The plugin does not swallow `transformModule` errors.
 
 ## 4. What this does not test
 

@@ -3,8 +3,8 @@
 //     https://opensource.org/license/mit
 
 // Universal bundler plugin (vite / rollup / webpack / rspack / esbuild / farm)
-// built on `unplugin`. Rewrites user modules that import marker APIs from
-// "capnweb-validate"; nothing is written to disk.
+// built on `unplugin`. Rewrites capnweb-validate decorators and Cap'n Web
+// client session calls; nothing is written to disk.
 
 import { sep } from "node:path";
 import { createUnplugin } from "unplugin";
@@ -22,7 +22,8 @@ export type CapnwebValidatePluginOptions = TransformContextOptions;
  * under `src/plugins/` re-export `capnwebValidate.vite`, `.rollup`, etc.
  */
 export const capnwebValidate = createUnplugin<
-    CapnwebValidatePluginOptions | undefined>((rawOptions) => {
+  CapnwebValidatePluginOptions | undefined
+>((rawOptions) => {
   let options: CapnwebValidatePluginOptions = rawOptions ?? {};
   let context: TransformContext | null = null;
 
@@ -39,9 +40,11 @@ export const capnwebValidate = createUnplugin<
     },
 
     transform(code, id) {
-      // Fast bail-out: modules that don't even mention the package can't need
-      // a rewrite.
-      if (!code.includes("capnweb-validate")) return null;
+      // Fast bail-out: only modules that mention the validation package or
+      // Cap'n Web client session APIs can need a rewrite.
+      if (!code.includes("capnweb-validate") && !code.includes("capnweb")) {
+        return null;
+      }
 
       if (!context) context = createTransformContext(options);
       let result = transformModule(context, id, code);

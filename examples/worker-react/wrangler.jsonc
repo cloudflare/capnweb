@@ -7,10 +7,13 @@
   "alias": {
     "capnweb": "../../dist/index-workers.js",
     "capnweb-validate": "../../packages/capnweb-validate/dist/index.mjs",
-    "capnweb-validate/internal": "../../packages/capnweb-validate/dist/internal/runtime.mjs"
+    "capnweb-validate/capnweb": "../../packages/capnweb-validate/dist/capnweb.mjs",
+    "capnweb-validate/internal": "../../packages/capnweb-validate/dist/internal/runtime.mjs",
+    "capnweb-validate/internal/core": "../../packages/capnweb-validate/dist/internal/core.mjs",
+    "capnweb-validate/internal/capnweb": "../../packages/capnweb-validate/dist/internal/capnweb.mjs"
   },
   "build": {
-    "command": "node ../../packages/capnweb-validate/dist/cli.cjs build --cwd server --out ../.wrangler/validate",
+    "command": "mkdir -p client/dist && node ../../packages/capnweb-validate/dist/cli.cjs build --cwd server --out ../.wrangler/validate",
     "watch_dir": "server"
   },
   "assets": {

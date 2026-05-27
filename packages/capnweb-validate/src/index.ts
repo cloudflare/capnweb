@@ -2,67 +2,73 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import type * as capnweb from "capnweb";
-
-export {
-  deserialize,
-  RpcPromise,
-  RpcStub,
-  RpcTarget,
-  serialize,
-} from "capnweb";
-export type {
-  RpcCompatible,
-  RpcSessionOptions,
-  RpcTransport,
-} from "capnweb";
 export { RpcValidationError } from "./error.js";
 export type { RpcValidationFailure } from "./error.js";
 
-export function skipRpcValidation(value: unknown, context: unknown): void;
-export function skipRpcValidation(
-  target: object, propertyKey: string | symbol, descriptor: PropertyDescriptor,
-): void;
-export function skipRpcValidation(): (...args: unknown[]) => void;
-export function skipRpcValidation(
-    ...args: unknown[]): void | ((...args: unknown[]) => void) {
-  // Decorator marker read by the transform. Runtime behavior is intentionally
-  // a no-op so decorated methods behave normally after TypeScript lowers them.
-  if (args.length === 0) return () => {};
+type AnyClass = abstract new (...args: any[]) => object;
+type AnyMethod = (this: unknown, ...args: any[]) => unknown;
+
+type ClassDecoratorMarker = <TClass extends AnyClass>(
+  value: TClass,
+  context: ClassDecoratorContext<TClass>
+) => void | TClass;
+
+type MethodDecoratorMarker = <This, Value extends AnyMethod>(
+  value: Value,
+  context: ClassMethodDecoratorContext<This, Value>
+) => void | Value;
+
+type LegacyMethodDecoratorMarker = (
+  target: object,
+  propertyKey: string | symbol,
+  descriptor: PropertyDescriptor
+) => void;
+
+export function validateRpc<TSurface = unknown, TClass extends AnyClass = AnyClass>(
+  value: TClass,
+  context: ClassDecoratorContext<TClass>
+): void | TClass;
+export function validateRpc<TSurface = unknown>(): ClassDecoratorMarker;
+export function validateRpc(
+  ...args: unknown[]
+): void | ClassDecoratorMarker {
+  return uncompiledDecoratorMarker(args);
 }
 
-// Re-exported as a local alias so the value and type share a name without
-// hitting TS2323 ("cannot redeclare exported variable") in this module.
-export type RpcSession<T extends capnweb.RpcCompatible<T> = undefined> =
-  capnweb.RpcSession<T>;
+export function skipRpcValidation<This, Value extends AnyMethod>(
+  value: Value,
+  context: ClassMethodDecoratorContext<This, Value>
+): void | Value;
+export function skipRpcValidation(
+  target: object,
+  propertyKey: string | symbol,
+  descriptor: PropertyDescriptor
+): void;
+export function skipRpcValidation(): MethodDecoratorMarker &
+  LegacyMethodDecoratorMarker;
+export function skipRpcValidation(
+  ...args: unknown[]
+): void | (MethodDecoratorMarker & LegacyMethodDecoratorMarker) {
+  // Decorator marker read by the transform. Runtime behavior is intentionally
+  // a no-op so decorated methods behave normally after TypeScript lowers them.
+  if (args.length === 0) return (() => {}) as MethodDecoratorMarker &
+    LegacyMethodDecoratorMarker;
+}
 
-export const RpcSession: typeof capnweb.RpcSession =
-  uncompiledMarker as unknown as typeof capnweb.RpcSession;
+function uncompiledDecoratorMarker(
+  args: unknown[]
+): never | ClassDecoratorMarker {
+  if (args.length === 0) {
+    return () => {
+      throwUncompiled();
+    };
+  }
+  throwUncompiled();
+}
 
-export const newWebSocketRpcSession: typeof capnweb.newWebSocketRpcSession =
-  uncompiledMarker as typeof capnweb.newWebSocketRpcSession;
-
-export const newHttpBatchRpcSession: typeof capnweb.newHttpBatchRpcSession =
-  uncompiledMarker as typeof capnweb.newHttpBatchRpcSession;
-
-export const newMessagePortRpcSession: typeof capnweb.newMessagePortRpcSession =
-  uncompiledMarker as typeof capnweb.newMessagePortRpcSession;
-
-export const newWorkersRpcResponse: typeof capnweb.newWorkersRpcResponse =
-  uncompiledMarker as typeof capnweb.newWorkersRpcResponse;
-
-export const newWorkersWebSocketRpcResponse: typeof capnweb.newWorkersWebSocketRpcResponse =
-  uncompiledMarker as typeof capnweb.newWorkersWebSocketRpcResponse;
-
-export const newHttpBatchRpcResponse: typeof capnweb.newHttpBatchRpcResponse =
-  uncompiledMarker as typeof capnweb.newHttpBatchRpcResponse;
-
-export const nodeHttpBatchRpcResponse: typeof capnweb.nodeHttpBatchRpcResponse =
-  uncompiledMarker as typeof capnweb.nodeHttpBatchRpcResponse;
-
-function uncompiledMarker(): never {
+function throwUncompiled(): never {
   throw new Error(
-    "capnweb-validate marker API was called before it was transformed. " +
-      "Configure the capnweb-validate bundler plugin or run the capnweb-validate CLI.",
+    "capnweb-validate decorator was called before it was transformed. " +
+      "Configure the capnweb-validate bundler plugin or run the capnweb-validate CLI."
   );
 }
