@@ -1,0 +1,21 @@
+{
+  "name": "capnweb-example-worker-react-server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "generate-validation": "npm exec capnweb-validate -- build --out ./validation",
+    "build": "wrangler build"
+  },
+  "dependencies": {
+    "capnweb-validate": "file:../../../dist/index.d.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "4.20260527.1",
+    "typescript": "^6.0.0",
+    "wrangler": "^4.95.0"
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "name": "capnweb-validate",
+  "version": "0.1.0",
+  "description": "Build-time TypeScript validation transform for capnweb RPC.",
+  "license": "MIT",
+  "type": "module",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./vite": {
+      "types": "./dist/plugins/vite.d.mts",
+      "import": "./dist/plugins/vite.mjs",
+      "require": "./dist/plugins/vite.cjs"
+    },
+    "./rollup": {
+      "types": "./dist/plugins/rollup.d.mts",
+      "import": "./dist/plugins/rollup.mjs",
+      "require": "./dist/plugins/rollup.cjs"
+    },
+    "./webpack": {
+      "types": "./dist/plugins/webpack.d.mts",
+      "import": "./dist/plugins/webpack.mjs",
+      "require": "./dist/plugins/webpack.cjs"
+    },
+    "./rspack": {
+      "types": "./dist/plugins/rspack.d.mts",
+      "import": "./dist/plugins/rspack.mjs",
+      "require": "./dist/plugins/rspack.cjs"
+    },
+    "./esbuild": {
+      "types": "./dist/plugins/esbuild.d.mts",
+      "import": "./dist/plugins/esbuild.mjs",
+      "require": "./dist/plugins/esbuild.cjs"
+    },
+    "./farm": {
+      "types": "./dist/plugins/farm.d.mts",
+      "import": "./dist/plugins/farm.mjs",
+      "require": "./dist/plugins/farm.cjs"
+    },
+    "./internal": {
+      "types": "./dist/internal/runtime.d.mts",
+      "import": "./dist/internal/runtime.mjs",
+      "require": "./dist/internal/runtime.cjs"
+    }
+  },
+  "bin": {
+    "capnweb-validate": "./dist/cli.cjs"
+  },
+  "scripts": {
+    "build": "tsdown",
+    "build:watch": "tsdown --watch",
+    "test": "vitest run --root ../.. --project node packages/capnweb-validate/__tests__"
+  },
+  "peerDependencies": {
+    "capnweb": ">=0.7.0",
+    "typescript": ">=5.0.0"
+  },
+  "devDependencies": {
+    "tsdown": "^0.16.7",
+    "typescript": "^5.9.3"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudflare/capnweb"
+  },
+  "dependencies": {
+    "unplugin": "^3.0.0"
+  }
+}

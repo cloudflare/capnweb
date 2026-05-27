@@ -1,0 +1,18 @@
+{
+  "$schema": "./server/node_modules/wrangler/config-schema.json",
+	"name": "capnweb-example-worker-react",
+	"main": "server/validation/worker.ts",
+	"compatibility_date": "2026-05-27",
+	"assets": {
+		"directory": "client/dist"
+	},
+	"vars": {
+		// Optional per-method artificial delays (ms)
+		"DELAY_AUTH_MS": 80,
+		"DELAY_PROFILE_MS": 120,
+		"DELAY_NOTIFS_MS": 120,
+		// Optional simulated network latency per direction (ms)
+		"SIMULATED_RTT_MS": 120,
+		"SIMULATED_RTT_JITTER_MS": 40
+	}
+}

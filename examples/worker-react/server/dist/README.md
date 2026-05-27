@@ -1,0 +1,1 @@
+This folder contains the built output assets for the worker "capnweb-example-worker-react" generated at 2026-05-27T13:51:51.948Z.

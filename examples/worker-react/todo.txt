@@ -1,0 +1,3 @@
+- `--out` is used by npm which causes you to need to add a `--` so instead change to `--output`
+- need to add `import type { ExecutionContext } from '@cloudflare/workers-types';`
+- was missing a `../` for `import { newWorkersRpcResponse, RpcTarget } from '../../../../packages/capnweb-validate/dist/index.mjs';`
