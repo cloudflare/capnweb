@@ -24,7 +24,7 @@ const PROFILES = new Map<string, Profile>([
   ['u_2', { id: 'u_2', bio: 'Mathematician & CS pioneer' }],
 ]);
 
-const NOTIFICATIONS = new Map([
+const NOTIFICATIONS = new Map<string, string[]>([
   ['u_1', ['Welcome to Cap\'n Web!', 'You have 2 new followers']],
   ['u_2', ['New feature: pipelining!', 'Security tips for your account']],
 ]);
