@@ -34,7 +34,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsdown --config-loader native && npm run -w capnweb-typecheck build",
+    "build": "tsdown --config-loader native && npm run -w capnweb-validate build",
     "build:watch": "tsdown --config-loader native --watch",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",

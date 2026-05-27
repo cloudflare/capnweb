@@ -2,12 +2,12 @@
   "version": "2.0.0",
   "tasks": [
     {
-      "label": "typecheck: Worker dev server",
+      "label": "validate: Worker dev server",
       "type": "shell",
-      "command": "examples/worker-react-typecheck/dev-debug-server.sh",
+      "command": "npm run build && cd examples/worker-react && npx wrangler dev --config wrangler.jsonc --ip 127.0.0.1 --port 8787 --inspector-port 9229",
       "isBackground": true,
       "problemMatcher": {
-        "owner": "typecheck-worker",
+        "owner": "validate-worker",
         "pattern": { "regexp": "$^" },
         "background": {
           "activeOnStart": true,
@@ -22,12 +22,12 @@
       }
     },
     {
-      "label": "typecheck: client dev server",
+      "label": "validate: client dev server",
       "type": "shell",
-      "command": "examples/worker-react-typecheck/dev-debug-client.sh",
+      "command": "cd examples/worker-react/client && npm install && npm run dev -- --host 127.0.0.1 --port 5173 --strictPort",
       "isBackground": true,
       "problemMatcher": {
-        "owner": "typecheck-client",
+        "owner": "validate-client",
         "pattern": { "regexp": "$^" },
         "background": {
           "activeOnStart": true,

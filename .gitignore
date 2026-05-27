@@ -1,7 +1,6 @@
 node_modules
 .wrangler/
-examples/worker-react/web/dist/
+examples/worker-react/client/dist/
 notes.txt
 /dist/
-examples/**/capnweb.typecheck.generated.ts
 packages/*/dist/

@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "lib": ["ES2022"],
+    "types": ["@cloudflare/workers-types"],
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "capnweb": ["../../../dist/index-workers.d.ts"],
+      "capnweb-validate": ["../../../packages/capnweb-validate/dist/index.d.mts"],
+      "capnweb-validate/internal": ["../../../packages/capnweb-validate/dist/internal/runtime.d.mts"]
+    }
+  },
+  "files": ["worker.ts"]
+}

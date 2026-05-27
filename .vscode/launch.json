@@ -4,12 +4,12 @@
     {
       "type": "node",
       "request": "attach",
-      "name": "typecheck: Worker",
+      "name": "validate: Worker",
       "address": "127.0.0.1",
       "port": 9229,
       "timeout": 60000,
       "restart": true,
-      "preLaunchTask": "typecheck: Worker dev server",
+      "preLaunchTask": "validate: Worker dev server",
       "skipFiles": [
         "<node_internals>/**"
       ],
@@ -20,11 +20,11 @@
     {
       "type": "chrome",
       "request": "launch",
-      "name": "typecheck: client",
+      "name": "validate: client",
       "url": "http://127.0.0.1:5173",
-      "webRoot": "${workspaceFolder}/examples/worker-react-typecheck/.wrangler/typecheck-web",
+      "webRoot": "${workspaceFolder}/examples/worker-react/client",
       "sourceMaps": true,
-      "preLaunchTask": "typecheck: client dev server",
+      "preLaunchTask": "validate: client dev server",
       "presentation": {
         "hidden": true
       }
@@ -32,10 +32,10 @@
   ],
   "compounds": [
     {
-      "name": "typecheck: debug all",
+      "name": "validate: debug all",
       "configurations": [
-        "typecheck: Worker",
-        "typecheck: client"
+        "validate: Worker",
+        "validate: client"
       ],
       "stopAll": true
     }
