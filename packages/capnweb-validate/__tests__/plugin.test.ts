@@ -122,12 +122,28 @@ describe("transformModule fast bail-outs", () => {
   });
 
   it("returns null when the file isn't in the Program", () => {
-    // The full per-module rewrite is covered in transform-module.test.ts;
-    // here we just pin the in-Program lookup path.
-    let ctx = createTransformContext();
-    let result = transformModule(ctx, "/src/not-in-program.ts",
-        `import { newWorkersRpcResponse } from "capnweb-validate";`);
-    expect(result).toBeNull();
+    // Use an empty Program so this fast-path test does not parse the whole
+    // repository when the full suite is running under CI load.
+    let dir = mkdtempSync(join(tmpdir(), "capnweb-validate-fast-bail-"));
+    try {
+      writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        files: [],
+      }));
+      let ctx = createTransformContext({
+        tsconfig: join(dir, "tsconfig.json"),
+        cwd: dir,
+      });
+      try {
+        let result = transformModule(ctx, "/src/not-in-program.ts",
+            `import { newWorkersRpcResponse } from "capnweb-validate";`);
+        expect(result).toBeNull();
+      } finally {
+        ctx.dispose();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
