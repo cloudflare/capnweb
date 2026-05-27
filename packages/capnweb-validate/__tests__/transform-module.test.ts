@@ -719,6 +719,36 @@ describe("transformModule: dictionary shapes", () => {
     expect(() => method.returns({ a: 1 }, ["set", "return"])).not.toThrow();
     expect(() => method.returns({ a: "x" }, ["set", "return"])).toThrow(RpcValidationError);
   });
+
+  it("skips symbol-keyed object properties", async () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("symbol-keys.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      const tag: unique symbol = Symbol("tag");
+      interface Payload {
+        id: string;
+        [tag]: number;
+        [Symbol.iterator](): Iterator<string>;
+      }
+      class Api extends RpcTarget {
+        save(value: Payload): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toContain('__rt.v.object({ "id": __rt.v.string }, "Payload")');
+    expect(code).not.toContain("__@tag");
+    expect(code).not.toContain("__@iterator");
+
+    let validator = await loadValidator(code, "__capnweb_validate_Api_server");
+    let method = validator.methods.save!;
+    expect(() => method.args[0]!({ id: "p_1" }, ["save", 0])).not.toThrow();
+  });
 });
 
 describe("transformModule: rejected built-ins", () => {
@@ -762,6 +792,22 @@ describe("transformModule: rejected built-ins", () => {
       expect(() => transform(src), `${label} should be rejected`).toThrow(want);
     });
   }
+
+  it("rejects Map return types with a pointed error", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("reject-map-return.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        fn(): Map<string, number> { return new Map(); }
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    expect(() => transform(src)).toThrow(/fn\.return: Map is not a capnweb wire type/);
+  });
 
   it("allows a method to opt out with @skipRpcValidation", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
@@ -1191,7 +1237,10 @@ describe("transformModule: runtime behavior", () => {
         },
       });
       let client = rt.__newMessagePortRpcSessionWithValidation<{
-        getChild(): { getName(): Promise<string>; load(id: string): Promise<string> };
+        getChild(): {
+          getName(): Promise<string>;
+          load(id: string): Promise<string>;
+        };
       }>(channel.port2, validator);
       let child = client.getChild();
 
@@ -1205,6 +1254,42 @@ describe("transformModule: runtime behavior", () => {
       channel.port1.close();
       channel.port2.close();
     }
+  });
+
+  it("client wrapper validates return values from nested stubs", async () => {
+    let rt = await import("../src/internal/runtime.js");
+    let childValidator = {
+      serviceName: "Child",
+      methods: {
+        getName: { args: [], returns: rt.v.string },
+        load: { args: [rt.v.string], returns: rt.v.string },
+      },
+    };
+    let validator = {
+      serviceName: "Api",
+      methods: {
+        getChild: { args: [], returns: rt.v.stubOf(childValidator) },
+      },
+    };
+    let client = rt.wrapClientStub({
+      async getChild() {
+        return {
+          async getName(): Promise<number> { return 42; },
+          async load(id: string): Promise<string> { return id; },
+        };
+      },
+    }, validator) as {
+      getChild(): Promise<{
+        getName(): Promise<string>;
+        load(id: string): Promise<string>;
+      }>;
+    };
+
+    let child = await client.getChild();
+
+    expect(() => child.load(123 as never)).toThrow(RpcValidationError);
+    await expect(child.getName()).rejects.toThrow(RpcValidationError);
+    await expect(child.load("ok")).resolves.toBe("ok");
   });
 
   it("client wrapper allows RpcPromise values as pipelined args", async () => {

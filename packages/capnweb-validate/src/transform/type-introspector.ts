@@ -108,6 +108,7 @@ function resolveServiceShapeInner(
   ctx.services.set(type, { shape: service, resolving: true });
 
   for (let prop of checker.getPropertiesOfType(type)) {
+    if (isSymbolNamedProperty(prop)) continue;
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
     if (!decl) continue;
     let propType = checker.getTypeOfSymbolAtLocation(prop, decl);
@@ -186,6 +187,11 @@ function createResolveContext(
     nextId: 0,
     services: new WeakMap(),
   };
+}
+
+function isSymbolNamedProperty(sym: ts.Symbol): boolean {
+  let name = sym.escapedName;
+  return typeof name === "string" && name.startsWith("__@");
 }
 
 function isPrivateOrProtected(tsm: typeof ts, decl: ts.Declaration): boolean {
@@ -452,6 +458,7 @@ function resolveObjectShape(
   let indexType = checker.getIndexTypeOfType?.(type, tsm.IndexKind.String);
   let index = indexType ? resolveType(ctx, indexType, depth + 1) : undefined;
   for (let prop of checker.getPropertiesOfType(type)) {
+    if (isSymbolNamedProperty(prop)) continue;
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
     if (!decl) continue;
     let pType = checker.getTypeOfSymbolAtLocation(prop, decl);

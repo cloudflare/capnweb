@@ -135,20 +135,39 @@ capnweb-validate validation for that method.
 ## Validation Errors
 
 Validation failures throw `RpcValidationError`, exported from
-`capnweb-validate`. It extends `TypeError` and carries structured detail in
-`error.rpcValidation`:
+`capnweb-validate`. It extends `TypeError`, so existing `TypeError` handlers
+still match, and carries structured detail in `error.rpcValidation`:
 
 ```ts
 import { RpcValidationError } from "capnweb-validate";
+
+type RpcValidationFailure = {
+  path: (string | number)[];
+  expected: string;
+  actual: string;
+  value: unknown;
+};
 
 try {
   await api.authenticate(123 as never);
 } catch (err) {
   if (err instanceof RpcValidationError) {
-    console.log(err.rpcValidation.path, err.rpcValidation.expected);
+    console.log(
+      err.rpcValidation.path,
+      err.rpcValidation.expected,
+      err.rpcValidation.actual
+    );
   }
 }
 ```
+
+Where errors surface depends on which boundary failed:
+
+| Boundary | Failure | How it surfaces |
+| -------- | ------- | --------------- |
+| Client outgoing call | Bad argument before transport | The stub method throws synchronously. |
+| Client resolved return | Bad return after transport | The returned promise rejects before user callbacks run. |
+| Server target | Bad incoming argument or outgoing return | The server throws and the caller observes an RPC rejection. |
 
 ## Current Type Coverage
 
