@@ -398,8 +398,12 @@ function resolveDecoratorShape(
   checker: ts.TypeChecker
 ): ServiceShape {
   let classType = getClassInstanceType(cls, checker);
+  let decoratorTypeArg = getDecoratorTypeArgumentNode(decorator);
+  if (decoratorTypeArg && typeNodeContainsAny(decoratorTypeArg)) {
+    warnDecoratorAny(sf, decoratorTypeArg);
+  }
   let type =
-    getDecoratorTypeArgument(decorator, checker) ??
+    (decoratorTypeArg ? checker.getTypeFromTypeNode(decoratorTypeArg) : null) ??
     getSingleImplementedType(sf, cls, decorator, checker) ??
     classType;
   if (isTooGeneric(type)) {
@@ -426,14 +430,36 @@ function resolveDecoratorShape(
   return shape;
 }
 
-function getDecoratorTypeArgument(
-  decorator: ts.Decorator,
-  checker: ts.TypeChecker
-): ts.Type | null {
+function getDecoratorTypeArgumentNode(
+  decorator: ts.Decorator
+): ts.TypeNode | null {
   let expression = decorator.expression;
   if (!ts.isCallExpression(expression)) return null;
-  let arg = expression.typeArguments?.[0];
-  return arg ? checker.getTypeFromTypeNode(arg) : null;
+  return expression.typeArguments?.[0] ?? null;
+}
+
+function typeNodeContainsAny(node: ts.TypeNode): boolean {
+  let found = false;
+  function visit(current: ts.Node): void {
+    if (found) return;
+    if (current.kind === ts.SyntaxKind.AnyKeyword) {
+      found = true;
+      return;
+    }
+    ts.forEachChild(current, visit);
+  }
+  visit(node);
+  return found;
+}
+
+function warnDecoratorAny(sf: ts.SourceFile, node: ts.TypeNode): void {
+  let { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+  console.warn(
+    `${sf.fileName}:${line + 1}:${character + 1}: capnweb-validate: ` +
+      `@validateRpc type argument contains \`any\`; generic content at ` +
+      `that position is not runtime-validated. Use a concrete surface type ` +
+      `if that boundary needs full validation.`
+  );
 }
 
 function getSingleImplementedType(

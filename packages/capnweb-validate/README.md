@@ -48,6 +48,40 @@ private validator for `Api`, and rewrites the decorator to pass that validator
 to the runtime wrapper. The same decorator shape also works for native Workers
 RPC entrypoints.
 
+## Generic service classes
+
+A decorator emits one validator at the class declaration. If the class itself
+is generic, the transform cannot specialize that validator for each later
+`new` expression.
+
+Use a concrete RPC surface when the type arguments are known at the decorator
+site:
+
+```ts
+@validateRpc<Gatekeeper<GmailSession, number, undefined>>()
+class GmailGatekeeper
+  extends RpcTarget
+  implements Gatekeeper<GmailSession, number, undefined> {
+  // ...
+}
+```
+
+If the implementation class is generic and no concrete type argument exists at
+the declaration, use an explicit surface with `any` in the generic position:
+
+```ts
+@validateRpc<Cursor<any>>()
+class ArrayCursor<T> extends RpcTarget implements Cursor<T> {
+  // ...
+}
+```
+
+This still validates the RPC method names, arity, non-generic fields, return
+capability shapes, and capnweb wire compatibility. Values flowing through the
+`any` position are permissive. The transform warns when an explicit
+`@validateRpc<...>()` type argument contains `any`; use a concrete surface type
+if that boundary needs full validation.
+
 ## Client Usage
 
 ```ts
@@ -221,6 +255,11 @@ type parameter with no inference source, an unsupported recursive corner, or a r
 built-in nested inside an object, the transform fails at the call site with a
 JSON-pointer-style list of every offending field. You fix them in one pass
 rather than rebuilding once per field.
+
+Recursive object and union shapes are emitted with lazy back-references. The
+resolver also has a guardrail for pathological non-recursive nesting. If the
+lowered type graph exceeds the internal resolution depth limit, it fails with
+`type exceeds maximum resolution depth (64)`.
 
 ## License
 

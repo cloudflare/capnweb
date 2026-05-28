@@ -12,7 +12,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RpcValidationError } from "../src/index.js";
 import { createTransformContext } from "../src/transform/context.js";
@@ -313,6 +313,35 @@ describe("transformModule: decorator rewrite", () => {
     expect(code).toContain("const __capnweb_validate_PublicApi_server");
     expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
     expect(code).not.toMatch(/helper[^}]*args:/s);
+  });
+
+  it("warns when an explicit decorator type argument contains any", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("decorator-any.ts", `
+      import { validateRpc } from "capnweb-validate";
+      import { RpcTarget } from "capnweb";
+      interface Cursor<T> {
+        next(): Promise<T | null>;
+      }
+      @validateRpc<Cursor<any>>()
+      class ArrayCursor<T> extends RpcTarget implements Cursor<T> {
+        async next(): Promise<T | null> { return null; }
+      }
+    `);
+    let warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      let { code } = transform(src);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toContain(
+        "@validateRpc type argument contains `any`"
+      );
+      expect(code).toContain("const __capnweb_validate_Cursor_server");
+      expect(code).toMatch(/next[^}]*returns:\s*__rt\.v\.any/s);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("uses a single implemented interface and applies method opt-outs", () => {
@@ -1031,6 +1060,26 @@ describe("transformModule: recursive types", () => {
     `);
 
     expect(() => transform(src)).toThrow(/Map is not a capnweb wire type/);
+  });
+
+  it("reports the maximum resolution depth", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let chain = Array.from({ length: 70 }, (_, i) =>
+      `interface N${i} { value: ${i === 69 ? "string" : `N${i + 1}`}; }`
+    ).join("\n");
+    let src = write("deep.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      ${chain}
+      class Api extends RpcTarget {
+        getDeep(): N0 { return undefined as any; }
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    expect(() => transform(src)).toThrow(/maximum resolution depth \(64\)/);
   });
 });
 
