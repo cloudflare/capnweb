@@ -65,4 +65,3 @@ export const capnwebValidate = createUnplugin<
   };
 });
 
-export default capnwebValidate;
