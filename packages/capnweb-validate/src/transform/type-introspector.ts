@@ -45,7 +45,15 @@ export type TypeShape =
   | { kind: "literal"; value: string | number | boolean }
   // ----- pass-by-value containers -----
   | { kind: "array"; id?: number; element: TypeShape }
-  | { kind: "tuple"; id?: number; elements: TypeShape[] }
+  | {
+      kind: "tuple";
+      id?: number;
+      elements: TypeShape[];
+      /** Number of required leading elements (`[a, b?]` -> 1). */
+      minLength?: number;
+      /** Variadic tail element type for `[a, ...b[]]`. */
+      rest?: TypeShape;
+    }
   | {
       kind: "object";
       id?: number;
@@ -105,7 +113,10 @@ function resolveServiceShapeInner(
     // Anonymous object type - fine, just less useful in error messages.
     name = "Service";
   }
-  let targetKind = isWorkerEntrypointType(checker, type)
+  let targetKind: "workerEntrypoint" | undefined = isWorkerEntrypointType(
+    checker,
+    type
+  )
     ? "workerEntrypoint"
     : undefined;
   let service: ServiceShape = {
@@ -155,6 +166,7 @@ function resolveServiceShapeInner(
           rest = shape.element;
         } else if (shape.kind === "tuple") {
           params.push(...shape.elements);
+          if (shape.rest) rest = shape.rest;
         } else {
           rest = shape;
         }
@@ -162,10 +174,7 @@ function resolveServiceShapeInner(
         params.push(shape);
       }
     }
-    let returns = resolveType(
-      ctx,
-      unwrapPromise(tsm, checker, sig.getReturnType())
-    );
+    let returns = resolveReturnType(ctx, sig.getReturnType());
     service.methods.push({ name: prop.getName(), params, rest, returns });
   }
 
@@ -252,14 +261,46 @@ function hasSkipRpcValidationDecorator(
 function unwrapPromise(
   tsm: typeof ts,
   checker: ts.TypeChecker,
-  type: ts.Type
+  type: ts.Type,
+  depth = 0
 ): ts.Type {
-  let sym = type.getSymbol();
-  if (sym && sym.getName() === "Promise") {
+  if (depth > MAX_RESOLVE_DEPTH) return type;
+  let sym = type.getSymbol() ?? type.aliasSymbol;
+  let name = sym?.getName();
+  if (name === "Promise" || name === "PromiseLike") {
     let args = checker.getTypeArguments(type as ts.TypeReference);
-    if (args.length === 1) return args[0]!;
+    // Unwrap nested awaitables too (`Promise<Promise<T>>`).
+    if (args.length === 1)
+      return unwrapPromise(tsm, checker, args[0]!, depth + 1);
   }
   return type;
+}
+
+/**
+ * Resolve a method's return type, accounting for the fact that capnweb awaits
+ * the return value before delivering it. A bare `Promise<T>` / `PromiseLike<T>`
+ * is unwrapped to `T`; a union that *contains* an awaitable (e.g.
+ * `Promise<T> | undefined`) has each awaitable branch unwrapped so the emitted
+ * validator matches the resolved value rather than the thenable object (which
+ * would reject every successful call).
+ */
+function resolveReturnType(ctx: ResolveContext, type: ts.Type): TypeShape {
+  let { tsm, checker } = ctx;
+  let unwrapped = unwrapPromise(tsm, checker, type);
+  if (unwrapped !== type) return resolveType(ctx, unwrapped);
+  if (type.getFlags() & tsm.TypeFlags.Union) {
+    let union = type as ts.UnionType;
+    let hasAwaitable = union.types.some(
+      (t) => unwrapPromise(tsm, checker, t) !== t
+    );
+    if (hasAwaitable) {
+      let branches = union.types.map((t) =>
+        resolveType(ctx, unwrapPromise(tsm, checker, t))
+      );
+      return collapseUnion(branches);
+    }
+  }
+  return resolveType(ctx, type);
 }
 
 /**
@@ -356,6 +397,11 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
   if (flags & TypeFlags.NumberLiteral) {
     return { kind: "literal", value: (type as ts.NumberLiteralType).value };
   }
+  if (flags & TypeFlags.BigIntLiteral) {
+    // capnweb transports bigint by value, but the literal machinery only
+    // carries string/number/boolean. Validate the bigint brand, not the value.
+    return { kind: "bigint" };
+  }
   if (flags & TypeFlags.BooleanLiteral) {
     // Boolean literal flag covers `true` / `false`. Their intrinsic name is
     // "true" / "false" - read it off the type to disambiguate.
@@ -417,11 +463,54 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
     let args = checker.getTypeArguments(type as ts.TypeReference);
-    let elements = args.map((t) => resolveType(ctx, t, depth + 1));
+    // ts.ElementFlags: Required=1, Optional=2, Rest=4, Variadic=8. Read them off
+    // the tuple target so optional (`[a, b?]`) and rest (`[a, ...b[]]`) elements
+    // become a variable-arity validator instead of a fixed-length one.
+    let target = (type as ts.TypeReference).target as ts.TupleType | undefined;
+    let elementFlags = target?.elementFlags ?? [];
+    let head: TypeShape[] = [];
+    let minLength = 0;
+    let rest: TypeShape | undefined;
+    let sawRest = false;
+    let restNotLast = false;
+    for (let i = 0; i < args.length; i++) {
+      let flag = elementFlags[i] ?? 1;
+      let shape = resolveType(ctx, args[i]!, depth + 1);
+      if (flag & (4 | 8)) {
+        // Rest or Variadic. `...number[]` carries the array element type; a
+        // bare element type is used directly.
+        if (sawRest) {
+          restNotLast = true;
+          break;
+        }
+        sawRest = true;
+        rest = shape.kind === "array" ? shape.element : shape;
+      } else {
+        // A fixed/optional element after a rest element (`[...a[], b]`) cannot
+        // be expressed as head + tail, so reject it at build time rather than
+        // emit a silently-wrong validator.
+        if (sawRest) {
+          restNotLast = true;
+          break;
+        }
+        head.push(shape);
+        if (!(flag & 2)) minLength = head.length;
+      }
+    }
+    if (restNotLast) {
+      return finishResolve(ctx, type, entry, {
+        kind: "unsupported",
+        reason: "tuple with a rest element before a fixed element",
+        typeExpr: checker.typeToString(type),
+        fixHint: "place the rest element last, e.g. `[a, ...b[]]`",
+      });
+    }
     return finishResolve(ctx, type, entry, {
       kind: "tuple",
       id: entry.id,
-      elements,
+      elements: head,
+      ...(minLength !== head.length ? { minLength } : {}),
+      ...(rest ? { rest } : {}),
     });
   }
 
@@ -666,19 +755,29 @@ function isFetcherLikeType(ctx: ResolveContext, type: ts.Type): boolean {
   ) {
     return true;
   }
+  // Structural fallback: exactly `fetch` + `connect`, both methods. Without
+  // the call-signature check, a `{ fetch: string; connect: number }` value
+  // would be misread as a Fetcher stub and skip field validation.
   let props = ctx.checker.getPropertiesOfType(type);
-  return (
-    props.length === 2 &&
-    props.some((prop) => prop.getName() === "fetch") &&
-    props.some((prop) => prop.getName() === "connect")
-  );
+  return props.length === 2 && hasFetcherMethods(ctx, type);
 }
 
 function hasFetcherMethods(ctx: ResolveContext, type: ts.Type): boolean {
-  let props = ctx.checker.getPropertiesOfType(type);
+  return isMethodProp(ctx, type, "fetch") && isMethodProp(ctx, type, "connect");
+}
+
+function isMethodProp(
+  ctx: ResolveContext,
+  type: ts.Type,
+  name: string
+): boolean {
+  let prop = getProperty(ctx, type, name);
+  if (!prop) return false;
+  let decl = prop.valueDeclaration ?? prop.declarations?.[0];
+  if (!decl) return false;
   return (
-    props.some((prop) => prop.getName() === "fetch") &&
-    props.some((prop) => prop.getName() === "connect")
+    ctx.checker.getTypeOfSymbolAtLocation(prop, decl).getCallSignatures()
+      .length > 0
   );
 }
 
@@ -732,9 +831,11 @@ function isCapnwebValidateSymbol(sym: ts.Symbol): boolean {
 function isRpcRuntimeSymbol(sym: ts.Symbol): boolean {
   for (let decl of sym.getDeclarations() ?? []) {
     let fileName = decl.getSourceFile().fileName;
-    // Published/workspace capnweb, and generated Workers types that back
-    // `cloudflare:workers`.
-    if (/[\\/]capnweb[\\/]/.test(fileName)) return true;
+    // Installed capnweb, and generated Workers types that back
+    // `cloudflare:workers`. Scoped to node_modules so a user project that
+    // merely lives under a directory named `capnweb` is not misdetected;
+    // source/workspace layouts resolve via the module-specifier check below.
+    if (/[\\/]node_modules[\\/]capnweb[\\/]/.test(fileName)) return true;
     if (/[\\/]@cloudflare[\\/]workers-types[\\/]/.test(fileName)) return true;
   }
   // Ambient `declare module "capnweb" { ... }` - covers test fixtures and any
@@ -881,6 +982,8 @@ export function collectUnsupported(
         shape.elements.forEach((e, i) =>
           walk(svc, methodName, appendSuffix(position, `[${i}]`), e)
         );
+        if (shape.rest)
+          walk(svc, methodName, appendSuffix(position, "[*]"), shape.rest);
         return;
       case "union":
         shape.branches.forEach((b, i) =>

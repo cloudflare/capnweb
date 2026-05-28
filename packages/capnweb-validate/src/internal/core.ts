@@ -14,7 +14,7 @@ type ValidationOptions = {
 
 type RuntimeShape =
   | { kind: "array"; element: Validator }
-  | { kind: "tuple"; elements: Validator[] }
+  | { kind: "tuple"; elements: Validator[]; rest?: Validator }
   | { kind: "object"; properties: Record<string, Validator> }
   | { kind: "union"; branches: Validator[] }
   | { kind: "lazy"; thunk: () => Validator }
@@ -154,18 +154,31 @@ export const v = {
       { kind: "array", element: elem }
     );
   },
-  tuple(elements: Validator[]): Validator {
+  tuple(
+    elements: Validator[],
+    opts?: { minLength?: number; rest?: Validator }
+  ): Validator {
+    let minLength = opts?.minLength ?? elements.length;
+    let rest = opts?.rest;
+    let label = `tuple(${elements.length})`;
+    if (rest) label = `tuple(>=${minLength})`;
+    else if (minLength !== elements.length)
+      label = `tuple(${minLength}..${elements.length})`;
     return withShape(
       (value, path, options) => {
         if (isDeferredValidationValue(value, options)) return;
         if (!Array.isArray(value)) fail(path, "tuple", value);
-        if (value.length !== elements.length)
-          fail(path, `tuple(${elements.length})`, value);
-        for (let i = 0; i < elements.length; i++) {
-          elements[i]!(value[i], [...path, i], options);
+        if (
+          value.length < minLength ||
+          (!rest && value.length > elements.length)
+        )
+          fail(path, label, value);
+        for (let i = 0; i < value.length; i++) {
+          let elem = i < elements.length ? elements[i]! : rest;
+          if (elem) elem(value[i], [...path, i], options);
         }
       },
-      { kind: "tuple", elements }
+      rest ? { kind: "tuple", elements, rest } : { kind: "tuple", elements }
     );
   },
   object(
@@ -420,7 +433,12 @@ export function wrapServerTarget<T extends object>(
   return new Proxy(target, {
     get(t, prop, receiver) {
       let orig = Reflect.get(t, prop, receiver);
-      if (typeof prop !== "string") return orig;
+      if (typeof prop !== "string") {
+        // Forward symbol-keyed members (Symbol.dispose etc.) bound to the real
+        // target. An unbound dispose would run with `this` as this proxy and
+        // re-enter the get trap on a helper call, throwing missingMethod.
+        return typeof orig === "function" ? orig.bind(t) : orig;
+      }
       if (typeof orig !== "function") return orig;
       let methodSpec = validator.methods[prop];
       if (!methodSpec) {
@@ -512,13 +530,16 @@ function wrapResolvedValue(
   }
   if (shape.kind === "array" || shape.kind === "tuple") {
     if (!Array.isArray(value)) return value;
-    let validators =
-      shape.kind === "array" ? value.map(() => shape.element) : shape.elements;
     let next: unknown[] | undefined;
-    for (let i = 0; i < validators.length && i < value.length; i++) {
+    for (let i = 0; i < value.length; i++) {
+      let elemValidator =
+        shape.kind === "array"
+          ? shape.element
+          : (shape.elements[i] ?? shape.rest);
+      if (!elemValidator) continue;
       let wrapped = wrapResolvedValue(
         value[i],
-        validators[i]!,
+        elemValidator,
         [...path, i],
         side
       );
@@ -665,6 +686,11 @@ function wrapRpcPromise(
       }
       if (canPassThroughMethod(prop))
         return Reflect.get(target, prop, receiver);
+      // No resolved surface (e.g. a self-/mutually-recursive service-less
+      // stub) means no method list to check, so pass the call through
+      // rather than throwing on a legitimate call.
+      if (isUnknownSurfaceStub(returns))
+        return Reflect.get(target, prop, receiver);
       return missingMethod(serviceNameFor(returns) ?? formatPath(path), prop);
     },
     apply(target, thisArg, argArray) {
@@ -716,6 +742,14 @@ function serviceNameFor(validator: Validator): string | undefined {
   return shape.service?.serviceName;
 }
 
+// True for a stub whose service surface could not be resolved. Pipelined
+// access on it can't be checked, so the runtime passes it through.
+function isUnknownSurfaceStub(validator: Validator): boolean {
+  let shape = shapeOf(validator);
+  while (shape?.kind === "lazy") shape = shapeOf(shape.thunk());
+  return shape?.kind === "stub" && !shape.service;
+}
+
 function propertyValidatorFor(
   validator: Validator,
   prop: string
@@ -724,8 +758,10 @@ function propertyValidatorFor(
   if (shape?.kind === "lazy") return propertyValidatorFor(shape.thunk(), prop);
   if (shape?.kind === "object") return shape.properties[prop];
   if (shape?.kind === "array" && numericKey(prop)) return shape.element;
-  if (shape?.kind === "tuple" && numericKey(prop))
-    return shape.elements[Number(prop)];
+  if (shape?.kind === "tuple" && numericKey(prop)) {
+    let i = Number(prop);
+    return i < shape.elements.length ? shape.elements[i] : shape.rest;
+  }
   return undefined;
 }
 
@@ -770,7 +806,11 @@ export function wrapClientStub(
   return new Proxy(stub, {
     get(t, prop, receiver) {
       let orig = Reflect.get(t, prop, receiver);
-      if (typeof prop !== "string") return orig;
+      if (typeof prop !== "string") {
+        // See wrapServerTarget: forward symbol-keyed members bound to the
+        // target so disposal and other well-known-symbol hooks keep working.
+        return typeof orig === "function" ? orig.bind(t) : orig;
+      }
       if (typeof orig !== "function") return orig;
       let methodSpec = validator.methods[prop];
       if (!methodSpec) {

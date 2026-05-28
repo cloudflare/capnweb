@@ -8,7 +8,11 @@ export type { RpcValidationFailure } from "./error.js";
 type AnyClass = abstract new (...args: any[]) => object;
 type AnyMethod = (this: unknown, ...args: any[]) => unknown;
 
-type ClassDecoratorMarker = <TClass extends AnyClass>(
+// Optional `@validateRpc<TSurface>()` arg: the class must satisfy TSurface
+// (narrow or pin a generic). No arg => `unknown`, so any class is accepted.
+type ClassDecoratorMarker<TSurface = unknown> = <
+  TClass extends abstract new (...args: any[]) => TSurface
+>(
   value: TClass,
   context: ClassDecoratorContext<TClass>
 ) => void | TClass;
@@ -24,11 +28,11 @@ type LegacyMethodDecoratorMarker = (
   descriptor: PropertyDescriptor
 ) => void;
 
-export function validateRpc<TSurface = unknown, TClass extends AnyClass = AnyClass>(
+export function validateRpc<TClass extends AnyClass = AnyClass>(
   value: TClass,
   context: ClassDecoratorContext<TClass>
 ): void | TClass;
-export function validateRpc<TSurface = unknown>(): ClassDecoratorMarker;
+export function validateRpc<TSurface = unknown>(): ClassDecoratorMarker<TSurface>;
 export function validateRpc(
   ...args: unknown[]
 ): void | ClassDecoratorMarker {

@@ -141,7 +141,18 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
       let elements = shape.elements
         .map((e) => emitValidator_(e, ctx))
         .join(", ");
-      return `__rt.v.tuple([${elements}])`;
+      let opts: string[] = [];
+      if (
+        shape.minLength !== undefined &&
+        shape.minLength !== shape.elements.length
+      ) {
+        opts.push(`minLength: ${shape.minLength}`);
+      }
+      if (shape.rest) {
+        opts.push(`rest: ${emitValidator_(shape.rest, ctx)}`);
+      }
+      let optsArg = opts.length ? `, { ${opts.join(", ")} }` : "";
+      return `__rt.v.tuple([${elements}]${optsArg})`;
     }
     case "object": {
       let hoisted = hoistedBinding(shape, ctx);

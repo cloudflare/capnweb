@@ -1,6 +1,6 @@
 import { defineConfig } from 'vite'
 import path from 'node:path'
-import capnwebValidate from '../../../packages/capnweb-validate/src/plugin.ts'
+import { capnwebValidate } from '../../../packages/capnweb-validate/src/plugin.ts'
 
 const repoRoot = path.resolve(__dirname, '../../..')
 

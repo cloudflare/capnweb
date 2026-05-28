@@ -788,6 +788,68 @@ describe("transformModule: rest parameters", () => {
   });
 });
 
+describe("transformModule: variable-arity tuples", () => {
+  it("accepts optional and rest tuple lengths a fixed-arity check would reject", async () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("vtuple.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        opt(t: [string, number?]): void {}
+        rest(t: [string, ...number[]]): void {}
+        mix(t: [string, number?, ...boolean[]]): void {}
+      }
+      export function h(req: Request): Promise<Response> {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    let { code } = transform(src);
+    expect(code).toContain("minLength: 1");
+    expect(code).toMatch(/rest:\s*__rt\.v\.number/);
+    let validator = await loadValidator(code, "__capnweb_validate_Api_server");
+
+    // [string, number?] - 1 or 2 elements valid; longer or wrong-typed rejected.
+    let opt = validator.methods.opt!.args[0]!;
+    expect(() => opt(["a"], ["opt", 0])).not.toThrow();
+    expect(() => opt(["a", 1], ["opt", 0])).not.toThrow();
+    expect(() => opt([], ["opt", 0])).toThrow(RpcValidationError);
+    expect(() => opt(["a", 1, 2], ["opt", 0])).toThrow(RpcValidationError);
+    expect(() => opt(["a", "x"], ["opt", 0])).toThrow(RpcValidationError);
+
+    // [string, ...number[]] - 1+ elements, any count of trailing numbers.
+    let rest = validator.methods.rest!.args[0]!;
+    expect(() => rest(["a"], ["rest", 0])).not.toThrow();
+    expect(() => rest(["a", 1], ["rest", 0])).not.toThrow();
+    expect(() => rest(["a", 1, 2, 3], ["rest", 0])).not.toThrow();
+    expect(() => rest([], ["rest", 0])).toThrow(RpcValidationError);
+    expect(() => rest(["a", "x"], ["rest", 0])).toThrow(RpcValidationError);
+
+    // [string, number?, ...boolean[]] - head + optional + variadic tail.
+    let mix = validator.methods.mix!.args[0]!;
+    expect(() => mix(["a"], ["mix", 0])).not.toThrow();
+    expect(() => mix(["a", 1], ["mix", 0])).not.toThrow();
+    expect(() => mix(["a", 1, true, false], ["mix", 0])).not.toThrow();
+    expect(() => mix([], ["mix", 0])).toThrow(RpcValidationError);
+    expect(() => mix(["a", 1, "no"], ["mix", 0])).toThrow(RpcValidationError);
+  });
+
+  it("rejects a rest element before a fixed element at build time", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("midrest.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        bad(t: [string, ...number[], boolean]): void {}
+      }
+      export function h(req: Request): Promise<Response> {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+    expect(transformError(src)).toContain("rest element before a fixed element");
+  });
+});
+
 describe("type-introspector platform paths", () => {
   it("recognizes TypeScript lib files with POSIX and Windows separators", () => {
     expect(isTypeScriptLibFileName("/repo/node_modules/typescript/lib/lib.es2023.d.ts")).toBe(true);

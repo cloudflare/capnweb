@@ -197,10 +197,21 @@ export function transformModule(
       end: callee.getEnd(),
       text: `${RUNTIME_NAMESPACE}.${cs.marker.helper}`,
     });
-    let closeParenPos = cs.call.getEnd() - 1;
-    let hasArgs = (cs.call.arguments?.length ?? 0) > 0;
-    let insertion = hasArgs ? `, ${cs.bindingName!}` : `${cs.bindingName!}`;
-    edits.push({ start: closeParenPos, end: closeParenPos, text: insertion });
+    let args = cs.call.arguments;
+    if (args && args.length > 0) {
+      // Insert right after the last argument rather than before `)`, so an
+      // existing trailing comma (`f(a, b,)`, common with Prettier) does not
+      // produce a `f(a, b,, __v)` double comma / syntax error.
+      let pos = args[args.length - 1]!.getEnd();
+      edits.push({ start: pos, end: pos, text: `, ${cs.bindingName!}` });
+    } else {
+      let closeParenPos = cs.call.getEnd() - 1;
+      edits.push({
+        start: closeParenPos,
+        end: closeParenPos,
+        text: `${cs.bindingName!}`,
+      });
+    }
   }
 
   for (let site of decoratorSites) {
@@ -730,7 +741,9 @@ function isCapnwebSymbolAt(checker: ts.TypeChecker, node: ts.Node): boolean {
   if (!sym) return false;
   for (let decl of sym.getDeclarations() ?? []) {
     let fileName = decl.getSourceFile().fileName;
-    if (/[\\/]capnweb[\\/]/.test(fileName)) return true;
+    // Scoped to node_modules so a project under a `capnweb/` directory is not
+    // misdetected; source/workspace layouts match via the specifier below.
+    if (/[\\/]node_modules[\\/]capnweb[\\/]/.test(fileName)) return true;
   }
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
   return !!parent && (parent.escapedName as string) === '"capnweb"';
@@ -798,6 +811,8 @@ function typeSignature(shape: TypeShape): unknown {
       return [
         shape.kind,
         shape.elements.map((element) => typeSignature(element)),
+        shape.minLength ?? null,
+        shape.rest ? typeSignature(shape.rest) : null,
       ];
     case "object":
       return [
