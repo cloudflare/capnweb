@@ -60,6 +60,15 @@ function transform(id: string): { code: string; map?: string } {
   }
 }
 
+function transformError(id: string): string {
+  try {
+    transform(id);
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+  throw new Error("transformModule did not throw");
+}
+
 type TestServiceValidator = {
   serviceName: string;
   methods: Record<string, {
@@ -861,31 +870,30 @@ describe("transformModule: dictionary shapes", () => {
 });
 
 describe("transformModule: rejected built-ins", () => {
-  // Each entry pairs a service signature with the substring the build error
-  // must mention. We assert on the reason text so future renames of a
-  // rejection message don't go unnoticed.
-  let rejected: [string, string, RegExp][] = [
-    ["Map",                "fn(m: Map<string, number>): void",      /Map is not a capnweb wire type/],
-    ["Set",                "fn(s: Set<string>): void",              /Set is not a capnweb wire type/],
-    ["WeakMap",            "fn(m: WeakMap<object, number>): void",  /WeakMap is not a capnweb wire type/],
-    ["WeakSet",            "fn(s: WeakSet<object>): void",          /WeakSet is not a capnweb wire type/],
-    ["ArrayBuffer",        "fn(b: ArrayBuffer): void",              /ArrayBuffer is not a capnweb wire type/],
-    ["SharedArrayBuffer",  "fn(b: SharedArrayBuffer): void",        /SharedArrayBuffer is not a capnweb wire type/],
-    ["Int8Array",          "fn(b: Int8Array): void",                /Int8Array is not a capnweb wire type/],
-    ["Uint8ClampedArray",  "fn(b: Uint8ClampedArray): void",        /Uint8ClampedArray is not a capnweb wire type/],
-    ["Int16Array",         "fn(b: Int16Array): void",               /Int16Array is not a capnweb wire type/],
-    ["Uint16Array",        "fn(b: Uint16Array): void",              /Uint16Array is not a capnweb wire type/],
-    ["Int32Array",         "fn(b: Int32Array): void",               /Int32Array is not a capnweb wire type/],
-    ["Uint32Array",        "fn(b: Uint32Array): void",              /Uint32Array is not a capnweb wire type/],
-    ["Float32Array",       "fn(b: Float32Array): void",             /Float32Array is not a capnweb wire type/],
-    ["Float64Array",       "fn(b: Float64Array): void",             /Float64Array is not a capnweb wire type/],
-    ["BigInt64Array",      "fn(b: BigInt64Array): void",            /BigInt64Array is not a capnweb wire type/],
-    ["BigUint64Array",     "fn(b: BigUint64Array): void",           /BigUint64Array is not a capnweb wire type/],
-    ["RegExp",             "fn(r: RegExp): void",                   /RegExp is not a capnweb wire type/],
-    ["DataView",           "fn(d: DataView): void",                 /DataView is not a capnweb wire type/],
+  // Each entry pairs a service signature with the rejected type name the
+  // build error must mention.
+  let rejected: [string, string][] = [
+    ["Map",                "fn(m: Map<string, number>): void"],
+    ["Set",                "fn(s: Set<string>): void"],
+    ["WeakMap",            "fn(m: WeakMap<object, number>): void"],
+    ["WeakSet",            "fn(s: WeakSet<object>): void"],
+    ["ArrayBuffer",        "fn(b: ArrayBuffer): void"],
+    ["SharedArrayBuffer",  "fn(b: SharedArrayBuffer): void"],
+    ["Int8Array",          "fn(b: Int8Array): void"],
+    ["Uint8ClampedArray",  "fn(b: Uint8ClampedArray): void"],
+    ["Int16Array",         "fn(b: Int16Array): void"],
+    ["Uint16Array",        "fn(b: Uint16Array): void"],
+    ["Int32Array",         "fn(b: Int32Array): void"],
+    ["Uint32Array",        "fn(b: Uint32Array): void"],
+    ["Float32Array",       "fn(b: Float32Array): void"],
+    ["Float64Array",       "fn(b: Float64Array): void"],
+    ["BigInt64Array",      "fn(b: BigInt64Array): void"],
+    ["BigUint64Array",     "fn(b: BigUint64Array): void"],
+    ["RegExp",             "fn(r: RegExp): void"],
+    ["DataView",           "fn(d: DataView): void"],
   ];
 
-  for (let [label, sig, want] of rejected) {
+  for (let [label, sig] of rejected) {
     it(`rejects ${label} with a pointed error`, () => {
       write("capnweb.d.ts", CAPNWEB_SHIM);
       let src = write(`reject-${label}.ts`, `
@@ -898,24 +906,144 @@ describe("transformModule: rejected built-ins", () => {
           return newWorkersRpcResponse(req, new Api());
         }
       `);
-      expect(() => transform(src), `${label} should be rejected`).toThrow(want);
+      let message = transformError(src);
+      expect(message, `${label} should be rejected`).toContain(
+        `Api.fn argument 1 is ${label}`
+      );
+      expect(message).toContain("which is not a capnweb wire type");
     });
   }
 
-  it("rejects Map return types with a pointed error", () => {
+  it("formats a single generic return type error", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("reject-map-return.ts", `
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
+      interface User { id: string; }
       class Api extends RpcTarget {
-        fn(): Map<string, number> { return new Map(); }
+        list(): Map<string, User> { return new Map(); }
       }
       export function h(req: Request): Response {
         return newWorkersRpcResponse(req, new Api());
       }
     `);
 
-    expect(() => transform(src)).toThrow(/fn\.return: Map is not a capnweb wire type/);
+    let message = transformError(src);
+
+    expect(message).toMatch(/reject-map-return\.ts:\d+:\d+: capnweb-validate: /);
+    expect(message).toContain(
+      "Api.list returns Map<string, User>, which is not a capnweb wire type. " +
+        "Use a plain object or an array of entries instead."
+    );
+    expect(message).not.toContain("Fix or replace these fields");
+  });
+
+  it("formats a single generic argument error with a 1-indexed position", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("reject-set-arg.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        upsert(id: string, tags: Set<string>): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    expect(transformError(src)).toContain(
+      "Api.upsert argument 2 is Set<string>, which is not a capnweb wire type. " +
+        "Use an array instead."
+    );
+  });
+
+  it("formats a single rest argument error", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("reject-rest.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        add(...tags: Set<string>[]): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    expect(transformError(src)).toContain(
+      "Api.add rest argument is Set<string>, which is not a capnweb wire type. " +
+        "Use an array instead."
+    );
+  });
+
+  it("formats multiple unsupported type errors with one collective frame", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("reject-multiple.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      interface User { id: string; }
+      class Api extends RpcTarget {
+        list(): Map<string, User> { return new Map(); }
+        upsert(tags: Set<string>): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    let message = transformError(src);
+
+    expect(message).toContain(
+      "capnweb-validate: `Api` references types that capnweb cannot transport:"
+    );
+    expect(message).toContain(
+      "  - Api.list returns Map<string, User>, which is not a capnweb wire type. " +
+        "Use a plain object or an array of entries instead."
+    );
+    expect(message).toContain(
+      "  - Api.upsert argument 1 is Set<string>, which is not a capnweb wire type. " +
+        "Use an array instead."
+    );
+  });
+
+  it("formats a nested unsupported type path", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("reject-nested.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      interface User { id: string; }
+      interface Payload { config: { items: [Map<string, User>] }; }
+      class Api extends RpcTarget {
+        save(payload: Payload): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    expect(transformError(src)).toContain(
+      "Api.save argument 1 .config.items[0] is Map<string, User>, " +
+        "which is not a capnweb wire type. " +
+        "Use a plain object or an array of entries instead."
+    );
+  });
+
+  it("formats a rejected type with no generic arguments", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("reject-regexp.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        match(pattern: RegExp): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    expect(transformError(src)).toContain(
+      "Api.match argument 1 is RegExp, which is not a capnweb wire type."
+    );
   });
 
   it("allows a method to opt out with @skipRpcValidation", async () => {
@@ -1043,7 +1171,7 @@ describe("transformModule: recursive types", () => {
       }
     `);
 
-    expect(() => transform(src)).toThrow(/Map is not a capnweb wire type/);
+    expect(transformError(src)).toContain("Map<string, number>, which is not a capnweb wire type");
   });
 
   it("still reports unsupported union branches", () => {
@@ -1059,7 +1187,7 @@ describe("transformModule: recursive types", () => {
       }
     `);
 
-    expect(() => transform(src)).toThrow(/Map is not a capnweb wire type/);
+    expect(transformError(src)).toContain("Map<string, number>, which is not a capnweb wire type");
   });
 
   it("reports the maximum resolution depth", () => {

@@ -253,8 +253,8 @@ build time, not at the first RPC call:
 If a method signature contains a leaf the resolver cannot lower, such as a generic
 type parameter with no inference source, an unsupported recursive corner, or a rejected
 built-in nested inside an object, the transform fails at the call site with a
-JSON-pointer-style list of every offending field. You fix them in one pass
-rather than rebuilding once per field.
+class-qualified list of every offending field. You fix them in one pass rather
+than rebuilding once per field.
 
 Recursive object and union shapes are emitted with lazy back-references. The
 resolver also has a guardrail for pathological non-recursive nesting. If the

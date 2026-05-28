@@ -69,7 +69,12 @@ export type TypeShape =
   | { kind: "function" } // plain functions
   | { kind: "stub"; service?: ServiceShape } // RpcStub<T>, RpcPromise<T>, Fetcher<T>
   // ----- rejected / unrepresentable -----
-  | { kind: "unsupported"; reason: string };
+  | {
+      kind: "unsupported";
+      reason: string;
+      typeExpr?: string;
+      fixHint?: string;
+    };
 
 /**
  * Resolve the service type at a marker call site to a normalized
@@ -312,33 +317,25 @@ const BUILTIN_VALUE_TYPES: Record<string, TypeShape["kind"]> = {
  * Built-in classes capnweb intentionally rejects. Hitting one of these in a
  * service signature is a build error - users have to refactor their API.
  */
-const BUILTIN_REJECTED_TYPES: Record<string, string> = {
-  Map: "Map is not a capnweb wire type. Use a plain object or an array of entries instead.",
-  Set: "Set is not a capnweb wire type. Use an array instead.",
-  WeakMap: "WeakMap is not a capnweb wire type.",
-  WeakSet: "WeakSet is not a capnweb wire type.",
-  ArrayBuffer:
-    "ArrayBuffer is not a capnweb wire type. Use Uint8Array instead.",
-  SharedArrayBuffer: "SharedArrayBuffer is not a capnweb wire type.",
-  Int8Array: "Int8Array is not a capnweb wire type. Use Uint8Array instead.",
-  Uint8ClampedArray:
-    "Uint8ClampedArray is not a capnweb wire type. Use Uint8Array instead.",
-  Int16Array: "Int16Array is not a capnweb wire type. Use Uint8Array instead.",
-  Uint16Array:
-    "Uint16Array is not a capnweb wire type. Use Uint8Array instead.",
-  Int32Array: "Int32Array is not a capnweb wire type. Use Uint8Array instead.",
-  Uint32Array:
-    "Uint32Array is not a capnweb wire type. Use Uint8Array instead.",
-  Float32Array:
-    "Float32Array is not a capnweb wire type. Use Uint8Array instead.",
-  Float64Array:
-    "Float64Array is not a capnweb wire type. Use Uint8Array instead.",
-  BigInt64Array:
-    "BigInt64Array is not a capnweb wire type. Use Uint8Array instead.",
-  BigUint64Array:
-    "BigUint64Array is not a capnweb wire type. Use Uint8Array instead.",
-  RegExp: "RegExp is not a capnweb wire type.",
-  DataView: "DataView is not a capnweb wire type. Use Uint8Array instead.",
+const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
+  Map: "Use a plain object or an array of entries instead.",
+  Set: "Use an array instead.",
+  WeakMap: undefined,
+  WeakSet: undefined,
+  ArrayBuffer: "Use Uint8Array instead.",
+  SharedArrayBuffer: undefined,
+  Int8Array: "Use Uint8Array instead.",
+  Uint8ClampedArray: "Use Uint8Array instead.",
+  Int16Array: "Use Uint8Array instead.",
+  Uint16Array: "Use Uint8Array instead.",
+  Int32Array: "Use Uint8Array instead.",
+  Uint32Array: "Use Uint8Array instead.",
+  Float32Array: "Use Uint8Array instead.",
+  Float64Array: "Use Uint8Array instead.",
+  BigInt64Array: "Use Uint8Array instead.",
+  BigUint64Array: "Use Uint8Array instead.",
+  RegExp: undefined,
+  DataView: "Use Uint8Array instead.",
 };
 
 function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
@@ -453,7 +450,7 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     // Built-in wire types take precedence over generic object walking;
     // otherwise the resolver would try to enumerate `Date.prototype` etc.
     // and emit nonsense shapes.
-    let builtin = matchBuiltin(type);
+    let builtin = matchBuiltin(ctx, type);
     if (builtin) return finishResolve(ctx, type, entry, builtin);
 
     // Pure function type (no own properties beyond call signatures).
@@ -563,17 +560,36 @@ function finishResolve(
  * type is not a recognised built-in, or if a symbol named like a built-in is
  * declared somewhere other than a TypeScript lib file (user code shadowing).
  */
-function matchBuiltin(type: ts.Type): TypeShape | null {
+function matchBuiltin(ctx: ResolveContext, type: ts.Type): TypeShape | null {
   let sym = type.getSymbol();
   if (!sym) return null;
   let name = sym.getName();
   if (!isLibSymbol(sym)) return null;
   if (name in BUILTIN_REJECTED_TYPES) {
-    return { kind: "unsupported", reason: BUILTIN_REJECTED_TYPES[name]! };
+    let fixHint = BUILTIN_REJECTED_TYPES[name];
+    return {
+      kind: "unsupported",
+      reason: "not a capnweb wire type",
+      typeExpr: rejectedTypeExpr(ctx, type, name),
+      ...(fixHint ? { fixHint } : {}),
+    };
   }
   let kind = BUILTIN_VALUE_TYPES[name];
   if (kind) return { kind } as TypeShape;
   return null;
+}
+
+function rejectedTypeExpr(
+  ctx: ResolveContext,
+  type: ts.Type,
+  builtinName: string
+): string {
+  let expr = ctx.checker.typeToString(
+    type,
+    undefined,
+    ctx.tsm.TypeFormatFlags.NoTruncation
+  );
+  return expr === `${builtinName}<ArrayBufferLike>` ? builtinName : expr;
 }
 
 /**
@@ -710,9 +726,7 @@ function isCapnwebValidateSymbol(sym: ts.Symbol): boolean {
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
   if (!parent) return false;
   let name = parent.escapedName as string;
-  return (
-    name === '"capnweb-validate"' || name === '"capnweb-validate/capnweb"'
-  );
+  return name === '"capnweb-validate"' || name === '"capnweb-validate/capnweb"';
 }
 
 function isRpcRuntimeSymbol(sym: ts.Symbol): boolean {
@@ -803,58 +817,97 @@ function collapseUnion(branches: TypeShape[]): TypeShape {
   return { kind: "union", branches };
 }
 
+export type UnsupportedPosition =
+  | { kind: "arg"; index: number; suffix: string }
+  | { kind: "rest"; suffix: string }
+  | { kind: "return"; suffix: string };
+
+export type UnsupportedTypeIssue = {
+  serviceName: string;
+  methodName: string;
+  position: UnsupportedPosition;
+  reason: string;
+  typeExpr?: string;
+  fixHint?: string;
+};
+
 /**
- * Walk a resolved service shape collecting `{ path, reason }` entries for
- * every `unsupported` leaf. Callers turn the list into a build error so the
- * user sees every offending field at once, with a JSON-pointer-style path.
+ * Walk a resolved service shape collecting every `unsupported` leaf. Callers
+ * turn the list into a build error so the user sees every offending field at
+ * once.
  */
 export function collectUnsupported(
   service: ServiceShape
-): { path: string; reason: string }[] {
-  let out: { path: string; reason: string }[] = [];
+): UnsupportedTypeIssue[] {
+  let out: UnsupportedTypeIssue[] = [];
   let seenServices = new Set<ServiceShape>();
-  walkService(service, "");
+  walkService(service);
   return out;
 
-  function walkService(svc: ServiceShape, prefix: string): void {
+  function walkService(svc: ServiceShape): void {
     if (seenServices.has(svc)) return;
     seenServices.add(svc);
     for (let m of svc.methods) {
       if (m.skipValidation) continue;
-      let base = prefix ? `${prefix}.${m.name}` : m.name;
-      m.params.forEach((p, i) => walk(p, `${base}.args[${i}]`));
-      if (m.rest) walk(m.rest, `${base}.args[*]`);
-      walk(m.returns, `${base}.return`);
+      m.params.forEach((p, i) =>
+        walk(svc, m.name, { kind: "arg", index: i + 1, suffix: "" }, p)
+      );
+      if (m.rest) walk(svc, m.name, { kind: "rest", suffix: "" }, m.rest);
+      walk(svc, m.name, { kind: "return", suffix: "" }, m.returns);
     }
   }
 
-  function walk(shape: TypeShape, path: string): void {
+  function walk(
+    svc: ServiceShape,
+    methodName: string,
+    position: UnsupportedPosition,
+    shape: TypeShape
+  ): void {
     switch (shape.kind) {
       case "unsupported":
-        out.push({ path, reason: shape.reason });
+        out.push({
+          serviceName: svc.name,
+          methodName,
+          position,
+          reason: shape.reason,
+          ...(shape.typeExpr ? { typeExpr: shape.typeExpr } : {}),
+          ...(shape.fixHint ? { fixHint: shape.fixHint } : {}),
+        });
         return;
       case "array":
-        walk(shape.element, `${path}[*]`);
+        walk(svc, methodName, appendSuffix(position, "[*]"), shape.element);
         return;
       case "tuple":
-        shape.elements.forEach((e, i) => walk(e, `${path}[${i}]`));
+        shape.elements.forEach((e, i) =>
+          walk(svc, methodName, appendSuffix(position, `[${i}]`), e)
+        );
         return;
       case "union":
-        shape.branches.forEach((b, i) => walk(b, `${path}|${i}`));
+        shape.branches.forEach((b, i) =>
+          walk(svc, methodName, appendSuffix(position, `|${i}`), b)
+        );
         return;
       case "ref":
         return;
       case "stub":
-        if (shape.service) walkService(shape.service, path);
+        if (shape.service) walkService(shape.service);
         return;
       case "object":
-        if (shape.index) walk(shape.index, `${path}.*`);
+        if (shape.index)
+          walk(svc, methodName, appendSuffix(position, ".*"), shape.index);
         for (let [k, v] of Object.entries(shape.properties)) {
-          walk(v, `${path}.${k}`);
+          walk(svc, methodName, appendSuffix(position, `.${k}`), v);
         }
         return;
       default:
         return;
     }
   }
+}
+
+function appendSuffix(
+  position: UnsupportedPosition,
+  suffix: string
+): UnsupportedPosition {
+  return { ...position, suffix: position.suffix + suffix };
 }

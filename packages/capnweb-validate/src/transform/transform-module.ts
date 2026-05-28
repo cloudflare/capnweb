@@ -16,6 +16,8 @@ import {
   resolveServiceShape,
   type ServiceShape,
   type TypeShape,
+  type UnsupportedPosition,
+  type UnsupportedTypeIssue,
 } from "./type-introspector.js";
 
 export type TransformResult = {
@@ -569,26 +571,66 @@ function isValidatePackageSymbol(sym: ts.Symbol): boolean {
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
   if (!parent) return false;
   let name = parent.escapedName as string;
-  return (
-    name === '"capnweb-validate"' || name === '"capnweb-validate/capnweb"'
-  );
+  return name === '"capnweb-validate"' || name === '"capnweb-validate/capnweb"';
 }
 
 function rejectUnsupported(
   sf: ts.SourceFile,
   node: ts.Node,
-  label: string,
+  _label: string,
   shape: ServiceShape
 ): void {
   let bad = collectUnsupported(shape);
   if (bad.length === 0) return;
-  let detail = bad.map((b) => `  - ${b.path}: ${b.reason}`).join("\n");
+  if (bad.length === 1) {
+    throw buildError(
+      sf,
+      node,
+      `capnweb-validate: ${formatUnsupportedIssue(bad[0]!)}`
+    );
+  }
+  let detail = bad.map((b) => `  - ${formatUnsupportedIssue(b)}`).join("\n");
   throw buildError(
     sf,
     node,
-    `capnweb-validate: \`${label}\` references types that capnweb cannot ` +
-      `transport. Fix or replace these fields:\n${detail}`
+    `capnweb-validate: \`${shape.name}\` references types that capnweb ` +
+      `cannot transport:\n${detail}`
   );
+}
+
+function formatUnsupportedIssue(issue: UnsupportedTypeIssue): string {
+  let location = formatUnsupportedLocation(issue);
+  if (!issue.typeExpr) return `${location}: ${issue.reason}`;
+  let message =
+    `${location} ${formatUnsupportedVerb(issue.position)} ` +
+    `${issue.typeExpr}, which is ${issue.reason}.`;
+  if (issue.fixHint) message += ` ${issue.fixHint}`;
+  return message;
+}
+
+function formatUnsupportedLocation(issue: UnsupportedTypeIssue): string {
+  let base = `${issue.serviceName}.${issue.methodName}`;
+  let { position } = issue;
+  switch (position.kind) {
+    case "arg":
+      return position.suffix
+        ? `${base} argument ${position.index} ${position.suffix}`
+        : `${base} argument ${position.index}`;
+    case "rest":
+      return position.suffix
+        ? `${base} rest argument ${position.suffix}`
+        : `${base} rest argument`;
+    case "return":
+      return position.suffix ? `${base} return ${position.suffix}` : `${base}`;
+  }
+}
+
+function formatUnsupportedVerb(
+  position: UnsupportedPosition
+): "is" | "returns" {
+  return position.kind === "return" && position.suffix === ""
+    ? "returns"
+    : "is";
 }
 
 function resolveCallSiteShape(
@@ -754,7 +796,12 @@ function typeSignature(shape: TypeShape): unknown {
         shape.service ? serviceSignature(shape.service) : null,
       ];
     case "unsupported":
-      return [shape.kind, shape.reason];
+      return [
+        shape.kind,
+        shape.reason,
+        shape.typeExpr ?? null,
+        shape.fixHint ?? null,
+      ];
     default:
       return [shape.kind];
   }
