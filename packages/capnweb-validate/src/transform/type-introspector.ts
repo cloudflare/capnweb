@@ -67,7 +67,7 @@ export type TypeShape =
   | { kind: "response" }
   // ----- pass-by-reference -----
   | { kind: "function" } // plain functions
-  | { kind: "stub"; service?: ServiceShape } // RpcStub<T>, RpcPromise<T>, RpcTarget subclasses
+  | { kind: "stub"; service?: ServiceShape } // RpcStub<T>, RpcPromise<T>, Fetcher<T>
   // ----- rejected / unrepresentable -----
   | { kind: "unsupported"; reason: string };
 
@@ -100,15 +100,27 @@ function resolveServiceShapeInner(
     // Anonymous object type - fine, just less useful in error messages.
     name = "Service";
   }
+  let targetKind = isWorkerEntrypointType(checker, type)
+    ? "workerEntrypoint"
+    : undefined;
   let service: ServiceShape = {
     name,
+    ...(targetKind ? { targetKind } : {}),
     methods: [],
     namedShapes: ctx.namedShapes,
   };
   ctx.services.set(type, { shape: service, resolving: true });
 
   for (let prop of checker.getPropertiesOfType(type)) {
+    let propName = prop.getName();
     if (isSymbolNamedProperty(prop)) continue;
+    if (RPC_CAPABILITY_BRAND_NAMES.has(propName)) continue;
+    if (
+      targetKind === "workerEntrypoint" &&
+      WORKER_ENTRYPOINT_LIFECYCLE.has(propName)
+    ) {
+      continue;
+    }
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
     if (!decl) continue;
     let propType = checker.getTypeOfSymbolAtLocation(prop, decl);
@@ -251,6 +263,23 @@ function unwrapPromise(
  */
 const RPC_STUB_NAMES = new Set(["RpcStub", "RpcPromise"]);
 
+const RPC_CAPABILITY_BRAND_NAMES = new Set([
+  "__RPC_TARGET_BRAND",
+  "__WORKER_ENTRYPOINT_BRAND",
+]);
+
+const WORKER_ENTRYPOINT_LIFECYCLE = new Set([
+  "fetch",
+  "connect",
+  "email",
+  "queue",
+  "scheduled",
+  "tail",
+  "tailStream",
+  "trace",
+  "test",
+]);
+
 /**
  * Built-in classes the capnweb wire format passes by value. Each entry maps a
  * lib-declared type name to the shape we emit. The resolver only honours
@@ -353,7 +382,9 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     let entryOrShape = beginResolve(ctx, type);
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
-    let service = resolveStubServiceShape(ctx, stubServiceType);
+    let service = stubServiceType.type
+      ? resolveStubServiceShape(ctx, stubServiceType.type)
+      : undefined;
     return finishResolve(ctx, type, entry, {
       kind: "stub",
       ...(service ? { service } : {}),
@@ -459,6 +490,7 @@ function resolveObjectShape(
   let index = indexType ? resolveType(ctx, indexType, depth + 1) : undefined;
   for (let prop of checker.getPropertiesOfType(type)) {
     if (isSymbolNamedProperty(prop)) continue;
+    if (RPC_CAPABILITY_BRAND_NAMES.has(prop.getName())) continue;
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
     if (!decl) continue;
     let pType = checker.getTypeOfSymbolAtLocation(prop, decl);
@@ -560,10 +592,12 @@ function isLibSymbol(sym: ts.Symbol): boolean {
   return false;
 }
 
+type StubServiceType = { type?: ts.Type };
+
 function getStubServiceType(
   ctx: ResolveContext,
   type: ts.Type
-): ts.Type | null {
+): StubServiceType | null {
   let checker = ctx.checker;
   let flags = type.getFlags();
   let { TypeFlags } = ctx.tsm;
@@ -571,26 +605,86 @@ function getStubServiceType(
     return null;
   }
 
+  let fetcherServiceType = getFetcherServiceType(ctx, type);
+  if (fetcherServiceType !== null) {
+    return fetcherServiceType ? { type: fetcherServiceType } : {};
+  }
+
   let sym = type.getSymbol();
   let name = sym?.getName();
   if (name && RPC_STUB_NAMES.has(name) && isRpcRuntimeSymbol(sym!)) {
     let args = checker.getTypeArguments(type as ts.TypeReference);
-    if (args.length === 1) return args[0]!;
+    return args.length === 1 ? { type: args[0]! } : {};
   }
 
-  let brand = checker
-    .getPropertiesOfType(type)
-    .find((prop) => prop.getName() === "__RPC_STUB_BRAND");
+  let brand = getProperty(ctx, type, "__RPC_STUB_BRAND");
   let decl = brand?.valueDeclaration ?? brand?.declarations?.[0];
   if (brand && decl) {
-    return checker.getTypeOfSymbolAtLocation(brand, decl);
+    return { type: checker.getTypeOfSymbolAtLocation(brand, decl) };
   }
 
-  // Walk base types looking for RpcTarget. `getBaseTypes` is only defined on
-  // interface/class types; the cast is safe because callers filtered to
-  // object-like types upstream.
-  if (extendsRpcReferenceTarget(checker, type)) return type;
+  if (hasRpcCapabilityBrand(ctx, type)) return { type };
+
+  // Walk base types looking for RpcTarget / WorkerEntrypoint. `getBaseTypes`
+  // is only defined on interface/class types; the cast is safe because callers
+  // filtered to object-like types upstream.
+  if (extendsRpcReferenceTarget(checker, type)) return { type };
   return null;
+}
+
+function getFetcherServiceType(
+  ctx: ResolveContext,
+  type: ts.Type
+): ts.Type | undefined | null {
+  if (!isFetcherLikeType(ctx, type)) return null;
+  let args = type.aliasTypeArguments ?? [];
+  let serviceType = args[0];
+  if (!serviceType) return undefined;
+  return isUndefinedType(ctx, serviceType) ? undefined : serviceType;
+}
+
+function isFetcherLikeType(ctx: ResolveContext, type: ts.Type): boolean {
+  if (
+    type.aliasSymbol?.getName() === "Fetcher" &&
+    hasFetcherMethods(ctx, type)
+  ) {
+    return true;
+  }
+  let props = ctx.checker.getPropertiesOfType(type);
+  return (
+    props.length === 2 &&
+    props.some((prop) => prop.getName() === "fetch") &&
+    props.some((prop) => prop.getName() === "connect")
+  );
+}
+
+function hasFetcherMethods(ctx: ResolveContext, type: ts.Type): boolean {
+  let props = ctx.checker.getPropertiesOfType(type);
+  return (
+    props.some((prop) => prop.getName() === "fetch") &&
+    props.some((prop) => prop.getName() === "connect")
+  );
+}
+
+function hasRpcCapabilityBrand(ctx: ResolveContext, type: ts.Type): boolean {
+  for (let name of RPC_CAPABILITY_BRAND_NAMES) {
+    if (getProperty(ctx, type, name)) return true;
+  }
+  return false;
+}
+
+function getProperty(
+  ctx: ResolveContext,
+  type: ts.Type,
+  name: string
+): ts.Symbol | undefined {
+  return ctx.checker
+    .getPropertiesOfType(type)
+    .find((prop) => prop.getName() === name);
+}
+
+function isUndefinedType(ctx: ResolveContext, type: ts.Type): boolean {
+  return (type.getFlags() & ctx.tsm.TypeFlags.Undefined) !== 0;
 }
 
 function resolveStubServiceShape(
@@ -603,6 +697,7 @@ function resolveStubServiceShape(
   if (flags & TypeFlags.Any) return undefined;
   if (flags & TypeFlags.Unknown) return undefined;
   if (flags & TypeFlags.Never) return undefined;
+  if (flags & TypeFlags.Undefined) return undefined;
   if (isBareRpcBaseType(ctx.checker, type)) return undefined;
   return resolveServiceShapeInner(ctx, type) ?? undefined;
 }
@@ -626,6 +721,7 @@ function isRpcRuntimeSymbol(sym: ts.Symbol): boolean {
     // Published/workspace capnweb, and generated Workers types that back
     // `cloudflare:workers`.
     if (/[\\/]capnweb[\\/]/.test(fileName)) return true;
+    if (/[\\/]@cloudflare[\\/]workers-types[\\/]/.test(fileName)) return true;
   }
   // Ambient `declare module "capnweb" { ... }` - covers test fixtures and any
   // user augmentation. Module symbols' `escapedName` is the quoted specifier.

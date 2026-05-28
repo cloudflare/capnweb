@@ -84,7 +84,7 @@ async function loadValidator(code: string, binding: string): Promise<TestService
 // so client factories must prefer explicit service type arguments.
 const CAPNWEB_SHIM = `
 declare module "capnweb" {
-  export class RpcTarget {}
+  export class RpcTarget { readonly __RPC_TARGET_BRAND: never; }
   export interface RpcTransport {}
   type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
   type Provider<T> = { readonly [K in keyof T]: T[K] };
@@ -101,11 +101,28 @@ declare module "capnweb" {
   }
 }
 declare module "cloudflare:workers" {
-  export class WorkerEntrypoint<Env = unknown> {}
+  export class RpcTarget { readonly __RPC_TARGET_BRAND: never; }
+  export class WorkerEntrypoint<Env = unknown> {
+    readonly __WORKER_ENTRYPOINT_BRAND: never;
+    fetch?(request: Request): Response | Promise<Response>;
+    queue?(batch: unknown): void | Promise<void>;
+    scheduled?(controller: unknown): void | Promise<void>;
+    tail?(events: unknown[]): void | Promise<void>;
+    tailStream?(event: unknown): unknown;
+    trace?(traces: unknown[]): void | Promise<void>;
+    test?(controller: unknown): void | Promise<void>;
+  }
   type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
   type Provider<T> = { readonly [K in keyof T]: T[K] };
   export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
 }
+type Fetcher<T = undefined, Reserved extends string = never> =
+  (T extends object
+    ? Pick<T, Exclude<keyof T, Reserved | "fetch" | "connect">>
+    : unknown) & {
+      fetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
+      connect(address: string): unknown;
+    };
 declare module "capnweb-validate" {
   export function validateRpc(...args: unknown[]): unknown;
   export function skipRpcValidation(...args: unknown[]): unknown;
@@ -428,6 +445,69 @@ describe("transformModule: wire-supported kinds", () => {
     expect(code).toMatch(/getInner[\s\S]*returns:\s*__rt\.v\.stubOf/);
     expect(code).not.toContain("__RPC_STUB_BRAND");
     expect(code).toMatch(/ping[\s\S]*args:\s*\[__rt\.v\.string\]/);
+  });
+
+  it("recognizes RpcTarget brands as pass-by-reference capabilities", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("target-brand.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "cloudflare:workers";
+      interface Authenticated extends RpcTarget {
+        ping(value: string): Promise<string>;
+      }
+      class Api extends RpcTarget {
+        authenticate(token: string): Promise<Authenticated> {
+          throw new Error("not called");
+        }
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toMatch(/authenticate[\s\S]*returns:\s*__rt\.v\.stubOf/);
+    expect(code).toMatch(/ping[\s\S]*args:\s*\[__rt\.v\.string\]/);
+    expect(code).not.toContain("__RPC_TARGET_BRAND");
+  });
+
+  it("recognizes WorkerEntrypoint Fetchers as pass-by-reference stubs", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("worker-fetcher.ts", `
+      import { validateRpc } from "capnweb-validate";
+      import { WorkerEntrypoint } from "cloudflare:workers";
+      interface User extends WorkerEntrypoint {
+        describe(): Promise<string>;
+      }
+      interface ConnectCallback extends WorkerEntrypoint {
+        complete(user: Fetcher<User>, expiresAt?: Date): Promise<void>;
+      }
+      interface HookInitiator<Hook extends WorkerEntrypoint> extends WorkerEntrypoint {
+        startHook(): Promise<{ hook: Fetcher<Hook> }>;
+      }
+      interface Vendor extends WorkerEntrypoint {
+        connectAccount(callback: Fetcher<ConnectCallback>): Promise<{ url: string }>;
+        setHook(hook: Fetcher<HookInitiator<User>> | null): Promise<void>;
+      }
+      @validateRpc<Vendor>()
+      class VendorImpl extends WorkerEntrypoint implements Vendor {
+        async connectAccount(_callback: Fetcher<ConnectCallback>) {
+          return { url: "https://example.com" };
+        }
+        async setHook(_hook: Fetcher<HookInitiator<User>> | null): Promise<void> {}
+      }
+    `);
+
+    let { code } = transform(src);
+
+    expect(code).toMatch(/targetKind:\s*"workerEntrypoint"/);
+    expect(code).toMatch(/connectAccount[\s\S]*args:\s*\[__rt\.v\.stubOf/);
+    expect(code).toMatch(/complete[\s\S]*args:\s*\[__rt\.v\.stubOf/);
+    expect(code).toMatch(/setHook[\s\S]*__rt\.v\.stubOf/);
+    expect(code).toMatch(/startHook[\s\S]*returns:\s*__rt\.v\.object/);
+    expect(code).toMatch(/describe[\s\S]*returns:\s*__rt\.v\.string/);
+    expect(code).not.toContain("__WORKER_ENTRYPOINT_BRAND");
   });
 
   it("widens optional properties to `T | undefined` in plain objects", () => {

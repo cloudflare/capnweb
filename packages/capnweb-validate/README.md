@@ -196,6 +196,9 @@ guarantees can travel over RPC also has a precise build-time validator:
 - Plain functions (validated as `typeof === "function"`).
 - `RpcStub<T>` and `RpcPromise<T>` by symbol name, and any user-defined class
   that extends `RpcTarget` (the resolver walks `getBaseTypes`).
+- Workers RPC `Fetcher<T>` values and branded `RpcTarget` /
+  `WorkerEntrypoint` capabilities. These are validated as pass-through stubs;
+  lifecycle methods such as `fetch`, `queue`, and `tail` remain pass-through.
 
 **Rejected types**: capnweb intentionally does not transport these, and the
 transform refuses to compile a service that uses them so the user finds out at
