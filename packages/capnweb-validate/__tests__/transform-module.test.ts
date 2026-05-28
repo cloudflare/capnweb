@@ -324,6 +324,31 @@ describe("transformModule: decorator rewrite", () => {
     expect(code).not.toMatch(/helper[^}]*args:/s);
   });
 
+  it("rejects method opt-outs outside the explicit RPC surface", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("decorator-skip-extra.ts", `
+      import { validateRpc, skipRpcValidation } from "capnweb-validate";
+      import { RpcTarget } from "capnweb";
+      interface PublicApi {
+        greet(): string;
+      }
+      @validateRpc<PublicApi>()
+      class Api extends RpcTarget implements PublicApi {
+        greet(): string { return "hi"; }
+        @skipRpcValidation()
+        disable(): void {}
+      }
+    `);
+
+    let message = transformError(src);
+
+    expect(message).toContain("@skipRpcValidation() on Api.disable");
+    expect(message).toContain("resolved RPC surface PublicApi");
+    expect(message).toContain(
+      "@skipRpcValidation() only applies to methods in the RPC surface"
+    );
+  });
+
   it("warns when an explicit decorator type argument contains any", () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("decorator-any.ts", `

@@ -425,7 +425,10 @@ function resolveDecoratorShape(
   }
   let shape = cloneServiceShape(resolved);
   let skipped = collectClassSkipRpcValidationMethods(cls, checker);
-  if (skipped.size > 0) shape = applySkippedMethods(shape, skipped);
+  if (skipped.size > 0) {
+    rejectSkippedMethodsOutsideSurface(sf, cls, shape, skipped);
+    shape = applySkippedMethods(shape, skipped);
+  }
   if (isWorkerEntrypointType(checker, classType)) {
     shape.targetKind = "workerEntrypoint";
   }
@@ -515,9 +518,29 @@ function cloneServiceShape(shape: ServiceShape): ServiceShape {
   };
 }
 
+function rejectSkippedMethodsOutsideSurface(
+  sf: ts.SourceFile,
+  cls: ts.ClassDeclaration,
+  shape: ServiceShape,
+  skipped: Map<string, ts.Decorator>
+): void {
+  let surfaceMethods = new Set(shape.methods.map((method) => method.name));
+  let className = cls.name?.text ?? "<anonymous>";
+  for (let [name, decorator] of skipped) {
+    if (surfaceMethods.has(name)) continue;
+    throw buildError(
+      sf,
+      decorator,
+      `capnweb-validate: @skipRpcValidation() on ${className}.${name} ` +
+        `does not match a method in the resolved RPC surface ${shape.name}. ` +
+        `@skipRpcValidation() only applies to methods in the RPC surface.`
+    );
+  }
+}
+
 function applySkippedMethods(
   shape: ServiceShape,
-  skipped: Set<string>
+  skipped: Map<string, ts.Decorator>
 ): ServiceShape {
   return {
     ...shape,
@@ -532,8 +555,8 @@ function applySkippedMethods(
 function collectClassSkipRpcValidationMethods(
   cls: ts.ClassDeclaration,
   checker: ts.TypeChecker
-): Set<string> {
-  let skipped = new Set<string>();
+): Map<string, ts.Decorator> {
+  let skipped = new Map<string, ts.Decorator>();
   for (let member of cls.members) {
     if (!ts.isMethodDeclaration(member)) continue;
     let name = methodName(member.name);
@@ -550,7 +573,7 @@ function collectClassSkipRpcValidationMethods(
         sym?.getName() === "skipRpcValidation" &&
         isValidatePackageSymbol(sym)
       ) {
-        skipped.add(name);
+        skipped.set(name, decorator);
       }
     }
   }
