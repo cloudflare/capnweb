@@ -1749,3 +1749,106 @@ describe("transformModule: runtime behavior", () => {
     }, ["Api", "save", 0])).toThrow(RpcValidationError);
   });
 });
+
+describe("transformModule: utility and string-pattern types", () => {
+  it("resolves Omit to the remaining properties", async () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("omit.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      type Full = { a: string; b: number };
+      class Api extends RpcTarget {
+        m(x: Omit<Full, "a">): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    let { code } = transform(src);
+    expect(code).toContain(`__rt.v.object({ "b": __rt.v.number }, "Omit")`);
+
+    let validator = await loadValidator(code, "__capnweb_validate_Api_server");
+    let m = validator.methods.m!;
+    expect(() => m.args[0]!({ b: 1 }, ["Api", "m", 0])).not.toThrow();
+    // Omit drops `a`, leaving `b` required: a value with only `a` is missing `b`.
+    expect(() => m.args[0]!({ a: 1 }, ["Api", "m", 0])).toThrow(RpcValidationError);
+    expect(() => m.args[0]!({ b: "x" }, ["Api", "m", 0])).toThrow(RpcValidationError);
+  });
+
+  it("resolves Pick and Record index signatures", async () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("pick-record.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      type Full = { a: string; b: number };
+      class Api extends RpcTarget {
+        k(x: Pick<Full, "a">): void {}
+        r(x: Record<string, number>): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    let { code } = transform(src);
+    expect(code).toContain(`__rt.v.object({ "a": __rt.v.string }, "Pick")`);
+
+    let validator = await loadValidator(code, "__capnweb_validate_Api_server");
+    let r = validator.methods.r!;
+    // Index signature: every value must be a number.
+    expect(() => r.args[0]!({ x: 1, y: 2 }, ["Api", "r", 0])).not.toThrow();
+    expect(() => r.args[0]!({ x: "no" }, ["Api", "r", 0])).toThrow(RpcValidationError);
+  });
+
+  it("treats template-literal and string-mapping types as string", async () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("string-pattern.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        t(x: \`user_\${string}\`): void {}
+        u(x: Uppercase<string>): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    // Both are plain strings at runtime: must compile (no build error) to v.string.
+    let { code } = transform(src);
+    expect(code).toContain(`"t": { args: [__rt.v.string]`);
+    expect(code).toContain(`"u": { args: [__rt.v.string]`);
+
+    let validator = await loadValidator(code, "__capnweb_validate_Api_server");
+    let t = validator.methods.t!;
+    expect(() => t.args[0]!("user_1", ["Api", "t", 0])).not.toThrow();
+    // The content pattern is intentionally not enforced - any string passes.
+    expect(() => t.args[0]!("anything", ["Api", "t", 0])).not.toThrow();
+    expect(() => t.args[0]!(123, ["Api", "t", 0])).toThrow(RpcValidationError);
+  });
+
+  it("resolves a numeric enum to a union of literals", async () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("enum.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      enum E { A, B }
+      class Api extends RpcTarget {
+        e(x: E): void {}
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+
+    let { code } = transform(src);
+    expect(code).toContain(`__rt.v.union([__rt.v.literal(0), __rt.v.literal(1)])`);
+
+    let validator = await loadValidator(code, "__capnweb_validate_Api_server");
+    let e = validator.methods.e!;
+    expect(() => e.args[0]!(0, ["Api", "e", 0])).not.toThrow();
+    expect(() => e.args[0]!(1, ["Api", "e", 0])).not.toThrow();
+    expect(() => e.args[0]!(2, ["Api", "e", 0])).toThrow(RpcValidationError);
+  });
+});

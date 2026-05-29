@@ -410,6 +410,13 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     if (name === "false") return { kind: "literal", value: false };
     return { kind: "boolean" };
   }
+  // Template literal (`user_${string}`) and intrinsic string-mapping
+  // (`Uppercase<T>`, `Lowercase<T>`, ...) types are plain strings at runtime;
+  // capnweb transports them as strings. Validate as `string`. The content
+  // pattern is not enforced - same looseness as any other string-internal
+  // constraint, consistent with not checking length/format.
+  if (flags & (TypeFlags.TemplateLiteral | TypeFlags.StringMapping))
+    return { kind: "string" };
   if (flags & TypeFlags.String) return { kind: "string" };
   if (flags & TypeFlags.Number) return { kind: "number" };
   if (flags & TypeFlags.Boolean) return { kind: "boolean" };
