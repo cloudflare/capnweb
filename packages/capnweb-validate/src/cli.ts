@@ -10,18 +10,21 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+import type { ValidationMode } from "./internal/core.js";
 import { runBuild } from "./transform/run.js";
 
 function usage(exitCode: number = 1): never {
   let out = exitCode === 0 ? console.log : console.error;
   out(`Usage:
-  capnweb-validate build --out <dir> [--tsconfig <path>] [--cwd <dir>]
+  capnweb-validate build --out <dir> [options]
 
 Options:
-  --out <dir>        Directory to write transformed sources to. Required.
-  --tsconfig <path>  Path to tsconfig.json. Defaults to ./tsconfig.json.
-  --cwd <dir>        Working directory. Defaults to process.cwd().
-  -h, --help         Show this message.`);
+  --out <dir>                 Directory to write transformed sources to. Required.
+  --tsconfig <path>           Path to tsconfig.json. Defaults to ./tsconfig.json.
+  --cwd <dir>                 Working directory. Defaults to process.cwd().
+  --client-validation <mode>  How client-side checks behave: throw | warn. Default throw.
+  --server-validation <mode>  How server-side checks behave: throw | warn. Default throw.
+  -h, --help                  Show this message.`);
   process.exit(exitCode);
 }
 
@@ -29,7 +32,17 @@ type BuildArgs = {
   out?: string;
   tsconfig?: string;
   cwd?: string;
+  clientValidation?: ValidationMode;
+  serverValidation?: ValidationMode;
 };
+
+function parseMode(arg: string, value: string | undefined): ValidationMode {
+  if (value === undefined) throw new Error(`${arg} requires a value.`);
+  if (value !== "throw" && value !== "warn") {
+    throw new Error(`${arg} must be one of throw, warn (got ${value}).`);
+  }
+  return value;
+}
 
 function parseBuildArgs(args: string[]): BuildArgs {
   let parsed: BuildArgs = {};
@@ -41,6 +54,10 @@ function parseBuildArgs(args: string[]): BuildArgs {
       let value = args[++i];
       if (value === undefined) throw new Error(`${arg} requires a value.`);
       parsed[arg.slice(2) as "out" | "tsconfig" | "cwd"] = value;
+    } else if (arg === "--client-validation") {
+      parsed.clientValidation = parseMode(arg, args[++i]);
+    } else if (arg === "--server-validation") {
+      parsed.serverValidation = parseMode(arg, args[++i]);
     } else if (arg.startsWith("--")) {
       throw new Error(`Unknown option: ${arg}`);
     } else {
@@ -67,6 +84,8 @@ async function main(): Promise<void> {
     out: opts.out,
     tsconfig: opts.tsconfig,
     cwd: opts.cwd,
+    clientValidation: opts.clientValidation,
+    serverValidation: opts.serverValidation,
   });
   console.log(
       `capnweb-validate: ${result.transformed} transformed, ` +

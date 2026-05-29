@@ -6,6 +6,7 @@
 // matching the contract in `src/internal/runtime.ts`. Output is plain text;
 // the transform stitches it into the module via TypeScript's printer.
 
+import type { ValidationMode } from "../internal/core.js";
 import type {
   MethodShape,
   ServiceShape,
@@ -22,13 +23,15 @@ import type {
  */
 export function emitValidator(
   bindingName: string,
-  shape: ServiceShape
+  shape: ServiceShape,
+  mode: ValidationMode = "throw"
 ): string {
   let lines: string[] = [];
   let ctx: EmitContext = {
     bindingName,
     namedShapes: shape.namedShapes,
     definingId: undefined,
+    mode,
   };
   for (let id of shape.namedShapes.keys()) {
     lines.push(`let ${shapeBinding(bindingName, id)};`);
@@ -45,6 +48,9 @@ export function emitValidator(
   if (shape.targetKind) {
     lines.push(`  targetKind: ${JSON.stringify(shape.targetKind)},`);
   }
+  if (mode !== "throw") {
+    lines.push(`  mode: ${JSON.stringify(mode)},`);
+  }
   lines.push(`  methods: {`);
   for (let method of shape.methods) {
     lines.push(
@@ -60,6 +66,7 @@ type EmitContext = {
   bindingName: string;
   namedShapes: Map<number, TypeShape>;
   definingId: number | undefined;
+  mode: ValidationMode;
 };
 
 function shapeBinding(bindingName: string, id: number): string {
@@ -105,9 +112,11 @@ function emitServiceLiteral(shape: ServiceShape, ctx: EmitContext): string {
   let targetKind = shape.targetKind
     ? `, targetKind: ${JSON.stringify(shape.targetKind)}`
     : "";
+  let mode =
+    ctx.mode !== "throw" ? `, mode: ${JSON.stringify(ctx.mode)}` : "";
   return `({ serviceName: ${JSON.stringify(
     shape.name
-  )}${targetKind}, methods: { ${methods} } })`;
+  )}${targetKind}${mode}, methods: { ${methods} } })`;
 }
 
 function emitValidator_(shape: TypeShape, ctx: EmitContext): string {

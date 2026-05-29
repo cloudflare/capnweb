@@ -1852,3 +1852,172 @@ describe("transformModule: utility and string-pattern types", () => {
     expect(() => e.args[0]!(2, ["Api", "e", 0])).toThrow(RpcValidationError);
   });
 });
+
+describe("transformModule: warn mode", () => {
+  function transformWithModes(
+    id: string,
+    modes: {
+      clientValidation?: "throw" | "warn";
+      serverValidation?: "throw" | "warn";
+    }
+  ): string {
+    let ctx = createTransformContext({
+      tsconfig: join(dir, "tsconfig.json"),
+      cwd: dir,
+      ...modes,
+    });
+    try {
+      let result = transformModule(ctx, id, require("node:fs").readFileSync(id, "utf8"));
+      if (!result) throw new Error("transformModule returned null");
+      return result.code;
+    } finally {
+      ctx.dispose();
+    }
+  }
+
+  it("emits mode into the server validator when serverValidation is warn", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("warn-server.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        greet(name: string): string { return "hi " + name; }
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+    let code = transformWithModes(src, { serverValidation: "warn" });
+    expect(code).toMatch(/mode: "warn"/);
+  });
+
+  it("omits the mode field for the default throw behavior", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("warn-default.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        greet(name: string): string { return "hi " + name; }
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+    let code = transformWithModes(src, {});
+    expect(code).not.toMatch(/mode:/);
+  });
+
+  it("stamps mode per side (client warn, server throw)", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("warn-mixed.ts", `
+      import { newWorkersRpcResponse, newHttpBatchRpcSession } from "capnweb-validate/capnweb";
+      import { RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        greet(name: string): string { return "hi " + name; }
+      }
+      export function h(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
+      export const api = newHttpBatchRpcSession<Api>("/rpc");
+    `);
+    let code = transformWithModes(src, {
+      clientValidation: "warn",
+      serverValidation: "throw",
+    });
+    expect(code).toContain("__capnweb_validate_Api_server");
+    expect(code).toContain("__capnweb_validate_Api_client");
+    // Only the client side is warn; the server side stays throw (no mode field).
+    expect(code.match(/mode: "warn"/g) ?? []).toHaveLength(1);
+  });
+
+  it("server warn mode logs and runs the method with the bad args", async () => {
+    let rt = await import("../src/internal/runtime.js");
+    let calls: unknown[][] = [];
+    let target = {
+      greet(name: string): string {
+        calls.push([name]);
+        return "hi " + name;
+      },
+    };
+    let validator = {
+      serviceName: "Api",
+      mode: "warn" as const,
+      methods: { greet: { args: [rt.v.string], returns: rt.v.string } },
+    };
+    let warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let wrapped = rt.wrapServerTarget(target, validator);
+      let result = (wrapped as { greet(n: unknown): unknown }).greet(123);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain("expected string");
+      expect(result).toBe("hi 123");
+      expect(calls).toEqual([[123]]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("server warn mode logs and passes a mistyped return through unwrapped", async () => {
+    let rt = await import("../src/internal/runtime.js");
+    let target = {
+      count(): number {
+        return "not-a-number" as unknown as number;
+      },
+    };
+    let validator = {
+      serviceName: "Api",
+      mode: "warn" as const,
+      methods: { count: { args: [], returns: rt.v.number } },
+    };
+    let warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let wrapped = rt.wrapServerTarget(target, validator);
+      let result = (wrapped as { count(): unknown }).count();
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]![0]).toContain("expected number");
+      expect(result).toBe("not-a-number");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("client warn mode logs and still dispatches the call", async () => {
+    let rt = await import("../src/internal/runtime.js");
+    let calls: unknown[][] = [];
+    let stub = {
+      greet(name: string): string {
+        calls.push([name]);
+        return "hi";
+      },
+    };
+    let validator = {
+      serviceName: "Api",
+      mode: "warn" as const,
+      methods: { greet: { args: [rt.v.string], returns: rt.v.string } },
+    };
+    let warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let wrapped = rt.wrapClientStub(stub, validator);
+      (wrapped as { greet(n: unknown): unknown }).greet(123);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(calls).toEqual([[123]]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("defaults to throw when no mode is set on the validator", async () => {
+    let rt = await import("../src/internal/runtime.js");
+    let validator = {
+      serviceName: "Api",
+      methods: { greet: { args: [rt.v.string], returns: rt.v.string } },
+    };
+    let wrapped = rt.wrapServerTarget(
+      { greet: (n: string) => n },
+      validator
+    );
+    expect(() => (wrapped as { greet(n: unknown): unknown }).greet(123)).toThrow(
+      RpcValidationError
+    );
+  });
+});

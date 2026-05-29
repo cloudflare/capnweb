@@ -176,13 +176,17 @@ export function transformModule(
     site.bindingName = dedup.bind(site.shape, "server");
   }
 
+  let clientMode = context.options.clientValidation ?? "throw";
+  let serverMode = context.options.serverValidation ?? "throw";
+
   let edits: TextEdit[] = [];
   let needsCapnwebRuntime = callSites.length > 0;
   let prelude = needsCapnwebRuntime
     ? CAPNWEB_RUNTIME_IMPORT
     : CORE_RUNTIME_IMPORT;
   for (let entry of dedup.emitOrder()) {
-    prelude += emitValidator(entry.bindingName, entry.shape) + "\n";
+    let mode = entry.side === "client" ? clientMode : serverMode;
+    prelude += emitValidator(entry.bindingName, entry.shape, mode) + "\n";
   }
   edits.push({ start: 0, end: 0, text: prelude });
 
@@ -754,7 +758,11 @@ class ValidatorDedup {
     string,
     { bindingName: string; shape: ServiceShape; signature: string }[]
   >();
-  #order: { bindingName: string; shape: ServiceShape }[] = [];
+  #order: {
+    bindingName: string;
+    shape: ServiceShape;
+    side: "server" | "client";
+  }[] = [];
 
   bind(shape: ServiceShape, side: "server" | "client"): string {
     let key = `${side}:${shape.name}`;
@@ -769,11 +777,15 @@ class ValidatorDedup {
     let entry = { bindingName, shape, signature };
     entries.push(entry);
     this.#emitted.set(key, entries);
-    this.#order.push(entry);
+    this.#order.push({ bindingName, shape, side });
     return bindingName;
   }
 
-  emitOrder(): { bindingName: string; shape: ServiceShape }[] {
+  emitOrder(): {
+    bindingName: string;
+    shape: ServiceShape;
+    side: "server" | "client";
+  }[] {
     return this.#order;
   }
 }

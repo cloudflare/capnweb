@@ -37,9 +37,13 @@ export type MethodSpec =
       unchecked?: false;
     };
 
+export type ValidationMode = "throw" | "warn";
+
 export type ServiceValidator = {
   serviceName: string;
   targetKind?: "workerEntrypoint";
+  /** How a failed check is reported. "throw" (default) raises; "warn" logs and lets the value through. */
+  mode?: ValidationMode;
   methods: Record<string, MethodSpec>;
 };
 
@@ -426,6 +430,36 @@ function missingMethod(serviceName: string, prop: string): never {
   );
 }
 
+function reportValidationFailure(err: unknown): void {
+  // Warn mode surfaces the mismatch but lets the original value through, so the
+  // boundary observes instead of enforcing. Re-throw anything that is not a
+  // validation error: those are real bugs, not type mismatches.
+  if (err instanceof RpcValidationError) {
+    console.warn(err.message);
+    return;
+  }
+  throw err;
+}
+
+function checkArgs(
+  mode: ValidationMode,
+  args: unknown[],
+  methodSpec: Exclude<MethodSpec, { unchecked: true }>,
+  serviceName: string,
+  prop: string,
+  options?: ValidationOptions
+): void {
+  if (mode === "throw") {
+    validateArgs(args, methodSpec, serviceName, prop, options);
+    return;
+  }
+  try {
+    validateArgs(args, methodSpec, serviceName, prop, options);
+  } catch (err) {
+    reportValidationFailure(err);
+  }
+}
+
 export function wrapServerTarget<T extends object>(
   target: T,
   validator: ServiceValidator
@@ -445,11 +479,12 @@ export function wrapServerTarget<T extends object>(
         if (canPassThroughMethod(prop, validator)) return orig.bind(t);
         return missingMethod(validator.serviceName, prop);
       }
+      let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
         if (isUncheckedMethod(methodSpec)) {
           return Reflect.apply(orig as (...a: unknown[]) => unknown, t, args);
         }
-        validateArgs(args, methodSpec, validator.serviceName, prop);
+        checkArgs(mode, args, methodSpec, validator.serviceName, prop);
         let result = Reflect.apply(
           orig as (...a: unknown[]) => unknown,
           t,
@@ -459,7 +494,8 @@ export function wrapServerTarget<T extends object>(
           result,
           methodSpec.returns,
           [validator.serviceName, prop, "<return>"],
-          "server"
+          "server",
+          mode
         );
       };
     },
@@ -470,10 +506,11 @@ export function validateReturn(
   result: unknown,
   returns: Validator,
   path: PropertyPath,
-  side: WrapSide
+  side: WrapSide,
+  mode: ValidationMode = "throw"
 ): unknown {
   if (isRpcPromiseLike(result)) {
-    return wrapRpcPromise(result, returns, path, side);
+    return wrapRpcPromise(result, returns, path, side, mode);
   }
   let resultType = typeof result;
   if (
@@ -482,19 +519,30 @@ export function validateReturn(
     typeof (result as { then?: unknown }).then === "function"
   ) {
     return (result as Promise<unknown>).then((value) =>
-      validateResolvedValue(value, returns, path, side)
+      validateResolvedValue(value, returns, path, side, mode)
     );
   }
-  return validateResolvedValue(result, returns, path, side);
+  return validateResolvedValue(result, returns, path, side, mode);
 }
 
 function validateResolvedValue(
   value: unknown,
   validator: Validator,
   path: PropertyPath,
-  side: WrapSide
+  side: WrapSide,
+  mode: ValidationMode
 ): unknown {
-  validator(value, path);
+  if (mode === "warn") {
+    try {
+      validator(value, path);
+    } catch (err) {
+      // Validation failed: warn and pass the original value through unwrapped.
+      reportValidationFailure(err);
+      return value;
+    }
+  } else {
+    validator(value, path);
+  }
   return wrapResolvedValue(value, validator, path, side);
 }
 
@@ -585,7 +633,8 @@ function wrapRpcPromise(
   result: (...args: unknown[]) => unknown,
   returns: Validator,
   path: PropertyPath,
-  side: WrapSide
+  side: WrapSide,
+  mode: ValidationMode
 ): object {
   return new Proxy(result, {
     get(target, prop, receiver) {
@@ -600,6 +649,7 @@ function wrapRpcPromise(
             returns,
             path,
             side,
+            mode,
             onfulfilled,
             onrejected
           );
@@ -613,6 +663,7 @@ function wrapRpcPromise(
             returns,
             path,
             side,
+            mode,
             undefined,
             onrejected
           );
@@ -626,6 +677,7 @@ function wrapRpcPromise(
             returns,
             path,
             side,
+            mode,
             (value) => {
               return Promise.resolve(onfinally?.()).then(() => value);
             },
@@ -652,7 +704,8 @@ function wrapRpcPromise(
               args
             );
           }
-          validateArgs(
+          checkArgs(
+            mode,
             args,
             methodSpec,
             serviceNameFor(returns) ?? "Service",
@@ -670,7 +723,8 @@ function wrapRpcPromise(
             result,
             methodSpec.returns,
             [...path, prop, "<return>"],
-            side
+            side,
+            mode
           );
         };
       }
@@ -681,8 +735,8 @@ function wrapRpcPromise(
           : [...path, prop];
         let next = Reflect.get(target, prop, receiver);
         if (isRpcPromiseLike(next))
-          return wrapRpcPromise(next, propValidator, nextPath, side);
-        return validateResolvedValue(next, propValidator, nextPath, side);
+          return wrapRpcPromise(next, propValidator, nextPath, side, mode);
+        return validateResolvedValue(next, propValidator, nextPath, side, mode);
       }
       if (canPassThroughMethod(prop))
         return Reflect.get(target, prop, receiver);
@@ -709,6 +763,7 @@ function callValidatedThen(
   returns: Validator,
   path: PropertyPath,
   side: WrapSide,
+  mode: ValidationMode,
   onfulfilled?: ((value: unknown) => unknown) | null,
   onrejected?: ((reason: unknown) => unknown) | null
 ): Promise<unknown> {
@@ -718,7 +773,7 @@ function callValidatedThen(
   ) => Promise<unknown>;
   return Reflect.apply(then, target, [
     (value: unknown) => {
-      let wrapped = validateResolvedValue(value, returns, path, side);
+      let wrapped = validateResolvedValue(value, returns, path, side, mode);
       return onfulfilled ? onfulfilled(wrapped) : wrapped;
     },
     onrejected,
@@ -818,11 +873,12 @@ export function wrapClientStub(
           return (orig as (...a: unknown[]) => unknown).bind(t);
         return missingMethod(validator.serviceName, prop);
       }
+      let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
         if (isUncheckedMethod(methodSpec)) {
           return Reflect.apply(orig as (...a: unknown[]) => unknown, t, args);
         }
-        validateArgs(args, methodSpec, validator.serviceName, prop, {
+        checkArgs(mode, args, methodSpec, validator.serviceName, prop, {
           allowDeferred: true,
         });
         let result = Reflect.apply(
@@ -834,7 +890,8 @@ export function wrapClientStub(
           result,
           methodSpec.returns,
           [validator.serviceName, prop, "<return>"],
-          "client"
+          "client",
+          mode
         );
       };
     },

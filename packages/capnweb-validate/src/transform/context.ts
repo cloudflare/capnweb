@@ -9,6 +9,8 @@
 import { resolve } from "node:path";
 import ts from "typescript";
 
+import type { ValidationMode } from "../internal/core.js";
+
 export type TransformContextOptions = {
   /** Path to the tsconfig.json that defines the TS Program. */
   tsconfig?: string;
@@ -18,6 +20,10 @@ export type TransformContextOptions = {
   exclude?: string[];
   /** Working directory used to resolve relative paths. Defaults to `process.cwd()`. */
   cwd?: string;
+  /** How a failed client-side check is handled: "throw" (default) raises an RpcValidationError; "warn" logs and lets the value through. */
+  clientValidation?: ValidationMode;
+  /** How a failed server-side check is handled: "throw" (default) raises an RpcValidationError; "warn" logs and lets the value through. */
+  serverValidation?: ValidationMode;
 };
 
 export interface TransformContext {
