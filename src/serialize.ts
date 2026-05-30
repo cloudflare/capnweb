@@ -8,6 +8,45 @@ export type ImportId = number;
 export type ExportId = number;
 
 // =======================================================================================
+// Resource limits applied while deserializing messages from a peer.
+//
+// These guard against resource-exhaustion attacks from untrusted peers (see issue #184). They are
+// purely *local, receiver-side* decisions: the protocol has no negotiation step, so a peer cannot
+// learn or agree on these values. Consequently the defaults are chosen to be far larger than any
+// legitimate message, so that no honest sender is ever rejected. A peer that exceeds a limit has
+// its message rejected (a TypeError is thrown), which tears down the session via abort().
+
+export interface RpcLimits {
+  // Maximum number of characters permitted in a ["bigint", "..."] wire value's string.
+  //
+  // Senders emit hex, which BigInt() parses in O(n) time. Legacy decimal strings are still
+  // accepted for backwards compatibility, but decimal parsing is synchronous and superlinear.
+  //
+  // The default is far larger than practical big-integer or cryptographic values, but far below
+  // the millions of decimal digits needed to cause meaningful blocking.
+  maxBigIntDigits: number;
+
+  // Maximum nesting depth of a single deserialized message. Guards against stack overflow from a
+  // deeply-nested payload (e.g. [[[[...]]]]). This is enforced uniformly across the whole message,
+  // including nested call arguments that are delivered as separate RpcPayloads.
+  maxDepth: number;
+
+  // Maximum size, in characters, of a single incoming message string before it is JSON-parsed.
+  // Enforced in the session read loop, after the transport has already returned a complete
+  // string, to bound JSON.parse and downstream deserialization work. Apps exposed to untrusted
+  // peers should also configure transport/socket-native payload limits where available.
+  maxMessageSize: number;
+}
+
+export const DEFAULT_MAX_DEPTH = 256;
+
+export const DEFAULT_LIMITS: RpcLimits = {
+  maxBigIntDigits: 16384,
+  maxDepth: DEFAULT_MAX_DEPTH,
+  maxMessageSize: 32 * 1024 * 1024,
+};
+
+// =======================================================================================
 
 export interface Exporter {
   exportStub(hook: StubHook): ExportId;
@@ -102,7 +141,7 @@ export class Devaluator {
   private exports?: Array<ExportId>;
 
   private devaluateImpl(value: unknown, parent: object | undefined, depth: number): unknown {
-    if (depth >= 64) {
+    if (depth >= DEFAULT_MAX_DEPTH) {
       throw new Error(
           "Serialization exceeded maximum allowed depth. (Does the message contain cycles?)");
     }
@@ -153,8 +192,14 @@ export class Devaluator {
         return [result];
       }
 
-      case "bigint":
-        return ["bigint", (<bigint>value).toString()];
+      case "bigint": {
+        let big = <bigint>value;
+        if (big < 0n) {
+          return ["bigint", "-0x" + (-big).toString(16)];
+        } else {
+          return ["bigint", "0x" + big.toString(16)];
+        }
+      }
 
       case "date": {
         const time = (<Date>value).getTime();
@@ -503,6 +548,11 @@ export interface Importer {
   // The exportId must refer to an export that was created as a pipe.
   // This can only be called once per pipe.
   getPipeReadable(exportId: ExportId): ReadableStream;
+
+  // The resource limits the Evaluator should enforce while deserializing. Surfaced through the
+  // Importer (rather than the Evaluator constructor) so that the per-session options reach the
+  // Evaluator without changing how Evaluators are constructed throughout the codebase.
+  getLimits(): RpcLimits;
 }
 
 class NullImporter implements Importer {
@@ -517,6 +567,11 @@ class NullImporter implements Importer {
   }
   getPipeReadable(exportId: ExportId): never {
     throw new Error("Cannot retrieve pipe readable without an RPC session.");
+  }
+  getLimits(): RpcLimits {
+    // The standalone deserialize() entry point has no session and therefore no per-session
+    // overrides, but it must still be protected -- so it enforces the bare defaults.
+    return DEFAULT_LIMITS;
   }
 }
 
@@ -555,15 +610,23 @@ function streamToBlobPromise(stream: ReadableStream, type: string): RpcPromise {
 // delivery to the app. This is used to implement deserialization, except that it doesn't actually
 // start from a raw string.
 export class Evaluator {
-  constructor(private importer: Importer) {}
+  private limits: RpcLimits;
+
+  constructor(private importer: Importer) {
+    this.limits = importer.getLimits();
+  }
 
   private hooks: StubHook[] = [];
   private promises: LocatedPromise[] = [];
 
   public evaluate(value: unknown): RpcPayload {
+    return this.evaluateWithDepth(value, 0);
+  }
+
+  private evaluateWithDepth(value: unknown, depth: number): RpcPayload {
     let payload = RpcPayload.forEvaluate(this.hooks, this.promises);
     try {
-      payload.value = this.evaluateImpl(value, payload, "value");
+      payload.value = this.evaluateImpl(value, payload, "value", depth);
       return payload;
     } catch (err) {
       payload.dispose();
@@ -576,19 +639,40 @@ export class Evaluator {
     return this.evaluate(structuredClone(value));
   }
 
-  private evaluateImpl(value: unknown, parent: object, property: string | number): unknown {
+  private evaluateImpl(
+      value: unknown, parent: object, property: string | number, depth: number): unknown {
+    let maxDepth = this.limits.maxDepth;
+    if (depth >= maxDepth) {
+      throw new TypeError(
+          `Deserialization exceeded maximum allowed message depth of ${maxDepth}.`);
+    }
+
     if (value instanceof Array) {
       if (value.length == 1 && value[0] instanceof Array) {
         // Escaped array. Evaluate the contents.
         let result = value[0];
         for (let i = 0; i < result.length; i++) {
-          result[i] = this.evaluateImpl(result[i], result, i);
+          result[i] = this.evaluateImpl(result[i], result, i, depth + 1);
         }
         return result;
       } else switch (value[0]) {
         case "bigint":
           if (typeof value[1] == "string") {
-            return BigInt(value[1]);
+            let digits = value[1];
+            let maxBigIntDigits = this.limits.maxBigIntDigits;
+            if (digits.length > maxBigIntDigits) {
+              throw new TypeError(
+                  `Deserialized bigint exceeds maximum length of ${maxBigIntDigits} characters.`);
+            }
+            if (/^-?[0-9]+$/.test(digits)) {
+              return BigInt(digits);
+            } else if (/^-?0x[0-9a-fA-F]+$/.test(digits)) {
+              let isNegative = digits.startsWith("-");
+              let magnitude = BigInt(isNegative ? digits.slice(1) : digits);
+              return isNegative ? -magnitude : magnitude;
+            } else {
+              throw new TypeError("Deserialized bigint contains invalid characters.");
+            }
           }
           break;
         case "date":
@@ -637,7 +721,7 @@ export class Evaluator {
               let propsObj = <Record<string, unknown>>props;
               for (let key of Object.keys(propsObj)) {
                 if (key === "name" || key === "message" || key === "stack") continue;
-                anyResult[key] = this.evaluateImpl(propsObj[key], result, key);
+                anyResult[key] = this.evaluateImpl(propsObj[key], result, key, depth + 1);
               }
             }
             return result;
@@ -672,7 +756,7 @@ export class Evaluator {
 
           // Evaluate specific properties which are expected to contain non-trivial types.
           if (init.body) {
-            init.body = this.evaluateImpl(init.body, init, "body");
+            init.body = this.evaluateImpl(init.body, init, "body", depth + 1);
             if (init.body === null ||
                 typeof init.body === "string" ||
                 init.body instanceof Uint8Array ||
@@ -683,7 +767,7 @@ export class Evaluator {
             }
           }
           if (init.signal) {
-            init.signal = this.evaluateImpl(init.signal, init, "signal");
+            init.signal = this.evaluateImpl(init.signal, init, "signal", depth + 1);
             if (!(init.signal instanceof AbortSignal)) {
               throw new TypeError("Request siganl must be of type AbortSignal.");
             }
@@ -712,7 +796,7 @@ export class Evaluator {
         case "response": {
           if (value.length !== 3) break;
 
-          let body = this.evaluateImpl(value[1], parent, property);
+          let body = this.evaluateImpl(value[1], parent, property, depth + 1);
           if (body === null ||
               typeof body === "string" ||
               body instanceof Uint8Array ||
@@ -746,7 +830,7 @@ export class Evaluator {
           // bytes through a pipe, so the content expression must evaluate to a ReadableStream.
           if (value.length !== 3 || typeof value[1] !== "string") break;
           let contentType = value[1] as string;
-          let content = this.evaluateImpl(value[2], parent, property);
+          let content = this.evaluateImpl(value[2], parent, property, depth + 1);
           if (!(content instanceof ReadableStream)) {
             throw new TypeError("Blob content must be serialized as a ReadableStream.");
           }
@@ -832,7 +916,7 @@ export class Evaluator {
 
           // We need a new evaluator for the args, to build a separate payload.
           let subEval = new Evaluator(this.importer);
-          args = subEval.evaluate([args]);
+          args = subEval.evaluateWithDepth([args], depth);
 
           return addStub(hook.call(path, args));
         }
@@ -949,10 +1033,10 @@ export class Evaluator {
           // snooping on JSON calls.
           //
           // We do still evaluate the inner value so that we can properly release any stubs.
-          this.evaluateImpl(result[key], result, key);
+          this.evaluateImpl(result[key], result, key, depth + 1);
           delete result[key];
         } else {
-          result[key] = this.evaluateImpl(result[key], result, key);
+          result[key] = this.evaluateImpl(result[key], result, key, depth + 1);
         }
       }
       return result;
