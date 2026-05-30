@@ -379,28 +379,6 @@ const PASSTHROUGH_METHODS = new Set([
   "map",
 ]);
 
-const WORKER_ENTRYPOINT_LIFECYCLE = new Set([
-  "fetch",
-  "connect",
-  "email",
-  "queue",
-  "scheduled",
-  "tail",
-  "tailStream",
-  "trace",
-  "test",
-]);
-
-function canPassThroughMethod(
-  prop: string,
-  validator?: ServiceValidator
-): boolean {
-  return (
-    PASSTHROUGH_METHODS.has(prop) ||
-    (validator?.targetKind === "workerEntrypoint" &&
-      WORKER_ENTRYPOINT_LIFECYCLE.has(prop))
-  );
-}
 
 function missingMethod(serviceName: string, prop: string): never {
   throw new RpcValidationError(
@@ -465,10 +443,9 @@ export function wrapServerTarget<T extends object>(
         );
       }
       if (typeof orig !== "function") return orig;
-      if (!methodSpec) {
-        if (canPassThroughMethod(prop, validator)) return orig.bind(t);
-        return missingMethod(validator.serviceName, prop);
-      }
+      // A method absent from the validator is a platform lifecycle hook the
+      // transform excluded from the RPC surface; pass it through unvalidated.
+      if (!methodSpec) return orig.bind(t);
       let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
         if (isUncheckedMethod(methodSpec)) {
@@ -728,7 +705,7 @@ function wrapRpcPromise(
           return wrapRpcPromise(next, propValidator, nextPath, side, mode);
         return validateResolvedValue(next, propValidator, nextPath, side, mode);
       }
-      if (canPassThroughMethod(prop))
+      if (PASSTHROUGH_METHODS.has(prop))
         return Reflect.get(target, prop, receiver);
       // A service-less stub (e.g. recursive) has no method list to check, so pass the call through instead of throwing.
       if (isUnknownSurfaceStub(returns))
@@ -872,11 +849,8 @@ export function wrapClientStub(
         );
       }
       if (typeof orig !== "function") return orig;
-      if (!methodSpec) {
-        if (canPassThroughMethod(prop, validator))
-          return (orig as (...a: unknown[]) => unknown).bind(t);
-        return missingMethod(validator.serviceName, prop);
-      }
+      // Not in the validator: a method outside the typechecked RPC surface.
+      if (!methodSpec) return (orig as (...a: unknown[]) => unknown).bind(t);
       let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
         if (isUncheckedMethod(methodSpec)) {

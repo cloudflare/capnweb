@@ -121,6 +121,14 @@ declare module "cloudflare:workers" {
     trace?(traces: unknown[]): void | Promise<void>;
     test?(controller: unknown): void | Promise<void>;
   }
+  export class DurableObject<Env = unknown> {
+    readonly __DURABLE_OBJECT_BRAND: never;
+    protected env: Env;
+    protected ctx: unknown;
+    fetch?(request: Request): Response | Promise<Response>;
+    alarm?(): void | Promise<void>;
+    webSocketMessage?(ws: unknown, message: string | ArrayBuffer): void | Promise<void>;
+  }
   type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
   type Provider<T> = { readonly [K in keyof T]: T[K] };
   export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
@@ -422,6 +430,61 @@ describe("transformModule: decorator rewrite", () => {
 
     expect(code).toContain('targetKind: "workerEntrypoint"');
     expect(code).toMatch(/describe[^}]*returns:\s*__rt\.v\.string/s);
+  });
+
+  it("filters platform methods when the interface extends WorkerEntrypoint", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("we-iface.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { WorkerEntrypoint } from "cloudflare:workers";
+      import { validateRpc } from "capnweb-validate";
+      interface Iface extends WorkerEntrypoint { doThing(x: string): Promise<string>; }
+      @validateRpc()
+      class Api extends WorkerEntrypoint implements Iface {
+        async doThing(x: string): Promise<string> { return x; }
+      }
+      export function h(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
+    `);
+    let { code } = transform(src);
+    expect(code).toContain('"doThing"');
+    expect(code).not.toContain('"tailStream"');
+    expect(code).not.toContain('"fetch"');
+  });
+
+  it("filters DurableObject platform methods (alarm, webSocketMessage)", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("durable.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { DurableObject } from "cloudflare:workers";
+      import { validateRpc } from "capnweb-validate";
+      @validateRpc()
+      class Api extends DurableObject {
+        async rpcMethod(x: string): Promise<string> { return x; }
+      }
+      export function h(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
+    `);
+    let { code } = transform(src);
+    expect(code).toContain('"rpcMethod"');
+    expect(code).not.toContain('"alarm"');
+    expect(code).not.toContain('"webSocketMessage"');
+    expect(code).not.toContain('"fetch"');
+  });
+
+  it("keeps a user method even when its name matches a platform hook", () => {
+    write("capnweb.d.ts", CAPNWEB_SHIM);
+    let src = write("user-fetch.ts", `
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { WorkerEntrypoint } from "cloudflare:workers";
+      import { validateRpc } from "capnweb-validate";
+      interface Iface { fetch(url: string): Promise<string>; }
+      @validateRpc()
+      class Api extends WorkerEntrypoint implements Iface {
+        async fetch(url: string): Promise<string> { return url; }
+      }
+      export function h(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
+    `);
+    let { code } = transform(src);
+    expect(code).toContain('"fetch": { args: [__rt.v.string], returns: __rt.v.string }');
   });
 });
 
@@ -1482,24 +1545,26 @@ describe("transformModule: runtime behavior", () => {
 
 
 
-  it("server wrapper passes through WorkerEntrypoint lifecycle methods", async () => {
+  it("server wrapper passes through methods absent from the validator", async () => {
     let rt = await import("../src/internal/runtime.js");
+    // A method on the target but not in the generated validator is a platform
+    // lifecycle hook the transform excluded (fetch, alarm, webSocketMessage),
+    // not part of the typechecked RPC surface. Pass it through, do not throw.
     let target = {
       fetch(): string { return "ok"; },
-      rpc(): string { return "bad"; },
+      alarm(): string { return "ran"; },
     };
     let validator = {
       serviceName: "Api",
-      targetKind: "workerEntrypoint" as const,
       methods: {},
     };
     let wrapped = rt.wrapServerTarget(target, validator);
 
     expect(wrapped.fetch()).toBe("ok");
-    expect(() => wrapped.rpc()).toThrow(RpcValidationError);
+    expect(wrapped.alarm()).toBe("ran");
   });
 
-  it("client wrapper rejects methods missing from the validator", async () => {
+  it("client wrapper passes through methods absent from the validator", async () => {
     let rt = await import("../src/internal/runtime.js");
     let capnweb = await import("../../../src/index.js");
     let channel = new MessageChannel();
@@ -1514,7 +1579,9 @@ describe("transformModule: runtime behavior", () => {
       });
       let client = rt.__newMessagePortRpcSessionWithValidation<any>(channel.port2, validator);
 
-      expect(() => client.greet("Ada")).toThrow(RpcValidationError);
+      // Not in the validator: outside the typechecked surface, so the call is
+      // forwarded rather than rejected.
+      expect(() => client.greet("Ada")).not.toThrow();
     } finally {
       channel.port1.close();
       channel.port2.close();

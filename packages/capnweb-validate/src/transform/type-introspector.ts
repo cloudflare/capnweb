@@ -131,14 +131,13 @@ function resolveServiceShapeInner(
     let propName = prop.getName();
     if (isSymbolNamedProperty(prop)) continue;
     if (RPC_CAPABILITY_BRAND_NAMES.has(propName)) continue;
-    if (
-      targetKind === "workerEntrypoint" &&
-      WORKER_ENTRYPOINT_LIFECYCLE.has(propName)
-    ) {
-      continue;
-    }
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
     if (!decl) continue;
+    // Skip methods inherited from a platform/library base (WorkerEntrypoint,
+    // DurableObject, RpcTarget). The runtime invokes those lifecycle hooks
+    // directly; they are not the user's RPC surface. Detected by where the
+    // member is declared, so no hardcoded method-name list is needed.
+    if (isPlatformInheritedMember(decl)) continue;
     if (isPrivateOrProtected(tsm, decl)) continue;
     if (propName.startsWith("#")) continue; // private fields
     if (propName === "constructor") continue;
@@ -359,17 +358,6 @@ const RPC_CAPABILITY_BRAND_NAMES = new Set([
   "__WORKER_ENTRYPOINT_BRAND",
 ]);
 
-const WORKER_ENTRYPOINT_LIFECYCLE = new Set([
-  "fetch",
-  "connect",
-  "email",
-  "queue",
-  "scheduled",
-  "tail",
-  "tailStream",
-  "trace",
-  "test",
-]);
 
 /**
  * Pass-by-value built-ins, mapping lib type name to emitted shape. Only honoured
@@ -991,6 +979,17 @@ function isRpcBaseSymbol(sym: ts.Symbol): boolean {
     (name === "RpcTarget" || name === "WorkerEntrypoint") &&
     isRpcRuntimeSymbol(sym)
   );
+}
+
+// True when a member is declared on a platform/library RPC base class or
+// interface (anything from capnweb / @cloudflare/workers-types / the
+// cloudflare:workers module), i.e. inherited machinery rather than a method the
+// user wrote. The declaring container is the member declaration's parent.
+function isPlatformInheritedMember(decl: ts.Declaration): boolean {
+  let container = decl.parent as ts.Node | undefined;
+  if (!container) return false;
+  let sym = (container as ts.Node & { symbol?: ts.Symbol }).symbol;
+  return sym !== undefined && isRpcRuntimeSymbol(sym);
 }
 
 export function isWorkerEntrypointType(
