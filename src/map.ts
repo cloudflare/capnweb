@@ -3,7 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { StubHook, PropertyPath, RpcPayload, RpcStub, RpcPromise, withCallInterceptor, ErrorStubHook, mapImpl, PayloadStubHook, unwrapStubAndPath, unwrapStubNoProperties } from "./core.js";
-import { Devaluator, Exporter, Importer, ExportId, ImportId, Evaluator } from "./serialize.js";
+import { Devaluator, Exporter, Importer, ExportId, ImportId, Evaluator, RpcLimits, DEFAULT_LIMITS } from "./serialize.js";
 
 let currentMapBuilder: MapBuilder | undefined;
 
@@ -295,6 +295,14 @@ class MapApplicator implements Importer {
 
   getPipeReadable(exportId: ExportId): never {
     throw new Error("A mapper function cannot use pipe readables.");
+  }
+
+  getLimits(): RpcLimits {
+    // A mapper's instructions arrived inside a ["remap"] message that was itself deserialized
+    // under the session's limits, so the default floor is sufficient protection here without
+    // threading per-session overrides through the several layers between the session and the
+    // mapper.
+    return DEFAULT_LIMITS;
   }
 }
 
