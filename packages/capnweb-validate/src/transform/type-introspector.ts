@@ -2,9 +2,8 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// Lower resolved TypeScript service types into the transform's normal form.
-// Keep checker-specific logic here so the rest of the transform deals with
-// `ServiceShape` and `TypeShape` only.
+// Lower resolved TypeScript service types into the transform's normal form
+// (ServiceShape / TypeShape). Keeps checker-specific logic out of the rest.
 
 import type ts from "typescript";
 
@@ -30,6 +29,8 @@ export type MethodShape =
       /** Return type with `Promise<T>` already unwrapped. */
       returns: TypeShape;
       skipValidation?: false;
+      /** Getter accessor: validated on property read, not call. `params` is empty. */
+      isGetter?: boolean;
     };
 
 export type TypeShape =
@@ -85,17 +86,16 @@ export type TypeShape =
     };
 
 /**
- * Resolve the service type at a marker call site to a normalized
- * {@link ServiceShape}. Returns `null` if the type cannot be resolved to a
- * concrete object - callers turn that into a build error pointing at the
- * call site.
+ * Resolve the service type at a marker call site to a {@link ServiceShape}.
+ * Returns null if it is not a concrete object; callers raise a build error.
  */
 export function resolveServiceShape(
   tsm: typeof ts,
   checker: ts.TypeChecker,
-  type: ts.Type
+  type: ts.Type,
+  generic?: GenericFallback
 ): ServiceShape | null {
-  let ctx = createResolveContext(tsm, checker);
+  let ctx = createResolveContext(tsm, checker, generic);
   return resolveServiceShapeInner(ctx, type);
 }
 
@@ -110,7 +110,7 @@ function resolveServiceShapeInner(
   let checker = ctx.checker;
   let name = typeName(type) ?? "<anonymous>";
   if (name === "__type" || name === "<anonymous>") {
-    // Anonymous object type - fine, just less useful in error messages.
+    // Anonymous object type, which is fine, just less useful in error messages.
     name = "Service";
   }
   let targetKind: "workerEntrypoint" | undefined = isWorkerEntrypointType(
@@ -139,14 +139,38 @@ function resolveServiceShapeInner(
     }
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
     if (!decl) continue;
-    let propType = checker.getTypeOfSymbolAtLocation(prop, decl);
-    let sigs = propType.getCallSignatures();
-    if (sigs.length === 0) continue; // not a method
     if (isPrivateOrProtected(tsm, decl)) continue;
-    if (prop.getName().startsWith("#")) continue; // private fields
-    if (prop.getName() === "constructor") continue;
-    // Use the first call signature; overloads are not represented separately.
+    if (propName.startsWith("#")) continue; // private fields
+    if (propName === "constructor") continue;
+    let propType = checker.getTypeOfSymbolAtLocation(prop, decl);
+    // Strip the optional `undefined`: `m?(): T` is `(() => T) | undefined`,
+    // and the union reports no call signatures, dropping the method.
+    let callableType =
+      prop.flags & tsm.SymbolFlags.Optional
+        ? checker.getNonNullableType(propType)
+        : propType;
+    let sigs = callableType.getCallSignatures();
+    if (sigs.length === 0) {
+      // Getters are a real RPC surface (capnweb's get() invokes them); plain
+      // instance properties are not. Unwrap a returned Promise like a method.
+      if (prop.flags & tsm.SymbolFlags.GetAccessor) {
+        service.methods.push({
+          name: propName,
+          params: [],
+          returns: resolveReturnType(ctx, propType),
+          isGetter: true,
+        });
+      }
+      continue;
+    }
     if (hasSkipRpcValidationDecorator(ctx, decl)) {
+      service.methods.push({ name: prop.getName(), skipValidation: true });
+      continue;
+    }
+    if (sigs.length > 1) {
+      // Overloaded: validating one signature would reject the other overloads,
+      // so pass through unvalidated and warn rather than break a legal call.
+      warnOverloadedMethod(propName, decl);
       service.methods.push({ name: prop.getName(), skipValidation: true });
       continue;
     }
@@ -192,6 +216,13 @@ type ResolveEntry = {
   shape?: TypeShape;
 };
 
+/**
+ * How to handle an unconstrained generic parameter: "any" (decorator path on a
+ * generic class) or "error" everywhere else. `used` fires when a default applies,
+ * so the caller warns only when it matters.
+ */
+export type GenericFallback = { mode: "error" | "any"; used: boolean };
+
 type ResolveContext = {
   tsm: typeof ts;
   checker: ts.TypeChecker;
@@ -199,11 +230,13 @@ type ResolveContext = {
   namedShapes: Map<number, TypeShape>;
   nextId: number;
   services: WeakMap<ts.Type, { shape: ServiceShape; resolving: boolean }>;
+  generic: GenericFallback;
 };
 
 function createResolveContext(
   tsm: typeof ts,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  generic: GenericFallback = { mode: "error", used: false }
 ): ResolveContext {
   return {
     tsm,
@@ -212,6 +245,7 @@ function createResolveContext(
     namedShapes: new Map(),
     nextId: 0,
     services: new WeakMap(),
+    generic,
   };
 }
 
@@ -221,7 +255,7 @@ function isSymbolNamedProperty(sym: ts.Symbol): boolean {
 }
 
 function isPrivateOrProtected(tsm: typeof ts, decl: ts.Declaration): boolean {
-  // ts.canHaveModifiers / getModifiers - public API in TS 5+.
+  // ts.canHaveModifiers / getModifiers are public API in TS 5+.
   if (tsm.canHaveModifiers(decl)) {
     let mods = tsm.getModifiers(decl);
     if (mods) {
@@ -232,6 +266,24 @@ function isPrivateOrProtected(tsm: typeof ts, decl: ts.Declaration): boolean {
     }
   }
   return false;
+}
+
+// Decorator and call-site paths resolve the same type, so dedup the warning on
+// the declaration node (a watch rebuild produces fresh nodes).
+const warnedOverloads = new WeakSet<ts.Declaration>();
+
+function warnOverloadedMethod(name: string, decl: ts.Declaration): void {
+  if (warnedOverloads.has(decl)) return;
+  warnedOverloads.add(decl);
+  let sf = decl.getSourceFile();
+  let { line, character } = sf.getLineAndCharacterOfPosition(decl.getStart(sf));
+  console.warn(
+    `${sf.fileName}:${line + 1}:${character + 1}: capnweb-validate: ` +
+      `method \`${name}\` is overloaded; capnweb-validate checks one ` +
+      `signature only, so it is passed through unvalidated. Use a single ` +
+      `signature with union parameters to validate it, or @skipRpcValidation() ` +
+      `to silence this.`
+  );
 }
 
 function hasSkipRpcValidationDecorator(
@@ -277,12 +329,8 @@ function unwrapPromise(
 }
 
 /**
- * Resolve a method's return type, accounting for the fact that capnweb awaits
- * the return value before delivering it. A bare `Promise<T>` / `PromiseLike<T>`
- * is unwrapped to `T`; a union that *contains* an awaitable (e.g.
- * `Promise<T> | undefined`) has each awaitable branch unwrapped so the emitted
- * validator matches the resolved value rather than the thenable object (which
- * would reject every successful call).
+ * Resolve a method's return type. capnweb awaits it, so unwrap `Promise<T>` to
+ * `T`, including per-branch in a union like `Promise<T> | undefined`.
  */
 function resolveReturnType(ctx: ResolveContext, type: ts.Type): TypeShape {
   let { tsm, checker } = ctx;
@@ -303,10 +351,7 @@ function resolveReturnType(ctx: ResolveContext, type: ts.Type): TypeShape {
   return resolveType(ctx, type);
 }
 
-/**
- * Names the capnweb wire format passes by reference. User classes that extend
- * `RpcTarget` are detected via base-type walk, not by name.
- */
+/** Pass-by-reference wire names. RpcTarget subclasses are found via base walk. */
 const RPC_STUB_NAMES = new Set(["RpcStub", "RpcPromise"]);
 
 const RPC_CAPABILITY_BRAND_NAMES = new Set([
@@ -327,10 +372,8 @@ const WORKER_ENTRYPOINT_LIFECYCLE = new Set([
 ]);
 
 /**
- * Built-in classes the capnweb wire format passes by value. Each entry maps a
- * lib-declared type name to the shape we emit. The resolver only honours
- * matches whose declaration lives in a TypeScript lib file (lib.*.d.ts),
- * so a user-defined `class Date {}` does not get hijacked.
+ * Pass-by-value built-ins, mapping lib type name to emitted shape. Only honoured
+ * for lib-declared symbols, so a user `class Date {}` is not hijacked.
  */
 const BUILTIN_VALUE_TYPES: Record<string, TypeShape["kind"]> = {
   Date: "date",
@@ -346,7 +389,6 @@ const BUILTIN_VALUE_TYPES: Record<string, TypeShape["kind"]> = {
   URIError: "error",
   AggregateError: "error",
   Blob: "blob",
-  File: "blob",
   ReadableStream: "readableStream",
   WritableStream: "writableStream",
   Headers: "headers",
@@ -354,10 +396,7 @@ const BUILTIN_VALUE_TYPES: Record<string, TypeShape["kind"]> = {
   Response: "response",
 };
 
-/**
- * Built-in classes capnweb intentionally rejects. Hitting one of these in a
- * service signature is a build error - users have to refactor their API.
- */
+/** Built-ins capnweb rejects: hitting one in a signature is a build error. */
 const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
   Map: "Use a plain object or an array of entries instead.",
   Set: "Use an array instead.",
@@ -377,6 +416,9 @@ const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
   BigUint64Array: "Use Uint8Array instead.",
   RegExp: undefined,
   DataView: "Use Uint8Array instead.",
+  // capnweb's serializer matches Blob by exact prototype, so File (a Blob
+  // subclass) is not transportable. Send the bytes as a Blob or Uint8Array.
+  File: "Use a Blob or Uint8Array; File is not a capnweb wire type.",
 };
 
 function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
@@ -398,23 +440,19 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     return { kind: "literal", value: (type as ts.NumberLiteralType).value };
   }
   if (flags & TypeFlags.BigIntLiteral) {
-    // capnweb transports bigint by value, but the literal machinery only
-    // carries string/number/boolean. Validate the bigint brand, not the value.
+    // literal shape only carries string/number/boolean, so validate the brand.
     return { kind: "bigint" };
   }
   if (flags & TypeFlags.BooleanLiteral) {
     // Boolean literal flag covers `true` / `false`. Their intrinsic name is
-    // "true" / "false" - read it off the type to disambiguate.
+    // "true" / "false", so read it off the type to disambiguate.
     let name = (type as ts.Type & { intrinsicName?: string }).intrinsicName;
     if (name === "true") return { kind: "literal", value: true };
     if (name === "false") return { kind: "literal", value: false };
     return { kind: "boolean" };
   }
-  // Template literal (`user_${string}`) and intrinsic string-mapping
-  // (`Uppercase<T>`, `Lowercase<T>`, ...) types are plain strings at runtime;
-  // capnweb transports them as strings. Validate as `string`. The content
-  // pattern is not enforced - same looseness as any other string-internal
-  // constraint, consistent with not checking length/format.
+  // Template literals and string-mapping types are plain strings at runtime;
+  // validate as `string` (the content pattern is not enforced).
   if (flags & (TypeFlags.TemplateLiteral | TypeFlags.StringMapping))
     return { kind: "string" };
   if (flags & TypeFlags.String) return { kind: "string" };
@@ -426,6 +464,37 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
   if (flags & TypeFlags.Void) return { kind: "void" };
   if (flags & TypeFlags.Any) return { kind: "any" };
   if (flags & TypeFlags.Unknown) return { kind: "any" };
+  if (flags & TypeFlags.Never) {
+    return { kind: "unsupported", reason: "the never type, which carries no value" };
+  }
+  if (flags & TypeFlags.NonPrimitive) {
+    return {
+      kind: "unsupported",
+      reason: "the `object` keyword has no shape to validate",
+      fixHint: "use a specific object type, `Record<string, T>`, or `unknown`",
+    };
+  }
+  if (flags & TypeFlags.TypeParameter) {
+    // A constrained parameter (`T extends Session`) validates against its
+    // constraint; an implicit `unknown` bound falls through to unconstrained.
+    let constraint = checker.getBaseConstraintOfType(type);
+    if (constraint && constraint !== type) {
+      let cf = constraint.getFlags();
+      if (!(cf & (TypeFlags.Unknown | TypeFlags.Any))) {
+        return resolveType(ctx, constraint, depth + 1);
+      }
+    }
+    // Unconstrained: default to `any` (decorator path) or fail (see GenericFallback).
+    if (ctx.generic.mode === "any") {
+      ctx.generic.used = true;
+      return { kind: "any" };
+    }
+    return {
+      kind: "unsupported",
+      reason: "an unresolved generic type parameter",
+      fixHint: "constrain it (e.g. `<T extends string>`) or use a concrete type",
+    };
+  }
 
   let stubServiceType = getStubServiceType(ctx, type);
   if (stubServiceType) {
@@ -454,6 +523,22 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
   }
 
   if (flags & TypeFlags.Intersection) {
+    // A branded primitive (`string & { __brand }`) is just the primitive on the
+    // wire; collapse to it so a branded `UserId` validates as `string`.
+    let wirePrimitive =
+      TypeFlags.String |
+      TypeFlags.Number |
+      TypeFlags.Boolean |
+      TypeFlags.BigInt |
+      TypeFlags.StringLiteral |
+      TypeFlags.NumberLiteral |
+      TypeFlags.BooleanLiteral |
+      TypeFlags.BigIntLiteral;
+    let primitive = (type as ts.IntersectionType).types.find(
+      (t) => t.getFlags() & wirePrimitive
+    );
+    if (primitive) return resolveType(ctx, primitive, depth + 1);
+
     let entryOrShape = beginResolve(ctx, type);
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
@@ -470,9 +555,8 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
     let args = checker.getTypeArguments(type as ts.TypeReference);
-    // ts.ElementFlags: Required=1, Optional=2, Rest=4, Variadic=8. Read them off
-    // the tuple target so optional (`[a, b?]`) and rest (`[a, ...b[]]`) elements
-    // become a variable-arity validator instead of a fixed-length one.
+    // ts.ElementFlags: Required=1, Optional=2, Rest=4, Variadic=8. Used to emit a
+    // variable-arity validator for optional (`[a, b?]`) and rest (`[a, ...b[]]`).
     let target = (type as ts.TypeReference).target as ts.TupleType | undefined;
     let elementFlags = target?.elementFlags ?? [];
     let head: TypeShape[] = [];
@@ -484,8 +568,7 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
       let flag = elementFlags[i] ?? 1;
       let shape = resolveType(ctx, args[i]!, depth + 1);
       if (flag & (4 | 8)) {
-        // Rest or Variadic. `...number[]` carries the array element type; a
-        // bare element type is used directly.
+        // Rest or Variadic: `...number[]` carries the array element type.
         if (sawRest) {
           restNotLast = true;
           break;
@@ -493,9 +576,7 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
         sawRest = true;
         rest = shape.kind === "array" ? shape.element : shape;
       } else {
-        // A fixed/optional element after a rest element (`[...a[], b]`) cannot
-        // be expressed as head + tail, so reject it at build time rather than
-        // emit a silently-wrong validator.
+        // `[...a[], b]` cannot be expressed as head + tail; reject it.
         if (sawRest) {
           restNotLast = true;
           break;
@@ -543,11 +624,15 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     if (!isResolveEntry(entryOrShape)) return entryOrShape;
     let entry = entryOrShape;
 
-    // Built-in wire types take precedence over generic object walking;
-    // otherwise the resolver would try to enumerate `Date.prototype` etc.
-    // and emit nonsense shapes.
+    // Built-ins before generic walking, else we enumerate `Date.prototype` etc.
     let builtin = matchBuiltin(ctx, type);
     if (builtin) return finishResolve(ctx, type, entry, builtin);
+
+    // User `Error` subclasses validate as `v.error`. matchBuiltin only catches
+    // the global `Error` by name, so walk the base chain for subclasses.
+    if (extendsGlobalError(ctx, type)) {
+      return finishResolve(ctx, type, entry, { kind: "error" });
+    }
 
     // Pure function type (no own properties beyond call signatures).
     let props = checker.getPropertiesOfType(type);
@@ -574,24 +659,29 @@ function resolveObjectShape(
 ): TypeShape {
   let tsm = ctx.tsm;
   let checker = ctx.checker;
-  // Generic object: enumerate properties. Methods declared on the type are
-  // intentionally walked too. For a plain-object property type we treat
-  // methods as `any` so the validator does not over-constrain.
+  // Generic object: enumerate properties (methods walk to `any`, not over-constrained).
   let properties: Record<string, TypeShape> = {};
   let name = typeName(type);
-  let indexType = checker.getIndexTypeOfType?.(type, tsm.IndexKind.String);
+  // Numeric and string index signatures lower identically (keys cross the wire
+  // as strings); arrays/tuples are handled above, so this is a real map.
+  let indexType =
+    checker.getIndexTypeOfType?.(type, tsm.IndexKind.String) ??
+    checker.getIndexTypeOfType?.(type, tsm.IndexKind.Number);
   let index = indexType ? resolveType(ctx, indexType, depth + 1) : undefined;
   for (let prop of checker.getPropertiesOfType(type)) {
     if (isSymbolNamedProperty(prop)) continue;
     if (RPC_CAPABILITY_BRAND_NAMES.has(prop.getName())) continue;
+    // Mapped-type members (`{ [K in U]: V }`) have no declaration; resolve from
+    // the symbol directly, else we drop them and under-validate.
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
-    if (!decl) continue;
-    let pType = checker.getTypeOfSymbolAtLocation(prop, decl);
+    let pType = decl
+      ? checker.getTypeOfSymbolAtLocation(prop, decl)
+      : checker.getTypeOfSymbol(prop);
     let shape = resolveType(ctx, pType, depth + 1);
     // Optional properties (`foo?: T`) widen to `T | undefined` so missing
     // keys validate cleanly.
     if (prop.getFlags() & tsm.SymbolFlags.Optional) {
-      shape = collapseUnion([shape, { kind: "undefined" }]);
+      shape = withUndefined(shape);
     }
     properties[prop.getName()] = shape;
   }
@@ -614,7 +704,16 @@ function beginResolve(
       existing.referenced = true;
       return { kind: "ref", id: existing.id, name: existing.name };
     }
-    if (existing.shape) return existing.shape;
+    if (existing.shape) {
+      // Repeat reference: hoist a named object/union to one shared validator;
+      // primitives, arrays, and tuples inline cheaply.
+      if (isHoistableShape(existing)) {
+        existing.referenced = true;
+        ctx.namedShapes.set(existing.id, existing.shape);
+        return { kind: "ref", id: existing.id, name: existing.name };
+      }
+      return existing.shape;
+    }
   }
   let entry: ResolveEntry = {
     id: ctx.nextId++,
@@ -651,16 +750,20 @@ function finishResolve(
   return shape;
 }
 
-/**
- * Match `type` against the wire's built-in catalogue. Returns null if the
- * type is not a recognised built-in, or if a symbol named like a built-in is
- * declared somewhere other than a TypeScript lib file (user code shadowing).
- */
+// Worth hoisting only for named objects/unions; anonymous shapes and the rest
+// inline cheaply.
+function isHoistableShape(entry: ResolveEntry): boolean {
+  if (entry.name === undefined || entry.name === "__type") return false;
+  let s = entry.shape;
+  return s !== undefined && (s.kind === "object" || s.kind === "union");
+}
+
+/** Match `type` against the built-in catalogue. Null for non-built-ins or user shadows. */
 function matchBuiltin(ctx: ResolveContext, type: ts.Type): TypeShape | null {
   let sym = type.getSymbol();
   if (!sym) return null;
   let name = sym.getName();
-  if (!isLibSymbol(sym)) return null;
+  if (!isGlobalSymbol(ctx.tsm, sym)) return null;
   if (name in BUILTIN_REJECTED_TYPES) {
     let fixHint = BUILTIN_REJECTED_TYPES[name];
     return {
@@ -688,18 +791,33 @@ function rejectedTypeExpr(
   return expr === `${builtinName}<ArrayBufferLike>` ? builtinName : expr;
 }
 
-/**
- * True when `sym`'s declaration lives in a TypeScript-shipped lib file
- * (lib.es5.d.ts, lib.dom.d.ts, etc.). Used to gate built-in matches against
- * user code that happens to reuse a global name.
- */
+/** True for a TypeScript lib file (lib.*.d.ts); gates built-in matches. */
 export function isTypeScriptLibFileName(fileName: string): boolean {
   return /[\\/]lib\.[\w.-]+\.d\.ts$/.test(fileName);
 }
 
-function isLibSymbol(sym: ts.Symbol): boolean {
+/**
+ * True when `sym` is a global declaration of its name. Matching the global (not
+ * file path or identity) maps every runtime's `Response` to one validator, since
+ * `v.response` checks `instanceof globalThis.Response`; a module-scoped reuse
+ * (e.g. `node-fetch`'s `Response`) validates structurally instead.
+ */
+function isGlobalSymbol(tsm: typeof ts, sym: ts.Symbol): boolean {
   for (let decl of sym.getDeclarations() ?? []) {
-    if (isTypeScriptLibFileName(decl.getSourceFile().fileName)) return true;
+    let node: ts.Node | undefined = decl.parent;
+    while (node) {
+      if (tsm.isModuleDeclaration(node)) {
+        // Only `declare global { ... }` re-enters global scope; other modules
+        // and namespaces are scoped.
+        return (node.flags & tsm.NodeFlags.GlobalAugmentation) !== 0;
+      }
+      if (tsm.isSourceFile(node)) {
+        // A non-module (script) declaration file declares globals directly;
+        // an external module's top-level declarations are module-scoped.
+        return !tsm.isExternalModule(node);
+      }
+      node = node.parent;
+    }
   }
   return false;
 }
@@ -737,9 +855,7 @@ function getStubServiceType(
 
   if (hasRpcCapabilityBrand(ctx, type)) return { type };
 
-  // Walk base types looking for RpcTarget / WorkerEntrypoint. `getBaseTypes`
-  // is only defined on interface/class types; the cast is safe because callers
-  // filtered to object-like types upstream.
+  // Walk base types for RpcTarget / WorkerEntrypoint (callers filtered to object-like).
   if (extendsRpcReferenceTarget(checker, type)) return { type };
   return null;
 }
@@ -762,11 +878,26 @@ function isFetcherLikeType(ctx: ResolveContext, type: ts.Type): boolean {
   ) {
     return true;
   }
-  // Structural fallback: exactly `fetch` + `connect`, both methods. Without
-  // the call-signature check, a `{ fetch: string; connect: number }` value
-  // would be misread as a Fetcher stub and skip field validation.
+  // Structural fallback for a Fetcher with an erased alias. Require fetch's
+  // Response-returning signature so a user `{ fetch(); connect() }` is not misread.
   let props = ctx.checker.getPropertiesOfType(type);
-  return props.length === 2 && hasFetcherMethods(ctx, type);
+  return (
+    props.length === 2 &&
+    hasFetcherMethods(ctx, type) &&
+    fetchReturnsResponse(ctx, type)
+  );
+}
+
+function fetchReturnsResponse(ctx: ResolveContext, type: ts.Type): boolean {
+  let prop = getProperty(ctx, type, "fetch");
+  let decl = prop?.valueDeclaration ?? prop?.declarations?.[0];
+  if (!prop || !decl) return false;
+  let fetchType = ctx.checker.getTypeOfSymbolAtLocation(prop, decl);
+  let sigs = fetchType.getCallSignatures();
+  if (sigs.length === 0) return false;
+  let ret = ctx.checker.getReturnTypeOfSignature(sigs[0]!);
+  let unwrapped = unwrapPromise(ctx.tsm, ctx.checker, ret);
+  return unwrapped.getSymbol()?.getName() === "Response";
 }
 
 function hasFetcherMethods(ctx: ResolveContext, type: ts.Type): boolean {
@@ -838,14 +969,12 @@ function isCapnwebValidateSymbol(sym: ts.Symbol): boolean {
 function isRpcRuntimeSymbol(sym: ts.Symbol): boolean {
   for (let decl of sym.getDeclarations() ?? []) {
     let fileName = decl.getSourceFile().fileName;
-    // Installed capnweb, and generated Workers types that back
-    // `cloudflare:workers`. Scoped to node_modules so a user project that
-    // merely lives under a directory named `capnweb` is not misdetected;
-    // source/workspace layouts resolve via the module-specifier check below.
+    // Installed capnweb and generated Workers types. Scoped to node_modules so a
+    // project under a `capnweb` dir is not misdetected (specifier check is below).
     if (/[\\/]node_modules[\\/]capnweb[\\/]/.test(fileName)) return true;
     if (/[\\/]@cloudflare[\\/]workers-types[\\/]/.test(fileName)) return true;
   }
-  // Ambient `declare module "capnweb" { ... }` - covers test fixtures and any
+  // Ambient `declare module "capnweb" { ... }`, which covers test fixtures and any
   // user augmentation. Module symbols' `escapedName` is the quoted specifier.
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
   if (parent && (parent.escapedName as string) === '"capnweb"') return true;
@@ -893,6 +1022,31 @@ function hasOwnRpcBaseSubclass(
   return extendsRpcReferenceTarget(checker, type);
 }
 
+// True when `type` is or extends the global `Error`, so it validates as `v.error`.
+// The isGlobalSymbol gate keeps a user type merely named `Error` from matching.
+function extendsGlobalError(ctx: ResolveContext, type: ts.Type): boolean {
+  let seen = new Set<ts.Type>();
+  function isErrorSymbol(t: ts.Type): boolean {
+    let sym = t.getSymbol();
+    if (!sym) return false;
+    return (
+      BUILTIN_VALUE_TYPES[sym.getName()] === "error" &&
+      isGlobalSymbol(ctx.tsm, sym)
+    );
+  }
+  function walk(t: ts.Type): boolean {
+    if (seen.has(t)) return false;
+    seen.add(t);
+    if (isErrorSymbol(t)) return true;
+    let bases = (t as ts.InterfaceType).getBaseTypes?.() ?? [];
+    for (let b of bases) {
+      if (walk(b)) return true;
+    }
+    return false;
+  }
+  return walk(type);
+}
+
 function extendsNamedRpcBase(
   _checker: ts.TypeChecker,
   type: ts.Type,
@@ -925,6 +1079,19 @@ function collapseUnion(branches: TypeShape[]): TypeShape {
   return { kind: "union", branches };
 }
 
+// Widen a shape to admit `undefined` for an optional property; left unchanged if
+// it already admits undefined (or is `any`).
+function withUndefined(shape: TypeShape): TypeShape {
+  if (shape.kind === "undefined" || shape.kind === "any") return shape;
+  if (
+    shape.kind === "union" &&
+    shape.branches.some((b) => b.kind === "undefined")
+  ) {
+    return shape;
+  }
+  return collapseUnion([shape, { kind: "undefined" }]);
+}
+
 export type UnsupportedPosition =
   | { kind: "arg"; index: number; suffix: string }
   | { kind: "rest"; suffix: string }
@@ -939,11 +1106,7 @@ export type UnsupportedTypeIssue = {
   fixHint?: string;
 };
 
-/**
- * Walk a resolved service shape collecting every `unsupported` leaf. Callers
- * turn the list into a build error so the user sees every offending field at
- * once.
- */
+/** Collect every `unsupported` leaf so the build error lists all offending fields. */
 export function collectUnsupported(
   service: ServiceShape
 ): UnsupportedTypeIssue[] {

@@ -66,21 +66,23 @@ class GmailGatekeeper
 }
 ```
 
-If the implementation class is generic and no concrete type argument exists at
-the declaration, use an explicit surface with `any` in the generic position:
+A generic implementation class needs no annotation. An unconstrained type
+parameter defaults to `any` with a warning; a constrained parameter validates
+against its constraint:
 
 ```ts
-@validateRpc<Cursor<any>>()
+@validateRpc()
 class ArrayCursor<T> extends RpcTarget implements Cursor<T> {
-  // ...
+  // `T` defaults to `any` (warned). `<T extends Session>` would validate
+  // those positions against `Session`.
 }
 ```
 
-This still validates the RPC method names, arity, non-generic fields, return
-capability shapes, and capnweb wire compatibility. Values flowing through the
-`any` position are permissive. The transform warns when an explicit
-`@validateRpc<...>()` type argument contains `any`; use a concrete surface type
-if that boundary needs full validation.
+Pass an explicit `@validateRpc<Cursor<string>>()` to validate the generic
+positions, or `@validateRpc<Cursor<any>>()` to silence the warning. Either way
+the transform validates the RPC method names, arity, non-generic fields, return
+capability shapes, and capnweb wire compatibility; values at an `any` position
+are permissive.
 
 ## Client Usage
 
@@ -214,16 +216,20 @@ guarantees can travel over RPC also has a precise build-time validator:
   `any`, `unknown`, plus string / number / boolean literal types. `any` and
   `unknown` use a permissive validator.
 - Containers: arrays, tuples (validated by exact length and per-position
-  element type), plain object shapes, unions, `Record<string, T>` and string
-  index signatures, and `Promise<T>` return values (unwrapped one level).
-  Optional properties (`foo?: T`) widen to `T | undefined`, matching how the
-  wire deserializes a missing key. Numeric index signatures are not treated
-  as dictionary schemas; use arrays for ordered numeric collections.
+  element type), plain object shapes, unions, `Record<K, T>` and index
+  signatures (string and numeric keys both validate their value type, since
+  object keys cross the wire as strings), and `Promise<T>` return values
+  (unwrapped one level). Optional properties (`foo?: T`) widen to
+  `T | undefined`, matching how the wire deserializes a missing key.
 - Built-ins from capnweb's catalogue: `Date`, `Uint8Array`, `Error` and its
   standard subclasses (`EvalError`, `RangeError`, `ReferenceError`,
-  `SyntaxError`, `TypeError`, `URIError`, `AggregateError`), `Blob` (and
-  `File`, which extends `Blob`), `ReadableStream`, `WritableStream`,
-  `Headers`, `Request`, `Response`.
+  `SyntaxError`, `TypeError`, `URIError`, `AggregateError`), `Blob`,
+  `ReadableStream`, `WritableStream`, `Headers`, `Request`, `Response`.
+
+capnweb serializes the built-ins above by exact prototype (except `Error`,
+matched by `instanceof`). A subclass instance reaching a base-typed position
+therefore validates here but fails to serialize; `File` is the common case and
+is rejected at build time for that reason (see below).
 
 **Pass-by-reference:**
 
@@ -249,6 +255,7 @@ build time, not at the first RPC call:
 | `RegExp`           | `RegExp` is not a capnweb wire type.                       |
 | `DataView`         | Use `Uint8Array` instead.                                  |
 | Other typed arrays | Use `Uint8Array` instead.                                  |
+| `File`             | Use a `Blob` or `Uint8Array`; `File` is not a wire type.   |
 
 If a method signature contains a leaf the resolver cannot lower, such as a generic
 type parameter with no inference source, an unsupported recursive corner, or a rejected
@@ -260,6 +267,12 @@ Recursive object and union shapes are emitted with lazy back-references. The
 resolver also has a guardrail for pathological non-recursive nesting. If the
 lowered type graph exceeds the internal resolution depth limit, it fails with
 `type exceeds maximum resolution depth (64)`.
+
+An overloaded method exposes several call signatures; validating against one
+would reject valid calls to the others. Overloaded methods are passed through
+unvalidated with a warning. Collapse the overloads into a single signature with
+union parameters to validate the method, or `@skipRpcValidation()` to silence
+the warning.
 
 ## License
 

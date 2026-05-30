@@ -2,9 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// Long-lived state shared across every per-module transform in a single build.
-// Owns the TypeScript Program / TypeChecker and refreshes file contents on
-// `invalidateFile()`. One instance per plugin instance.
+// Long-lived state shared across per-module transforms in one build. One instance per plugin.
 
 import { resolve } from "node:path";
 import ts from "typescript";
@@ -134,9 +132,8 @@ export function createTransformContext(
     invalidateFile(id: string): void {
       invalidated.add(id);
       fileVersions.set(id, (fileVersions.get(id) ?? 0) + 1);
-      // Aggressive but correct: any change in any source file can shift
-      // resolved types elsewhere. Drop the Program so the next `transform`
-      // builds a fresh one.
+      // Drop the whole Program: any file change can shift resolved types elsewhere, and
+      // rebuild is a flat ~30-95ms (lib load/bind floor), so oldProgram reuse isn't worth the stale-type risk.
       rebuildProgram();
     },
 

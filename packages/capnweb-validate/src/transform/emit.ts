@@ -2,9 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// Turn a resolved ServiceShape into the JS source for a `ServiceValidator`
-// matching the contract in `src/internal/runtime.ts`. Output is plain text;
-// the transform stitches it into the module via TypeScript's printer.
+// Emit JS source for a `ServiceValidator` from a resolved ServiceShape.
 
 import type { ValidationMode } from "../internal/core.js";
 import type {
@@ -13,14 +11,8 @@ import type {
   TypeShape,
 } from "./type-introspector.js";
 
-/**
- * Emit a `const <name> = { serviceName, methods: { ... } };` declaration as a
- * string. The caller chooses the binding name (one per server / client per
- * service, deduped by service type within a module).
- *
- * The emitted code references `__rt` as the runtime namespace; the transform
- * adds an internal runtime import at the top of every transformed module.
- */
+// Emit a `const <name> = { serviceName, methods: { ... } };` declaration.
+// References `__rt`; the transform adds the runtime import to each module.
 export function emitValidator(
   bindingName: string,
   shape: ServiceShape,
@@ -75,10 +67,19 @@ function shapeBinding(bindingName: string, id: number): string {
 
 function hoistedBinding(shape: TypeShape, ctx: EmitContext): string | null {
   let id = shapeId(shape);
-  if (id !== undefined && id !== ctx.definingId && ctx.namedShapes.has(id)) {
-    return shapeBinding(ctx.bindingName, id);
+  if (id === undefined || id === ctx.definingId || !ctx.namedShapes.has(id)) {
+    return null;
   }
-  return null;
+  return bindingRef(id, ctx);
+}
+
+// Inside a named shape body the target may be forward/cyclic, so defer with
+// `lazy`; at method level all shapes are assigned, so reference directly.
+function bindingRef(id: number, ctx: EmitContext): string {
+  let binding = shapeBinding(ctx.bindingName, id);
+  return ctx.definingId === undefined
+    ? binding
+    : `__rt.v.lazy(() => ${binding})`;
 }
 
 function shapeId(shape: TypeShape): number | undefined {
@@ -97,10 +98,11 @@ function emitMethod(method: MethodShape, ctx: EmitContext): string {
   if (method.skipValidation) return `{ unchecked: true }`;
   let args = method.params.map((p) => emitValidator_(p, ctx)).join(", ");
   let rest = method.rest ? `, rest: ${emitValidator_(method.rest, ctx)}` : "";
+  let getter = method.isGetter ? `, isGetter: true` : "";
   return `{ args: [${args}]${rest}, returns: ${emitValidator_(
     method.returns,
     ctx
-  )} }`;
+  )}${getter} }`;
 }
 
 function emitServiceLiteral(shape: ServiceShape, ctx: EmitContext): string {
@@ -188,7 +190,7 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
       return `__rt.v.union([${branches}])`;
     }
     case "ref":
-      return `__rt.v.lazy(() => ${shapeBinding(ctx.bindingName, shape.id)})`;
+      return bindingRef(shape.id, ctx);
     // Built-in pass-by-value types. The runtime checks each by brand
     // (`instanceof`) since the wire deserialises real instances.
     case "date":
@@ -209,9 +211,7 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
       return `__rt.v.request`;
     case "response":
       return `__rt.v.response`;
-    // Pass-by-reference: the wire ships a stub or function. When the resolver
-    // knows the stub service, keep that method shape so pipelined calls can be
-    // validated too.
+    // Pass-by-reference: keep the stub service shape so pipelined calls validate too.
     case "function":
       return `__rt.v.func`;
     case "stub":
@@ -219,11 +219,7 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
         ? `__rt.v.stubOf(${emitServiceLiteral(shape.service, ctx)})`
         : `__rt.v.stub`;
     case "unsupported":
-      // Reject set bubbles up as a build error - emitting `v.any` would let
-      // the boundary silently accept anything for a type the wire cannot
-      // carry. The transform raises an error before reaching here in the
-      // common path; this branch covers genuinely unrepresentable corners
-      // (recursive types, etc.) and keeps the lowerer total.
+      // Normally rejected before here; this fallback covers unrepresentable corners and keeps the lowerer total.
       return `__rt.v.any`;
   }
 }

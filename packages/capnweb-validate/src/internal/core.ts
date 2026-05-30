@@ -2,9 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// Core runtime helpers called by transformed user code. This module has no
-// dependency on capnweb so capnweb-validate can also be used with native
-// Workers RPC.
+// Core runtime helpers called by transformed user code. No capnweb dependency, so this also works with native Workers RPC.
 
 import { RpcValidationError, type PropertyPath } from "../error.js";
 
@@ -35,6 +33,8 @@ export type MethodSpec =
       rest?: Validator;
       returns: Validator;
       unchecked?: false;
+      /** Getter accessor: validated on read, not call. `args` empty, `returns` validates the read value. */
+      isGetter?: boolean;
     };
 
 export type ValidationMode = "throw" | "warn";
@@ -94,10 +94,7 @@ function validateStubBrand(
   }
 }
 
-/**
- * Validator primitives. The transform emits references to `v.string`,
- * `v.number`, `v.array(v.string)`, etc. when constructing service validators.
- */
+/** Validator primitives. The transform emits references like `v.string`, `v.array(v.string)` when building service validators. */
 export const v = {
   string(
     value: unknown,
@@ -144,7 +141,7 @@ export const v = {
     if (value !== undefined) fail(path, "undefined", value);
   },
   any(_value: unknown, _path: PropertyPath): void {
-    // any / unknown / void - permissive on purpose.
+    // any / unknown / void, permissive on purpose.
   },
   array(elem: Validator): Validator {
     return withShape(
@@ -255,15 +252,18 @@ export const v = {
       { kind: "lazy", thunk }
     );
   },
-  // ---- Built-in pass-by-value brands. Match by `instanceof` against the
-  // platform constructors capnweb itself serialises. `globalThis.X` is the
-  // resolved constructor at runtime (Node 18+, Workers, browsers); we look it
-  // up lazily so a runtime missing one of these (e.g. Node without `Blob`)
-  // doesn't crash on import.
-  date(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
-    if (isDeferredValidationValue(value, options)) return;
-    if (!(value instanceof Date)) fail(path, "Date", value);
-  },
+  // ---- Built-in pass-by-value brands. Matched by `instanceof`; constructor looked up lazily so a runtime missing one (e.g. Node without `Blob`) doesn't crash on import.
+  // capnweb serializes these by exact prototype, so a subclass instance (e.g.
+  // File extends Blob) is rejected at the wire and must be rejected here too.
+  date: exactBrand("Date"),
+  blob: exactBrand("Blob"),
+  readableStream: exactBrand("ReadableStream"),
+  writableStream: exactBrand("WritableStream"),
+  headers: exactBrand("Headers"),
+  request: exactBrand("Request"),
+  response: exactBrand("Response"),
+  // bytes and error are instanceof: capnweb accepts Buffer (a Uint8Array
+  // subclass) for bytes, and matches any Error subclass for error.
   bytes(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
     if (isDeferredValidationValue(value, options)) return;
     if (!(value instanceof Uint8Array)) {
@@ -274,16 +274,7 @@ export const v = {
     if (isDeferredValidationValue(value, options)) return;
     if (!(value instanceof Error)) fail(path, "Error", value);
   },
-  blob: brand("Blob"),
-  readableStream: brand("ReadableStream"),
-  writableStream: brand("WritableStream"),
-  headers: brand("Headers"),
-  request: brand("Request"),
-  response: brand("Response"),
-  // ---- Pass-by-reference brands. The wire always delivers an object (a stub
-  // / RpcPromise / function-stub). Method-level shape is enforced statically
-  // by TypeScript; at runtime we only confirm the receiver is callable / an
-  // object so accidental primitives are caught.
+  // ---- Pass-by-reference brands. Method shape is enforced statically by TS; at runtime only confirm the receiver is callable / an object to catch accidental primitives.
   func(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
     if (isDeferredValidationValue(value, options)) return;
     if (typeof value !== "function") fail(path, "function", value);
@@ -316,25 +307,23 @@ function isDeferredValidationValue(
   value: unknown,
   options: ValidationOptions | undefined
 ): boolean {
-  // Client-side args can intentionally contain RpcPromise placeholders for
-  // promise pipelining, e.g. api.getProfile(api.authenticate(token).id). The
-  // concrete value is validated at the server boundary when the pipeline lands.
+  // Client args may hold RpcPromise placeholders for pipelining; the concrete value is checked at the server boundary.
   return options?.allowDeferred === true && isRpcPromiseLike(value);
 }
 
-/**
- * Build a brand validator for a global constructor that may be absent on the
- * current runtime (e.g. `Blob` outside Workers). Missing constructors fail
- * the same way wrong-type values do - the user has no way to satisfy the
- * type, so silently passing would defeat the boundary.
- */
-function brand(name: string): Validator {
+/** Exact-prototype brand for a possibly-absent global constructor (e.g. `Blob` outside Workers). Matches capnweb's serializer, which keys on the exact prototype, so a subclass instance (File extends Blob) is rejected. A missing constructor fails like a wrong-type value, since the user can't satisfy the type. */
+function exactBrand(name: string): Validator {
   return (value, path, options) => {
     if (isDeferredValidationValue(value, options)) return;
     let ctor = (globalThis as Record<string, unknown>)[name] as
-      | (new (...a: never[]) => unknown)
+      | { prototype: unknown }
       | undefined;
-    if (typeof ctor !== "function" || !(value instanceof ctor)) {
+    if (
+      (typeof value !== "object" && typeof value !== "function") ||
+      value === null ||
+      typeof ctor !== "function" ||
+      Object.getPrototypeOf(value) !== ctor.prototype
+    ) {
       fail(path, name, value);
     }
   };
@@ -343,14 +332,9 @@ function brand(name: string): Validator {
 // ---------------------------------------------------------------------------
 // Server-side wrapping.
 //
-// The transform rewrites every server boundary call site like
-//   newWorkersRpcResponse(req, new Api(env))
-// into
-//   __newWorkersRpcResponseWithValidation(req, new Api(env), __validator)
-// where `__validator` is a service shape generated for the resolved type of
-// the target argument. The helper wraps the target in a Proxy that validates
-// every method's incoming args and return value before delegating to the
-// original implementation.
+// The transform rewrites server boundary call sites to pass a generated
+// `__validator`; the helper wraps the target in a Proxy that validates each
+// method's incoming args and return value before delegating.
 // ---------------------------------------------------------------------------
 
 function isUncheckedMethod(
@@ -431,9 +415,7 @@ function missingMethod(serviceName: string, prop: string): never {
 }
 
 function reportValidationFailure(err: unknown): void {
-  // Warn mode surfaces the mismatch but lets the original value through, so the
-  // boundary observes instead of enforcing. Re-throw anything that is not a
-  // validation error: those are real bugs, not type mismatches.
+  // Warn mode logs the mismatch and lets the value through. Re-throw non-validation errors: those are real bugs.
   if (err instanceof RpcValidationError) {
     console.warn(err.message);
     return;
@@ -468,13 +450,21 @@ export function wrapServerTarget<T extends object>(
     get(t, prop, receiver) {
       let orig = Reflect.get(t, prop, receiver);
       if (typeof prop !== "string") {
-        // Forward symbol-keyed members (Symbol.dispose etc.) bound to the real
-        // target. An unbound dispose would run with `this` as this proxy and
-        // re-enter the get trap on a helper call, throwing missingMethod.
+        // Forward symbol-keyed members (Symbol.dispose etc.) bound to the real target; unbound, `this` would be the proxy and re-enter the get trap, throwing missingMethod.
         return typeof orig === "function" ? orig.bind(t) : orig;
       }
-      if (typeof orig !== "function") return orig;
       let methodSpec = validator.methods[prop];
+      if (methodSpec && !isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
+        // Getter: Reflect.get already invoked the accessor, so `orig` is the read value; validate it like a no-arg return.
+        return validateReturn(
+          orig,
+          methodSpec.returns,
+          [validator.serviceName, prop],
+          "server",
+          validator.mode ?? "throw"
+        );
+      }
+      if (typeof orig !== "function") return orig;
       if (!methodSpec) {
         if (canPassThroughMethod(prop, validator)) return orig.bind(t);
         return missingMethod(validator.serviceName, prop);
@@ -740,9 +730,7 @@ function wrapRpcPromise(
       }
       if (canPassThroughMethod(prop))
         return Reflect.get(target, prop, receiver);
-      // No resolved surface (e.g. a self-/mutually-recursive service-less
-      // stub) means no method list to check, so pass the call through
-      // rather than throwing on a legitimate call.
+      // A service-less stub (e.g. recursive) has no method list to check, so pass the call through instead of throwing.
       if (isUnknownSurfaceStub(returns))
         return Reflect.get(target, prop, receiver);
       return missingMethod(serviceNameFor(returns) ?? formatPath(path), prop);
@@ -773,7 +761,15 @@ function callValidatedThen(
   ) => Promise<unknown>;
   return Reflect.apply(then, target, [
     (value: unknown) => {
-      let wrapped = validateResolvedValue(value, returns, path, side, mode);
+      // Validation runs in the fulfillment handler; route a failure to onrejected so the awaiter rejects rather than hangs,
+      // or rethrow when there is no onrejected (bare `.then(onF)`) to reject the chained promise.
+      let wrapped: unknown;
+      try {
+        wrapped = validateResolvedValue(value, returns, path, side, mode);
+      } catch (err) {
+        if (onrejected) return onrejected(err);
+        throw err;
+      }
       return onfulfilled ? onfulfilled(wrapped) : wrapped;
     },
     onrejected,
@@ -847,11 +843,8 @@ export function isServiceValidator(value: unknown): value is ServiceValidator {
 // ---------------------------------------------------------------------------
 // Client-side wrapping.
 //
-// `newHttpBatchRpcSession<Api>(url)` becomes
-//   __newHttpBatchRpcSessionWithValidation(url, __validator)
-// The helper builds the underlying capnweb stub then wraps it in a Proxy
-// that validates outgoing args before the network call and validates the
-// resolved return value before user code sees it.
+// The helper builds the capnweb stub then wraps it in a Proxy that validates
+// outgoing args before the network call and the resolved return before user code.
 // ---------------------------------------------------------------------------
 
 export function wrapClientStub(
@@ -866,8 +859,19 @@ export function wrapClientStub(
         // target so disposal and other well-known-symbol hooks keep working.
         return typeof orig === "function" ? orig.bind(t) : orig;
       }
-      if (typeof orig !== "function") return orig;
       let methodSpec = validator.methods[prop];
+      if (methodSpec && !isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
+        // A getter read returns an RpcPromise for the value; validate its
+        // resolved value (and keep pipelining working) like a method return.
+        return validateReturn(
+          orig,
+          methodSpec.returns,
+          [validator.serviceName, prop],
+          "client",
+          validator.mode ?? "throw"
+        );
+      }
+      if (typeof orig !== "function") return orig;
       if (!methodSpec) {
         if (canPassThroughMethod(prop, validator))
           return (orig as (...a: unknown[]) => unknown).bind(t);

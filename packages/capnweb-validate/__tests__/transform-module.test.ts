@@ -894,7 +894,7 @@ describe("transformModule: resolved TypeScript shapes", () => {
 });
 
 describe("transformModule: dictionary shapes", () => {
-  it("supports string dictionaries and documents numeric index signatures", async () => {
+  it("validates string and numeric index signatures", async () => {
     write("capnweb.d.ts", CAPNWEB_SHIM);
     let src = write("dictionary.ts", `
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
@@ -912,7 +912,9 @@ describe("transformModule: dictionary shapes", () => {
 
     let { code } = transform(src);
     expect(code).toContain('__rt.v.object({ "known": __rt.v.string }, "Bag", __rt.v.string)');
-    expect(code).toContain('__rt.v.object({ "length": __rt.v.number }, "NumericBag")');
+    // Object keys cross the wire as strings, so the numeric index value type is
+    // validated, the third v.object argument must be present.
+    expect(code).toContain('__rt.v.object({ "length": __rt.v.number }, "NumericBag", __rt.v.string)');
     let validator = await loadValidator(code, "__capnweb_validate_Api_server");
     let method = validator.methods.set!;
 
@@ -920,7 +922,10 @@ describe("transformModule: dictionary shapes", () => {
     expect(() => method.args[0]!({ a: "x" }, ["set", 0])).toThrow(RpcValidationError);
     expect(() => method.args[1]!({ known: "x", extra: "y" }, ["set", 1])).not.toThrow();
     expect(() => method.args[1]!({ known: "x", extra: 1 }, ["set", 1])).toThrow(RpcValidationError);
-    expect(() => method.args[2]!({ length: 1, 0: 2 }, ["set", 2])).not.toThrow();
+    expect(() => method.args[2]!({ length: 1, 0: "ok" }, ["set", 2])).not.toThrow();
+    // The numeric index value type (string) is now enforced: a number value
+    // under a non-fixed key is rejected instead of silently accepted.
+    expect(() => method.args[2]!({ length: 1, 0: 2 }, ["set", 2])).toThrow(RpcValidationError);
     expect(() => method.returns({ a: 1 }, ["set", "return"])).not.toThrow();
     expect(() => method.returns({ a: "x" }, ["set", "return"])).toThrow(RpcValidationError);
   });

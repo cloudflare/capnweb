@@ -2,9 +2,8 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// Per-module transform for capnweb-validate decorators and Cap'n Web client
-// session calls. It resolves service types, emits private validators, imports
-// the internal runtime, and rewrites marker syntax to runtime helpers.
+// Per-module transform: resolve service types, emit validators, import the
+// runtime, and rewrite marker syntax to runtime helpers.
 
 import ts from "typescript";
 
@@ -12,6 +11,7 @@ import type { TransformContext } from "./context.js";
 import { emitValidator } from "./emit.js";
 import {
   collectUnsupported,
+  type GenericFallback,
   isWorkerEntrypointType,
   resolveServiceShape,
   type ServiceShape,
@@ -153,11 +153,17 @@ export function transformModule(
   if (!sourceFile) return null;
   let checker = context.getChecker();
 
-  let markerBindings = collectMarkerBindings(sourceFile);
+  let { bindings: markerBindings, namespaces: markerNamespaces } =
+    collectMarkerBindings(sourceFile);
   let decoratorBindings = collectDecoratorBindings(sourceFile);
 
   let callSites = [
-    ...collectMarkerCallSites(sourceFile, markerBindings, checker),
+    ...collectMarkerCallSites(
+      sourceFile,
+      markerBindings,
+      markerNamespaces,
+      checker
+    ),
     ...collectCapnwebClientCallSites(sourceFile, checker),
   ];
   let decoratorSites = collectDecoratorSites(
@@ -203,9 +209,8 @@ export function transformModule(
     });
     let args = cs.call.arguments;
     if (args && args.length > 0) {
-      // Insert right after the last argument rather than before `)`, so an
-      // existing trailing comma (`f(a, b,)`, common with Prettier) does not
-      // produce a `f(a, b,, __v)` double comma / syntax error.
+      // Insert after the last arg, not before `)`, so a trailing comma does
+      // not produce `f(a, b,, __v)`.
       let pos = args[args.length - 1]!.getEnd();
       edits.push({ start: pos, end: pos, text: `, ${cs.bindingName!}` });
     } else {
@@ -234,27 +239,40 @@ type MarkerBinding = {
   markerName: keyof typeof MARKERS;
 };
 
-function collectMarkerBindings(sf: ts.SourceFile): Map<string, MarkerBinding> {
-  let result = new Map<string, MarkerBinding>();
+type MarkerImports = {
+  /** Named imports: `{ validateRpc }` -> `validateRpc(...)`. */
+  bindings: Map<string, MarkerBinding>;
+  /** Namespace import locals: `* as ns` -> `ns.validateRpc(...)`. */
+  namespaces: Set<string>;
+};
+
+// Catch namespace call sites (`ns.marker(...)`) too; missing them silently
+// skips validation, which is worse than a build error.
+function collectMarkerBindings(sf: ts.SourceFile): MarkerImports {
+  let bindings = new Map<string, MarkerBinding>();
+  let namespaces = new Set<string>();
   for (let stmt of sf.statements) {
     if (!ts.isImportDeclaration(stmt)) continue;
     let mod = stmt.moduleSpecifier;
     if (!ts.isStringLiteral(mod)) continue;
     if (mod.text !== CAPNWEB_MARKER_PACKAGE_NAME && mod.text !== PACKAGE_NAME)
       continue;
-    let clause = stmt.importClause;
-    if (!clause?.namedBindings || !ts.isNamedImports(clause.namedBindings))
-      continue;
-    for (let spec of clause.namedBindings.elements) {
-      let imported = (spec.propertyName ?? spec.name).text;
-      if (!(imported in MARKERS)) continue;
-      result.set(spec.name.text, {
-        localName: spec.name.text,
-        markerName: imported as keyof typeof MARKERS,
-      });
+    let named = stmt.importClause?.namedBindings;
+    if (!named) continue;
+    if (ts.isNamespaceImport(named)) {
+      namespaces.add(named.name.text);
+    } else if (ts.isNamedImports(named)) {
+      for (let spec of named.elements) {
+        let imported = (spec.propertyName ?? spec.name).text;
+        if (!(imported in MARKERS)) continue;
+        bindings.set(spec.name.text, {
+          localName: spec.name.text,
+          markerName: imported as keyof typeof MARKERS,
+        });
+      }
     }
   }
-  return result;
+  return { bindings, namespaces };
 }
 
 function collectDecoratorBindings(sf: ts.SourceFile): Set<string> {
@@ -291,35 +309,61 @@ type DecoratorSite = {
   bindingName?: string;
 };
 
+// A call, or a `new` with an argument list. A bare `new Foo` without `()` is
+// never a marker call, so it is excluded.
+function isCallLike(
+  node: ts.Node
+): node is ts.CallExpression | ts.NewExpression {
+  return (
+    ts.isCallExpression(node) ||
+    (ts.isNewExpression(node) && node.arguments !== undefined)
+  );
+}
+
 function collectMarkerCallSites(
   sf: ts.SourceFile,
   bindings: Map<string, MarkerBinding>,
+  namespaces: Set<string>,
   checker: ts.TypeChecker
 ): CallSite[] {
   let out: CallSite[] = [];
   function visit(node: ts.Node): void {
-    let isCall = ts.isCallExpression(node) && ts.isIdentifier(node.expression);
-    let isNew =
-      ts.isNewExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.arguments !== undefined;
-    if (isCall || isNew) {
-      let call = node as ts.CallExpression | ts.NewExpression;
-      let binding = bindings.get((call.expression as ts.Identifier).text);
-      if (binding)
-        pushCallSite(
-          out,
-          sf,
-          call,
-          MARKERS[binding.markerName],
-          binding.localName,
-          checker
-        );
+    if (isCallLike(node)) {
+      let resolved = resolveMarkerCallee(node.expression, bindings, namespaces);
+      if (resolved)
+        pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker);
     }
     ts.forEachChild(node, visit);
   }
   visit(sf);
   return out;
+}
+
+/** Map a callee to its marker, via named (`marker(...)`) or namespace (`ns.marker(...)`) import. */
+function resolveMarkerCallee(
+  callee: ts.Expression,
+  bindings: Map<string, MarkerBinding>,
+  namespaces: Set<string>
+): { marker: (typeof MARKERS)[keyof typeof MARKERS]; localName: string } | null {
+  if (ts.isIdentifier(callee)) {
+    let binding = bindings.get(callee.text);
+    return binding
+      ? { marker: MARKERS[binding.markerName], localName: binding.localName }
+      : null;
+  }
+  if (
+    ts.isPropertyAccessExpression(callee) &&
+    ts.isIdentifier(callee.expression) &&
+    namespaces.has(callee.expression.text) &&
+    callee.name.text in MARKERS
+  ) {
+    let markerName = callee.name.text as keyof typeof MARKERS;
+    return {
+      marker: MARKERS[markerName],
+      localName: `${callee.expression.text}.${callee.name.text}`,
+    };
+  }
+  return null;
 }
 
 function collectCapnwebClientCallSites(
@@ -328,22 +372,23 @@ function collectCapnwebClientCallSites(
 ): CallSite[] {
   let out: CallSite[] = [];
   function visit(node: ts.Node): void {
-    let isCall = ts.isCallExpression(node) && ts.isIdentifier(node.expression);
-    let isNew =
-      ts.isNewExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.arguments !== undefined;
-    if (isCall || isNew) {
-      let call = node as ts.CallExpression | ts.NewExpression;
-      let name = (call.expression as ts.Identifier).text;
+    if (isCallLike(node)) {
+      let callee = node.expression;
+      // `marker(...)` (named/default import) or `ns.marker(...)` (namespace).
+      let name = ts.isIdentifier(callee)
+        ? callee.text
+        : ts.isPropertyAccessExpression(callee)
+          ? callee.name.text
+          : undefined;
       if (
+        name !== undefined &&
         CAPNWEB_CLIENT_MARKERS.has(name) &&
-        isCapnwebSymbolAt(checker, call.expression)
+        isCapnwebSymbolAt(checker, callee)
       ) {
         let marker = MARKERS[name]!;
-        let actual: "call" | "new" = isNew ? "new" : "call";
+        let actual: "call" | "new" = ts.isNewExpression(node) ? "new" : "call";
         if (marker.form === actual)
-          pushCallSite(out, sf, call, marker, name, checker);
+          pushCallSite(out, sf, node, marker, name, checker);
       }
     }
     ts.forEachChild(node, visit);
@@ -430,13 +475,25 @@ function resolveDecoratorShape(
       `capnweb-validate: could not resolve a concrete service type for @validateRpc.`
     );
   }
-  let resolved = resolveServiceShape(ts, checker, type);
+  // Generic class with no type arg: default free params to `any` and record it
+  // so we can warn those positions are not validated. Constrained params still
+  // resolve against their constraint.
+  let generic: GenericFallback = {
+    mode: !decoratorTypeArg && (cls.typeParameters?.length ?? 0) > 0
+      ? "any"
+      : "error",
+    used: false,
+  };
+  let resolved = resolveServiceShape(ts, checker, type, generic);
   if (resolved === null) {
     throw buildError(
       sf,
       decorator,
       `capnweb-validate: could not resolve a concrete service type for @validateRpc.`
     );
+  }
+  if (generic.used) {
+    warnGenericDefaultedToAny(sf, cls, decorator);
   }
   let shape = cloneServiceShape(resolved);
   let skipped = collectClassSkipRpcValidationMethods(cls, checker);
@@ -472,6 +529,23 @@ function typeNodeContainsAny(node: ts.TypeNode): boolean {
   return found;
 }
 
+function warnGenericDefaultedToAny(
+  sf: ts.SourceFile,
+  cls: ts.ClassDeclaration,
+  decorator: ts.Decorator
+): void {
+  let { line, character } = sf.getLineAndCharacterOfPosition(
+    decorator.getStart(sf)
+  );
+  let name = cls.name?.text ?? "class";
+  console.warn(
+    `${sf.fileName}:${line + 1}:${character + 1}: capnweb-validate: ` +
+      `\`${name}\` is generic; unconstrained type parameters default to ` +
+      `\`any\` and are not runtime-validated. Pass a concrete type argument ` +
+      `(e.g. @validateRpc<${name}<string>>()) or constrain the parameter ` +
+      `(\`<T extends ...>\`) to validate those positions.`
+  );
+}
 function warnDecoratorAny(sf: ts.SourceFile, node: ts.TypeNode): void {
   let { line, character } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
   console.warn(
@@ -493,17 +567,12 @@ function getSingleImplementedType(
     if (clause.token === ts.SyntaxKind.ImplementsKeyword)
       impls.push(...clause.types);
   }
+  // A single implemented interface is the declared RPC contract; use it. With
+  // multiple (or none) there is no single contract, so the caller falls back to
+  // the class instance type. `sf`/`decorator` are kept for call-site symmetry.
+  void sf;
+  void decorator;
   if (impls.length === 1) return checker.getTypeAtLocation(impls[0]!);
-  if (impls.length > 1) {
-    let { line, character } = sf.getLineAndCharacterOfPosition(
-      decorator.getStart(sf)
-    );
-    console.warn(
-      `${sf.fileName}:${line + 1}:${character + 1}: capnweb-validate: ` +
-        `class implements multiple interfaces. Specify @validateRpc<Interface>() ` +
-        `to restrict the RPC surface.`
-    );
-  }
   return null;
 }
 
