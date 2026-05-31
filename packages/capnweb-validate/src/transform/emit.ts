@@ -117,6 +117,8 @@ function serviceMetaParts(shape: ServiceShape, mode: ValidationMode): string[] {
   if (shape.targetKind)
     parts.push(`targetKind: ${JSON.stringify(shape.targetKind)}`);
   if (mode !== "throw") parts.push(`mode: ${JSON.stringify(mode)}`);
+  if (shape.passthrough?.length)
+    parts.push(`passthrough: ${JSON.stringify(shape.passthrough)}`);
   return parts;
 }
 

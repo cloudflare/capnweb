@@ -10,6 +10,7 @@ import ts from "typescript";
 import type { TransformContext } from "./context.js";
 import { emitValidator } from "./emit.js";
 import {
+  collectPlatformMethodNames,
   collectUnsupported,
   type GenericFallback,
   isCapnwebValidateSymbol,
@@ -519,6 +520,10 @@ function resolveDecoratorShape(
   if (isWorkerEntrypointType(checker, classType)) {
     shape.targetKind = "workerEntrypoint";
   }
+  // Pass-through names come from the class (the proxy wraps its instances), not
+  // the possibly-narrowed resolved surface.
+  let platform = collectPlatformMethodNames(checker, classType);
+  shape.passthrough = platform.length ? platform : undefined;
   return shape;
 }
 
@@ -892,6 +897,7 @@ function sanitize(name: string): string {
 function serviceSignature(shape: ServiceShape): string {
   return JSON.stringify({
     targetKind: shape.targetKind ?? null,
+    passthrough: shape.passthrough ?? [],
     methods: shape.methods.map((method) =>
       method.skipValidation
         ? {

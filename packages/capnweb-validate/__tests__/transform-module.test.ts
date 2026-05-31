@@ -162,9 +162,11 @@ describe("transformModule", () => {
       export default Api;
     `);
     let { code } = transform(src);
-    expect(code).toContain('"rpc"');
-    expect(code).not.toContain('"tailStream"');
-    expect(code).not.toContain('"fetch"');
+    expect(code).toContain('"rpc":'); // validated RPC method
+    // fetch/tailStream are platform hooks: pass-through, not validated methods.
+    expect(code).toMatch(/passthrough:\s*\[[^\]]*"fetch"[^\]]*\]/);
+    expect(code).not.toContain('"fetch":');
+    expect(code).not.toContain('"tailStream":');
   });
 
   it("rejects a non-wire built-in at build time", () => {

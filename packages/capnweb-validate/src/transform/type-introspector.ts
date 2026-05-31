@@ -13,6 +13,8 @@ export type ServiceShape = {
   name: string;
   targetKind?: "workerEntrypoint";
   methods: MethodShape[];
+  /** Platform-inherited methods excluded from the surface but still dispatchable on the wrapped target (e.g. WorkerEntrypoint `fetch`). */
+  passthrough?: string[];
   /** Validator fragments that must be hoisted because refs point at them. */
   namedShapes: Map<number, TypeShape>;
 };
@@ -128,17 +130,20 @@ function resolveServiceShapeInner(
   };
   ctx.services.set(type, { shape: service, resolving: true });
 
+  let passthrough: string[] = [];
   for (let prop of checker.getPropertiesOfType(type)) {
     let propName = prop.getName();
     if (isSymbolNamedProperty(prop)) continue;
     if (RPC_CAPABILITY_BRAND_NAMES.has(propName)) continue;
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
     if (!decl) continue;
-    // Skip methods inherited from a platform/library base (WorkerEntrypoint,
-    // DurableObject, RpcTarget). The runtime invokes those lifecycle hooks
-    // directly; they are not the user's RPC surface. Detected by where the
-    // member is declared, so no hardcoded method-name list is needed.
-    if (isPlatformInheritedMember(decl)) continue;
+    // Platform/library base methods (WorkerEntrypoint, DurableObject, RpcTarget)
+    // aren't the user's surface but still dispatch on the wrapped target, so
+    // record them as pass-through. Detected by origin, not a name list.
+    if (isPlatformInheritedMember(decl)) {
+      passthrough.push(propName);
+      continue;
+    }
     if (isPrivateOrProtected(tsm, decl)) continue;
     if (propName.startsWith("#")) continue; // private fields
     if (propName === "constructor") continue;
@@ -202,6 +207,7 @@ function resolveServiceShapeInner(
     service.methods.push({ name: prop.getName(), params, rest, returns });
   }
 
+  if (passthrough.length) service.passthrough = passthrough;
   ctx.services.set(type, { shape: service, resolving: false });
   return service;
 }
@@ -1053,6 +1059,21 @@ function isPlatformInheritedMember(decl: ts.Declaration): boolean {
   if (!container) return false;
   let sym = (container as ts.Node & { symbol?: ts.Symbol }).symbol;
   return sym !== undefined && isRpcRuntimeSymbol(sym);
+}
+
+// Platform-inherited method names of `type` (e.g. WorkerEntrypoint `fetch`).
+export function collectPlatformMethodNames(
+  checker: ts.TypeChecker,
+  type: ts.Type
+): string[] {
+  let names: string[] = [];
+  for (let prop of checker.getPropertiesOfType(type)) {
+    if (isSymbolNamedProperty(prop)) continue;
+    if (RPC_CAPABILITY_BRAND_NAMES.has(prop.getName())) continue;
+    let decl = prop.valueDeclaration ?? prop.declarations?.[0];
+    if (decl && isPlatformInheritedMember(decl)) names.push(prop.getName());
+  }
+  return names;
 }
 
 export function isWorkerEntrypointType(

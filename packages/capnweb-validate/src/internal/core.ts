@@ -45,6 +45,8 @@ export type ServiceValidator = {
   /** How a failed check is reported. "throw" (default) raises; "warn" logs and lets the value through. */
   mode?: ValidationMode;
   methods: Record<string, MethodSpec>;
+  /** Platform-inherited methods (e.g. WorkerEntrypoint `fetch`) allowed through unvalidated; any other unknown method is refused. */
+  passthrough?: string[];
 };
 
 type WrapSide = "server" | "client";
@@ -379,7 +381,25 @@ const PASSTHROUGH_METHODS = new Set([
   "dup",
   "onRpcBroken",
   "map",
+  // Promise machinery a client stub manufactures as callables.
+  "then",
+  "catch",
+  "finally",
 ]);
+
+// A method absent from the surface passes through only if it is infrastructure
+// or a platform hook; anything else is refused.
+function canPassThrough(prop: string, validator: ServiceValidator): boolean {
+  return (
+    PASSTHROUGH_METHODS.has(prop) || validator.passthrough?.includes(prop) === true
+  );
+}
+
+// Own-property lookup: a plain map inherits `toString`/`valueOf`/etc. from
+// Object.prototype, which would read back as a bogus spec.
+function own<T>(record: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
+}
 
 
 function missingMethod(serviceName: string, prop: string): never {
@@ -435,7 +455,7 @@ export function wrapServerTarget<T extends object>(
         // Forward symbol-keyed members (Symbol.dispose etc.) bound to the real target; unbound, `this` would be the proxy and re-enter the get trap, throwing missingMethod.
         return typeof orig === "function" ? orig.bind(t) : orig;
       }
-      let methodSpec = validator.methods[prop];
+      let methodSpec = own(validator.methods, prop);
       if (methodSpec && !isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
         // Getter: Reflect.get already invoked the accessor, so `orig` is the read value; validate it like a no-arg return.
         return validateReturn(
@@ -447,9 +467,13 @@ export function wrapServerTarget<T extends object>(
         );
       }
       if (typeof orig !== "function") return orig;
-      // A method absent from the validator is a platform lifecycle hook the
-      // transform excluded from the RPC surface; pass it through unvalidated.
-      if (!methodSpec) return orig.bind(t);
+      if (!methodSpec) {
+        // Outside the validated surface: forward infra/platform hooks, refuse
+        // the rest rather than run them unvalidated.
+        if (canPassThrough(prop, validator)) return orig.bind(t);
+        return (..._args: unknown[]): never =>
+          missingMethod(validator.serviceName, prop);
+      }
       let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
         if (isUncheckedMethod(methodSpec)) {
@@ -777,7 +801,7 @@ function methodSpecFor(
   let shape = shapeOf(validator);
   if (shape?.kind === "lazy") return methodSpecFor(shape.thunk(), prop);
   if (shape?.kind !== "stub") return undefined;
-  return shape.service?.methods[prop];
+  return shape.service ? own(shape.service.methods, prop) : undefined;
 }
 
 function serviceNameFor(validator: Validator): string | undefined {
@@ -802,7 +826,7 @@ function propertyValidatorFor(
   let shape = shapeOf(validator);
   if (shape?.kind === "lazy") return propertyValidatorFor(shape.thunk(), prop);
   if (shape?.kind === "object")
-    return shape.properties[prop] ?? shape.index;
+    return own(shape.properties, prop) ?? shape.index;
   if (shape?.kind === "array" && numericKey(prop)) return shape.element;
   if (shape?.kind === "tuple" && numericKey(prop)) {
     let i = Number(prop);
@@ -854,7 +878,7 @@ export function wrapClientStub(
         // target so disposal and other well-known-symbol hooks keep working.
         return typeof orig === "function" ? orig.bind(t) : orig;
       }
-      let methodSpec = validator.methods[prop];
+      let methodSpec = own(validator.methods, prop);
       if (methodSpec && !isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
         // A getter read returns an RpcPromise for the value; validate its
         // resolved value (and keep pipelining working) like a method return.
@@ -867,8 +891,14 @@ export function wrapClientStub(
         );
       }
       if (typeof orig !== "function") return orig;
-      // Not in the validator: a method outside the typechecked RPC surface.
-      if (!methodSpec) return (orig as (...a: unknown[]) => unknown).bind(t);
+      if (!methodSpec) {
+        // capnweb's stub manufactures a callable for every property; refuse
+        // names outside the typed surface instead of sending undeclared calls.
+        if (canPassThrough(prop, validator))
+          return (orig as (...a: unknown[]) => unknown).bind(t);
+        return (..._args: unknown[]): never =>
+          missingMethod(validator.serviceName, prop);
+      }
       let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
         if (isUncheckedMethod(methodSpec)) {
