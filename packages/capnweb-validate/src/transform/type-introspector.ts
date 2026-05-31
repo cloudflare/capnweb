@@ -428,6 +428,16 @@ const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
   File: "Use a Blob or Uint8Array; File is not a capnweb wire type.",
 };
 
+// Rejected types that no host can transport (not structured-cloneable), so the
+// onUnsupportedType hook must not pass them through: doing so only defers a
+// guaranteed serialize-time failure past the build guard.
+const NEVER_TRANSPORTABLE = new Set([
+  "WeakMap",
+  "WeakSet",
+  "SharedArrayBuffer",
+  "File",
+]);
+
 function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
   if (depth > MAX_RESOLVE_DEPTH) {
     return {
@@ -773,9 +783,15 @@ function matchBuiltin(ctx: ResolveContext, type: ts.Type): TypeShape | null {
   if (!isGlobalSymbol(ctx.tsm, sym)) return null;
   if (name in BUILTIN_REJECTED_TYPES) {
     // A host may accept a type capnweb does not (e.g. Workers RPC transports
-    // Map/Set via structured clone). The hook lets it pass through as `any`
-    // rather than fail the build; default stays reject.
-    if (ctx.onUnsupported?.({ typeName: name }) === "passthrough") {
+    // Map/Set via structured clone). The hook lets such a type pass through as
+    // `any` rather than fail the build; default stays reject. Types in
+    // NEVER_TRANSPORTABLE are uncloneable on every host, so the hook cannot
+    // override them: passing them through would only move a guaranteed runtime
+    // failure past the build guard.
+    if (
+      !NEVER_TRANSPORTABLE.has(name) &&
+      ctx.onUnsupported?.({ typeName: name }) === "passthrough"
+    ) {
       return { kind: "any" };
     }
     let fixHint = BUILTIN_REJECTED_TYPES[name];
@@ -968,7 +984,7 @@ function resolveStubServiceShape(
   return resolveServiceShapeInner(ctx, type) ?? undefined;
 }
 
-function isCapnwebValidateSymbol(sym: ts.Symbol): boolean {
+export function isCapnwebValidateSymbol(sym: ts.Symbol): boolean {
   for (let decl of sym.getDeclarations() ?? []) {
     let fileName = decl.getSourceFile().fileName;
     if (/[\\/]capnweb-validate[\\/]/.test(fileName)) return true;
@@ -1024,9 +1040,13 @@ export function isWorkerEntrypointType(
   return extendsNamedRpcBase(checker, type, "WorkerEntrypoint");
 }
 
+// Bare RpcTarget/WorkerEntrypoint itself (not a user subclass): the base symbol
+// with no RPC base in its own heritage chain.
 function isBareRpcBaseType(checker: ts.TypeChecker, type: ts.Type): boolean {
   let sym = type.getSymbol();
-  return !!sym && isRpcBaseSymbol(sym) && !hasOwnRpcBaseSubclass(checker, type);
+  return (
+    !!sym && isRpcBaseSymbol(sym) && !extendsRpcReferenceTarget(checker, type)
+  );
 }
 
 function extendsRpcReferenceTarget(
@@ -1037,13 +1057,6 @@ function extendsRpcReferenceTarget(
     extendsNamedRpcBase(checker, type, "RpcTarget") ||
     extendsNamedRpcBase(checker, type, "WorkerEntrypoint")
   );
-}
-
-function hasOwnRpcBaseSubclass(
-  checker: ts.TypeChecker,
-  type: ts.Type
-): boolean {
-  return extendsRpcReferenceTarget(checker, type);
 }
 
 // True when `type` is or extends the global `Error`, so it validates as `v.error`.

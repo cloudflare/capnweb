@@ -89,7 +89,9 @@ async function main(): Promise<void> {
   });
   console.log(
       `capnweb-validate: ${result.transformed} transformed, ` +
-      `${result.copied} copied -> ${opts.out}`);
+      `${result.copied} copied` +
+      (result.skipped ? `, ${result.skipped} skipped (outside project)` : "") +
+      ` -> ${opts.out}`);
 }
 
 if (isMain()) {

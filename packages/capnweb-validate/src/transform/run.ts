@@ -23,6 +23,8 @@ export type BuildOptions = TransformContextOptions & {
 export type BuildResult = {
   transformed: number;
   copied: number;
+  /** Source files skipped because they map outside --out (outside cwd). */
+  skipped: number;
 };
 
 function isInsideOrEqual(parent: string, child: string): boolean {
@@ -47,12 +49,24 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
   let context = createTransformContext(options);
   let transformed = 0;
   let copied = 0;
+  let skipped = 0;
   try {
     for (let id of context.listSourceFiles()) {
       if (isInsideOrEqual(out, id)) continue;
+      let dest = resolve(out, relative(cwd, id));
+      // A source file outside cwd (e.g. an included sibling dir) maps to a dest
+      // that escapes --out and could clobber unrelated files. Skip it loudly
+      // rather than write outside the requested output tree.
+      if (!isInsideOrEqual(out, dest)) {
+        console.warn(
+          `capnweb-validate: skipping ${id}: it is outside the project ` +
+          `directory (cwd=${cwd}), so it cannot be written under --out (${out}).`,
+        );
+        skipped++;
+        continue;
+      }
       let code = await readFile(id, "utf8");
       let result = transformModule(context, id, code);
-      let dest = resolve(out, relative(cwd, id));
       await mkdir(dirname(dest), { recursive: true });
       if (result) {
         await writeFile(dest, result.code);
@@ -65,5 +79,5 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
   } finally {
     context.dispose();
   }
-  return { transformed, copied };
+  return { transformed, copied, skipped };
 }

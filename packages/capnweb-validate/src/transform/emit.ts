@@ -36,13 +36,7 @@ export function emitValidator(
   }
   ctx.definingId = undefined;
   lines.push(`const ${bindingName} = {`);
-  lines.push(`  serviceName: ${JSON.stringify(shape.name)},`);
-  if (shape.targetKind) {
-    lines.push(`  targetKind: ${JSON.stringify(shape.targetKind)},`);
-  }
-  if (mode !== "throw") {
-    lines.push(`  mode: ${JSON.stringify(mode)},`);
-  }
+  for (let part of serviceMetaParts(shape, mode)) lines.push(`  ${part},`);
   lines.push(`  methods: {`);
   for (let method of shape.methods) {
     lines.push(
@@ -111,14 +105,19 @@ function emitServiceLiteral(shape: ServiceShape, ctx: EmitContext): string {
       (method) => `${JSON.stringify(method.name)}: ${emitMethod(method, ctx)}`
     )
     .join(", ");
-  let targetKind = shape.targetKind
-    ? `, targetKind: ${JSON.stringify(shape.targetKind)}`
-    : "";
-  let mode =
-    ctx.mode !== "throw" ? `, mode: ${JSON.stringify(ctx.mode)}` : "";
-  return `({ serviceName: ${JSON.stringify(
-    shape.name
-  )}${targetKind}${mode}, methods: { ${methods} } })`;
+  let meta = serviceMetaParts(shape, ctx.mode).join(", ");
+  return `({ ${meta}, methods: { ${methods} } })`;
+}
+
+// The ServiceValidator metadata fields (`serviceName`, optional `targetKind`,
+// optional non-default `mode`) shared by the hoisted binding and the inline
+// stub literal. Each part is a `key: value` fragment.
+function serviceMetaParts(shape: ServiceShape, mode: ValidationMode): string[] {
+  let parts = [`serviceName: ${JSON.stringify(shape.name)}`];
+  if (shape.targetKind)
+    parts.push(`targetKind: ${JSON.stringify(shape.targetKind)}`);
+  if (mode !== "throw") parts.push(`mode: ${JSON.stringify(mode)}`);
+  return parts;
 }
 
 function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
@@ -192,25 +191,18 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
     case "ref":
       return bindingRef(shape.id, ctx);
     // Built-in pass-by-value types. The runtime checks each by brand
-    // (`instanceof`) since the wire deserialises real instances.
+    // (`instanceof`) since the wire deserialises real instances. Each kind name
+    // matches its `v.*` validator, so map directly.
     case "date":
-      return `__rt.v.date`;
     case "bytes":
-      return `__rt.v.bytes`;
     case "error":
-      return `__rt.v.error`;
     case "blob":
-      return `__rt.v.blob`;
     case "readableStream":
-      return `__rt.v.readableStream`;
     case "writableStream":
-      return `__rt.v.writableStream`;
     case "headers":
-      return `__rt.v.headers`;
     case "request":
-      return `__rt.v.request`;
     case "response":
-      return `__rt.v.response`;
+      return `__rt.v.${shape.kind}`;
     // Pass-by-reference: keep the stub service shape so pipelined calls validate too.
     case "function":
       return `__rt.v.func`;

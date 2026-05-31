@@ -13,7 +13,7 @@ type ValidationOptions = {
 type RuntimeShape =
   | { kind: "array"; element: Validator }
   | { kind: "tuple"; elements: Validator[]; rest?: Validator }
-  | { kind: "object"; properties: Record<string, Validator> }
+  | { kind: "object"; properties: Record<string, Validator>; index?: Validator }
   | { kind: "union"; branches: Validator[] }
   | { kind: "lazy"; thunk: () => Validator }
   | { kind: "stub"; service?: ServiceValidator };
@@ -210,7 +210,7 @@ export const v = {
           }
         }
       },
-      { kind: "object", properties: shape }
+      { kind: "object", properties: shape, ...(index ? { index } : {}) }
     );
   },
   union(branches: Validator[], name?: string): Validator {
@@ -582,6 +582,19 @@ function wrapResolvedValue(
         next[key] = wrapped;
       }
     }
+    // Index-signature / Record values: wrap each dynamic key not covered by a
+    // fixed property, so stubs reached through `Record<string, Stub<T>>` are
+    // wrapped and their pipelined calls validate.
+    if (shape.index) {
+      for (let key of Object.keys(rec)) {
+        if (key in shape.properties) continue;
+        let wrapped = wrapResolvedValue(rec[key], shape.index, [...path, key], side);
+        if (wrapped !== rec[key]) {
+          next ??= { ...rec };
+          next[key] = wrapped;
+        }
+      }
+    }
     return next ?? value;
   }
   return value;
@@ -784,7 +797,8 @@ function propertyValidatorFor(
 ): Validator | undefined {
   let shape = shapeOf(validator);
   if (shape?.kind === "lazy") return propertyValidatorFor(shape.thunk(), prop);
-  if (shape?.kind === "object") return shape.properties[prop];
+  if (shape?.kind === "object")
+    return shape.properties[prop] ?? shape.index;
   if (shape?.kind === "array" && numericKey(prop)) return shape.element;
   if (shape?.kind === "tuple" && numericKey(prop)) {
     let i = Number(prop);
@@ -808,7 +822,7 @@ export function splitTrailingValidator(rest: unknown[]): {
   return { args: rest.slice(0, -1), validator };
 }
 
-export function isServiceValidator(value: unknown): value is ServiceValidator {
+function isServiceValidator(value: unknown): value is ServiceValidator {
   return (
     value !== null &&
     typeof value === "object" &&

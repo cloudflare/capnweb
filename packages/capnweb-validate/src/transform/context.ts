@@ -48,9 +48,6 @@ export function createTransformContext(
   let cwd = resolve(options.cwd ?? process.cwd());
   let program: ts.Program | null = null;
   let checker: ts.TypeChecker | null = null;
-  /** Cache of `id` -> mtime/version we last parsed at. Invalidation bumps this. */
-  let fileVersions = new Map<string, number>();
-  let invalidated = new Set<string>();
 
   function ensureProgram(): ts.Program {
     if (program) return program;
@@ -74,9 +71,6 @@ export function createTransformContext(
       host,
     });
     checker = program.getTypeChecker();
-    for (let sf of program.getSourceFiles()) {
-      if (!sf.isDeclarationFile) fileVersions.set(sf.fileName, 0);
-    }
     return program;
   }
 
@@ -132,9 +126,7 @@ export function createTransformContext(
       return ensureProgram().getSourceFile(id);
     },
 
-    invalidateFile(id: string): void {
-      invalidated.add(id);
-      fileVersions.set(id, (fileVersions.get(id) ?? 0) + 1);
+    invalidateFile(_id: string): void {
       // Drop the whole Program: any file change can shift resolved types elsewhere, and
       // rebuild is a flat ~30-95ms (lib load/bind floor), so oldProgram reuse isn't worth the stale-type risk.
       rebuildProgram();
@@ -143,8 +135,6 @@ export function createTransformContext(
     dispose(): void {
       program = null;
       checker = null;
-      fileVersions.clear();
-      invalidated.clear();
     },
   };
 }

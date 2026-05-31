@@ -39,8 +39,9 @@ export class RpcValidationError extends TypeError {
     super(message);
     this.name = "RpcValidationError";
     this.rpcValidation = validation;
-    if (typeof (Error as { captureStackTrace?: Function }).captureStackTrace === "function") {
-      (Error as { captureStackTrace: Function }).captureStackTrace(this, RpcValidationError);
+    let errorCtor = Error as { captureStackTrace?: Function };
+    if (typeof errorCtor.captureStackTrace === "function") {
+      errorCtor.captureStackTrace(this, RpcValidationError);
     }
   }
 }

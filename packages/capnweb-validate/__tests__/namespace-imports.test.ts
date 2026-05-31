@@ -71,6 +71,29 @@ import { RpcTarget } from "capnweb";
     expect(code).toMatch(/echo[\s\S]*?args:\s*\[__rt\.v\.string\]/);
   });
 
+  it("decorator: import * as cv -> @cv.validateRpc() is transformed", () => {
+    const { code } = transformFixture(
+      `@cv.validateRpc()
+class Api extends RpcTarget { greet(name: string): string { return name; } }
+export function handler(req: Request): Promise<Response> {
+  return cv2.newWorkersRpcResponse(req, new Api());
+}
+`,
+      {
+        shim: `${CAPNWEB_SHIM}
+declare module "capnweb-validate" {
+  export function validateRpc<T = unknown>(): any;
+}`,
+        imports: `import * as cv from "capnweb-validate";
+import * as cv2 from "capnweb-validate/capnweb";
+import { RpcTarget } from "capnweb";
+`,
+      },
+    );
+    expect(code).toContain("__rt.__validateRpcClass");
+    expect(code).toMatch(/greet[\s\S]*?args:\s*\[__rt\.v\.string\]/);
+  });
+
   it("fails loud: a namespace marker call with no resolvable type throws", () => {
     const msg = transformError(
       `export const api = capnweb.newHttpBatchRpcSession("/rpc");

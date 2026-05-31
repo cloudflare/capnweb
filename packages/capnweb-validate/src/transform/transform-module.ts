@@ -12,6 +12,7 @@ import { emitValidator } from "./emit.js";
 import {
   collectUnsupported,
   type GenericFallback,
+  isCapnwebValidateSymbol,
   isWorkerEntrypointType,
   resolveServiceShape,
   type ServiceShape,
@@ -173,6 +174,7 @@ export function transformModule(
   let decoratorSites = collectDecoratorSites(
     sourceFile,
     decoratorBindings,
+    markerNamespaces,
     checker,
     onUnsupported
   );
@@ -425,16 +427,18 @@ function pushCallSite(
 function collectDecoratorSites(
   sf: ts.SourceFile,
   decoratorBindings: Set<string>,
+  namespaces: Set<string>,
   checker: ts.TypeChecker,
   onUnsupported?: UnsupportedTypeHandler
 ): DecoratorSite[] {
   let out: DecoratorSite[] = [];
-  if (decoratorBindings.size === 0) return out;
+  if (decoratorBindings.size === 0 && namespaces.size === 0) return out;
 
   function visit(node: ts.Node): void {
     if (ts.isClassDeclaration(node)) {
       for (let decorator of ts.getDecorators(node) ?? []) {
-        if (!isValidateRpcDecorator(decorator, decoratorBindings)) continue;
+        if (!isValidateRpcDecorator(decorator, decoratorBindings, namespaces))
+          continue;
         let shape = resolveDecoratorShape(sf, node, decorator, checker, onUnsupported);
         rejectUnsupported(sf, decorator, "validateRpc", shape);
         out.push({ decorator, cls: node, shape });
@@ -448,11 +452,19 @@ function collectDecoratorSites(
 
 function isValidateRpcDecorator(
   decorator: ts.Decorator,
-  bindings: Set<string>
+  bindings: Set<string>,
+  namespaces: Set<string>
 ): boolean {
   let expression = decorator.expression;
   if (ts.isCallExpression(expression)) expression = expression.expression;
-  return ts.isIdentifier(expression) && bindings.has(expression.text);
+  if (ts.isIdentifier(expression)) return bindings.has(expression.text);
+  // `@ns.validateRpc()` from `import * as ns from "capnweb-validate"`.
+  return (
+    ts.isPropertyAccessExpression(expression) &&
+    ts.isIdentifier(expression.expression) &&
+    namespaces.has(expression.expression.text) &&
+    expression.name.text === "validateRpc"
+  );
 }
 
 function resolveDecoratorShape(
@@ -469,7 +481,7 @@ function resolveDecoratorShape(
   }
   let type =
     (decoratorTypeArg ? checker.getTypeFromTypeNode(decoratorTypeArg) : null) ??
-    getSingleImplementedType(sf, cls, decorator, checker) ??
+    getSingleImplementedType(cls, checker) ??
     classType;
   if (isTooGeneric(type)) {
     throw buildError(
@@ -560,9 +572,7 @@ function warnDecoratorAny(sf: ts.SourceFile, node: ts.TypeNode): void {
 }
 
 function getSingleImplementedType(
-  sf: ts.SourceFile,
   cls: ts.ClassDeclaration,
-  decorator: ts.Decorator,
   checker: ts.TypeChecker
 ): ts.Type | null {
   let impls: ts.ExpressionWithTypeArguments[] = [];
@@ -572,9 +582,7 @@ function getSingleImplementedType(
   }
   // A single implemented interface is the declared RPC contract; use it. With
   // multiple (or none) there is no single contract, so the caller falls back to
-  // the class instance type. `sf`/`decorator` are kept for call-site symmetry.
-  void sf;
-  void decorator;
+  // the class instance type.
   if (impls.length === 1) return checker.getTypeAtLocation(impls[0]!);
   return null;
 }
@@ -658,7 +666,7 @@ function collectClassSkipRpcValidationMethods(
       }
       if (
         sym?.getName() === "skipRpcValidation" &&
-        isValidatePackageSymbol(sym)
+        isCapnwebValidateSymbol(sym)
       ) {
         skipped.set(name, decorator);
       }
@@ -671,17 +679,6 @@ function methodName(name: ts.PropertyName): string | null {
   if (ts.isIdentifier(name)) return name.text;
   if (ts.isStringLiteral(name) || ts.isNumericLiteral(name)) return name.text;
   return null;
-}
-
-function isValidatePackageSymbol(sym: ts.Symbol): boolean {
-  for (let decl of sym.getDeclarations() ?? []) {
-    let fileName = decl.getSourceFile().fileName;
-    if (/[\\/]capnweb-validate[\\/]/.test(fileName)) return true;
-  }
-  let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
-  if (!parent) return false;
-  let name = parent.escapedName as string;
-  return name === '"capnweb-validate"' || name === '"capnweb-validate/capnweb"';
 }
 
 function rejectUnsupported(
@@ -811,10 +808,6 @@ function isTooGeneric(type: ts.Type): boolean {
   return false;
 }
 
-function isCapnwebSymbolAt(checker: ts.TypeChecker, node: ts.Node): boolean {
-  return resolveCapnwebSymbol(checker, node) !== undefined;
-}
-
 // Resolve a callee to its capnweb export symbol, following import aliases, or
 // undefined if it is not a capnweb export. Callers read the symbol's original
 // (pre-alias) name so detection is keyed on the export, not the local name.
@@ -893,6 +886,10 @@ function serviceSignature(shape: ServiceShape): string {
             params: method.params.map((param) => typeSignature(param)),
             rest: method.rest ? typeSignature(method.rest) : null,
             returns: typeSignature(method.returns),
+            // A getter and a same-named no-arg method share params/returns;
+            // isGetter must distinguish them so dedup does not reuse one for the
+            // other (the runtime validates a getter on read, a method on call).
+            isGetter: method.isGetter ?? false,
           }
     ),
   });

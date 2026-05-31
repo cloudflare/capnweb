@@ -3,18 +3,17 @@
 import { describe, it, expect } from "vitest";
 import { transformFixture, transformError } from "./helpers.js";
 
-function emitFor(_label: string, body: string): string {
+function emitFor(body: string): string {
   return transformFixture(body, { target: "new Api()" }).code;
 }
 
-function buildError(_label: string, body: string): string {
+function buildError(body: string): string {
   return transformError(body, { target: "new Api()" });
 }
 
 describe("branded primitives", () => {
   it("validates a symbol-branded string as v.string", () => {
     const code = emitFor(
-      "symbol brand",
       `type UserId = string & { readonly __brand: unique symbol };
        class Api extends RpcTarget {
          async getUser(id: UserId): Promise<string> { return id; }
@@ -29,7 +28,6 @@ describe("branded primitives", () => {
 
   it("validates a string-literal-branded string as v.string", () => {
     const code = emitFor(
-      "literal brand",
       `type OrderId = string & { readonly __brand: "OrderId" };
        class Api extends RpcTarget {
          async getOrder(id: OrderId): Promise<string> { return id; }
@@ -40,7 +38,6 @@ describe("branded primitives", () => {
 
   it("validates a branded number as v.number", () => {
     const code = emitFor(
-      "number brand",
       `type Cents = number & { readonly __brand: unique symbol };
        class Api extends RpcTarget {
          async charge(amount: Cents): Promise<void> {}
@@ -53,7 +50,6 @@ describe("branded primitives", () => {
     // No primitive constituent -> must keep walking as an object so both halves
     // of the intersection are validated.
     const code = emitFor(
-      "object intersection",
       `interface HasId { id: string }
        interface HasName { name: string }
        class Api extends RpcTarget {
@@ -68,7 +64,6 @@ describe("branded primitives", () => {
     // The primitive-collapse must not weaken rejection elsewhere: a `Map`
     // property still fails the build loudly.
     const msg = buildError(
-      "non-wire property",
       `class Api extends RpcTarget {
          async save(v: { data: Map<string, number> }): Promise<void> {}
        }`

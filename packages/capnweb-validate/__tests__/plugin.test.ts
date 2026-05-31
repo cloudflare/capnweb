@@ -181,17 +181,15 @@ describe("runBuild orchestration", () => {
     // Use an empty fixture dir + a tsconfig that includes nothing so the
     // Program's source set is empty regardless of where the test runs from.
     let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
-    let out = mkdtempSync(join(tmpdir(), "capnweb-validate-out-"));
     try {
       writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
         compilerOptions: { target: "es2022", module: "esnext", types: [] },
         files: [],
       }));
-      let result = await runBuild({ cwd: src, tsconfig: join(src, "tsconfig.json"), out });
-      expect(result).toEqual({ transformed: 0, copied: 0 });
+      let result = await runBuild({ cwd: src, tsconfig: join(src, "tsconfig.json"), out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 0, skipped: 0 });
     } finally {
       rmSync(src, { recursive: true, force: true });
-      rmSync(out, { recursive: true, force: true });
     }
   });
 
@@ -210,7 +208,7 @@ describe("runBuild orchestration", () => {
       writeFileSync(join(src, "out", "stale.ts"), "export const stale = true;\n");
 
       await expect(runBuild({ cwd: src, tsconfig: join(src, "tsconfig.json"), out: "out" }))
-        .resolves.toEqual({ transformed: 0, copied: 1 });
+        .resolves.toEqual({ transformed: 0, copied: 1, skipped: 0 });
 
       expect(existsSync(join(src, "out", "a.ts"))).toBe(true);
       expect(existsSync(join(src, "out", "stale.ts"))).toBe(false);
@@ -247,13 +245,47 @@ describe("runBuild orchestration", () => {
         tsconfig: join(src, "tsconfig.json"),
         out: ".wrangler/validate",
       };
-      await expect(runBuild(options)).resolves.toEqual({ transformed: 0, copied: 1 });
-      await expect(runBuild(options)).resolves.toEqual({ transformed: 0, copied: 1 });
+      await expect(runBuild(options)).resolves.toEqual({ transformed: 0, copied: 1, skipped: 0 });
+      await expect(runBuild(options)).resolves.toEqual({ transformed: 0, copied: 1, skipped: 0 });
 
       expect(existsSync(join(src, ".wrangler/validate/a.ts"))).toBe(true);
       expect(existsSync(join(src, ".wrangler/validate/.wrangler/validate/a.ts"))).toBe(false);
     } finally {
       rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("skips a source file outside cwd instead of writing outside --out", async () => {
+    // workspace/{app, shared}; app's tsconfig includes ../shared. The shared
+    // file maps to ../shared under out and must not escape the output tree.
+    let workspace = mkdtempSync(join(tmpdir(), "capnweb-validate-ws-"));
+    try {
+      let app = join(workspace, "app");
+      let shared = join(workspace, "shared");
+      mkdirSync(app, { recursive: true });
+      mkdirSync(shared, { recursive: true });
+      writeFileSync(join(app, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["**/*.ts", "../shared/**/*.ts"],
+      }));
+      writeFileSync(join(app, "main.ts"), "export const main = 1;\n");
+      writeFileSync(join(shared, "util.ts"), "export const util = 2;\n");
+
+      let result = await runBuild({
+        cwd: app,
+        tsconfig: join(app, "tsconfig.json"),
+        out: ".out",
+      });
+
+      // app/main.ts copied; shared/util.ts skipped, not written anywhere.
+      expect(result.copied).toBe(1);
+      expect(result.skipped).toBe(1);
+      expect(existsSync(join(app, ".out/main.ts"))).toBe(true);
+      expect(existsSync(join(workspace, "shared/util.ts.bak"))).toBe(false);
+      // Nothing written outside the out tree (no app/shared, no workspace/out).
+      expect(existsSync(join(app, "shared"))).toBe(false);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
     }
   });
 });
