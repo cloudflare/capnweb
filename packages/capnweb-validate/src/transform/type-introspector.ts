@@ -170,14 +170,14 @@ function resolveServiceShapeInner(
       }
       continue;
     }
-    if (hasSkipRpcValidationDecorator(ctx, decl)) {
+    if (decl && hasSkipRpcValidationDecorator(ctx, decl)) {
       service.methods.push({ name: prop.getName(), skipValidation: true });
       continue;
     }
     if (sigs.length > 1) {
       // Overloaded: validating one signature would reject the other overloads,
       // so pass through unvalidated and warn rather than break a legal call.
-      warnOverloadedMethod(propName, decl);
+      if (decl) warnOverloadedMethod(propName, decl);
       service.methods.push({ name: prop.getName(), skipValidation: true });
       continue;
     }
