@@ -10,6 +10,7 @@ import { sep } from "node:path";
 import { createUnplugin } from "unplugin";
 import {
   createTransformContext,
+  fileMatchesTransformFilters,
   type TransformContext,
   type TransformContextOptions,
 } from "./transform/context.js";
@@ -36,7 +37,7 @@ export const capnwebValidate = createUnplugin<
       if (!/\.(?:ts|tsx|mts|cts)$/.test(cleanId)) return false;
       if (/\.d\.(?:ts|mts|cts)$/.test(cleanId)) return false;
       if (cleanId.includes(`${sep}node_modules${sep}`)) return false;
-      return true;
+      return fileMatchesTransformFilters(cleanId, options);
     },
 
     transform(code, id) {
@@ -45,6 +46,7 @@ export const capnwebValidate = createUnplugin<
       if (!code.includes("capnweb-validate") && !code.includes("capnweb")) {
         return null;
       }
+      if (!fileMatchesTransformFilters(id, options)) return null;
 
       if (!context) context = createTransformContext(options);
       let result = transformModule(context, id, code);

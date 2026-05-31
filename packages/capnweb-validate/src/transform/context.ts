@@ -4,7 +4,7 @@
 
 // Long-lived state shared across per-module transforms in one build. One instance per plugin.
 
-import { resolve } from "node:path";
+import { basename, isAbsolute, relative, resolve } from "node:path";
 import ts from "typescript";
 
 import type { ValidationMode } from "../internal/core.js";
@@ -27,6 +27,88 @@ export type TransformContextOptions = {
   onUnsupportedType?: UnsupportedTypeHandler;
 };
 
+function normalizePath(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
+function hasGlob(pattern: string): boolean {
+  return /[*?]/.test(pattern);
+}
+
+function escapeRegexChar(char: string): string {
+  return /[.+^${}()|[\]\\]/.test(char) ? `\\${char}` : char;
+}
+
+function globToRegExp(pattern: string): RegExp {
+  let source = "^";
+  for (let i = 0; i < pattern.length; ) {
+    let char = pattern[i]!;
+    if (char === "*") {
+      if (pattern[i + 1] === "*") {
+        if (pattern[i + 2] === "/") {
+          source += "(?:.*/)?";
+          i += 3;
+        } else {
+          source += ".*";
+          i += 2;
+        }
+      } else {
+        source += "[^/]*";
+        i++;
+      }
+    } else if (char === "?") {
+      source += "[^/]";
+      i++;
+    } else {
+      source += escapeRegexChar(char);
+      i++;
+    }
+  }
+  return new RegExp(`${source}$`);
+}
+
+function matchesPattern(
+  fileName: string,
+  cwd: string,
+  pattern: string
+): boolean {
+  let clean = fileName.split("?", 1)[0]!.split("#", 1)[0]!;
+  let abs = normalizePath(resolve(cwd, clean));
+  let rel = normalizePath(relative(cwd, abs));
+  let normalizedPattern = normalizePath(pattern);
+  let target = isAbsolute(pattern) ? abs : rel;
+
+  if (!hasGlob(normalizedPattern)) {
+    let bare = normalizedPattern.replace(/\/$/, "");
+    return (
+      target === bare ||
+      target.startsWith(`${bare}/`) ||
+      (!bare.includes("/") && basename(target) === bare)
+    );
+  }
+
+  return globToRegExp(normalizedPattern).test(target);
+}
+
+export function fileMatchesTransformFilters(
+  fileName: string,
+  options: TransformContextOptions = {}
+): boolean {
+  let cwd = resolve(options.cwd ?? process.cwd());
+  let include = options.include;
+  let exclude = options.exclude;
+  if (
+    include?.length &&
+    !include.some((p) => matchesPattern(fileName, cwd, p))
+  ) {
+    return false;
+  }
+  if (exclude?.some((p) => matchesPattern(fileName, cwd, p))) {
+    return false;
+  }
+  return true;
+}
+
 export interface TransformContext {
   readonly options: TransformContextOptions;
   /** Absolute paths of every `.ts`/`.tsx` file the build should consider. */
@@ -46,6 +128,7 @@ export interface TransformContext {
 export function createTransformContext(
     options: TransformContextOptions = {}): TransformContext {
   let cwd = resolve(options.cwd ?? process.cwd());
+  let publicOptions: TransformContextOptions = { ...options, cwd };
   let program: ts.Program | null = null;
   let checker: ts.TypeChecker | null = null;
 
@@ -100,7 +183,7 @@ export function createTransformContext(
   }
 
   return {
-    options,
+    options: publicOptions,
 
     listSourceFiles(): Iterable<string> {
       let prog = ensureProgram();
@@ -108,6 +191,9 @@ export function createTransformContext(
       for (let sf of prog.getSourceFiles()) {
         if (sf.isDeclarationFile) continue;
         if (sf.fileName.includes("/node_modules/")) continue;
+        if (!fileMatchesTransformFilters(sf.fileName, { ...options, cwd })) {
+          continue;
+        }
         files.push(sf.fileName);
       }
       return files;

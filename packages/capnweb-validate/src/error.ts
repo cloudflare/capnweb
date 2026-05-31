@@ -33,12 +33,16 @@ export type RpcValidationFailure = {
  * ```
  */
 export class RpcValidationError extends TypeError {
-  readonly rpcValidation: RpcValidationFailure;
+  readonly rpcValidation!: RpcValidationFailure;
 
   constructor(message: string, validation: RpcValidationFailure) {
     super(message);
     this.name = "RpcValidationError";
-    this.rpcValidation = validation;
+    Object.defineProperty(this, "rpcValidation", {
+      value: validation,
+      enumerable: false,
+      configurable: true,
+    });
     let errorCtor = Error as { captureStackTrace?: Function };
     if (typeof errorCtor.captureStackTrace === "function") {
       errorCtor.captureStackTrace(this, RpcValidationError);

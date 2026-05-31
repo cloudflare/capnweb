@@ -136,18 +136,19 @@ function resolveServiceShapeInner(
     if (isSymbolNamedProperty(prop)) continue;
     if (RPC_CAPABILITY_BRAND_NAMES.has(propName)) continue;
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
-    if (!decl) continue;
     // Platform/library base methods (WorkerEntrypoint, DurableObject, RpcTarget)
     // aren't the user's surface but still dispatch on the wrapped target, so
     // record them as pass-through. Detected by origin, not a name list.
-    if (isPlatformInheritedMember(decl)) {
+    if (decl && isPlatformInheritedMember(decl)) {
       passthrough.push(propName);
       continue;
     }
-    if (isPrivateOrProtected(tsm, decl)) continue;
+    if (decl && isPrivateOrProtected(tsm, decl)) continue;
     if (propName.startsWith("#")) continue; // private fields
     if (propName === "constructor") continue;
-    let propType = checker.getTypeOfSymbolAtLocation(prop, decl);
+    let propType = decl
+      ? checker.getTypeOfSymbolAtLocation(prop, decl)
+      : checker.getTypeOfSymbol(prop);
     // Strip the optional `undefined`: `m?(): T` is `(() => T) | undefined`,
     // and the union reports no call signatures, dropping the method.
     let callableType =
@@ -156,9 +157,10 @@ function resolveServiceShapeInner(
         : propType;
     let sigs = callableType.getCallSignatures();
     if (sigs.length === 0) {
-      // Getters are a real RPC surface (capnweb's get() invokes them); plain
-      // instance properties are not. Unwrap a returned Promise like a method.
-      if (prop.flags & tsm.SymbolFlags.GetAccessor) {
+      // Cap'n Web exposes property reads as promise-like gets. Preserve declared
+      // data properties from service interfaces and object literals as getter
+      // specs; class instance fields stay excluded because RpcTarget blocks them.
+      if (isRpcReadableProperty(ctx, type, prop, decl)) {
         service.methods.push({
           name: propName,
           params: [],
@@ -1059,6 +1061,23 @@ function isPlatformInheritedMember(decl: ts.Declaration): boolean {
   if (!container) return false;
   let sym = (container as ts.Node & { symbol?: ts.Symbol }).symbol;
   return sym !== undefined && isRpcRuntimeSymbol(sym);
+}
+
+function isRpcReadableProperty(
+  ctx: ResolveContext,
+  serviceType: ts.Type,
+  prop: ts.Symbol,
+  decl: ts.Declaration | undefined
+): boolean {
+  if (prop.flags & ctx.tsm.SymbolFlags.GetAccessor) return true;
+  if (!decl) return true;
+  if (ctx.tsm.isPropertySignature(decl)) return true;
+  if (ctx.tsm.isPropertyAssignment(decl)) return true;
+  if (ctx.tsm.isShorthandPropertyAssignment(decl)) return true;
+  return (
+    !extendsRpcReferenceTarget(ctx.checker, serviceType) &&
+    !ctx.tsm.isPropertyDeclaration(decl)
+  );
 }
 
 // Platform-inherited method names of `type` (e.g. WorkerEntrypoint `fetch`).

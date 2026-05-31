@@ -73,6 +73,18 @@ describe("RpcValidationError", () => {
     expect(err.rpcValidation.actual).toBe("null");
     expect(err.rpcValidation.value).toBeNull();
   });
+
+  it("keeps rpcValidation non-enumerable so RPC error serialization does not leak values", () => {
+    let secret = { token: "secret" };
+    let err = new RpcValidationError("nope", {
+      path: ["return"],
+      expected: "string",
+      actual: "object",
+      value: secret,
+    });
+    expect(err.rpcValidation.value).toBe(secret);
+    expect(Object.keys(err)).not.toContain("rpcValidation");
+  });
 });
 
 describe("TransformContext stub", () => {
@@ -159,8 +171,23 @@ describe("unplugin adapters", () => {
       expect((factory as () => unknown)()).toBeDefined();
     });
   }
-});
 
+  it("honors include and exclude in transformInclude", () => {
+    let dir = mkdtempSync(join(tmpdir(), "capnweb-validate-plugin-"));
+    try {
+      let plugin = capnwebValidate.vite({
+        cwd: dir,
+        include: ["src/**"],
+        exclude: ["src/skip.ts"],
+      }) as { transformInclude(id: string): boolean };
+      expect(plugin.transformInclude(join(dir, "src/app.ts"))).toBe(true);
+      expect(plugin.transformInclude(join(dir, "src/skip.ts"))).toBe(false);
+      expect(plugin.transformInclude(join(dir, "other.ts"))).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("CLI bin", () => {
   let workspaceBin = join(process.cwd(), "dist/cli.cjs");
@@ -250,6 +277,49 @@ describe("runBuild orchestration", () => {
 
       expect(existsSync(join(src, ".wrangler/validate/a.ts"))).toBe(true);
       expect(existsSync(join(src, ".wrangler/validate/.wrangler/validate/a.ts"))).toBe(false);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("honors exclude when listing CLI source files", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: {
+          target: "es2022",
+          module: "esnext",
+          moduleResolution: "bundler",
+          strict: true,
+          skipLibCheck: true,
+          types: [],
+        },
+        include: ["**/*.ts"],
+      }));
+      writeFileSync(join(src, "capnweb.d.ts"), `
+        declare module "capnweb" { export class RpcTarget { readonly __RPC_TARGET_BRAND: never; } }
+        declare module "capnweb-validate/capnweb" { export function newWorkersRpcResponse(request: Request, target: object): Promise<Response>; }
+      `);
+      writeFileSync(join(src, "good.ts"), "export const good = 1;\n");
+      writeFileSync(join(src, "bad.ts"), `
+        import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+        import { RpcTarget } from "capnweb";
+        class Api extends RpcTarget { bad(value: Map<string, number>): void {} }
+        export function handler(req: Request): Promise<Response> {
+          return newWorkersRpcResponse(req, new Api());
+        }
+      `);
+
+      let result = await runBuild({
+        cwd: src,
+        tsconfig: join(src, "tsconfig.json"),
+        out: ".out",
+        exclude: ["bad.ts"],
+      });
+
+      expect(result).toEqual({ transformed: 0, copied: 1, skipped: 0 });
+      expect(existsSync(join(src, ".out/good.ts"))).toBe(true);
+      expect(existsSync(join(src, ".out/bad.ts"))).toBe(false);
     } finally {
       rmSync(src, { recursive: true, force: true });
     }

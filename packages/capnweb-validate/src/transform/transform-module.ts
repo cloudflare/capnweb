@@ -7,7 +7,7 @@
 
 import ts from "typescript";
 
-import type { TransformContext } from "./context.js";
+import { fileMatchesTransformFilters, type TransformContext } from "./context.js";
 import { emitValidator } from "./emit.js";
 import {
   collectPlatformMethodNames,
@@ -152,6 +152,7 @@ export function transformModule(
   if (!code.includes(PACKAGE_NAME) && !code.includes(CAPNWEB_PACKAGE_NAME)) {
     return null;
   }
+  if (!fileMatchesTransformFilters(id, context.options)) return null;
 
   let sourceFile = context.getSourceFile(id);
   if (!sourceFile) return null;

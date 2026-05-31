@@ -5,6 +5,7 @@ import { RpcValidationError } from "../src/error.js";
 import {
   wrapServerTarget,
   wrapClientStub,
+  validateReturn,
   v,
   type ServiceValidator,
 } from "../src/internal/core.js";
@@ -64,6 +65,43 @@ describe("getter accessors on the RPC surface", () => {
     expect(code).not.toContain('"secret"');
   });
 
+  it("emits getter-style validators for declared data properties", () => {
+    const code = transformFixture(
+      `interface Api { config: string; }
+       export const api = newHttpBatchRpcSession<Api>("/rpc");`,
+      {
+        shim: `declare module "capnweb" {
+  type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
+  type Provider<T> = { readonly [K in keyof T]: T[K] };
+  export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
+  export function newHttpBatchRpcSession<T>(url: string): RpcStub<T>;
+}`,
+        imports: `import { newHttpBatchRpcSession } from "capnweb";\n`,
+      }
+    ).code;
+    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
+  });
+
+  it("emits getter-style validators for plain object target properties", () => {
+    const code = transformFixture(
+      `const target = { config: "x" };`,
+      { target: "target" }
+    ).code;
+    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
+  });
+
+  it("server: validates a data property on property read", () => {
+    const validator: ServiceValidator = {
+      serviceName: "Api",
+      methods: { config: { args: [], returns: v.string, isGetter: true } },
+    };
+    const target = { config: "ok" as unknown };
+    const wrapped = wrapServerTarget(target, validator);
+    expect(wrapped.config).toBe("ok");
+    target.config = 123;
+    expect(() => wrapped.config).toThrow(RpcValidationError);
+  });
+
   it("server: validates the getter value on property read", () => {
     class Api {
       _v: unknown = "ok";
@@ -95,6 +133,42 @@ describe("getter accessors on the RPC surface", () => {
     };
     const wrapped = wrapServerTarget(new Api(), validator);
     expect(wrapped.config).toBe(123); // warn: original value passes through
+  });
+
+  it("client: validates a pipelined getter's resolved value", async () => {
+    const validator: ServiceValidator = {
+      serviceName: "User",
+      methods: { config: { args: [], returns: v.string, isGetter: true } },
+    };
+
+    const good = fakeRpcPromise(undefined) as ReturnType<
+      typeof fakeRpcPromise
+    > & { config?: unknown };
+    good.config = fakeRpcPromise("Ada");
+    const goodVal = await (validateReturn(
+      good,
+      v.stubOf(validator),
+      ["Api", "user", "<return>"],
+      "client"
+    ) as { config: Promise<string> }).config;
+    expect(goodVal).toBe("Ada");
+
+    const bad = fakeRpcPromise(undefined) as ReturnType<
+      typeof fakeRpcPromise
+    > & { config?: unknown };
+    bad.config = fakeRpcPromise(123);
+    let err: unknown;
+    try {
+      await (validateReturn(
+        bad,
+        v.stubOf(validator),
+        ["Api", "user", "<return>"],
+        "client"
+      ) as { config: Promise<string> }).config;
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(RpcValidationError);
   });
 
   it("client: validates the getter's resolved value", async () => {

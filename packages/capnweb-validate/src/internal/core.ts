@@ -720,6 +720,16 @@ function wrapRpcPromise(
       if (typeof prop !== "string") return Reflect.get(target, prop, receiver);
       let methodSpec = methodSpecFor(returns, prop);
       if (methodSpec) {
+        if (!isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
+          let result = Reflect.get(target, prop, receiver);
+          return validateReturn(
+            result,
+            methodSpec.returns,
+            [...path, prop],
+            side,
+            mode
+          );
+        }
         return function wrappedPipelined(
           this: unknown,
           ...args: unknown[]
