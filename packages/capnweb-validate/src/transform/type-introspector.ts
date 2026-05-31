@@ -1066,14 +1066,32 @@ export function collectPlatformMethodNames(
   checker: ts.TypeChecker,
   type: ts.Type
 ): string[] {
-  let names: string[] = [];
+  let names = new Set<string>();
+  let add = (prop: ts.Symbol): void => {
+    if (isSymbolNamedProperty(prop)) return;
+    if (RPC_CAPABILITY_BRAND_NAMES.has(prop.getName())) return;
+    names.add(prop.getName());
+  };
   for (let prop of checker.getPropertiesOfType(type)) {
-    if (isSymbolNamedProperty(prop)) continue;
-    if (RPC_CAPABILITY_BRAND_NAMES.has(prop.getName())) continue;
     let decl = prop.valueDeclaration ?? prop.declarations?.[0];
-    if (decl && isPlatformInheritedMember(decl)) names.push(prop.getName());
+    if (decl && isPlatformInheritedMember(decl)) add(prop);
   }
-  return names;
+  // Walk platform base types directly, so a hook the subclass overrides (its
+  // declaration now on the user class, e.g. `fetch`) is still recognized.
+  let seen = new Set<ts.Type>();
+  let walk = (t: ts.Type): void => {
+    for (let base of (t as ts.InterfaceType).getBaseTypes?.() ?? []) {
+      if (seen.has(base)) continue;
+      seen.add(base);
+      let sym = base.getSymbol();
+      if (sym && isRpcRuntimeSymbol(sym)) {
+        for (let prop of checker.getPropertiesOfType(base)) add(prop);
+      }
+      walk(base);
+    }
+  };
+  walk(type);
+  return [...names];
 }
 
 export function isWorkerEntrypointType(

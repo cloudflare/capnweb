@@ -401,6 +401,19 @@ function own<T>(record: Record<string, T>, key: string): T | undefined {
   return Object.prototype.hasOwnProperty.call(record, key) ? record[key] : undefined;
 }
 
+// Descriptor of `prop` own or inherited below Object.prototype, or undefined
+// when absent (so probing a missing prop stays a no-op rather than a refusal).
+function exposedDescriptor(
+  obj: object,
+  prop: string
+): PropertyDescriptor | undefined {
+  for (let o: object | null = obj; o && o !== Object.prototype; o = Object.getPrototypeOf(o)) {
+    let d = Object.getOwnPropertyDescriptor(o, prop);
+    if (d) return d;
+  }
+  return undefined;
+}
+
 
 function missingMethod(serviceName: string, prop: string): never {
   throw new RpcValidationError(
@@ -448,16 +461,30 @@ export function wrapServerTarget<T extends object>(
 ): T {
   return new Proxy(target, {
     get(t, prop) {
-      // Target as receiver, not the proxy: a getter reading a private field
-      // would throw if `this` were the proxy. Methods bind `t` too.
-      let orig = Reflect.get(t, prop, t);
       if (typeof prop !== "string") {
-        // Forward symbol-keyed members (Symbol.dispose etc.) bound to the real target; unbound, `this` would be the proxy and re-enter the get trap, throwing missingMethod.
+        // Symbol-keyed members (Symbol.dispose etc.): forward bound to `t`.
+        let orig = Reflect.get(t, prop, t);
         return typeof orig === "function" ? orig.bind(t) : orig;
       }
       let methodSpec = own(validator.methods, prop);
-      if (methodSpec && !isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
-        // Getter: Reflect.get already invoked the accessor, so `orig` is the read value; validate it like a no-arg return.
+      if (!methodSpec) {
+        // Infra / platform hook: forward the real member (read or bound).
+        if (canPassThrough(prop, validator)) {
+          let orig = Reflect.get(t, prop, t);
+          return typeof orig === "function" ? orig.bind(t) : orig;
+        }
+        // Outside the surface: refuse a real member without invoking it (a
+        // getter would otherwise run and leak); an absent prop reads undefined.
+        let desc = exposedDescriptor(t, prop);
+        if (!desc) return undefined;
+        return typeof desc.value === "function"
+          ? (..._args: unknown[]): never =>
+              missingMethod(validator.serviceName, prop)
+          : missingMethod(validator.serviceName, prop);
+      }
+      // `t` as receiver so a declared getter can read private state.
+      let orig = Reflect.get(t, prop, t);
+      if (!isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
         return validateReturn(
           orig,
           methodSpec.returns,
@@ -467,13 +494,6 @@ export function wrapServerTarget<T extends object>(
         );
       }
       if (typeof orig !== "function") return orig;
-      if (!methodSpec) {
-        // Outside the validated surface: forward infra/platform hooks, refuse
-        // the rest rather than run them unvalidated.
-        if (canPassThrough(prop, validator)) return orig.bind(t);
-        return (..._args: unknown[]): never =>
-          missingMethod(validator.serviceName, prop);
-      }
       let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
         if (isUncheckedMethod(methodSpec)) {
