@@ -815,20 +815,37 @@ function resolveCapnwebSymbol(
   checker: ts.TypeChecker,
   node: ts.Node
 ): ts.Symbol | undefined {
-  let sym = checker.getSymbolAtLocation(node);
-  if (sym && sym.flags & ts.SymbolFlags.Alias)
-    sym = checker.getAliasedSymbol(sym);
+  let local = checker.getSymbolAtLocation(node);
+  let sym =
+    local && local.flags & ts.SymbolFlags.Alias
+      ? checker.getAliasedSymbol(local)
+      : local;
   if (!sym) return undefined;
   for (let decl of sym.getDeclarations() ?? []) {
     let fileName = decl.getSourceFile().fileName;
     // Scoped to node_modules so a project under a `capnweb/` directory is not
-    // misdetected; source/workspace layouts match via the specifier below.
+    // misdetected.
     if (/[\\/]node_modules[\\/]capnweb[\\/]/.test(fileName)) return sym;
   }
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
-  return parent && (parent.escapedName as string) === '"capnweb"'
-    ? sym
-    : undefined;
+  if (parent && (parent.escapedName as string) === '"capnweb"') return sym;
+  // Path-mapped / workspace capnweb (not node_modules, not ambient): trust the
+  // import specifier so it's still recognized.
+  return importModuleSpecifier(local) === CAPNWEB_PACKAGE_NAME ? sym : undefined;
+}
+
+// Module specifier that introduced `sym` (e.g. "capnweb"), or undefined.
+function importModuleSpecifier(sym: ts.Symbol | undefined): string | undefined {
+  for (let decl of sym?.getDeclarations() ?? []) {
+    for (let n: ts.Node | undefined = decl; n; n = n.parent) {
+      if (ts.isImportDeclaration(n)) {
+        return ts.isStringLiteral(n.moduleSpecifier)
+          ? n.moduleSpecifier.text
+          : undefined;
+      }
+    }
+  }
+  return undefined;
 }
 
 class ValidatorDedup {

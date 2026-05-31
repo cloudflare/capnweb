@@ -49,20 +49,16 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
   let context = createTransformContext(options);
   let transformed = 0;
   let copied = 0;
-  let skipped = 0;
+  let skippedOutside: string[] = [];
   try {
     for (let id of context.listSourceFiles()) {
       if (isInsideOrEqual(out, id)) continue;
       let dest = resolve(out, relative(cwd, id));
       // A source file outside cwd (e.g. an included sibling dir) maps to a dest
-      // that escapes --out and could clobber unrelated files. Skip it loudly
-      // rather than write outside the requested output tree.
+      // that escapes --out and could clobber unrelated files. Skip it rather
+      // than write outside the requested output tree; warned once below.
       if (!isInsideOrEqual(out, dest)) {
-        console.warn(
-          `capnweb-validate: skipping ${id}: it is outside the project ` +
-          `directory (cwd=${cwd}), so it cannot be written under --out (${out}).`,
-        );
-        skipped++;
+        skippedOutside.push(id);
         continue;
       }
       let code = await readFile(id, "utf8");
@@ -79,5 +75,13 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
   } finally {
     context.dispose();
   }
-  return { transformed, copied, skipped };
+  // One consolidated warning, not one per file (shared sibling dirs are common).
+  if (skippedOutside.length > 0) {
+    console.warn(
+      `capnweb-validate: skipped ${skippedOutside.length} file(s) outside the ` +
+      `project directory (cwd=${cwd}); they cannot be written under --out, so ` +
+      `they are not validated (e.g. ${skippedOutside[0]}).`,
+    );
+  }
+  return { transformed, copied, skipped: skippedOutside.length };
 }

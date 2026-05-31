@@ -407,6 +407,9 @@ const BUILTIN_VALUE_TYPES: Record<string, TypeShape["kind"]> = {
 const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
   Map: "Use a plain object or an array of entries instead.",
   Set: "Use an array instead.",
+  // Same runtime as Map/Set; else they'd be walked as plain objects.
+  ReadonlyMap: "Use a plain object or an array of entries instead.",
+  ReadonlySet: "Use an array instead.",
   WeakMap: undefined,
   WeakSet: undefined,
   ArrayBuffer: "Use Uint8Array instead.",
@@ -665,6 +668,15 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     );
   }
 
+  if (flags & TypeFlags.Conditional) {
+    return {
+      kind: "unsupported",
+      reason: "a conditional type that does not resolve to a concrete type",
+      fixHint:
+        "pass a concrete type argument (e.g. a non-generic method, or " +
+        "@validateRpc<Service<ConcreteType>>()) so the type resolves",
+    };
+  }
   return { kind: "unsupported", reason: `unsupported type (flags=${flags})` };
 }
 
@@ -860,6 +872,16 @@ function getStubServiceType(
   let checker = ctx.checker;
   let flags = type.getFlags();
   let { TypeFlags } = ctx.tsm;
+  // A deferred conditional (e.g. a generic `RpcStub<T>`) has a caller-determined
+  // surface, so resolve it to a service-less stub when stub-branded: validate
+  // the boundary, pass pipelined calls through. Reading the brand's `T` here
+  // would yield an empty surface that wrongly rejects every pipelined call.
+  if (flags & TypeFlags.Conditional) {
+    return getProperty(ctx, type, "__RPC_STUB_BRAND") !== undefined ||
+      hasRpcCapabilityBrand(ctx, type)
+      ? {}
+      : null;
+  }
   if (!(flags & TypeFlags.Object) && !(flags & TypeFlags.Intersection)) {
     return null;
   }

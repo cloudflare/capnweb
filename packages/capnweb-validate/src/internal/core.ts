@@ -193,10 +193,12 @@ export const v = {
     return withShape(
       (value, path, options) => {
         if (isDeferredValidationValue(value, options)) return;
+        // Match capnweb's wire check: only a plain object serializes, so a class
+        // instance, null-proto object, or array is rejected here too.
         if (
           value === null ||
           typeof value !== "object" ||
-          Array.isArray(value)
+          Object.getPrototypeOf(value) !== Object.prototype
         ) {
           fail(path, label, value);
         }
@@ -425,8 +427,10 @@ export function wrapServerTarget<T extends object>(
   validator: ServiceValidator
 ): T {
   return new Proxy(target, {
-    get(t, prop, receiver) {
-      let orig = Reflect.get(t, prop, receiver);
+    get(t, prop) {
+      // Target as receiver, not the proxy: a getter reading a private field
+      // would throw if `this` were the proxy. Methods bind `t` too.
+      let orig = Reflect.get(t, prop, t);
       if (typeof prop !== "string") {
         // Forward symbol-keyed members (Symbol.dispose etc.) bound to the real target; unbound, `this` would be the proxy and re-enter the get trap, throwing missingMethod.
         return typeof orig === "function" ? orig.bind(t) : orig;
