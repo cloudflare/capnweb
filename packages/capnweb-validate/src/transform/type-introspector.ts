@@ -93,9 +93,10 @@ export function resolveServiceShape(
   tsm: typeof ts,
   checker: ts.TypeChecker,
   type: ts.Type,
-  generic?: GenericFallback
+  generic?: GenericFallback,
+  onUnsupported?: UnsupportedTypeHandler
 ): ServiceShape | null {
-  let ctx = createResolveContext(tsm, checker, generic);
+  let ctx = createResolveContext(tsm, checker, generic, onUnsupported);
   return resolveServiceShapeInner(ctx, type);
 }
 
@@ -222,6 +223,16 @@ type ResolveEntry = {
  */
 export type GenericFallback = { mode: "error" | "any"; used: boolean };
 
+/**
+ * Decides what to do with a type capnweb does not transport. Return
+ * "passthrough" to accept it as `any` (e.g. a host like Workers RPC that
+ * accepts more types than capnweb); anything else leaves the default build
+ * error. Called only for types that would otherwise be rejected.
+ */
+export type UnsupportedTypeHandler = (info: {
+  typeName: string;
+}) => "passthrough" | "reject" | undefined;
+
 type ResolveContext = {
   tsm: typeof ts;
   checker: ts.TypeChecker;
@@ -230,12 +241,14 @@ type ResolveContext = {
   nextId: number;
   services: WeakMap<ts.Type, { shape: ServiceShape; resolving: boolean }>;
   generic: GenericFallback;
+  onUnsupported?: UnsupportedTypeHandler;
 };
 
 function createResolveContext(
   tsm: typeof ts,
   checker: ts.TypeChecker,
-  generic: GenericFallback = { mode: "error", used: false }
+  generic: GenericFallback = { mode: "error", used: false },
+  onUnsupported?: UnsupportedTypeHandler
 ): ResolveContext {
   return {
     tsm,
@@ -244,6 +257,7 @@ function createResolveContext(
     namedShapes: new Map(),
     nextId: 0,
     services: new WeakMap(),
+    onUnsupported,
     generic,
   };
 }
@@ -384,7 +398,12 @@ const BUILTIN_VALUE_TYPES: Record<string, TypeShape["kind"]> = {
   Response: "response",
 };
 
-/** Built-ins capnweb rejects: hitting one in a signature is a build error. */
+/**
+ * Built-ins capnweb rejects: hitting one in a signature is a build error.
+ * Map/Set/RegExp/ArrayBuffer/typed-arrays follow capnweb's catalogue; a host
+ * that accepts more (Workers RPC, via structured clone) can opt in per type
+ * with the `onUnsupportedType` handler.
+ */
 const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
   Map: "Use a plain object or an array of entries instead.",
   Set: "Use an array instead.",
@@ -753,6 +772,12 @@ function matchBuiltin(ctx: ResolveContext, type: ts.Type): TypeShape | null {
   let name = sym.getName();
   if (!isGlobalSymbol(ctx.tsm, sym)) return null;
   if (name in BUILTIN_REJECTED_TYPES) {
+    // A host may accept a type capnweb does not (e.g. Workers RPC transports
+    // Map/Set via structured clone). The hook lets it pass through as `any`
+    // rather than fail the build; default stays reject.
+    if (ctx.onUnsupported?.({ typeName: name }) === "passthrough") {
+      return { kind: "any" };
+    }
     let fixHint = BUILTIN_REJECTED_TYPES[name];
     return {
       kind: "unsupported",

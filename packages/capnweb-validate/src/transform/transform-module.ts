@@ -17,6 +17,7 @@ import {
   type ServiceShape,
   type TypeShape,
   type UnsupportedPosition,
+  type UnsupportedTypeHandler,
   type UnsupportedTypeIssue,
 } from "./type-introspector.js";
 
@@ -74,7 +75,8 @@ const RUNTIME_NAMESPACE = "__rt";
 const CORE_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/core";\n`;
 const CAPNWEB_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/capnweb";\n`;
 
-const MARKERS: Record<
+// Exported so marker-coverage.test.ts can assert this stays in sync with capnweb's actual RPC entry points.
+export const MARKERS: Record<
   string,
   {
     side: "server" | "client";
@@ -157,19 +159,22 @@ export function transformModule(
     collectMarkerBindings(sourceFile);
   let decoratorBindings = collectDecoratorBindings(sourceFile);
 
+  let onUnsupported = context.options.onUnsupportedType;
   let callSites = [
     ...collectMarkerCallSites(
       sourceFile,
       markerBindings,
       markerNamespaces,
-      checker
+      checker,
+      onUnsupported
     ),
-    ...collectCapnwebClientCallSites(sourceFile, checker),
+    ...collectCapnwebClientCallSites(sourceFile, checker, onUnsupported),
   ];
   let decoratorSites = collectDecoratorSites(
     sourceFile,
     decoratorBindings,
-    checker
+    checker,
+    onUnsupported
   );
 
   if (callSites.length === 0 && decoratorSites.length === 0) return null;
@@ -324,14 +329,15 @@ function collectMarkerCallSites(
   sf: ts.SourceFile,
   bindings: Map<string, MarkerBinding>,
   namespaces: Set<string>,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  onUnsupported?: UnsupportedTypeHandler
 ): CallSite[] {
   let out: CallSite[] = [];
   function visit(node: ts.Node): void {
     if (isCallLike(node)) {
       let resolved = resolveMarkerCallee(node.expression, bindings, namespaces);
       if (resolved)
-        pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker);
+        pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker, onUnsupported);
     }
     ts.forEachChild(node, visit);
   }
@@ -368,27 +374,21 @@ function resolveMarkerCallee(
 
 function collectCapnwebClientCallSites(
   sf: ts.SourceFile,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  onUnsupported?: UnsupportedTypeHandler
 ): CallSite[] {
   let out: CallSite[] = [];
   function visit(node: ts.Node): void {
     if (isCallLike(node)) {
-      let callee = node.expression;
-      // `marker(...)` (named/default import) or `ns.marker(...)` (namespace).
-      let name = ts.isIdentifier(callee)
-        ? callee.text
-        : ts.isPropertyAccessExpression(callee)
-          ? callee.name.text
-          : undefined;
-      if (
-        name !== undefined &&
-        CAPNWEB_CLIENT_MARKERS.has(name) &&
-        isCapnwebSymbolAt(checker, callee)
-      ) {
+      // Key off the resolved capnweb export name, not the call-site text, so a
+      // renamed import (`newHttpBatchRpcSession as connect`) is still matched.
+      let sym = resolveCapnwebSymbol(checker, node.expression);
+      let name = sym?.getName();
+      if (name !== undefined && CAPNWEB_CLIENT_MARKERS.has(name)) {
         let marker = MARKERS[name]!;
         let actual: "call" | "new" = ts.isNewExpression(node) ? "new" : "call";
         if (marker.form === actual)
-          pushCallSite(out, sf, node, marker, name, checker);
+          pushCallSite(out, sf, node, marker, name, checker, onUnsupported);
       }
     }
     ts.forEachChild(node, visit);
@@ -403,12 +403,13 @@ function pushCallSite(
   call: ts.CallExpression | ts.NewExpression,
   marker: (typeof MARKERS)[keyof typeof MARKERS],
   localName: string,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  onUnsupported?: UnsupportedTypeHandler
 ): void {
   let expected = marker.form;
   let actual: "call" | "new" = ts.isNewExpression(call) ? "new" : "call";
   if (expected !== actual) return;
-  let shape = resolveCallSiteShape(call, marker, checker);
+  let shape = resolveCallSiteShape(call, marker, checker, onUnsupported);
   if (shape === null) {
     throw buildError(
       sf,
@@ -424,7 +425,8 @@ function pushCallSite(
 function collectDecoratorSites(
   sf: ts.SourceFile,
   decoratorBindings: Set<string>,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  onUnsupported?: UnsupportedTypeHandler
 ): DecoratorSite[] {
   let out: DecoratorSite[] = [];
   if (decoratorBindings.size === 0) return out;
@@ -433,7 +435,7 @@ function collectDecoratorSites(
     if (ts.isClassDeclaration(node)) {
       for (let decorator of ts.getDecorators(node) ?? []) {
         if (!isValidateRpcDecorator(decorator, decoratorBindings)) continue;
-        let shape = resolveDecoratorShape(sf, node, decorator, checker);
+        let shape = resolveDecoratorShape(sf, node, decorator, checker, onUnsupported);
         rejectUnsupported(sf, decorator, "validateRpc", shape);
         out.push({ decorator, cls: node, shape });
       }
@@ -457,7 +459,8 @@ function resolveDecoratorShape(
   sf: ts.SourceFile,
   cls: ts.ClassDeclaration,
   decorator: ts.Decorator,
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  onUnsupported?: UnsupportedTypeHandler
 ): ServiceShape {
   let classType = getClassInstanceType(cls, checker);
   let decoratorTypeArg = getDecoratorTypeArgumentNode(decorator);
@@ -484,7 +487,7 @@ function resolveDecoratorShape(
       : "error",
     used: false,
   };
-  let resolved = resolveServiceShape(ts, checker, type, generic);
+  let resolved = resolveServiceShape(ts, checker, type, generic, onUnsupported);
   if (resolved === null) {
     throw buildError(
       sf,
@@ -743,7 +746,8 @@ function formatUnsupportedVerb(
 function resolveCallSiteShape(
   call: ts.CallExpression | ts.NewExpression,
   marker: (typeof MARKERS)[keyof typeof MARKERS],
-  checker: ts.TypeChecker
+  checker: ts.TypeChecker,
+  onUnsupported?: UnsupportedTypeHandler
 ): ServiceShape | null {
   let type: ts.Type;
   if (marker.side === "server") {
@@ -776,7 +780,7 @@ function resolveCallSiteShape(
     }
   }
   if (isTooGeneric(type)) return null;
-  return resolveServiceShape(ts, checker, type);
+  return resolveServiceShape(ts, checker, type, undefined, onUnsupported);
 }
 
 function getExplicitTypeArgument(
@@ -808,18 +812,30 @@ function isTooGeneric(type: ts.Type): boolean {
 }
 
 function isCapnwebSymbolAt(checker: ts.TypeChecker, node: ts.Node): boolean {
+  return resolveCapnwebSymbol(checker, node) !== undefined;
+}
+
+// Resolve a callee to its capnweb export symbol, following import aliases, or
+// undefined if it is not a capnweb export. Callers read the symbol's original
+// (pre-alias) name so detection is keyed on the export, not the local name.
+function resolveCapnwebSymbol(
+  checker: ts.TypeChecker,
+  node: ts.Node
+): ts.Symbol | undefined {
   let sym = checker.getSymbolAtLocation(node);
   if (sym && sym.flags & ts.SymbolFlags.Alias)
     sym = checker.getAliasedSymbol(sym);
-  if (!sym) return false;
+  if (!sym) return undefined;
   for (let decl of sym.getDeclarations() ?? []) {
     let fileName = decl.getSourceFile().fileName;
     // Scoped to node_modules so a project under a `capnweb/` directory is not
     // misdetected; source/workspace layouts match via the specifier below.
-    if (/[\\/]node_modules[\\/]capnweb[\\/]/.test(fileName)) return true;
+    if (/[\\/]node_modules[\\/]capnweb[\\/]/.test(fileName)) return sym;
   }
   let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
-  return !!parent && (parent.escapedName as string) === '"capnweb"';
+  return parent && (parent.escapedName as string) === '"capnweb"'
+    ? sym
+    : undefined;
 }
 
 class ValidatorDedup {

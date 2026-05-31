@@ -257,6 +257,20 @@ build time, not at the first RPC call:
 | Other typed arrays | Use `Uint8Array` instead.                                  |
 | `File`             | Use a `Blob` or `Uint8Array`; `File` is not a wire type.   |
 
+This list follows capnweb's wire catalogue. A host may accept more: Workers RPC
+transports `Map`, `Set`, `RegExp`, `ArrayBuffer`, and typed arrays via structured
+clone. To accept those on such a host, pass `onUnsupportedType`, which decides
+each otherwise-rejected type. Returning `"passthrough"` validates it as `any`
+(the host serializes it); the default is a build error.
+
+```ts
+capnwebValidate({
+  // Accept the structured-clone types Workers RPC supports but capnweb does not.
+  onUnsupportedType: ({ typeName }) =>
+    ["Map", "Set", "RegExp", "ArrayBuffer"].includes(typeName) ? "passthrough" : "reject",
+});
+```
+
 If a method signature contains a leaf the resolver cannot lower, such as a generic
 type parameter with no inference source, an unsupported recursive corner, or a rejected
 built-in nested inside an object, the transform fails at the call site with a

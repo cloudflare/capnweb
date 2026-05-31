@@ -55,6 +55,22 @@ import { RpcTarget } from "capnweb";
     expect(code).toMatch(/greet[\s\S]*?args:\s*\[__rt\.v\.string\]/);
   });
 
+  it("client: a renamed import (newHttpBatchRpcSession as connect) is matched by resolved name", () => {
+    const { code } = transformFixture(
+      `interface Api extends RpcTarget { echo(value: string): Promise<string>; }
+export const api = connect<Api>("/rpc");
+`,
+      {
+        shim: CAPNWEB_SHIM,
+        imports: `import { newHttpBatchRpcSession as connect } from "capnweb";
+import { RpcTarget } from "capnweb";
+`,
+      },
+    );
+    expect(code).toContain("__rt.__newHttpBatchRpcSessionWithValidation");
+    expect(code).toMatch(/echo[\s\S]*?args:\s*\[__rt\.v\.string\]/);
+  });
+
   it("fails loud: a namespace marker call with no resolvable type throws", () => {
     const msg = transformError(
       `export const api = capnweb.newHttpBatchRpcSession("/rpc");

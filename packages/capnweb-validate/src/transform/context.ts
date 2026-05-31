@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import ts from "typescript";
 
 import type { ValidationMode } from "../internal/core.js";
+import type { UnsupportedTypeHandler } from "./type-introspector.js";
 
 export type TransformContextOptions = {
   /** Path to the tsconfig.json that defines the TS Program. */
@@ -22,6 +23,8 @@ export type TransformContextOptions = {
   clientValidation?: ValidationMode;
   /** How a failed server-side check is handled: "throw" (default) raises an RpcValidationError; "warn" logs and lets the value through. */
   serverValidation?: ValidationMode;
+  /** Decide what to do with a type capnweb does not transport. Return "passthrough" to accept it as `any` (e.g. a host like Workers RPC that accepts more types); default is a build error. */
+  onUnsupportedType?: UnsupportedTypeHandler;
 };
 
 export interface TransformContext {
