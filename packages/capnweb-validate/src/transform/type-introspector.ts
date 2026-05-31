@@ -1070,6 +1070,12 @@ export function collectPlatformMethodNames(
   let add = (prop: ts.Symbol): void => {
     if (isSymbolNamedProperty(prop)) return;
     if (RPC_CAPABILITY_BRAND_NAMES.has(prop.getName())) return;
+    // Methods only: a platform data field (`ctx`/`env`) is not a hook.
+    let decl = prop.valueDeclaration ?? prop.declarations?.[0];
+    let pType = decl
+      ? checker.getTypeOfSymbolAtLocation(prop, decl)
+      : checker.getTypeOfSymbol(prop);
+    if (checker.getNonNullableType(pType).getCallSignatures().length === 0) return;
     names.add(prop.getName());
   };
   for (let prop of checker.getPropertiesOfType(type)) {
