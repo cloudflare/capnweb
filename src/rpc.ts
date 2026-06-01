@@ -52,10 +52,9 @@ export interface RpcTransportWithCustomEncoding {
   readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone";
 
   /**
-   * Encodes and sends a message to the other end. Returns the encoded byte size if known
-   * (for flow control), or void if the size is unavailable (e.g. structured clone transports).
-   * When void is returned, stream writes are serialized (no overlapping) instead of using
-   * window-based flow control. Send errors should be propagated via `receive()` rejecting.
+   * Encodes and sends a message to the other end. Returns the encoded byte size if known.
+   * If the size is unavailable, return void; Cap'n Web will estimate stream message sizes for
+   * flow control. Send errors should be propagated via `receive()` rejecting.
    */
   send(message: unknown): number | void;
 
@@ -81,6 +80,74 @@ export interface RpcTransportWithCustomEncoding {
 
 /** Any supported transport type. */
 export type AnyRpcTransport = RpcTransport | RpcTransportWithCustomEncoding;
+
+const ESTIMATED_OBJECT_OVERHEAD = 16;
+const ESTIMATED_ENTRY_OVERHEAD = 8;
+const ESTIMATED_BINARY_OVERHEAD = 16;
+const MAX_ESTIMATE_DEPTH = 64;
+
+function estimateStringSize(value: string): number {
+  // Bias high. UTF-8 uses up to 3 bytes for BMP code points, and surrogate pairs are 4 bytes for
+  // 2 UTF-16 code units.
+  return 2 + value.length * 3;
+}
+
+function estimateEncodedSize(value: unknown, seen?: WeakSet<object>, depth: number = 0): number {
+  if (depth >= MAX_ESTIMATE_DEPTH) return ESTIMATED_ENTRY_OVERHEAD;
+
+  switch (typeof value) {
+    case "string":
+      return estimateStringSize(value);
+    case "number":
+      return 16;
+    case "bigint":
+      return 16;
+    case "boolean":
+      return 8;
+    case "undefined":
+      return 16;
+    case "object": {
+      if (value === null) return 8;
+      if (ArrayBuffer.isView(value)) return ESTIMATED_BINARY_OVERHEAD + value.byteLength;
+      if (value instanceof ArrayBuffer) return ESTIMATED_BINARY_OVERHEAD + value.byteLength;
+      if (typeof Blob !== "undefined" && value instanceof Blob) {
+        return ESTIMATED_BINARY_OVERHEAD + value.size;
+      }
+      if (value instanceof Date) return 16;
+
+      seen ??= new WeakSet();
+      if (seen.has(value)) return ESTIMATED_ENTRY_OVERHEAD;
+      seen.add(value);
+
+      if (value instanceof Array) {
+        let size = ESTIMATED_OBJECT_OVERHEAD;
+        for (let item of value) {
+          size += ESTIMATED_ENTRY_OVERHEAD + estimateEncodedSize(item, seen, depth + 1);
+        }
+        return size;
+      }
+
+      if (value instanceof Error) {
+        let size = ESTIMATED_OBJECT_OVERHEAD + estimateStringSize(value.name) +
+            estimateStringSize(value.message) + estimateStringSize(value.stack ?? "");
+        for (let key of Object.keys(value)) {
+          size += ESTIMATED_ENTRY_OVERHEAD + estimateStringSize(key) +
+              estimateEncodedSize((value as any)[key], seen, depth + 1);
+        }
+        return size;
+      }
+
+      let size = ESTIMATED_OBJECT_OVERHEAD;
+      for (let key of Object.keys(value)) {
+        size += ESTIMATED_ENTRY_OVERHEAD + estimateStringSize(key) +
+            estimateEncodedSize((value as Record<string, unknown>)[key], seen, depth + 1);
+      }
+      return size;
+    }
+    default:
+      return 16;
+  }
+}
 
 // Entry on the exports table.
 type ExportTableEntry = {
@@ -623,9 +690,9 @@ class RpcSessionImpl implements Importer, Exporter {
     return importId;
   }
 
-  // Serializes and sends a message. Returns the byte length of the serialized message,
-  // or undefined if the transport doesn't report size (e.g. structured clone).
-  private send(msg: any): number | void {
+  // Serializes and sends a message. Returns the byte length reported by the transport, or
+  // undefined if the transport doesn't report size.
+  private send(msg: any): number | undefined {
     if (this.abortReason !== undefined) {
       // Ignore sends after we've aborted.
       return 0;
@@ -640,7 +707,8 @@ class RpcSessionImpl implements Importer, Exporter {
       } else {
         // Custom encoding transport encodes and returns the actual encoded size,
         // or void if size is unavailable (e.g. structured clone).
-        return (this.transport as RpcTransportWithCustomEncoding).send(msg);
+        let size = (this.transport as RpcTransportWithCustomEncoding).send(msg);
+        return size === undefined ? undefined : size;
       }
     } catch (err) {
       // If JSON stringification failed, there's something wrong with the devaluator, as it should
@@ -673,7 +741,7 @@ class RpcSessionImpl implements Importer, Exporter {
   }
 
   sendStream(id: ImportId, path: PropertyPath, args: RpcPayload)
-      : {promise: Promise<void>, size?: number} {
+      : {promise: Promise<void>, size: number} {
     if (this.abortReason) throw this.abortReason;
 
     let value: Array<any> = ["pipeline", id, path];
@@ -683,7 +751,11 @@ class RpcSessionImpl implements Importer, Exporter {
     // TODO: Clean this up somehow.
     value.push((<Array<unknown>>devalue)[0]);
 
-    let size = this.send(["stream", value]) ?? undefined;
+    let msg = ["stream", value];
+    let size = this.send(msg);
+    if (size === undefined) {
+      size = estimateEncodedSize(msg);
+    }
 
     // Create the import entry in "already pulling" state (pulling=true), since stream messages
     // are automatically pulled. Set remoteRefcount to 0 so that resolve() won't send a release

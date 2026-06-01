@@ -3,8 +3,9 @@
 //     https://opensource.org/license/mit
 
 import { expect, it, describe, inject } from "vitest"
-import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport, RpcTarget,
-         RpcStub, newWebSocketRpcSession, newMessagePortRpcSession,
+import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
+         type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, newWebSocketRpcSession,
+         newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
 import { Counter, TestTarget } from "./test-util.js";
 
@@ -470,6 +471,54 @@ class TestTransport implements RpcTransport {
 
   forceReceiveError(error: any) {
     this.aborter!(error);
+  }
+}
+
+class ObjectTestTransport implements RpcTransportWithCustomEncoding {
+  readonly encodingLevel = "json" as const;
+
+  constructor(private partner?: ObjectTestTransport) {
+    if (partner) {
+      partner.partner = this;
+    }
+  }
+
+  private queue: unknown[] = [];
+  private waiter?: () => void;
+  private aborter?: (err: any) => void;
+  private fenced = false;
+
+  send(message: unknown): void {
+    this.partner!.queue.push(JSON.parse(JSON.stringify(message)));
+    if (this.partner!.waiter && !this.partner!.fenced) {
+      this.partner!.waiter();
+      this.partner!.waiter = undefined;
+      this.partner!.aborter = undefined;
+    }
+  }
+
+  async receive(): Promise<unknown> {
+    while (this.queue.length == 0 || this.fenced) {
+      await new Promise<void>((resolve, reject) => {
+        this.waiter = resolve;
+        this.aborter = reject;
+      });
+    }
+
+    return this.queue.shift()!;
+  }
+
+  fence() {
+    this.fenced = true;
+  }
+
+  releaseFence() {
+    this.fenced = false;
+    if (this.queue.length > 0 && this.waiter) {
+      this.waiter();
+      this.waiter = undefined;
+      this.aborter = undefined;
+    }
   }
 }
 
@@ -2281,6 +2330,53 @@ describe("WritableStream over RPC", () => {
     expect(writesReceived).toBe(20);
     expect(closeReceived).toBe(true);
     await rpcPromise;
+  });
+
+  it("applies backpressure when custom transport omits stream message size", async () => {
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    let clientTransport = new ObjectTestTransport();
+    let serverTransport = new ObjectTestTransport(clientTransport);
+    let client = new RpcSession<StreamReceiver>(clientTransport);
+    new RpcSession(serverTransport, new StreamReceiver());
+    using clientStub = client.getRemoteMain();
+
+    clientTransport.fence();
+
+    clientStub.receiveStream(stream).catch(() => {});
+
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (writesSent == oldWritesSent) break;
+    }
+
+    expect(writesSent).toBeGreaterThan(1);
+    expect(writesSent).toBeLessThan(20);
+    expect(writesReceived).toBe(0);
+    expect(closeReceived).toBe(false);
+
+    clientTransport.releaseFence();
   });
 
   it("uses stream messages instead of push+pull+release", async () => {
