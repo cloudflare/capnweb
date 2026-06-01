@@ -47,7 +47,7 @@ export interface RpcTransportWithCustomEncoding {
    *
    * - "json": Transport encodes/decodes JS objects (JSON-compatible).
    * - "jsonWithBytes": Like "json" but Uint8Array values are left raw (not base64-encoded).
-   * - "structuredClone": Native types like Date, BigInt, Error pass through (e.g. MessagePort).
+   * - "structuredClone": Native types like Date and BigInt pass through.
    */
   readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone";
 
