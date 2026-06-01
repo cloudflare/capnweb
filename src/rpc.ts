@@ -810,7 +810,8 @@ class RpcSessionImpl implements Importer, Exporter {
       let readCanceled = Promise.withResolvers<never>();
       this.cancelReadLoop = readCanceled.reject;
 
-      let raw: string | object;
+      let raw: unknown;
+
       try {
         raw = await Promise.race([this.transport.receive(), readCanceled.promise]);
       } finally {
