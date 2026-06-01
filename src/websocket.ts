@@ -5,7 +5,7 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { RpcStub } from "./core.js";
-import { RpcTransport, RpcSession, RpcSessionOptions } from "./rpc.js";
+import { RpcSession, RpcSessionOptions } from "./rpc.js";
 
 export function newWebSocketRpcSession(
     webSocket: WebSocket | string, localMain?: any, options?: RpcSessionOptions): RpcStub {
@@ -144,5 +144,6 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
   }
 }
 
-// WebSocketTransport<string> satisfies RpcTransport (can't use `implements` on generic class).
-const _typeCheck: RpcTransport = null! as WebSocketTransport<string>;
+// This class is generic, so it can't `implements RpcTransport` (that would require every `T` to
+// conform, but the ArrayBuffer instantiation intentionally doesn't). The default string
+// instantiation's conformance is asserted in __type-tests__/rpc-types.test.ts.
