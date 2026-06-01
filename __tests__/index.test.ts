@@ -475,9 +475,9 @@ class TestTransport implements RpcTransport {
 }
 
 class ObjectTestTransport implements RpcTransportWithCustomEncoding {
-  readonly encodingLevel = "json" as const;
-
-  constructor(private partner?: ObjectTestTransport) {
+  constructor(
+      private partner?: ObjectTestTransport,
+      readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone" = "json") {
     if (partner) {
       partner.partner = this;
     }
@@ -489,7 +489,9 @@ class ObjectTestTransport implements RpcTransportWithCustomEncoding {
   private fenced = false;
 
   send(message: unknown): void {
-    this.partner!.queue.push(JSON.parse(JSON.stringify(message)));
+    let cloned = this.encodingLevel === "json" ? JSON.parse(JSON.stringify(message))
+                                               : structuredClone(message);
+    this.partner!.queue.push(cloned);
     if (this.partner!.waiter && !this.partner!.fenced) {
       this.partner!.waiter();
       this.partner!.waiter = undefined;
@@ -519,6 +521,12 @@ class ObjectTestTransport implements RpcTransportWithCustomEncoding {
       this.waiter = undefined;
       this.aborter = undefined;
     }
+  }
+
+  abort(reason: any): void {
+    this.aborter?.(reason);
+    this.waiter = undefined;
+    this.aborter = undefined;
   }
 }
 
@@ -1814,6 +1822,25 @@ describe("error serialization", () => {
     expect(result).toBe("caught");
   });
 
+  it("hides the stack by default with structured clone transports", async () => {
+    let clientTransport = new ObjectTestTransport(undefined, "structuredClone");
+    let serverTransport = new ObjectTestTransport(clientTransport, "structuredClone");
+    let client = new RpcSession<TestTarget>(clientTransport);
+    new RpcSession(serverTransport, new TestTarget());
+    using stub = client.getRemoteMain();
+
+    let result = await stub.throwError()
+      .catch(err => {
+        expect(err).toBeInstanceOf(RangeError);
+        expect((err as Error).message).toBe("test error");
+        expect((err as Error).stack).not.toContain("throwErrorImpl");
+        expect((err as Error).stack).not.toContain("test-util.ts");
+
+        return "caught";
+      });
+    expect(result).toBe("caught");
+  });
+
   it("reveals the stack if the callback returns the error", async () => {
     await using harness = new TestHarness(new TestTarget(), {
       onSendError: (error) => {
@@ -2530,6 +2557,43 @@ describe("WritableStream over RPC", () => {
     expect(rpcDone).toBe(true);
     expect(rpcError).not.toBeNull();
     expect(rpcError.message).toContain("Simulated write failure");
+  });
+});
+
+describe("transport encoding levels", () => {
+  class EchoService extends RpcTarget {
+    echo(value: unknown): unknown {
+      return value;
+    }
+  }
+
+  // Native values should survive a round trip through a custom-encoding transport at every
+  // non-string level: base64 bytes at "json", raw Uint8Array at "jsonWithBytes", and native
+  // structured-clone types at "structuredClone".
+  for (let level of ["json", "jsonWithBytes", "structuredClone"] as const) {
+    it(`round-trips native types over a ${level} transport`, async () => {
+      let clientTransport = new ObjectTestTransport(undefined, level);
+      let serverTransport = new ObjectTestTransport(clientTransport, level);
+      let client = new RpcSession<EchoService>(clientTransport);
+      new RpcSession(serverTransport, new EchoService());
+      using stub = client.getRemoteMain();
+
+      let bytes = await stub.echo(new Uint8Array([1, 2, 3])) as Uint8Array;
+      expect(new Uint8Array(bytes)).toStrictEqual(new Uint8Array([1, 2, 3]));
+
+      let date = await stub.echo(new Date(1234567890)) as Date;
+      expect(date).toBeInstanceOf(Date);
+      expect(date.getTime()).toBe(1234567890);
+
+      expect(await stub.echo(123n)).toBe(123n);
+    });
+  }
+
+  it("aborts the receive loop when the transport is aborted", async () => {
+    let transport = new ObjectTestTransport();
+    let pending = transport.receive();
+    transport.abort(new Error("boom"));
+    await expect(pending).rejects.toThrow("boom");
   });
 });
 

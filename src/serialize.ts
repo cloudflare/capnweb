@@ -14,7 +14,7 @@ export type ExportId = number;
  * - `"string"`: Full JSON encoding (string output). Default, used by HTTP batch.
  * - `"json"`: JS object tree with all types encoded (JSON-compatible). For custom encoders.
  * - `"jsonWithBytes"`: Like json but Uint8Array stays raw. For CBOR/MessagePack.
- * - `"structuredClone"`: Only encode stubs/functions, pass native types through. For MessagePort.
+ * - `"structuredClone"`: Native structured-clone types pass through, except errors.
  *
  * @example
  * ```ts
@@ -22,7 +22,7 @@ export type ExportId = number;
  * "string"          → '["bytes","AQID"]'           // JSON string with base64
  * "json"            → ["bytes", "AQID"]            // JS array with base64
  * "jsonWithBytes"   → ["bytes", Uint8Array]        // JS array with raw bytes
- * "structuredClone" → ["bytes", Uint8Array]        // + Date, BigInt, Error stay native
+ * "structuredClone" → ["bytes", Uint8Array]        // + Date, BigInt stay native
  * ```
  */
 export type EncodingLevel = "string" | "json" | "jsonWithBytes" | "structuredClone";
@@ -376,11 +376,6 @@ export class Devaluator {
         let rewritten = this.exporter.onSendError(e);
         if (rewritten) {
           e = rewritten;
-        }
-
-        // At structuredClone level, keep Error as native value (still call onSendError above)
-        if (this.encodingLevel === "structuredClone") {
-          return rewritten || value;
         }
 
         // Capture own enumerable properties plus the standard non-enumerable slots `cause`
