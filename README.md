@@ -736,9 +736,8 @@ You can implement a custom RPC transport across any bidirectional stream. For st
 
 ```ts
 export interface RpcTransport {
-  // Sends a JSON string message. Returns the byte size of the message.
-  // Transport errors should be propagated via receive() rejecting.
-  send(message: string): number;
+  // Sends a JSON string message.
+  send(message: string): number | void | Promise<void>;
 
   // Receives a message sent by the other end.
   receive(): Promise<string>;
@@ -755,8 +754,8 @@ export interface RpcTransportWithCustomEncoding {
   // Declares what encoding level this transport uses.
   readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone";
 
-  // Encodes and sends a message. Returns the encoded byte size if known
-  // (for flow control), or void if unavailable (e.g. structured clone).
+  // Encodes and sends a message. Returns the encoded byte size if known.
+  // If unavailable, Cap'n Web estimates stream message sizes for flow control.
   send(message: unknown): number | void;
 
   // Receives and decodes a message.
@@ -784,33 +783,12 @@ let stub: RemoteMainInterface = session.getRemoteMain();
 // Now we can call methods on the stub.
 ```
 
-Note that sessions are entirely symmetric: neither side is defined as the "client" nor the "server". Each side can optionally expose a "main interface" to the other. In typical scenarios with a logical client and server, the server exposes a main interface but the client does not.ś
+Note that sessions are entirely symmetric: neither side is defined as the "client" nor the "server". Each side can optionally expose a "main interface" to the other. In typical scenarios with a logical client and server, the server exposes a main interface but the client does not.
 
 #### Custom encoding levels
 
-By default, `RpcTransport` sends and receives JSON strings. To use a binary format like CBOR or MessagePack, implement `RpcTransportWithCustomEncoding` instead, which declares an `encodingLevel` so the RPC system knows how much serialization to do before handing messages to the transport:
+By default, `RpcTransport` sends and receives JSON strings, with Cap'n Web handling the encoding all the way to and from strings. Transports that want more control over serialization can implement `RpcTransportWithCustomEncoding` and declare an `encodingLevel`:
 
-```ts
-import { RpcTransportWithCustomEncoding, RpcSession } from "capnweb";
-import * as cbor from "cbor-x";
-
-class CborTransport implements RpcTransportWithCustomEncoding {
-  readonly encodingLevel = "jsonWithBytes";  // Uint8Array stays raw for CBOR
-
-  send(msg: unknown): number {
-    const encoded = cbor.encode(msg);
-    this.ws.send(encoded);
-    return encoded.byteLength;
-  }
-
-  async receive(): Promise<unknown> {
-    return cbor.decode(new Uint8Array(await this.nextMessage()));
-  }
-
-  abort(reason: any) { this.ws.close(3000, String(reason)); }
-}
-
-const session = new RpcSession<MyApi>(new CborTransport(ws));
-```
-
-The available encoding levels are `"json"` (JSON-compatible object tree), `"jsonWithBytes"` (same but `Uint8Array` stays raw), and `"structuredClone"` (native types like `Date`, `BigInt`, `Error` also pass through). The built-in `MessagePort` transport uses `"structuredClone"` automatically.
+* `"json"`: Messages are JSON-compatible objects. The transport is responsible for serializing and deserializing them.
+* `"jsonWithBytes"`: Like `"json"`, except byte arrays are left as `Uint8Array` instead of base64-encoded. This is useful for serializations like CBOR or MessagePack that support bytes efficiently.
+* `"structuredClone"`: Messages are structured-clonable objects. Cap'n Web applies special handling for RPC stubs and errors. This is useful for custom transports built on `MessagePort` or similar APIs.
