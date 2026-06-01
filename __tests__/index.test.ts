@@ -585,6 +585,23 @@ class TestHarness<T extends RpcTarget> {
   }
 }
 
+it("propagates async send failures from string transports", async () => {
+  let sendError = new Error("send failed");
+  let transport: RpcTransport = {
+    send(_message: string): Promise<void> {
+      return Promise.reject(sendError);
+    },
+    receive(): Promise<string> {
+      return new Promise(() => {});
+    },
+  };
+
+  let session = new RpcSession<TestTarget>(transport);
+  using stub = session.getRemoteMain();
+
+  await expect(() => stub.square(1)).rejects.toThrow(sendError);
+});
+
 describe("local stub", () => {
   it("supports wrapping an RpcTarget", async () => {
     let stub = new RpcStub(new TestTarget());

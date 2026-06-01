@@ -14,7 +14,7 @@ export interface RpcTransport {
   /**
    * Sends a message to the other end.
    */
-  send(message: string): void;
+  send(message: string): number | void | Promise<void>;
 
   /**
    * Receives a message sent by the other end.
@@ -702,7 +702,10 @@ class RpcSessionImpl implements Importer, Exporter {
       if (this.encodingLevel === "string") {
         // Stringify and send via string transport. We know the size from the string length.
         let msgText = JSON.stringify(msg);
-        (this.transport as RpcTransport).send(msgText);
+        let sent = (this.transport as RpcTransport).send(msgText);
+        if (sent !== undefined && typeof sent !== "number") {
+          sent.catch(err => this.abort(err, false));
+        }
         return msgText.length;
       } else {
         // Custom encoding transport encodes and returns the actual encoded size,
@@ -829,7 +832,10 @@ class RpcSessionImpl implements Importer, Exporter {
       try {
         let abortMsg = ["abort", Devaluator.devaluate(error, undefined, this, undefined, this.encodingLevel)];
         if (this.encodingLevel === "string") {
-          (this.transport as RpcTransport).send(JSON.stringify(abortMsg));
+          let sent = (this.transport as RpcTransport).send(JSON.stringify(abortMsg));
+          if (sent !== undefined && typeof sent !== "number") {
+            sent.catch(err => {});
+          }
         } else {
           (this.transport as RpcTransportWithCustomEncoding).send(abortMsg);
         }
