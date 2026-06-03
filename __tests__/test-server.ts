@@ -51,7 +51,10 @@ export async function setup(project: TestProject) {
   })
 
   // Listen on an ephemeral port for testing purposes.
-  httpServer.listen(0);
+  await new Promise<void>((resolve, reject) => {
+    httpServer!.once("error", reject);
+    httpServer!.listen(0, "127.0.0.1", resolve);
+  });
   let addr = httpServer.address() as AddressInfo;
 
   // Provide the server address to tests.

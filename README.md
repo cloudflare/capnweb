@@ -205,6 +205,14 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `ReadableStream` and `WritableStream`, with automatic flow control.
 * `Headers`, `Request`, and `Response` from the Fetch API.
 
+Live `WebSocket` objects, including a Cloudflare Workers `Response` with a `.webSocket`
+property, can also be passed over RPC. Unlike the types above, a WebSocket is passed by
+reference: the receiver gets a WebSocket-like bridge connected to the original socket. The bridge
+supports `send()`, `close()`, `accept()`, `readyState`, and `message` / `close` / `error` event
+listeners, but it is not a full platform WebSocket object. Close or dispose it when done so the
+remote socket can be released. WebSocket tunneling carries frames over the RPC session and does
+not add `ReadableStream`-style flow control.
+
 The following types are not supported as of this writing, but may be added in the future:
 * `Map` and `Set`
 * `ArrayBuffer` and typed arrays other than `Uint8Array`

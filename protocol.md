@@ -203,10 +203,15 @@ A `Request` object from the Fetch API. `url` and `init` are the parameters to pa
 At this time, `init.signal` is not supported and must not be sent, though that will change when `AbortSignal` gains support for serialization.
 
 `["response", body, init]`
+`["response", body, init, webSocketExpression]`
 
 A `Response` object from the Fetch API. `body` and `init` are the parameters to pass to `Response`'s constructor to create the desired `Response` instance. `body` is an expression which must evaluate to `null`, a string, `UInt8Array`, or `ReadableStream`. `init.headers`, if present, must contain an array of pairs, suitable to pass to the constructor of `Headers`. Other properties of `init` must be plain values; they will not be evaluated as expressions before passing to the `Response` constructor.
 
-At this time, `init.webSocket` (a Cloudflare Workers extension) is not supported and must not be sent, though that may change if `WebSocket` gains support for serialization.
+The 4-element form represents a response with an attached WebSocket, as in the Cloudflare Workers `Response.webSocket` extension. `webSocketExpression` evaluates to a live WebSocket capability. The receiver reconstructs a `Response` with a non-standard `.webSocket` property; the presence of that property is the upgrade signal. Since standard `Response` constructors cannot represent 1xx statuses, senders omit `status` and `statusText` from `init` when a WebSocket-bearing response has a 1xx status.
+
+`["websocket", exportExpression]`
+
+A live WebSocket connection, represented as a capability rather than a value. `exportExpression` evaluates to an exported object that forwards `send()`, `close()`, and socket events. The receiver gets a WebSocket-like object suitable for sending frames, receiving `message` / `close` / `error` events, and passing to `newWebSocketRpcSession()`. WebSocket frames are delivered in order, but this bridge does not add stream-style flow control beyond the underlying socket and RPC transport.
 
 `["import", importId, propertyPath, callArguments]`
 `["pipeline", importId, propertyPath, callArguments]`

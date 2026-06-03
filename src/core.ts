@@ -39,7 +39,8 @@ export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
-    "error" | "undefined" | "writable" | "readable" | "headers" | "request" | "response";
+    "error" | "undefined" | "writable" | "readable" | "headers" | "request" | "response" |
+    "websocket";
 
 const AsyncFunction = (async function () {}).constructor;
 
@@ -47,6 +48,19 @@ const AsyncFunction = (async function () {}).constructor;
 // to accept as "bytes". In browsers, this is undefined, which won't match any prototype.
 let BUFFER_PROTOTYPE: object | undefined =
     typeof Buffer !== "undefined" ? Buffer.prototype : undefined;
+
+function isWebSocketLike(value: object): boolean {
+  if (typeof WebSocket !== "undefined" && value instanceof WebSocket) {
+    return true;
+  }
+
+  let socket = value as any;
+  return typeof socket.send === "function" &&
+      typeof socket.close === "function" &&
+      typeof socket.addEventListener === "function" &&
+      (typeof socket.readyState === "number" || "binaryType" in socket || "protocol" in socket) &&
+      (socket.constructor?.name === "WebSocket" || "binaryType" in socket || "protocol" in socket);
+}
 
 export function typeForRpc(value: unknown): TypeForRpc {
   switch (typeof value) {
@@ -146,6 +160,13 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
       if (value instanceof Error) {
         return "error";
+      }
+
+      // A live `WebSocket` (Workers' `WebSocketPair` ends, browsers/Node, or ws-compatible
+      // server sockets). Runtime constructors differ, so accept the standard EventTarget-shaped
+      // socket interface rather than requiring a single global constructor.
+      if (isWebSocketLike(value)) {
+        return "websocket";
       }
 
       return "unsupported";
@@ -805,11 +826,11 @@ export class RpcPayload {
   // return, so that we can make sure they are not disposed before the pipeline ends.
   //
   // This is initialized on first use.
-  private rpcTargets?: Map<RpcTarget | Function | WritableStream | ReadableStream, StubHook>;
+  private rpcTargets?: Map<object, StubHook>;
 
   // Get the StubHook representing the given RpcTarget found inside this payload.
   public getHookForRpcTarget(target: RpcTarget | Function, parent: object | undefined,
-                             dupStubs: boolean = true): StubHook {
+                             dupStubs: boolean = true, mapKey: object = target): StubHook {
     if (this.source === "params") {
       if (dupStubs) {
         // We aren't supposed to take ownership of stubs appearing in params -- we're supposed to
@@ -846,12 +867,12 @@ export class RpcPayload {
       // * If the target is not in the map, we just create it, but don't populate the map.
       // * If the target *is* in the map, we *remove* the hook from the map, and return it.
 
-      let hook = this.rpcTargets?.get(target);
+      let hook = this.rpcTargets?.get(mapKey);
       if (hook) {
         if (dupStubs) {
           return hook.dup();
         } else {
-          this.rpcTargets?.delete(target);
+          this.rpcTargets?.delete(mapKey);
           return hook;
         }
       } else {
@@ -860,7 +881,7 @@ export class RpcPayload {
           if (!this.rpcTargets) {
             this.rpcTargets = new Map;
           }
-          this.rpcTargets.set(target, hook);
+          this.rpcTargets.set(mapKey, hook);
           return hook.dup();
         } else {
           return hook;
@@ -1078,8 +1099,20 @@ export class RpcPayload {
         // Make an actual copy of the object, e.g. so the headers are copied.
         // Note that it would be incorrect to use clone() here since that would tee() the body
         // stream.
-        return new Response(resp.body, resp);
+        let result: any = new Response(resp.body, resp);
+        let webSocket = (<any>resp).webSocket;
+        if (webSocket) {
+          Object.defineProperty(result, "webSocket", {
+            value: webSocket,
+            configurable: true,
+          });
+        }
+        return result;
       }
+
+      case "websocket":
+        // A live connection is a reference type (like a stream); share it rather than copy.
+        return value;
 
       default:
         kind satisfies never;
@@ -1348,9 +1381,23 @@ export class RpcPayload {
         // The body may be a ReadableStream that has an associated hook in rpcTargets.
         let resp = <Response>value;
         if (resp.body) this.disposeImpl(resp.body, resp);
-        // TODO: When we support WebSocket, we may need to dispose response.webSocket here?
+        let cfResp = resp as any;
+        if (cfResp.webSocket) this.disposeImpl(cfResp.webSocket, resp);
         return;
       }
+
+      case "websocket":
+        {
+          let socket = <any>value;
+          let hook = this.rpcTargets?.get(socket);
+          if (hook) {
+            hook.dispose();
+            this.rpcTargets!.delete(socket);
+          } else {
+            try { socket.close(); } catch {}
+          }
+        }
+        return;
 
       case "writable": {
         let stream = <WritableStream>value;
@@ -1451,6 +1498,10 @@ export class RpcPayload {
 
       case "rpc-thenable":
         (<any>value).then((_: any) => {}, (_: any) => {});
+        return;
+
+      case "websocket":
+        // No promises attached; nothing to ignore.
         return;
 
       default:
@@ -1578,6 +1629,7 @@ function followPath(value: unknown, parent: object | undefined,
       case "headers":
       case "request":
       case "response":
+      case "websocket":
         // These have no properties that can be accessed remotely.
         value = undefined;
         break;
