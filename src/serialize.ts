@@ -3,6 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
+import { WebSocketSource, BridgedWebSocket } from "./websocket-bridge.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -301,11 +302,28 @@ export class Devaluator {
           init.encodeBody = cfResp.encodeBody;
         }
         if (cfResp.webSocket) {
-          // As of this writing, we don't support WebSocket, but we might someday.
-          throw new TypeError("Can't serialize a Response containing a webSocket.");
+          // Ferry the attached WebSocket as a capability over the same session (see
+          // websocket-bridge.ts). It rides along as a 4th wire element so the body/init encoding
+          // is unchanged for the common, socket-less case.
+          if (typeof init.status === "number" && init.status >= 100 && init.status < 200) {
+            delete init.status;
+            delete init.statusText;
+          }
+          let ws = this.devaluateImpl(cfResp.webSocket, resp, depth + 1);
+          return ["response", body, init, ws];
         }
 
         return ["response", body, init];
+      }
+
+      case "websocket": {
+        if (!this.source) {
+          throw new Error("Can't serialize a WebSocket in this context.");
+        }
+        // Export the live socket as a capability; the peer rebuilds a BridgedWebSocket from it.
+        let hook = this.source.getHookForRpcTarget(
+            <RpcTarget><any>new WebSocketSource(<WebSocket>value), parent, true, <object>value);
+        return ["websocket", this.devaluateHook("export", hook)];
       }
 
       case "blob": {
@@ -710,7 +728,8 @@ export class Evaluator {
         }
 
         case "response": {
-          if (value.length !== 3) break;
+          // 3 elements normally; a 4th carries an attached WebSocket capability.
+          if (value.length !== 3 && value.length !== 4) break;
 
           let body = this.evaluateImpl(value[1], parent, property);
           if (body === null ||
@@ -725,20 +744,30 @@ export class Evaluator {
           let init = value[2];
           if (typeof init !== "object" || init === null) break;
 
-          // Evaluate specific properties which are expected to contain non-trivial types.
-          if (init.webSocket) {
-            // `response.webSocket` is a Cloudflare Workers extension. Not (yet?) supported for
-            // serialization.
-            throw new TypeError("Can't deserialize a Response containing a webSocket.");
-          }
-
           // Type-check `headers` is an array because the constructor allows multiple
           // representations and we don't want to allow the others.
           if (init.headers && !(init.headers instanceof Array)) {
             throw new TypeError("Request headers must be serialized as an array of pairs.");
           }
 
+          if (value.length === 4) {
+            // The deserialized socket is a BridgedWebSocket, not a platform WebSocket, so the
+            // consumer is responsible for pumping frames between it and a socket it owns.
+            let webSocket = this.evaluateImpl(value[3], parent, property);
+            let result: any = new Response(body as BodyInit | null, init as ResponseInit);
+            Object.defineProperty(result, "webSocket", {
+              value: webSocket,
+              configurable: true,
+            });
+            return result;
+          }
+
           return new Response(body as BodyInit | null, init as ResponseInit);
+        }
+
+        case "websocket": {
+          if (value.length !== 2) break;
+          return new BridgedWebSocket(this.evaluateImpl(value[1], parent, property));
         }
 
         case "blob": {
