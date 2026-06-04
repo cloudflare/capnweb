@@ -97,6 +97,11 @@ declare module "cloudflare:workers" {
     fetch?(request: Request): Response | Promise<Response>;
     tailStream?(event: unknown): unknown;
   }
+  export class DurableObject<Env = unknown> {
+    readonly __DURABLE_OBJECT_BRAND: never;
+    fetch?(request: Request): Response | Promise<Response>;
+    alarm?(): void | Promise<void>;
+  }
 }
 declare module "capnweb-validate" {
   export function validateRpc(...args: unknown[]): unknown;
@@ -166,6 +171,24 @@ describe("transformModule", () => {
     expect(code).toMatch(/passthrough:\s*\[[^\]]*"fetch"[^\]]*\]/);
     expect(code).not.toContain('"fetch":');
     expect(code).not.toContain('"tailStream":');
+  });
+
+  it("decorator: filters inherited DurableObject platform methods", () => {
+    let src = write("do.ts", `
+      import { DurableObject } from "cloudflare:workers";
+      import { validateRpc } from "capnweb-validate";
+      @validateRpc()
+      class Api extends DurableObject { rpc(x: string): Promise<string> { return null as any; } }
+      export default Api;
+    `);
+    let { code } = transform(src);
+    expect(code).toContain('"rpc":');
+    // fetch/alarm are platform hooks: pass-through, not validated methods.
+    // Assert membership independently; passthrough order is not contractual.
+    expect(code).toMatch(/passthrough:\s*\[[^\]]*"fetch"[^\]]*\]/);
+    expect(code).toMatch(/passthrough:\s*\[[^\]]*"alarm"[^\]]*\]/);
+    expect(code).not.toContain('"fetch":');
+    expect(code).not.toContain('"alarm":');
   });
 
   it("rejects a non-wire built-in at build time", () => {
