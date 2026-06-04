@@ -4,7 +4,7 @@
 
 // Smoke tests for the per-module transform: one representative case per
 // mechanism. Depth lives in the focused test files (branded-primitive,
-// record-index, mapped-types, getters, namespace-imports, structured-clone-types,
+// record-index, mapped-types, getters, namespace-imports, rpc-compatible-types,
 // method-overloads, generic-class, fetcher-detection, ...).
 
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";

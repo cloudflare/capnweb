@@ -15,7 +15,7 @@ function accepts(
   }
 }
 
-describe("structured-clone RPC value types", () => {
+describe("RPC-compatible value types", () => {
   it("accepts ArrayBuffer, DataView, RegExp, Map/Set, and typed arrays at build time", () => {
     const { code } = transformFixture(
       `class Api extends RpcTarget {
@@ -105,7 +105,7 @@ describe("structured-clone RPC value types", () => {
     expect(accepts(v.bytes, new ArrayBuffer(4))).toBe(false);
   });
 
-  it("validates structured-clone built-in brands at runtime", () => {
+  it("validates RPC-compatible built-in brands at runtime", () => {
     expect(accepts(v.dataView, new DataView(new ArrayBuffer(4)))).toBe(true);
     expect(accepts(v.dataView, new Uint8Array(4))).toBe(false);
     expect(accepts(v.regexp, /abc/u)).toBe(true);
