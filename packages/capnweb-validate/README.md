@@ -1,12 +1,12 @@
 # capnweb-validate
 
-Build-time runtime validation for Cap'n Web RPC services.
+Build-time runtime validation for Cap'n Web and Workers RPC services.
 
 `capnweb-validate` keeps TypeScript method signatures as the source of
-truth. Add `@validateRpc()` to the service class and keep importing Cap'n Web
-APIs from `capnweb`. A bundler plugin or CLI rewrites the decorator and client
-session calls, then injects validators generated from the resolved TypeScript
-types.
+truth. Add `@validateRpc()` to the service class; a bundler plugin or CLI
+rewrites the decorator and injects validators generated from the resolved
+TypeScript types. Cap'n Web client sessions can also be wrapped for client-side
+argument and return-value checks.
 
 If a validation decorator is left untransformed, it throws with a configuration
 error instead of silently running without validation.
@@ -43,10 +43,8 @@ export default {
 };
 ```
 
-The transform resolves the concrete service type from `@validateRpc()`, emits a
-private validator for `Api`, and rewrites the decorator to pass that validator
-to the runtime wrapper. The same decorator shape also works for native Workers
-RPC entrypoints.
+`@validateRpc()` validates calls on class instances, so it works with Cap'n Web,
+Workers `WorkerEntrypoint`, and Workers `DurableObject` services.
 
 The RPC surface is the class's public string-named methods and RPC-readable
 getters/properties, matching Cap'n Web dispatch. `implements SomeInterface` and
@@ -97,9 +95,10 @@ import type { Api } from "./worker";
 export const api = newHttpBatchRpcSession<Api>("/rpc");
 ```
 
-The transform recognizes Cap'n Web client session constructors by TypeScript
-symbol resolution. Client calls validate outgoing arguments before transport
-and validate resolved return values before application code receives them.
+Cap'n Web client session constructors are also recognized. Client calls validate
+outgoing arguments before transport and resolved return values before application
+code receives them. Native Workers RPC clients are not wrapped client-side; use
+`@validateRpc()` on the service class to validate the server boundary.
 
 For custom transports built on top of `RpcSession`, the constructor form is
 also recognized:
