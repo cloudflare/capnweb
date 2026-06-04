@@ -5,7 +5,7 @@
 // Surface tests for marker exports, plugin adapters, transform context, and
 // build orchestration. Per-module rewrite behavior is covered separately.
 
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -233,6 +233,211 @@ describe("runBuild orchestration", () => {
     }
   });
 
+  it("copies non-TypeScript assets into the output tree", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src", "icons"), { recursive: true });
+      writeFileSync(join(src, "src", "worker.ts"),
+        `import email from "./email.txt?raw";\n` +
+        `export { default as logo } from "./icons/logo.svg#asset";\n` +
+        `const dynamic = import("./dynamic.html");\n` +
+        `const icon = new URL("./icons/icon.bin?url", import.meta.url);\n` +
+        `export { dynamic, email, icon };\n`);
+      writeFileSync(join(src, "src", "email.txt"), "hello\n");
+      writeFileSync(join(src, "src", "icons", "logo.svg"), "<svg />\n");
+      writeFileSync(join(src, "src", "icons", "icon.bin"), "binary\n");
+      writeFileSync(join(src, "src", "dynamic.html"), "<p>dynamic</p>\n");
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 5, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/worker.ts"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/email.txt"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/icons/logo.svg"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/icons/icon.bin"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/dynamic.html"))).toBe(true);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("does not copy assets mentioned only in comments or strings", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src"), { recursive: true });
+      writeFileSync(join(src, "src", "worker.ts"),
+        `// import secret from "./secret.txt";\n` +
+        `const text = "new URL('./also-secret.txt', import.meta.url)";\n` +
+        `export { text };\n`);
+      writeFileSync(join(src, "src", "secret.txt"), "secret\n");
+      writeFileSync(join(src, "src", "also-secret.txt"), "secret\n");
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 1, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/secret.txt"))).toBe(false);
+      expect(existsSync(join(src, ".out/src/also-secret.txt"))).toBe(false);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("does not copy type-only asset references", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src"), { recursive: true });
+      writeFileSync(join(src, "src", "worker.ts"),
+        `import type schema from "./schema.json";\n` +
+        `export type { schema };\n`);
+      writeFileSync(join(src, "src", "schema.json"), "{}\n");
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 1, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/schema.json"))).toBe(false);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("copies empty named import and export asset references", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src"), { recursive: true });
+      writeFileSync(join(src, "src", "worker.ts"),
+        `import {} from "./empty-import.css";\n` +
+        `export {} from "./empty-export.css";\n`);
+      writeFileSync(join(src, "src", "empty-import.css"), ".import {}\n");
+      writeFileSync(join(src, "src", "empty-export.css"), ".export {}\n");
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 3, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/empty-import.css"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/empty-export.css"))).toBe(true);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("does not copy extensionless TS module imports as assets", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src"), { recursive: true });
+      writeFileSync(join(src, "src", "worker.ts"),
+        `import { value } from "./config";\n` +
+        `export { value };\n`);
+      writeFileSync(join(src, "src", "config.ts"), "export const value = 1;\n");
+      writeFileSync(join(src, "src", "config"), "not an asset\n");
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 2, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/config.ts"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/config"))).toBe(false);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("does not copy ignored directories or the output tree", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src"), { recursive: true });
+      mkdirSync(join(src, "src", "node_modules", "pkg"), { recursive: true });
+      mkdirSync(join(src, "src", ".git"), { recursive: true });
+      mkdirSync(join(src, ".out"), { recursive: true });
+      writeFileSync(join(src, "src", "worker.ts"),
+        `import asset from "./asset.txt";\n` +
+        `import ignoredDep from "./node_modules/pkg/asset.txt";\n` +
+        `import ignoredGit from "./.git/config.txt";\n` +
+        `export { asset, ignoredDep, ignoredGit };\n`);
+      writeFileSync(join(src, "src", "asset.txt"), "asset\n");
+      writeFileSync(join(src, "src", ".env"), "SECRET=1\n");
+      writeFileSync(join(src, "src", "node_modules", "pkg", "asset.txt"), "dep\n");
+      writeFileSync(join(src, "src", ".git", "config.txt"), "git\n");
+      writeFileSync(join(src, ".out", "stale.txt"), "stale\n");
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 2, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/asset.txt"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/.env"))).toBe(false);
+      expect(existsSync(join(src, ".out/src/node_modules/pkg/asset.txt"))).toBe(false);
+      expect(existsSync(join(src, ".out/src/.git/config.txt"))).toBe(false);
+      expect(existsSync(join(src, ".out/.out/stale.txt"))).toBe(false);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("does not follow symlinked assets", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src"), { recursive: true });
+      writeFileSync(join(src, "src", "worker.ts"),
+        `import target from "./target.txt";\n` +
+        `import linked from "./linked.txt";\n` +
+        `export { target, linked };\n`);
+      writeFileSync(join(src, "src", "target.txt"), "target\n");
+      symlinkSync(join(src, "src", "target.txt"), join(src, "src", "linked.txt"));
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 2, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/target.txt"))).toBe(true);
+      expect(existsSync(join(src, ".out/src/linked.txt"))).toBe(false);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("does not follow symlinked asset directories", async () => {
+    let workspace = mkdtempSync(join(tmpdir(), "capnweb-validate-ws-"));
+    try {
+      let app = join(workspace, "app");
+      let secrets = join(workspace, "secrets");
+      mkdirSync(join(app, "src"), { recursive: true });
+      mkdirSync(secrets, { recursive: true });
+      writeFileSync(join(app, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      writeFileSync(join(app, "src", "worker.ts"),
+        `import token from "./assets/token.txt";\n` +
+        `export { token };\n`);
+      writeFileSync(join(secrets, "token.txt"), "secret\n");
+      symlinkSync(secrets, join(app, "src", "assets"));
+
+      let result = await runBuild({ cwd: app, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 1, skipped: 0 });
+      expect(existsSync(join(app, ".out/src/assets/token.txt"))).toBe(false);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("refuses to use the project directory as output", async () => {
     let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
     try {
@@ -327,8 +532,11 @@ describe("runBuild orchestration", () => {
         compilerOptions: { target: "es2022", module: "esnext", types: [] },
         include: ["**/*.ts", "../shared/**/*.ts"],
       }));
-      writeFileSync(join(app, "main.ts"), "export const main = 1;\n");
+      writeFileSync(join(app, "main.ts"),
+        `import asset from "../shared/asset.txt";\n` +
+        `export const main = asset;\n`);
       writeFileSync(join(shared, "util.ts"), "export const util = 2;\n");
+      writeFileSync(join(shared, "asset.txt"), "asset\n");
 
       let result = await runBuild({
         cwd: app,
@@ -340,6 +548,7 @@ describe("runBuild orchestration", () => {
       expect(result.copied).toBe(1);
       expect(result.skipped).toBe(1);
       expect(existsSync(join(app, ".out/main.ts"))).toBe(true);
+      expect(existsSync(join(app, ".out/shared/asset.txt"))).toBe(false);
       expect(existsSync(join(workspace, "shared/util.ts.bak"))).toBe(false);
       // Nothing written outside the out tree (no app/shared, no workspace/out).
       expect(existsSync(join(app, "shared"))).toBe(false);
