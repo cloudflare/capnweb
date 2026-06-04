@@ -48,6 +48,8 @@ export type TypeShape =
   | { kind: "literal"; value: string | number | boolean }
   // ----- pass-by-value containers -----
   | { kind: "array"; id?: number; element: TypeShape }
+  | { kind: "map"; key: TypeShape; value: TypeShape }
+  | { kind: "set"; element: TypeShape }
   | {
       kind: "tuple";
       id?: number;
@@ -68,7 +70,11 @@ export type TypeShape =
   | { kind: "ref"; id: number; name?: string }
   // ----- pass-by-value built-in classes the wire understands -----
   | { kind: "date" }
+  | { kind: "arrayBuffer" }
+  | { kind: "dataView" }
+  | { kind: "regexp" }
   | { kind: "bytes" } // Uint8Array
+  | { kind: "typedArray"; name: TypedArrayName }
   | { kind: "error" } // Error & well-known subclasses
   | { kind: "blob" } // Blob (and File, which extends Blob)
   | { kind: "readableStream" }
@@ -96,10 +102,9 @@ export function resolveServiceShape(
   checker: ts.TypeChecker,
   type: ts.Type,
   generic?: GenericFallback,
-  onUnsupported?: UnsupportedTypeHandler,
   signatureType?: ts.Type | null
 ): ServiceShape | null {
-  let ctx = createResolveContext(tsm, checker, generic, onUnsupported);
+  let ctx = createResolveContext(tsm, checker, generic);
   if (!signatureType) return resolveServiceShapeInner(ctx, type);
   // `type` owns the method set; `signatureType` only sharpens matching members.
   let surfaceKinds = collectServiceSurfaceNames(ctx, type);
@@ -310,16 +315,6 @@ type ResolveEntry = {
  */
 export type GenericFallback = { mode: "error" | "any"; used: boolean };
 
-/**
- * Decides what to do with a type capnweb does not transport. Return
- * "passthrough" to accept it as `any` (e.g. a host like Workers RPC that
- * accepts more types than capnweb); anything else leaves the default build
- * error. Called only for types that would otherwise be rejected.
- */
-export type UnsupportedTypeHandler = (info: {
-  typeName: string;
-}) => "passthrough" | "reject" | undefined;
-
 type ResolveContext = {
   tsm: typeof ts;
   checker: ts.TypeChecker;
@@ -328,14 +323,12 @@ type ResolveContext = {
   nextId: number;
   services: WeakMap<ts.Type, { shape: ServiceShape; resolving: boolean }>;
   generic: GenericFallback;
-  onUnsupported?: UnsupportedTypeHandler;
 };
 
 function createResolveContext(
   tsm: typeof ts,
   checker: ts.TypeChecker,
-  generic: GenericFallback = { mode: "error", used: false },
-  onUnsupported?: UnsupportedTypeHandler
+  generic: GenericFallback = { mode: "error", used: false }
 ): ResolveContext {
   return {
     tsm,
@@ -344,7 +337,6 @@ function createResolveContext(
     namedShapes: new Map(),
     nextId: 0,
     services: new WeakMap(),
-    onUnsupported,
     generic,
   };
 }
@@ -462,72 +454,84 @@ const RPC_CAPABILITY_BRAND_NAMES = new Set([
 ]);
 
 
+type TypedArrayName =
+  | "Int8Array"
+  | "Uint8ClampedArray"
+  | "Int16Array"
+  | "Uint16Array"
+  | "Int32Array"
+  | "Uint32Array"
+  | "Float32Array"
+  | "Float64Array"
+  | "BigInt64Array"
+  | "BigUint64Array";
+
 /**
  * Pass-by-value built-ins, mapping lib type name to emitted shape. Only honoured
  * for lib-declared symbols, so a user `class Date {}` is not hijacked.
  */
-const BUILTIN_VALUE_TYPES: Record<string, TypeShape["kind"]> = {
-  Date: "date",
-  Uint8Array: "bytes",
+const BUILTIN_VALUE_TYPES: Record<string, TypeShape> = {
+  Date: { kind: "date" },
+  ArrayBuffer: { kind: "arrayBuffer" },
+  DataView: { kind: "dataView" },
+  RegExp: { kind: "regexp" },
+  Uint8Array: { kind: "bytes" },
+  Int8Array: { kind: "typedArray", name: "Int8Array" },
+  Uint8ClampedArray: { kind: "typedArray", name: "Uint8ClampedArray" },
+  Int16Array: { kind: "typedArray", name: "Int16Array" },
+  Uint16Array: { kind: "typedArray", name: "Uint16Array" },
+  Int32Array: { kind: "typedArray", name: "Int32Array" },
+  Uint32Array: { kind: "typedArray", name: "Uint32Array" },
+  Float32Array: { kind: "typedArray", name: "Float32Array" },
+  Float64Array: { kind: "typedArray", name: "Float64Array" },
+  BigInt64Array: { kind: "typedArray", name: "BigInt64Array" },
+  BigUint64Array: { kind: "typedArray", name: "BigUint64Array" },
   // Error and its standard subclasses. User-defined Error subclasses fall
   // through to a base-type walk below.
-  Error: "error",
-  EvalError: "error",
-  RangeError: "error",
-  ReferenceError: "error",
-  SyntaxError: "error",
-  TypeError: "error",
-  URIError: "error",
-  AggregateError: "error",
-  Blob: "blob",
-  ReadableStream: "readableStream",
-  WritableStream: "writableStream",
-  Headers: "headers",
-  Request: "request",
-  Response: "response",
+  Error: { kind: "error" },
+  EvalError: { kind: "error" },
+  RangeError: { kind: "error" },
+  ReferenceError: { kind: "error" },
+  SyntaxError: { kind: "error" },
+  TypeError: { kind: "error" },
+  URIError: { kind: "error" },
+  AggregateError: { kind: "error" },
+  Blob: { kind: "blob" },
+  ReadableStream: { kind: "readableStream" },
+  WritableStream: { kind: "writableStream" },
+  Headers: { kind: "headers" },
+  Request: { kind: "request" },
+  Response: { kind: "response" },
 };
 
 /**
- * Built-ins capnweb rejects: hitting one in a signature is a build error.
- * Map/Set/RegExp/ArrayBuffer/typed-arrays follow capnweb's catalogue; a host
- * that accepts more (Workers RPC, via structured clone) can opt in per type
- * with the `onUnsupportedType` handler.
+ * Built-ins no supported RPC transport handles as values. Hitting one in a
+ * signature is a build error instead of a deferred runtime failure.
  */
 const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
-  Map: "Use a plain object or an array of entries instead.",
-  Set: "Use an array instead.",
-  // Same runtime as Map/Set; else they'd be walked as plain objects.
-  ReadonlyMap: "Use a plain object or an array of entries instead.",
-  ReadonlySet: "Use an array instead.",
   WeakMap: undefined,
   WeakSet: undefined,
-  ArrayBuffer: "Use Uint8Array instead.",
   SharedArrayBuffer: undefined,
-  Int8Array: "Use Uint8Array instead.",
-  Uint8ClampedArray: "Use Uint8Array instead.",
-  Int16Array: "Use Uint8Array instead.",
-  Uint16Array: "Use Uint8Array instead.",
-  Int32Array: "Use Uint8Array instead.",
-  Uint32Array: "Use Uint8Array instead.",
-  Float32Array: "Use Uint8Array instead.",
-  Float64Array: "Use Uint8Array instead.",
-  BigInt64Array: "Use Uint8Array instead.",
-  BigUint64Array: "Use Uint8Array instead.",
-  RegExp: undefined,
-  DataView: "Use Uint8Array instead.",
   // capnweb's serializer matches Blob by exact prototype, so File (a Blob
   // subclass) is not transportable. Send the bytes as a Blob or Uint8Array.
   File: "Use a Blob or Uint8Array; File is not a capnweb wire type.",
 };
 
-// Rejected types that no host can transport (not structured-cloneable), so the
-// onUnsupportedType hook must not pass them through: doing so only defers a
-// guaranteed serialize-time failure past the build guard.
-const NEVER_TRANSPORTABLE = new Set([
-  "WeakMap",
-  "WeakSet",
-  "SharedArrayBuffer",
-  "File",
+const MAP_TYPES = new Set(["Map", "ReadonlyMap"]);
+const SET_TYPES = new Set(["Set", "ReadonlySet"]);
+const ARRAY_BUFFER_VIEW_TYPES = new Set([
+  "DataView",
+  "Uint8Array",
+  "Int8Array",
+  "Uint8ClampedArray",
+  "Int16Array",
+  "Uint16Array",
+  "Int32Array",
+  "Uint32Array",
+  "Float32Array",
+  "Float64Array",
+  "BigInt64Array",
+  "BigUint64Array",
 ]);
 
 function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
@@ -734,7 +738,7 @@ function resolveType(ctx: ResolveContext, type: ts.Type, depth = 0): TypeShape {
     let entry = entryOrShape;
 
     // Built-ins before generic walking, else we enumerate `Date.prototype` etc.
-    let builtin = matchBuiltin(ctx, type);
+    let builtin = matchBuiltin(ctx, type, depth);
     if (builtin) return finishResolve(ctx, type, entry, builtin);
 
     // User `Error` subclasses validate as `v.error`. matchBuiltin only catches
@@ -877,35 +881,94 @@ function isHoistableShape(entry: ResolveEntry): boolean {
 }
 
 /** Match `type` against the built-in catalogue. Null for non-built-ins or user shadows. */
-function matchBuiltin(ctx: ResolveContext, type: ts.Type): TypeShape | null {
+function matchBuiltin(
+  ctx: ResolveContext,
+  type: ts.Type,
+  depth: number
+): TypeShape | null {
   let sym = type.getSymbol();
   if (!sym) return null;
   let name = sym.getName();
   if (!isGlobalSymbol(ctx.tsm, sym)) return null;
+  if (MAP_TYPES.has(name)) {
+    let args = ctx.checker.getTypeArguments(type as ts.TypeReference);
+    return {
+      kind: "map",
+      key: args[0] ? resolveType(ctx, args[0], depth + 1) : { kind: "any" },
+      value: args[1] ? resolveType(ctx, args[1], depth + 1) : { kind: "any" },
+    };
+  }
+  if (SET_TYPES.has(name)) {
+    let args = ctx.checker.getTypeArguments(type as ts.TypeReference);
+    return {
+      kind: "set",
+      element: args[0] ? resolveType(ctx, args[0], depth + 1) : { kind: "any" },
+    };
+  }
+  if (ARRAY_BUFFER_VIEW_TYPES.has(name)) {
+    let unsupported = rejectSharedArrayBufferView(ctx, type, name);
+    if (unsupported) return unsupported;
+  }
   if (name in BUILTIN_REJECTED_TYPES) {
-    // A host may accept a type capnweb does not (e.g. Workers RPC transports
-    // Map/Set via structured clone). The hook lets such a type pass through as
-    // `any` rather than fail the build; default stays reject. Types in
-    // NEVER_TRANSPORTABLE are uncloneable on every host, so the hook cannot
-    // override them: passing them through would only move a guaranteed runtime
-    // failure past the build guard.
-    if (
-      !NEVER_TRANSPORTABLE.has(name) &&
-      ctx.onUnsupported?.({ typeName: name }) === "passthrough"
-    ) {
-      return { kind: "any" };
-    }
     let fixHint = BUILTIN_REJECTED_TYPES[name];
     return {
       kind: "unsupported",
-      reason: "not a capnweb wire type",
+      reason: "not a supported RPC validation type",
       typeExpr: rejectedTypeExpr(ctx, type, name),
       ...(fixHint ? { fixHint } : {}),
     };
   }
-  let kind = BUILTIN_VALUE_TYPES[name];
-  if (kind) return { kind } as TypeShape;
+  let builtin = BUILTIN_VALUE_TYPES[name];
+  if (builtin) return builtin;
   return null;
+}
+
+function rejectSharedArrayBufferView(
+  ctx: ResolveContext,
+  type: ts.Type,
+  name: string
+): TypeShape | null {
+  let args = ctx.checker.getTypeArguments(type as ts.TypeReference);
+  if (!args.some((arg) => containsSharedArrayBufferType(ctx, arg))) return null;
+  return {
+    kind: "unsupported",
+    reason: "backed by SharedArrayBuffer",
+    typeExpr: rejectedTypeExpr(ctx, type, name),
+    fixHint: "Use an ArrayBuffer-backed view instead.",
+  };
+}
+
+function containsSharedArrayBufferType(
+  ctx: ResolveContext,
+  type: ts.Type,
+  seen = new Set<ts.Type>()
+): boolean {
+  if (seen.has(type)) return false;
+  seen.add(type);
+  // Default typed-array declarations use ArrayBufferLike; keep accepting that
+  // type and let runtime validation reject an actual SharedArrayBuffer backing.
+  if (type.aliasSymbol?.getName() === "ArrayBufferLike") return false;
+  if (isDirectSharedArrayBufferType(ctx, type)) return true;
+  if (type.getFlags() & ctx.tsm.TypeFlags.TypeParameter) {
+    let constraint = ctx.checker.getBaseConstraintOfType(type);
+    return !!constraint && containsSharedArrayBufferType(ctx, constraint, seen);
+  }
+  if (type.isUnionOrIntersection()) {
+    return type.types.some((branch) =>
+      containsSharedArrayBufferType(ctx, branch, seen)
+    );
+  }
+  return false;
+}
+
+function isDirectSharedArrayBufferType(
+  ctx: ResolveContext,
+  type: ts.Type
+): boolean {
+  let sym = type.getSymbol();
+  return (
+    sym?.getName() === "SharedArrayBuffer" && isGlobalSymbol(ctx.tsm, sym)
+  );
 }
 
 function rejectedTypeExpr(
@@ -1234,7 +1297,7 @@ function extendsGlobalError(ctx: ResolveContext, type: ts.Type): boolean {
     let sym = t.getSymbol();
     if (!sym) return false;
     return (
-      BUILTIN_VALUE_TYPES[sym.getName()] === "error" &&
+      BUILTIN_VALUE_TYPES[sym.getName()]?.kind === "error" &&
       isGlobalSymbol(ctx.tsm, sym)
     );
   }
@@ -1350,6 +1413,13 @@ export function collectUnsupported(
         });
         return;
       case "array":
+        walk(svc, methodName, appendSuffix(position, "[*]"), shape.element);
+        return;
+      case "map":
+        walk(svc, methodName, appendSuffix(position, ".<key>"), shape.key);
+        walk(svc, methodName, appendSuffix(position, ".<value>"), shape.value);
+        return;
+      case "set":
         walk(svc, methodName, appendSuffix(position, "[*]"), shape.element);
         return;
       case "tuple":

@@ -61,11 +61,11 @@ describe("branded primitives", () => {
   });
 
   it("still rejects a genuinely non-wire type in a property position", () => {
-    // The primitive-collapse must not weaken rejection elsewhere: a `Map`
+    // The primitive-collapse must not weaken rejection elsewhere: a `WeakMap`
     // property still fails the build loudly.
     const msg = buildError(
       `class Api extends RpcTarget {
-         async save(v: { data: Map<string, number> }): Promise<void> {}
+         async save(v: { data: WeakMap<object, number> }): Promise<void> {}
        }`
     );
     expect(msg).toContain("capnweb-validate");

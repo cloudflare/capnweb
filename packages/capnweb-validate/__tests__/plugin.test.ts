@@ -545,7 +545,7 @@ describe("runBuild orchestration", () => {
       writeFileSync(join(src, "bad.ts"), `
         import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
         import { RpcTarget } from "capnweb";
-        class Api extends RpcTarget { bad(value: Map<string, number>): void {} }
+        class Api extends RpcTarget { bad(value: WeakMap<object, number>): void {} }
         export function handler(req: Request): Promise<Response> {
           return newWorkersRpcResponse(req, new Api());
         }

@@ -16,6 +16,8 @@ type ValidationOptions = {
 
 type RuntimeShape =
   | { kind: "array"; element: Validator }
+  | { kind: "map"; key: Validator; value: Validator }
+  | { kind: "set"; element: Validator }
   | { kind: "tuple"; elements: Validator[]; rest?: Validator }
   | { kind: "object"; properties: Record<string, Validator>; index?: Validator }
   | { kind: "union"; branches: Validator[] }
@@ -160,6 +162,35 @@ export const v = {
       { kind: "array", element: elem }
     );
   },
+  map(keyValidator: Validator, valueValidator: Validator): Validator {
+    return withShape(
+      (value, path, options) => {
+        if (isDeferredValidationValue(value, options)) return;
+        if (!(value instanceof Map)) fail(path, "Map", value);
+        let i = 0;
+        for (let [key, entryValue] of value) {
+          keyValidator(key, [...path, i, "key"], options);
+          valueValidator(entryValue, [...path, i, "value"], options);
+          i++;
+        }
+      },
+      { kind: "map", key: keyValidator, value: valueValidator }
+    );
+  },
+  set(elem: Validator): Validator {
+    return withShape(
+      (value, path, options) => {
+        if (isDeferredValidationValue(value, options)) return;
+        if (!(value instanceof Set)) fail(path, "Set", value);
+        let i = 0;
+        for (let elemValue of value) {
+          elem(elemValue, [...path, i], options);
+          i++;
+        }
+      },
+      { kind: "set", element: elem }
+    );
+  },
   tuple(
     elements: Validator[],
     opts?: { minLength?: number; rest?: Validator }
@@ -271,11 +302,18 @@ export const v = {
   response: exactBrand("Response"),
   // bytes and error are instanceof: capnweb accepts Buffer (a Uint8Array
   // subclass) for bytes, and matches any Error subclass for error.
+  arrayBuffer: instanceBrand("ArrayBuffer"),
+  dataView: arrayBufferViewBrand("DataView"),
+  regexp: instanceBrand("RegExp"),
+  typedArray(name: string): Validator {
+    return arrayBufferViewBrand(name);
+  },
   bytes(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
     if (isDeferredValidationValue(value, options)) return;
     if (!(value instanceof Uint8Array)) {
       fail(path, "Uint8Array", value);
     }
+    rejectSharedArrayBufferBacking(value, path, "Uint8Array");
   },
   error(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
     if (isDeferredValidationValue(value, options)) return;
@@ -334,6 +372,42 @@ function exactBrand(name: string): Validator {
       fail(path, name, value);
     }
   };
+}
+
+function instanceBrand(name: string): Validator {
+  return (value, path, options) => {
+    if (isDeferredValidationValue(value, options)) return;
+    let ctor = (globalThis as Record<string, unknown>)[name];
+    if (typeof ctor !== "function" || !(value instanceof ctor)) {
+      fail(path, name, value);
+    }
+  };
+}
+
+function arrayBufferViewBrand(name: string): Validator {
+  return (value, path, options) => {
+    if (isDeferredValidationValue(value, options)) return;
+    let ctor = (globalThis as Record<string, unknown>)[name];
+    if (typeof ctor !== "function" || !(value instanceof ctor)) {
+      fail(path, name, value);
+    }
+    rejectSharedArrayBufferBacking(
+      value as { buffer?: unknown },
+      path,
+      name
+    );
+  };
+}
+
+function rejectSharedArrayBufferBacking(
+  value: { buffer?: unknown },
+  path: PropertyPath,
+  name: string
+): void {
+  let ctor = (globalThis as Record<string, unknown>).SharedArrayBuffer;
+  if (typeof ctor === "function" && value.buffer instanceof ctor) {
+    fail(path, `${name} backed by ArrayBuffer`, value);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -607,6 +681,45 @@ function wrapResolvedValue(
         next ??= value.slice();
         next[i] = wrapped;
       }
+    }
+    return next ?? value;
+  }
+  if (shape.kind === "map") {
+    if (!(value instanceof Map)) return value;
+    let entries = [...value.entries()];
+    let next: Map<unknown, unknown> | undefined;
+    for (let i = 0; i < entries.length; i++) {
+      let [key, entryValue] = entries[i]!;
+      let wrappedKey = wrapResolvedValue(
+        key,
+        shape.key,
+        [...path, i, "key"],
+        side
+      );
+      let wrappedValue = wrapResolvedValue(
+        entryValue,
+        shape.value,
+        [...path, i, "value"],
+        side
+      );
+      if (wrappedKey !== key || wrappedValue !== entryValue) {
+        next ??= new Map(entries.slice(0, i));
+      }
+      if (next) next.set(wrappedKey, wrappedValue);
+    }
+    return next ?? value;
+  }
+  if (shape.kind === "set") {
+    if (!(value instanceof Set)) return value;
+    let values = [...value.values()];
+    let next: Set<unknown> | undefined;
+    for (let i = 0; i < values.length; i++) {
+      let elemValue = values[i]!;
+      let wrapped = wrapResolvedValue(elemValue, shape.element, [...path, i], side);
+      if (wrapped !== elemValue) {
+        next ??= new Set(values.slice(0, i));
+      }
+      if (next) next.add(wrapped);
     }
     return next ?? value;
   }

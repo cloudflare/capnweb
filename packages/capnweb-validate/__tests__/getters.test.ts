@@ -47,10 +47,10 @@ describe("getter accessors on the RPC surface", () => {
 
   it("rejects an unsupported getter type at build time (no longer silently dropped)", () => {
     const msg = transformError(
-      `class Api extends RpcTarget {\n  get config(): Map<string, number> { return new Map(); }\n}`
+      `class Api extends RpcTarget {\n  get config(): WeakMap<object, number> { return new WeakMap(); }\n}`
     );
     expect(msg).toContain("Api.config");
-    expect(msg).toContain("not a capnweb wire type");
+    expect(msg).toContain("not a supported RPC validation type");
   });
 
   it("skips private and #-prefixed accessors", () => {

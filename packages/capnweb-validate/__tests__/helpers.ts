@@ -30,8 +30,6 @@ export type FixtureOptions = {
   imports?: string;
   /** When set, append a handler returning newWorkersRpcResponse(req, <target>). */
   target?: string;
-  /** Forwarded to the transform context: decide unsupported-type handling. */
-  onUnsupportedType?: (info: { typeName: string }) => "passthrough" | "reject" | undefined;
 };
 
 export type FixtureResult = { code: string; warns: string[] };
@@ -80,7 +78,6 @@ export function transformFixture(
     const ctx = createTransformContext({
       tsconfig: join(dir, "tsconfig.json"),
       cwd: dir,
-      onUnsupportedType: opts.onUnsupportedType,
     });
     try {
       const r = transformModule(ctx, wp, readFileSync(wp, "utf8"));

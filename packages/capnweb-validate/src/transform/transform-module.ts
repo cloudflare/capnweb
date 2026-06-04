@@ -19,7 +19,6 @@ import {
   type ServiceShape,
   type TypeShape,
   type UnsupportedPosition,
-  type UnsupportedTypeHandler,
   type UnsupportedTypeIssue,
 } from "./type-introspector.js";
 
@@ -162,23 +161,20 @@ export function transformModule(
     collectMarkerBindings(sourceFile);
   let decoratorBindings = collectDecoratorBindings(sourceFile);
 
-  let onUnsupported = context.options.onUnsupportedType;
   let callSites = [
     ...collectMarkerCallSites(
       sourceFile,
       markerBindings,
       markerNamespaces,
-      checker,
-      onUnsupported
+      checker
     ),
-    ...collectCapnwebClientCallSites(sourceFile, checker, onUnsupported),
+    ...collectCapnwebClientCallSites(sourceFile, checker),
   ];
   let decoratorSites = collectDecoratorSites(
     sourceFile,
     decoratorBindings,
     markerNamespaces,
-    checker,
-    onUnsupported
+    checker
   );
 
   if (callSites.length === 0 && decoratorSites.length === 0) return null;
@@ -333,15 +329,14 @@ function collectMarkerCallSites(
   sf: ts.SourceFile,
   bindings: Map<string, MarkerBinding>,
   namespaces: Set<string>,
-  checker: ts.TypeChecker,
-  onUnsupported?: UnsupportedTypeHandler
+  checker: ts.TypeChecker
 ): CallSite[] {
   let out: CallSite[] = [];
   function visit(node: ts.Node): void {
     if (isCallLike(node)) {
       let resolved = resolveMarkerCallee(node.expression, bindings, namespaces);
       if (resolved)
-        pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker, onUnsupported);
+        pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker);
     }
     ts.forEachChild(node, visit);
   }
@@ -378,8 +373,7 @@ function resolveMarkerCallee(
 
 function collectCapnwebClientCallSites(
   sf: ts.SourceFile,
-  checker: ts.TypeChecker,
-  onUnsupported?: UnsupportedTypeHandler
+  checker: ts.TypeChecker
 ): CallSite[] {
   let out: CallSite[] = [];
   function visit(node: ts.Node): void {
@@ -392,7 +386,7 @@ function collectCapnwebClientCallSites(
         let marker = MARKERS[name]!;
         let actual: "call" | "new" = ts.isNewExpression(node) ? "new" : "call";
         if (marker.form === actual)
-          pushCallSite(out, sf, node, marker, name, checker, onUnsupported);
+          pushCallSite(out, sf, node, marker, name, checker);
       }
     }
     ts.forEachChild(node, visit);
@@ -407,13 +401,12 @@ function pushCallSite(
   call: ts.CallExpression | ts.NewExpression,
   marker: (typeof MARKERS)[keyof typeof MARKERS],
   localName: string,
-  checker: ts.TypeChecker,
-  onUnsupported?: UnsupportedTypeHandler
+  checker: ts.TypeChecker
 ): void {
   let expected = marker.form;
   let actual: "call" | "new" = ts.isNewExpression(call) ? "new" : "call";
   if (expected !== actual) return;
-  let shape = resolveCallSiteShape(call, marker, checker, onUnsupported);
+  let shape = resolveCallSiteShape(call, marker, checker);
   if (shape === null) {
     throw buildError(
       sf,
@@ -430,8 +423,7 @@ function collectDecoratorSites(
   sf: ts.SourceFile,
   decoratorBindings: Set<string>,
   namespaces: Set<string>,
-  checker: ts.TypeChecker,
-  onUnsupported?: UnsupportedTypeHandler
+  checker: ts.TypeChecker
 ): DecoratorSite[] {
   let out: DecoratorSite[] = [];
   if (decoratorBindings.size === 0 && namespaces.size === 0) return out;
@@ -441,7 +433,7 @@ function collectDecoratorSites(
       for (let decorator of ts.getDecorators(node) ?? []) {
         if (!isValidateRpcDecorator(decorator, decoratorBindings, namespaces))
           continue;
-        let shape = resolveDecoratorShape(sf, node, decorator, checker, onUnsupported);
+        let shape = resolveDecoratorShape(sf, node, decorator, checker);
         rejectUnsupported(sf, decorator, "validateRpc", shape);
         out.push({ decorator, cls: node, shape });
       }
@@ -473,8 +465,7 @@ function resolveDecoratorShape(
   sf: ts.SourceFile,
   cls: ts.ClassDeclaration,
   decorator: ts.Decorator,
-  checker: ts.TypeChecker,
-  onUnsupported?: UnsupportedTypeHandler
+  checker: ts.TypeChecker
 ): ServiceShape {
   let classType = getClassInstanceType(cls, checker);
   let decoratorTypeArg = getDecoratorTypeArgumentNode(decorator);
@@ -505,7 +496,6 @@ function resolveDecoratorShape(
     checker,
     classType,
     generic,
-    onUnsupported,
     signatureType
   );
   if (resolved === null) {
@@ -754,8 +744,7 @@ function formatUnsupportedVerb(
 function resolveCallSiteShape(
   call: ts.CallExpression | ts.NewExpression,
   marker: (typeof MARKERS)[keyof typeof MARKERS],
-  checker: ts.TypeChecker,
-  onUnsupported?: UnsupportedTypeHandler
+  checker: ts.TypeChecker
 ): ServiceShape | null {
   let type: ts.Type;
   if (marker.side === "server") {
@@ -788,7 +777,7 @@ function resolveCallSiteShape(
     }
   }
   if (isTooGeneric(type)) return null;
-  return resolveServiceShape(ts, checker, type, undefined, onUnsupported);
+  return resolveServiceShape(ts, checker, type);
 }
 
 function getExplicitTypeArgument(

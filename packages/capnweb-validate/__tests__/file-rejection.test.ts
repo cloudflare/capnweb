@@ -30,7 +30,7 @@ describe("File is rejected at build time", () => {
       `class Api extends RpcTarget { async upload(f: File): Promise<void> {} }`,
     );
     expect(error).toContain("Api.upload argument 1 is File");
-    expect(error).toContain("not a capnweb wire type");
+    expect(error).toContain("not a supported RPC validation type");
     expect(error).toContain("Use a Blob or Uint8Array");
   });
 
@@ -38,7 +38,7 @@ describe("File is rejected at build time", () => {
     const { error } = build(
       `class Api extends RpcTarget { async get(): Promise<{ avatar: File }> { return null as any; } }`,
     );
-    expect(error).toContain("not a capnweb wire type");
+    expect(error).toContain("not a supported RPC validation type");
   });
 
   it("still accepts Blob (the supported base type)", () => {

@@ -147,6 +147,13 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
       if (hoisted) return hoisted;
       return `__rt.v.array(${emitValidator_(shape.element, ctx)})`;
     }
+    case "map":
+      return `__rt.v.map(${emitValidator_(shape.key, ctx)}, ${emitValidator_(
+        shape.value,
+        ctx
+      )})`;
+    case "set":
+      return `__rt.v.set(${emitValidator_(shape.element, ctx)})`;
     case "tuple": {
       let hoisted = hoistedBinding(shape, ctx);
       if (hoisted) return hoisted;
@@ -196,6 +203,9 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
     // (`instanceof`) since the wire deserialises real instances. Each kind name
     // matches its `v.*` validator, so map directly.
     case "date":
+    case "arrayBuffer":
+    case "dataView":
+    case "regexp":
     case "bytes":
     case "error":
     case "blob":
@@ -205,6 +215,8 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
     case "request":
     case "response":
       return `__rt.v.${shape.kind}`;
+    case "typedArray":
+      return `__rt.v.typedArray(${JSON.stringify(shape.name)})`;
     // Pass-by-reference: keep the stub service shape so pipelined calls validate too.
     case "function":
       return `__rt.v.func`;

@@ -4,7 +4,7 @@
 
 // Smoke tests for the per-module transform: one representative case per
 // mechanism. Depth lives in the focused test files (branded-primitive,
-// record-index, mapped-types, getters, namespace-imports, unsupported-type-hook,
+// record-index, mapped-types, getters, namespace-imports, structured-clone-types,
 // method-overloads, generic-class, fetcher-detection, ...).
 
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
@@ -191,14 +191,14 @@ describe("transformModule", () => {
     expect(code).not.toContain('"alarm":');
   });
 
-  it("rejects a non-wire built-in at build time", () => {
+  it("rejects a non-cloneable built-in at build time", () => {
     let src = write("bad.ts", `
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
-      class Api extends RpcTarget { fn(m: Map<string, number>): void {} }
+      class Api extends RpcTarget { fn(m: WeakMap<object, number>): void {} }
       export function handler(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
     `);
-    expect(transformError(src)).toContain("not a capnweb wire type");
+    expect(transformError(src)).toContain("not a supported RPC validation type");
   });
 
   it("fails loud when a marker call has no resolvable service type", () => {

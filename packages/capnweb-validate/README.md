@@ -205,20 +205,22 @@ guarantees can travel over RPC also has a precise build-time validator:
   `any`, `unknown`, plus string / number / boolean literal types. `any` and
   `unknown` use a permissive validator.
 - Containers: arrays, tuples (validated by exact length and per-position
-  element type), plain object shapes, unions, `Record<K, T>` and index
+  element type), `Map<K, V>` / `ReadonlyMap<K, V>`, `Set<T>` /
+  `ReadonlySet<T>`, plain object shapes, unions, `Record<K, T>` and index
   signatures (string and numeric keys both validate their value type, since
   object keys cross the wire as strings), and `Promise<T>` return values
   (unwrapped one level). Optional properties (`foo?: T`) widen to
   `T | undefined`, matching how the wire deserializes a missing key.
-- Built-ins from capnweb's catalogue: `Date`, `Uint8Array`, `Error` and its
+- Built-ins from the RPC-compatible runtime set: `Date`, `ArrayBuffer`,
+  `DataView`, `RegExp`, `Uint8Array`, other typed arrays, `Error` and its
   standard subclasses (`EvalError`, `RangeError`, `ReferenceError`,
   `SyntaxError`, `TypeError`, `URIError`, `AggregateError`), `Blob`,
   `ReadableStream`, `WritableStream`, `Headers`, `Request`, `Response`.
 
-capnweb serializes the built-ins above by exact prototype (except `Error`,
-matched by `instanceof`). A subclass instance reaching a base-typed position
-therefore validates here but fails to serialize; `File` is the common case and
-is rejected at build time for that reason (see below).
+Some host objects are checked by exact prototype to match the transport behavior;
+`Error`, `ArrayBuffer`, `RegExp`, `DataView`, and typed arrays use `instanceof`.
+`File` is rejected at build time because it is a common `Blob` subclass that does
+not match the supported `Blob` wire type.
 
 **Pass-by-reference:**
 
@@ -229,36 +231,16 @@ is rejected at build time for that reason (see below).
   `WorkerEntrypoint` capabilities. These are validated as pass-through stubs;
   lifecycle methods such as `fetch`, `queue`, and `tail` remain pass-through.
 
-**Rejected types**: capnweb intentionally does not transport these, and the
+**Rejected types**: these cannot be validated as supported RPC values, and the
 transform refuses to compile a service that uses them so the user finds out at
 build time, not at the first RPC call:
 
 | Type               | Build error hint                                           |
 | ------------------ | ---------------------------------------------------------- |
-| `Map`              | Use a plain object or an array of entries instead.         |
-| `Set`              | Use an array instead.                                      |
-| `WeakMap`          | `WeakMap` is not a capnweb wire type.                      |
-| `WeakSet`          | `WeakSet` is not a capnweb wire type.                      |
-| `ArrayBuffer`      | Use `Uint8Array` instead.                                  |
-| `SharedArrayBuffer`| `SharedArrayBuffer` is not a capnweb wire type.            |
-| `RegExp`           | `RegExp` is not a capnweb wire type.                       |
-| `DataView`         | Use `Uint8Array` instead.                                  |
-| Other typed arrays | Use `Uint8Array` instead.                                  |
+| `WeakMap`          | `WeakMap` is not a supported RPC validation type.          |
+| `WeakSet`          | `WeakSet` is not a supported RPC validation type.          |
+| `SharedArrayBuffer`| `SharedArrayBuffer` is not a supported RPC validation type.|
 | `File`             | Use a `Blob` or `Uint8Array`; `File` is not a wire type.   |
-
-This list follows capnweb's wire catalogue. A host may accept more: Workers RPC
-transports `Map`, `Set`, `RegExp`, `ArrayBuffer`, and typed arrays via structured
-clone. To accept those on such a host, pass `onUnsupportedType`, which decides
-each otherwise-rejected type. Returning `"passthrough"` validates it as `any`
-(the host serializes it); the default is a build error.
-
-```ts
-capnwebValidate({
-  // Accept the structured-clone types Workers RPC supports but capnweb does not.
-  onUnsupportedType: ({ typeName }) =>
-    ["Map", "Set", "RegExp", "ArrayBuffer"].includes(typeName) ? "passthrough" : "reject",
-});
-```
 
 If a method signature contains a leaf the resolver cannot lower, such as a generic
 type parameter with no inference source, an unsupported recursive corner, or a rejected
