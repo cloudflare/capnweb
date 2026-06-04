@@ -46,7 +46,10 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
   // so deleted/renamed files from a previous run cannot stay in the source set.
   await rm(out, { recursive: true, force: true });
 
-  let context = createTransformContext(options);
+  let context = createTransformContext({
+    ...options,
+    tsconfig: options.tsconfig ?? "tsconfig.json",
+  });
   let transformed = 0;
   let copied = 0;
   let skippedOutside: string[] = [];

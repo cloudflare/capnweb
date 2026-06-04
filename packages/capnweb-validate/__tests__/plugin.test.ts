@@ -181,6 +181,34 @@ describe("runBuild orchestration", () => {
     }
   });
 
+  it("defaults to cwd/tsconfig.json when tsconfig is omitted", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      writeFileSync(join(src, "tsconfig.json"), JSON.stringify({
+        compilerOptions: { target: "es2022", module: "esnext", types: [] },
+        include: ["src/**/*.ts"],
+      }));
+      mkdirSync(join(src, "src"), { recursive: true });
+      writeFileSync(join(src, "src", "a.ts"), "export const a = 1;\n");
+
+      let result = await runBuild({ cwd: src, out: ".out" });
+      expect(result).toEqual({ transformed: 0, copied: 1, skipped: 0 });
+      expect(existsSync(join(src, ".out/src/a.ts"))).toBe(true);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
+  it("reports an actionable error when cwd has no tsconfig.json", async () => {
+    let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
+    try {
+      await expect(runBuild({ cwd: src, out: ".out" }))
+        .rejects.toThrow(/tsconfig not found/);
+    } finally {
+      rmSync(src, { recursive: true, force: true });
+    }
+  });
+
 
   it("cleans stale output before writing the current source set", async () => {
     let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));

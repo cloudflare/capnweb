@@ -135,12 +135,16 @@ export function createTransformContext(
   function ensureProgram(): ts.Program {
     if (program) return program;
 
+    // An explicit path resolves directly; otherwise walk up from cwd. Either
+    // way, a missing file yields the same actionable error below rather than a
+    // lower-level read failure.
     let tsconfigPath = options.tsconfig
       ? resolve(cwd, options.tsconfig)
       : ts.findConfigFile(cwd, ts.sys.fileExists, "tsconfig.json");
-    if (!tsconfigPath) {
+    if (!tsconfigPath || !ts.sys.fileExists(tsconfigPath)) {
       throw new Error(
-        `capnweb-validate: tsconfig.json not found (cwd=${cwd}). ` +
+        `capnweb-validate: tsconfig not found ` +
+        `(${tsconfigPath ?? `tsconfig.json, cwd=${cwd}`}). ` +
         `Pass \`tsconfig\` to capnwebValidate({...}) or run from a directory ` +
         `with a tsconfig.`,
       );
