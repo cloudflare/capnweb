@@ -7,7 +7,7 @@
 // the transform leaves alone are copied verbatim so `out/` is a complete
 // drop-in replacement for the original source tree.
 
-import { copyFile, lstat, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, lstat, mkdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { dirname, extname, isAbsolute, relative, resolve, sep } from "node:path";
 import ts from "typescript";
 
@@ -127,10 +127,14 @@ function isImportMetaUrl(node: ts.Node | undefined): boolean {
   );
 }
 
-async function hasSymlinkPathPart(path: string, cwd: string): Promise<boolean> {
+async function hasSymlinkParentPathPart(
+  path: string,
+  cwd: string
+): Promise<boolean> {
   let rel = relative(cwd, path);
   let current = cwd;
-  for (let part of rel.split(/[\\/]/)) {
+  let parts = rel.split(/[\\/]/);
+  for (let part of parts.slice(0, -1)) {
     if (!part) continue;
     current = resolve(current, part);
     let stat = await lstat(current);
@@ -209,6 +213,8 @@ async function copyAssets(
   written: Set<string>
 ): Promise<number> {
   let copied = 0;
+  let realCwd = await realpath(cwd);
+  let realOut = await realpath(out).catch(() => out);
   for (let src of assets) {
     if (!isInsideOrEqual(cwd, src)) continue;
     if (isInsideOrEqual(out, src)) continue;
@@ -217,15 +223,24 @@ async function copyAssets(
     if (written.has(dest)) continue;
     if (!isInsideOrEqual(out, dest)) continue;
     let stat: Awaited<ReturnType<typeof lstat>>;
+    let copyFrom = src;
     try {
-      if (await hasSymlinkPathPart(src, cwd)) continue;
+      if (await hasSymlinkParentPathPart(src, cwd)) continue;
       stat = await lstat(src);
+      if (stat.isSymbolicLink()) {
+        let realSrc = await realpath(src);
+        if (!isInsideOrEqual(realCwd, realSrc)) continue;
+        if (isInsideOrEqual(realOut, realSrc)) continue;
+        if (hasIgnoredPathPart(realSrc, realCwd)) continue;
+        copyFrom = realSrc;
+        stat = await lstat(realSrc);
+      }
     } catch {
       continue;
     }
     if (!stat.isFile()) continue;
     await mkdir(dirname(dest), { recursive: true });
-    await copyFile(src, dest);
+    await copyFile(copyFrom, dest);
     written.add(dest);
     copied++;
   }
