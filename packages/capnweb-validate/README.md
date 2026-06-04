@@ -48,13 +48,18 @@ private validator for `Api`, and rewrites the decorator to pass that validator
 to the runtime wrapper. The same decorator shape also works for native Workers
 RPC entrypoints.
 
+The RPC surface is the class's public string-named methods and RPC-readable
+getters/properties, matching Cap'n Web dispatch. `implements SomeInterface` and
+`@validateRpc<SomeInterface>()` only sharpen matching signatures; they do not
+hide extra public class methods. Keep local-only helpers private or symbol-named.
+
 ## Generic service classes
 
 A decorator emits one validator at the class declaration. If the class itself
 is generic, the transform cannot specialize that validator for each later
 `new` expression.
 
-Use a concrete RPC surface when the type arguments are known at the decorator
+Use an explicit signature source when type arguments are known at the decorator
 site:
 
 ```ts
@@ -78,11 +83,9 @@ class ArrayCursor<T> extends RpcTarget implements Cursor<T> {
 }
 ```
 
-Pass an explicit `@validateRpc<Cursor<string>>()` to validate the generic
-positions, or `@validateRpc<Cursor<any>>()` to silence the warning. Either way
-the transform validates the RPC method names, arity, non-generic fields, return
-capability shapes, and capnweb wire compatibility; values at an `any` position
-are permissive.
+Pass `@validateRpc<Cursor<string>>()` to validate matching generic positions, or
+`@validateRpc<Cursor<any>>()` to silence the warning. Either way, the class's
+public RPC surface is still validated; `any` positions are permissive.
 
 ## Client Usage
 

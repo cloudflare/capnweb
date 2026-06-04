@@ -481,11 +481,10 @@ function resolveDecoratorShape(
   if (decoratorTypeArg && typeNodeContainsAny(decoratorTypeArg)) {
     warnDecoratorAny(sf, decoratorTypeArg);
   }
-  let type =
-    (decoratorTypeArg ? checker.getTypeFromTypeNode(decoratorTypeArg) : null) ??
-    getSingleImplementedType(cls, checker) ??
-    classType;
-  if (isTooGeneric(type)) {
+  let signatureType = decoratorTypeArg
+    ? checker.getTypeFromTypeNode(decoratorTypeArg)
+    : getSingleImplementedType(cls, checker);
+  if (signatureType && isTooGeneric(signatureType)) {
     throw buildError(
       sf,
       decorator,
@@ -501,7 +500,14 @@ function resolveDecoratorShape(
       : "error",
     used: false,
   };
-  let resolved = resolveServiceShape(ts, checker, type, generic, onUnsupported);
+  let resolved = resolveServiceShape(
+    ts,
+    checker,
+    classType,
+    generic,
+    onUnsupported,
+    signatureType
+  );
   if (resolved === null) {
     throw buildError(
       sf,
@@ -586,9 +592,8 @@ function getSingleImplementedType(
     if (clause.token === ts.SyntaxKind.ImplementsKeyword)
       impls.push(...clause.types);
   }
-  // A single implemented interface is the declared RPC contract; use it. With
-  // multiple (or none) there is no single contract, so the caller falls back to
-  // the class instance type.
+  // A single implemented interface can provide more precise signatures for
+  // matching class methods, but it is not the runtime method allowlist.
   if (impls.length === 1) return checker.getTypeAtLocation(impls[0]!);
   return null;
 }

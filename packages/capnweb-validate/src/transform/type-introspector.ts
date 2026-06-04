@@ -96,17 +96,40 @@ export function resolveServiceShape(
   checker: ts.TypeChecker,
   type: ts.Type,
   generic?: GenericFallback,
-  onUnsupported?: UnsupportedTypeHandler
+  onUnsupported?: UnsupportedTypeHandler,
+  signatureType?: ts.Type | null
 ): ServiceShape | null {
   let ctx = createResolveContext(tsm, checker, generic, onUnsupported);
-  return resolveServiceShapeInner(ctx, type);
+  if (!signatureType) return resolveServiceShapeInner(ctx, type);
+  // `type` owns the method set; `signatureType` only sharpens matching members.
+  let surfaceKinds = collectServiceSurfaceNames(ctx, type);
+  let signature = resolveServiceShapeInner(
+    ctx,
+    signatureType,
+    undefined,
+    surfaceKinds
+  );
+  let overrides = signature
+    ? new Map(signature.methods.map((method) => [method.name, method]))
+    : undefined;
+  return resolveServiceShapeInner(ctx, type, overrides);
 }
 
+// Resolve `type` into a ServiceShape. Two optional, mutually exclusive modes
+// support the decorator's "class surface + signature source" split:
+// - `methodOverrides`: replace a resolved member with a precomputed shape when
+//   the names match. Used by the final class pass to adopt sharper signatures.
+// - `includeMethods`: restrict resolution to these surface names (the signature
+//   pass), so signature-only members never warn, error, or emit named shapes.
+// Both modes bypass the service cache so the filtered/overridden shape is never
+// observed by an unrelated resolution of the same `type`.
 function resolveServiceShapeInner(
   ctx: ResolveContext,
-  type: ts.Type
+  type: ts.Type,
+  methodOverrides?: Map<string, MethodShape>,
+  includeMethods?: Map<string, SurfaceMemberKind>
 ): ServiceShape | null {
-  let existing = ctx.services.get(type);
+  let existing = methodOverrides || includeMethods ? undefined : ctx.services.get(type);
   if (existing) return existing.resolving ? null : existing.shape;
 
   let tsm = ctx.tsm;
@@ -128,7 +151,7 @@ function resolveServiceShapeInner(
     methods: [],
     namedShapes: ctx.namedShapes,
   };
-  ctx.services.set(type, { shape: service, resolving: true });
+  if (!includeMethods) ctx.services.set(type, { shape: service, resolving: true });
 
   let passthrough: string[] = [];
   for (let prop of checker.getPropertiesOfType(type)) {
@@ -146,6 +169,11 @@ function resolveServiceShapeInner(
     if (decl && isPrivateOrProtected(tsm, decl)) continue;
     if (propName.startsWith("#")) continue; // private fields
     if (propName === "constructor") continue;
+    if (includeMethods && !includeMethods.has(propName)) continue;
+    if (hasSkipRpcValidationDecorator(ctx, prop)) {
+      service.methods.push({ name: prop.getName(), skipValidation: true });
+      continue;
+    }
     let propType = decl
       ? checker.getTypeOfSymbolAtLocation(prop, decl)
       : checker.getTypeOfSymbol(prop);
@@ -156,11 +184,16 @@ function resolveServiceShapeInner(
         ? checker.getNonNullableType(propType)
         : propType;
     let sigs = callableType.getCallSignatures();
+    let override = methodOverrides?.get(propName);
     if (sigs.length === 0) {
       // Cap'n Web exposes property reads as promise-like gets. Preserve declared
       // data properties from service interfaces and object literals as getter
       // specs; class instance fields stay excluded because RpcTarget blocks them.
       if (isRpcReadableProperty(ctx, type, prop, decl)) {
+        if (override && !override.skipValidation && override.isGetter) {
+          service.methods.push(override);
+          continue;
+        }
         service.methods.push({
           name: propName,
           params: [],
@@ -170,14 +203,22 @@ function resolveServiceShapeInner(
       }
       continue;
     }
-    if (decl && hasSkipRpcValidationDecorator(ctx, decl)) {
-      service.methods.push({ name: prop.getName(), skipValidation: true });
+    if (override && override.skipValidation) {
+      service.methods.push(override);
+      continue;
+    }
+    if (override && !override.isGetter) {
+      service.methods.push(override);
       continue;
     }
     if (sigs.length > 1) {
       // Overloaded: validating one signature would reject the other overloads,
       // so pass through unvalidated and warn rather than break a legal call.
-      if (decl) warnOverloadedMethod(propName, decl);
+      // Signature-only overloads warn only when they apply to a callable member.
+      let surfaceKind = includeMethods?.get(propName);
+      if (decl && (!includeMethods || surfaceKind === "callable")) {
+        warnOverloadedMethod(propName, decl);
+      }
       service.methods.push({ name: prop.getName(), skipValidation: true });
       continue;
     }
@@ -210,8 +251,46 @@ function resolveServiceShapeInner(
   }
 
   if (passthrough.length) service.passthrough = passthrough;
-  ctx.services.set(type, { shape: service, resolving: false });
+  if (!includeMethods) ctx.services.set(type, { shape: service, resolving: false });
   return service;
+}
+
+// Member kind on the runtime surface, used to gate signature-source diagnostics.
+type SurfaceMemberKind = "callable" | "getter";
+
+// Names (and kinds) of the members `resolveServiceShapeInner` would emit for
+// `type`. The inclusion filter below MUST mirror that loop's skip rules, or the
+// signature pass and the surface pass disagree on which members exist.
+function collectServiceSurfaceNames(
+  ctx: ResolveContext,
+  type: ts.Type
+): Map<string, SurfaceMemberKind> {
+  let names = new Map<string, SurfaceMemberKind>();
+  let tsm = ctx.tsm;
+  for (let prop of ctx.checker.getPropertiesOfType(type)) {
+    let propName = prop.getName();
+    if (isSymbolNamedProperty(prop)) continue;
+    if (RPC_CAPABILITY_BRAND_NAMES.has(propName)) continue;
+    let decl = prop.valueDeclaration ?? prop.declarations?.[0];
+    if (decl && isPlatformInheritedMember(decl)) continue;
+    if (decl && isPrivateOrProtected(tsm, decl)) continue;
+    if (propName.startsWith("#")) continue;
+    if (propName === "constructor") continue;
+    if (hasSkipRpcValidationDecorator(ctx, prop)) continue;
+    let propType = decl
+      ? ctx.checker.getTypeOfSymbolAtLocation(prop, decl)
+      : ctx.checker.getTypeOfSymbol(prop);
+    let callableType =
+      prop.flags & tsm.SymbolFlags.Optional
+        ? ctx.checker.getNonNullableType(propType)
+        : propType;
+    if (callableType.getCallSignatures().length > 0) {
+      names.set(propName, "callable");
+    } else if (isRpcReadableProperty(ctx, type, prop, decl)) {
+      names.set(propName, "getter");
+    }
+  }
+  return names;
 }
 
 const MAX_RESOLVE_DEPTH = 64;
@@ -309,23 +388,25 @@ function warnOverloadedMethod(name: string, decl: ts.Declaration): void {
 
 function hasSkipRpcValidationDecorator(
   ctx: ResolveContext,
-  decl: ts.Declaration
+  prop: ts.Symbol
 ): boolean {
-  let tsm = ctx.tsm;
-  if (!tsm.canHaveDecorators?.(decl)) return false;
-  for (let decorator of tsm.getDecorators?.(decl) ?? []) {
-    let expression = decorator.expression;
-    if (tsm.isCallExpression(expression)) expression = expression.expression;
-    if (!tsm.isIdentifier(expression)) continue;
-    let sym = ctx.checker.getSymbolAtLocation(expression);
-    if (sym && sym.flags & tsm.SymbolFlags.Alias) {
-      sym = ctx.checker.getAliasedSymbol(sym);
-    }
-    if (
-      sym?.getName() === "skipRpcValidation" &&
-      isCapnwebValidateSymbol(sym)
-    ) {
-      return true;
+  for (let decl of prop.declarations ?? []) {
+    let tsm = ctx.tsm;
+    if (!tsm.canHaveDecorators?.(decl)) continue;
+    for (let decorator of tsm.getDecorators?.(decl) ?? []) {
+      let expression = decorator.expression;
+      if (tsm.isCallExpression(expression)) expression = expression.expression;
+      if (!tsm.isIdentifier(expression)) continue;
+      let sym = ctx.checker.getSymbolAtLocation(expression);
+      if (sym && sym.flags & tsm.SymbolFlags.Alias) {
+        sym = ctx.checker.getAliasedSymbol(sym);
+      }
+      if (
+        sym?.getName() === "skipRpcValidation" &&
+        isCapnwebValidateSymbol(sym)
+      ) {
+        return true;
+      }
     }
   }
   return false;

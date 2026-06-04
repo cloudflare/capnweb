@@ -47,4 +47,11 @@ describe("method overloads", () => {
     expect(code).toContain('"foo": { unchecked: true }');
     expect(warns.filter((w) => w.includes("is overloaded")).length).toBe(0);
   });
+
+  it("does not warn when @skipRpcValidation is on the overload implementation", () => {
+    const { code, warns } = compile(
+      `@validateRpc()\nclass Api extends RpcTarget {\n  foo(x: string): Promise<string>;\n  foo(x: number): Promise<number>;\n  @skipRpcValidation() async foo(x: any): Promise<any> { return x; }\n}`);
+    expect(code).toContain('"foo": { unchecked: true }');
+    expect(warns.filter((w) => w.includes("is overloaded")).length).toBe(0);
+  });
 });
