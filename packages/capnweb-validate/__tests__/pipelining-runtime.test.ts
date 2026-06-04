@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { v, validateReturn, type ServiceValidator } from "../src/internal/core.js";
-import { RpcValidationError } from "../src/error.js";
 
 // RpcPromise stand-in: a callable proxy with `.then` (what isRpcPromiseLike keys on); pipelined methods hang off the function.
 function rpcPromise(
@@ -39,10 +38,10 @@ describe("wrapRpcPromise: resolved-value validation via .then", () => {
     await expect(Promise.resolve(wrapped)).resolves.toBe("hello");
   });
 
-  it("rejects with RpcValidationError when the resolved value is wrong (throw)", async () => {
+  it("rejects with TypeError when the resolved value is wrong (throw)", async () => {
     const wrapped = validateReturn(rpcPromise(42), v.string, [], "client");
     await expect(Promise.resolve(wrapped)).rejects.toBeInstanceOf(
-      RpcValidationError
+      TypeError
     );
   });
 
@@ -80,7 +79,7 @@ describe("wrapRpcPromise: .catch / .finally delegation", () => {
       finally(f: () => void): Promise<unknown>;
     };
     await expect(wrapped.finally(() => {})).rejects.toBeInstanceOf(
-      RpcValidationError
+      TypeError
     );
   });
 });
@@ -99,7 +98,7 @@ describe("wrapRpcPromise: promise pipelining (method access before resolve)", ()
     const wrapped = validateReturn(p, userStub(), [], "client") as {
       getName(): Promise<unknown>;
     };
-    await expect(wrapped.getName()).rejects.toBeInstanceOf(RpcValidationError);
+    await expect(wrapped.getName()).rejects.toBeInstanceOf(TypeError);
   });
 
   it("throws synchronously on a pipelined call with a bad argument", () => {
@@ -107,7 +106,7 @@ describe("wrapRpcPromise: promise pipelining (method access before resolve)", ()
     const wrapped = validateReturn(p, userStub(), [], "client") as {
       setName(x: unknown): Promise<string>;
     };
-    expect(() => wrapped.setName(123)).toThrow(RpcValidationError);
+    expect(() => wrapped.setName(123)).toThrow(TypeError);
   });
 });
 
@@ -128,6 +127,6 @@ describe("wrapRpcPromise: allowDeferred for client pipeline placeholders", () =>
     const wrapped = validateReturn(p, userStub(), [], "client") as {
       setName(x: unknown): Promise<string>;
     };
-    expect(() => wrapped.setName(123)).toThrow(RpcValidationError);
+    expect(() => wrapped.setName(123)).toThrow(TypeError);
   });
 });

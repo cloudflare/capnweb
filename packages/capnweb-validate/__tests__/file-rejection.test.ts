@@ -5,14 +5,13 @@
 import { describe, it, expect } from "vitest";
 import { transformFixture } from "./helpers.js";
 import { v } from "../src/internal/core.js";
-import { RpcValidationError } from "../src/error.js";
 
 function accepts(validator: (value: unknown, path: never[]) => void, value: unknown): boolean {
   try {
     validator(value, []);
     return true;
   } catch (e) {
-    if (e instanceof RpcValidationError) return false;
+    if (e instanceof TypeError) return false;
     throw e;
   }
 }

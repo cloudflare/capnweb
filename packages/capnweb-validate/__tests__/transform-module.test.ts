@@ -13,7 +13,6 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { RpcValidationError } from "../src/index.js";
 import { createTransformContext } from "../src/transform/context.js";
 import { transformModule } from "../src/transform/transform-module.js";
 import { isTypeScriptLibFileName } from "../src/transform/type-introspector.js";
@@ -200,8 +199,8 @@ describe("transformModule", () => {
     let validator = await loadValidator(code, "__capnweb_validate_Api_server");
     let save = validator.methods.save!;
     expect(() => save.args[0]!({ id: "u1", age: 30 }, ["save", 0])).not.toThrow();
-    expect(() => save.args[0]!({ id: "u1", age: "x" }, ["save", 0])).toThrow(RpcValidationError);
-    expect(() => save.args[0]!({ id: "u1" }, ["save", 0])).toThrow(RpcValidationError);
+    expect(() => save.args[0]!({ id: "u1", age: "x" }, ["save", 0])).toThrow(TypeError);
+    expect(() => save.args[0]!({ id: "u1" }, ["save", 0])).toThrow(TypeError);
   });
 });
 

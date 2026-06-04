@@ -1,7 +1,6 @@
 // Getters are a real RPC surface (get(["name"]) reads the accessor over the wire). A prior
 // version dropped them, leaking values unvalidated and skipping the build-time wire-type check.
 import { describe, it, expect } from "vitest";
-import { RpcValidationError } from "../src/error.js";
 import {
   wrapServerTarget,
   wrapClientStub,
@@ -99,7 +98,7 @@ describe("getter accessors on the RPC surface", () => {
     const wrapped = wrapServerTarget(target, validator);
     expect(wrapped.config).toBe("ok");
     target.config = 123;
-    expect(() => wrapped.config).toThrow(RpcValidationError);
+    expect(() => wrapped.config).toThrow(TypeError);
   });
 
   it("server: validates the getter value on property read", () => {
@@ -117,7 +116,7 @@ describe("getter accessors on the RPC surface", () => {
     const wrapped = wrapServerTarget(api, validator);
     expect(wrapped.config).toBe("ok"); // good value passes through
     api._v = 123; // inject a value the type lies about
-    expect(() => wrapped.config).toThrow(RpcValidationError); // bad value rejected
+    expect(() => wrapped.config).toThrow(TypeError); // bad value rejected
   });
 
   it("server: warn mode lets a bad getter value through", () => {
@@ -168,7 +167,7 @@ describe("getter accessors on the RPC surface", () => {
     } catch (e) {
       err = e;
     }
-    expect(err).toBeInstanceOf(RpcValidationError);
+    expect(err).toBeInstanceOf(TypeError);
   });
 
   it("client: validates the getter's resolved value", async () => {
@@ -188,7 +187,7 @@ describe("getter accessors on the RPC surface", () => {
     } catch (e) {
       err = e;
     }
-    expect(err).toBeInstanceOf(RpcValidationError);
+    expect(err).toBeInstanceOf(TypeError);
   });
 });
 

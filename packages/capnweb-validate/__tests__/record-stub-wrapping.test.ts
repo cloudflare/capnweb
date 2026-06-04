@@ -4,7 +4,6 @@
 // propertyValidatorFor consult it for keys not covered by a fixed property.
 import { describe, it, expect } from "vitest";
 import { v, wrapServerTarget, type ServiceValidator } from "../src/internal/core.js";
-import { RpcValidationError } from "../src/error.js";
 
 const userStub = v.stubOf({
   serviceName: "User",
@@ -23,7 +22,7 @@ describe("Record / index-signature stub values are wrapped", () => {
   it("validates a pipelined call through a dynamic-key stub value", () => {
     // The dynamic-key stub lies: getName returns a number, not a string.
     const rec = service({ getUsers: () => ({ alice: { getName: () => 12345 } }) }).getUsers();
-    expect(() => rec.alice.getName()).toThrow(RpcValidationError);
+    expect(() => rec.alice.getName()).toThrow(TypeError);
   });
 
   it("passes a correct dynamic-key stub value through", () => {
@@ -39,7 +38,7 @@ describe("Record / index-signature stub values are wrapped", () => {
       }),
     }).getUsers();
     expect(rec.good.getName()).toBe("ok");
-    expect(() => rec.bad.getName()).toThrow(RpcValidationError);
+    expect(() => rec.bad.getName()).toThrow(TypeError);
   });
 
   it("still wraps fixed properties alongside the index", () => {
@@ -58,7 +57,7 @@ describe("Record / index-signature stub values are wrapped", () => {
       validator,
     ) as { m(): Record<string, { getName(): unknown }> };
     const rec = wrapped.m();
-    expect(() => rec.fixed.getName()).toThrow(RpcValidationError); // fixed still validated
+    expect(() => rec.fixed.getName()).toThrow(TypeError); // fixed still validated
     expect(rec.dyn.getName()).toBe("ok"); // index still validated
   });
 });

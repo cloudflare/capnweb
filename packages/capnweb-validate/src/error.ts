@@ -4,48 +4,27 @@
 
 export type PropertyPath = (string | number)[];
 
-/**
- * Structured detail attached to {@link RpcValidationError}. Lets a caller
- * inspect *what* went wrong (which path, expected vs. actual type, original
- * value) without parsing the error message.
- */
-export type RpcValidationFailure = {
-  path: PropertyPath;
-  expected: string;
-  actual: string;
-  value: unknown;
-};
+const RPC_VALIDATION_ERROR = Symbol("capnweb-validate.validationError");
 
-/**
- * Thrown by validators injected by the `capnweb-validate` transform when an
- * RPC argument or return value fails a type check. Extends {@link TypeError}
- * so existing `instanceof TypeError` catches still match; adds `rpcValidation`
- * for structured inspection.
- *
- * ```ts
- * try {
- *   await stub.method(badArg);
- * } catch (e) {
- *   if (e instanceof RpcValidationError) {
- *     console.log(e.rpcValidation.path, e.rpcValidation.expected);
- *   }
- * }
- * ```
- */
-export class RpcValidationError extends TypeError {
-  readonly rpcValidation!: RpcValidationFailure;
+type TaggedValidationError = TypeError & { [RPC_VALIDATION_ERROR]?: true };
 
-  constructor(message: string, validation: RpcValidationFailure) {
-    super(message);
-    this.name = "RpcValidationError";
-    Object.defineProperty(this, "rpcValidation", {
-      value: validation,
-      enumerable: false,
-      configurable: true,
-    });
-    let errorCtor = Error as { captureStackTrace?: Function };
-    if (typeof errorCtor.captureStackTrace === "function") {
-      errorCtor.captureStackTrace(this, RpcValidationError);
-    }
+export function newValidationTypeError(message: string): TypeError {
+  let err = new TypeError(message) as TaggedValidationError;
+  Object.defineProperty(err, RPC_VALIDATION_ERROR, {
+    value: true,
+    enumerable: false,
+    configurable: false,
+  });
+  let errorCtor = Error as { captureStackTrace?: Function };
+  if (typeof errorCtor.captureStackTrace === "function") {
+    errorCtor.captureStackTrace(err, newValidationTypeError);
   }
+  return err;
+}
+
+export function isValidationTypeError(err: unknown): err is TypeError {
+  return (
+    err instanceof TypeError &&
+    (err as TaggedValidationError)[RPC_VALIDATION_ERROR] === true
+  );
 }

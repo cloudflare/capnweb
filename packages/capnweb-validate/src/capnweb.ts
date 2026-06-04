@@ -12,8 +12,7 @@ export {
   serialize,
 } from "capnweb";
 export type { RpcCompatible, RpcSessionOptions, RpcTransport } from "capnweb";
-export { RpcValidationError, skipRpcValidation, validateRpc } from "./index.js";
-export type { RpcValidationFailure } from "./error.js";
+export { skipRpcValidation, validateRpc } from "./index.js";
 
 // Re-exported as a local alias so the value and type share a name without
 // hitting TS2323 ("cannot redeclare exported variable") in this module.

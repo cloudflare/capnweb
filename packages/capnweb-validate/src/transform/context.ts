@@ -19,9 +19,9 @@ export type TransformContextOptions = {
   exclude?: string[];
   /** Working directory used to resolve relative paths. Defaults to `process.cwd()`. */
   cwd?: string;
-  /** How a failed client-side check is handled: "throw" (default) raises an RpcValidationError; "warn" logs and lets the value through. */
+  /** How a failed client-side check is handled: "throw" (default) raises a TypeError; "warn" logs and lets the value through. */
   clientValidation?: ValidationMode;
-  /** How a failed server-side check is handled: "throw" (default) raises an RpcValidationError; "warn" logs and lets the value through. */
+  /** How a failed server-side check is handled: "throw" (default) raises a TypeError; "warn" logs and lets the value through. */
   serverValidation?: ValidationMode;
   /** Decide what to do with a type capnweb does not transport. Return "passthrough" to accept it as `any` (e.g. a host like Workers RPC that accepts more types); default is a build error. */
   onUnsupportedType?: UnsupportedTypeHandler;

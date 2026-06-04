@@ -21,7 +21,6 @@ import {
   newWorkersWebSocketRpcResponse,
   nodeHttpBatchRpcResponse,
   RpcSession,
-  RpcValidationError,
 } from "../src/capnweb.js";
 import { capnwebValidate } from "../src/plugin.js";
 import { createTransformContext } from "../src/transform/context.js";
@@ -47,44 +46,6 @@ describe("marker APIs throw before the transform runs", () => {
       expect(() => marker()).toThrow(/capnweb-validate marker API was called before it was transformed/);
     });
   }
-});
-
-describe("RpcValidationError", () => {
-  it("extends TypeError so legacy instanceof catches still match", () => {
-    let err = new RpcValidationError("nope", {
-      path: ["args", 0],
-      expected: "string",
-      actual: "number",
-      value: 42,
-    });
-    expect(err).toBeInstanceOf(TypeError);
-    expect(err.name).toBe("RpcValidationError");
-  });
-
-  it("attaches structured rpcValidation detail", () => {
-    let err = new RpcValidationError("nope", {
-      path: ["returns"],
-      expected: "User",
-      actual: "null",
-      value: null,
-    });
-    expect(err.rpcValidation.path).toEqual(["returns"]);
-    expect(err.rpcValidation.expected).toBe("User");
-    expect(err.rpcValidation.actual).toBe("null");
-    expect(err.rpcValidation.value).toBeNull();
-  });
-
-  it("keeps rpcValidation non-enumerable so RPC error serialization does not leak values", () => {
-    let secret = { token: "secret" };
-    let err = new RpcValidationError("nope", {
-      path: ["return"],
-      expected: "string",
-      actual: "object",
-      value: secret,
-    });
-    expect(err.rpcValidation.value).toBe(secret);
-    expect(Object.keys(err)).not.toContain("rpcValidation");
-  });
 });
 
 describe("TransformContext stub", () => {

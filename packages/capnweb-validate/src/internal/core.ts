@@ -4,7 +4,11 @@
 
 // Core runtime helpers called by transformed user code. No capnweb dependency, so this also works with native Workers RPC.
 
-import { RpcValidationError, type PropertyPath } from "../error.js";
+import {
+  isValidationTypeError,
+  newValidationTypeError,
+  type PropertyPath,
+} from "../error.js";
 
 type ValidationOptions = {
   allowDeferred?: boolean;
@@ -53,11 +57,10 @@ type WrapSide = "server" | "client";
 
 function fail(path: PropertyPath, expected: string, value: unknown): never {
   let actual = describe(value);
-  throw new RpcValidationError(
+  throw newValidationTypeError(
     `capnweb-validate: at ${formatPath(
       path
-    )}: expected ${expected}, got ${actual}`,
-    { path, expected, actual, value }
+    )}: expected ${expected}, got ${actual}`
   );
 }
 
@@ -227,7 +230,7 @@ export const v = {
             branch(value, path, options);
             return;
           } catch (err) {
-            if (!(err instanceof RpcValidationError)) throw err;
+            if (!isValidationTypeError(err)) throw err;
           }
         }
         fail(path, label, value);
@@ -416,20 +419,14 @@ function exposedDescriptor(
 
 
 function missingMethod(serviceName: string, prop: string): never {
-  throw new RpcValidationError(
-    `capnweb-validate: ${serviceName}.${prop} is not in the generated validator`,
-    {
-      path: [serviceName, prop],
-      expected: "known RPC method",
-      actual: "missing validator",
-      value: undefined,
-    }
+  throw newValidationTypeError(
+    `capnweb-validate: ${serviceName}.${prop} is not in the generated validator`
   );
 }
 
 function reportValidationFailure(err: unknown): void {
   // Warn mode logs the mismatch and lets the value through. Re-throw non-validation errors: those are real bugs.
-  if (err instanceof RpcValidationError) {
+  if (isValidationTypeError(err)) {
     console.warn(err.message);
     return;
   }
@@ -577,7 +574,7 @@ function wrapResolvedValue(
         branch(value, path);
         return wrapResolvedValue(value, branch, path, side);
       } catch (err) {
-        if (!(err instanceof RpcValidationError)) throw err;
+        if (!isValidationTypeError(err)) throw err;
       }
     }
     return value;

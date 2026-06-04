@@ -2,9 +2,6 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-export { RpcValidationError } from "./error.js";
-export type { RpcValidationFailure } from "./error.js";
-
 type AnyClass = abstract new (...args: any[]) => object;
 type AnyMethod = (this: unknown, ...args: any[]) => unknown;
 

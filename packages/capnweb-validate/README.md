@@ -170,29 +170,16 @@ capnweb-validate validation for that method.
 
 ## Validation Errors
 
-Validation failures throw `RpcValidationError`, exported from
-`capnweb-validate`. It extends `TypeError`, so existing `TypeError` handlers
-still match, and carries structured detail in `error.rpcValidation`:
+Validation failures throw `TypeError`, so validation errors keep their standard
+error type when they cross RPC boundaries. The message includes the failing path,
+expected type, and actual type:
 
 ```ts
-import { RpcValidationError } from "capnweb-validate";
-
-type RpcValidationFailure = {
-  path: (string | number)[];
-  expected: string;
-  actual: string;
-  value: unknown;
-};
-
 try {
   await api.authenticate(123 as never);
 } catch (err) {
-  if (err instanceof RpcValidationError) {
-    console.log(
-      err.rpcValidation.path,
-      err.rpcValidation.expected,
-      err.rpcValidation.actual
-    );
+  if (err instanceof TypeError) {
+    console.log(err.message);
   }
 }
 ```
