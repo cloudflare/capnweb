@@ -701,8 +701,8 @@ function rejectUnsupported(
   throw buildError(
     sf,
     node,
-    `capnweb-validate: \`${shape.name}\` references types that capnweb ` +
-      `cannot transport:\n${detail}`
+    `capnweb-validate: \`${shape.name}\` references types that ` +
+      `capnweb-validate cannot validate:\n${detail}`
   );
 }
 

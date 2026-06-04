@@ -60,7 +60,7 @@ describe("branded primitives", () => {
     expect(code).toMatch(/"name":\s*__rt\.v\.string/);
   });
 
-  it("still rejects a genuinely non-wire type in a property position", () => {
+  it("still rejects a genuinely unsupported type in a property position", () => {
     // The primitive-collapse must not weaken rejection elsewhere: a `WeakMap`
     // property still fails the build loudly.
     const msg = buildError(

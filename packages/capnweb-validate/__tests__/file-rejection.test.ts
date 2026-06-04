@@ -1,7 +1,7 @@
-// capnweb's serializer matches Blob by exact prototype, so File (a Blob
-// subclass) is categorized "unsupported" and throws at serialize time. The
-// transform must reject File at build time rather than emit v.blob, which would
-// accept a File the wire then refuses. Blob itself stays supported.
+// Blob validates by exact prototype, so File (a Blob subclass) is categorized
+// "unsupported". The transform must reject File at build time rather than emit
+// v.blob, which would accept a subclass in a Blob-typed position. Blob itself
+// stays supported.
 import { describe, it, expect } from "vitest";
 import { transformFixture } from "./helpers.js";
 import { v } from "../src/internal/core.js";
@@ -50,7 +50,7 @@ describe("File is rejected at build time", () => {
   });
 });
 
-describe("exact-prototype brands match capnweb's serializer", () => {
+describe("exact-prototype brands reject subclasses", () => {
   it("v.blob rejects a Blob subclass (e.g. File) but accepts a real Blob", () => {
     class FileLike extends Blob {}
     expect(accepts(v.blob, new Blob(["x"]))).toBe(true);
@@ -64,8 +64,8 @@ describe("exact-prototype brands match capnweb's serializer", () => {
   });
 
   it("v.bytes keeps accepting Buffer (capnweb allows it)", () => {
-    // Buffer's prototype is not Uint8Array.prototype, but capnweb serializes it
-    // as bytes, so the bytes validator stays instanceof, not exact-prototype.
+    // Buffer's prototype is not Uint8Array.prototype, but it is a Uint8Array
+    // subclass, so the bytes validator stays instanceof, not exact-prototype.
     expect(accepts(v.bytes, new Uint8Array([1]))).toBe(true);
     expect(accepts(v.bytes, Buffer.from([1]))).toBe(true);
   });

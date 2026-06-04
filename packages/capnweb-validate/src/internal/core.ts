@@ -229,8 +229,8 @@ export const v = {
     return withShape(
       (value, path, options) => {
         if (isDeferredValidationValue(value, options)) return;
-        // Match capnweb's wire check: only a plain object serializes, so a class
-        // instance, null-proto object, or array is rejected here too.
+        // Object shapes describe plain records, not class instances,
+        // null-prototype objects, or arrays.
         if (
           value === null ||
           typeof value !== "object" ||
@@ -290,9 +290,10 @@ export const v = {
       { kind: "lazy", thunk }
     );
   },
-  // ---- Built-in pass-by-value brands. Matched by `instanceof`; constructor looked up lazily so a runtime missing one (e.g. Node without `Blob`) doesn't crash on import.
-  // capnweb serializes these by exact prototype, so a subclass instance (e.g.
-  // File extends Blob) is rejected at the wire and must be rejected here too.
+  // ---- Built-in pass-by-value brands. Constructors are looked up lazily so a
+  // runtime missing one (e.g. Node without `Blob`) doesn't crash on import.
+  // These host objects use exact prototypes, so subclass instances (e.g. File
+  // as Blob) are rejected.
   date: exactBrand("Date"),
   blob: exactBrand("Blob"),
   readableStream: exactBrand("ReadableStream"),
@@ -356,7 +357,7 @@ function isDeferredValidationValue(
   return options?.allowDeferred === true && isRpcPromiseLike(value);
 }
 
-/** Exact-prototype brand for a possibly-absent global constructor (e.g. `Blob` outside Workers). Matches capnweb's serializer, which keys on the exact prototype, so a subclass instance (File extends Blob) is rejected. A missing constructor fails like a wrong-type value, since the user can't satisfy the type. */
+/** Exact-prototype brand for a possibly-absent global constructor (e.g. `Blob` outside Workers). A subclass instance (File extends Blob) is rejected. A missing constructor fails like a wrong-type value, since the user can't satisfy the type. */
 function exactBrand(name: string): Validator {
   return (value, path, options) => {
     if (isDeferredValidationValue(value, options)) return;

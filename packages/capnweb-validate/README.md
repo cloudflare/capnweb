@@ -220,7 +220,7 @@ guarantees can travel over RPC also has a precise build-time validator:
 Some host objects are checked by exact prototype to match the transport behavior;
 `Error`, `ArrayBuffer`, `RegExp`, `DataView`, and typed arrays use `instanceof`.
 `File` is rejected at build time because it is a common `Blob` subclass that does
-not match the supported `Blob` wire type.
+not match the supported `Blob` validator.
 
 **Pass-by-reference:**
 
@@ -240,7 +240,7 @@ build time, not at the first RPC call:
 | `WeakMap`          | `WeakMap` is not a supported RPC validation type.          |
 | `WeakSet`          | `WeakSet` is not a supported RPC validation type.          |
 | `SharedArrayBuffer`| `SharedArrayBuffer` is not a supported RPC validation type.|
-| `File`             | Use a `Blob` or `Uint8Array`; `File` is not a wire type.   |
+| `File`             | Use a `Blob` or `Uint8Array`; `File` is not supported.     |
 
 If a method signature contains a leaf the resolver cannot lower, such as a generic
 type parameter with no inference source, an unsupported recursive corner, or a rejected

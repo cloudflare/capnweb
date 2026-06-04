@@ -68,7 +68,7 @@ export type TypeShape =
     }
   | { kind: "union"; id?: number; branches: TypeShape[] }
   | { kind: "ref"; id: number; name?: string }
-  // ----- pass-by-value built-in classes the wire understands -----
+  // ----- pass-by-value built-in classes the validator understands -----
   | { kind: "date" }
   | { kind: "arrayBuffer" }
   | { kind: "dataView" }
@@ -76,7 +76,7 @@ export type TypeShape =
   | { kind: "bytes" } // Uint8Array
   | { kind: "typedArray"; name: TypedArrayName }
   | { kind: "error" } // Error & well-known subclasses
-  | { kind: "blob" } // Blob (and File, which extends Blob)
+  | { kind: "blob" } // Blob
   | { kind: "readableStream" }
   | { kind: "writableStream" }
   | { kind: "headers" }
@@ -512,9 +512,9 @@ const BUILTIN_REJECTED_TYPES: Record<string, string | undefined> = {
   WeakMap: undefined,
   WeakSet: undefined,
   SharedArrayBuffer: undefined,
-  // capnweb's serializer matches Blob by exact prototype, so File (a Blob
-  // subclass) is not transportable. Send the bytes as a Blob or Uint8Array.
-  File: "Use a Blob or Uint8Array; File is not a capnweb wire type.",
+  // File is a Blob subclass, but this validator accepts Blob by exact prototype.
+  // Send the bytes as a Blob or Uint8Array instead.
+  File: "Use a Blob or Uint8Array; File is not a supported RPC validation type.",
 };
 
 const MAP_TYPES = new Set(["Map", "ReadonlyMap"]);
