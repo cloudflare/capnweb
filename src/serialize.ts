@@ -637,6 +637,13 @@ export class Evaluator {
               let propsObj = <Record<string, unknown>>props;
               for (let key of Object.keys(propsObj)) {
                 if (key === "name" || key === "message" || key === "stack") continue;
+                if (key in Object.prototype || key === "toJSON") {
+                  // Consistent with the plain-object deserializer below: don't allow error
+                  // properties to override Object.prototype members (e.g. __proto__, toString,
+                  // valueOf) or toJSON. Still evaluate the inner value so any stubs are released.
+                  this.evaluateImpl(propsObj[key], result, key);
+                  continue;
+                }
                 anyResult[key] = this.evaluateImpl(propsObj[key], result, key);
               }
             }
