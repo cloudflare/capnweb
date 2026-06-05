@@ -18,8 +18,6 @@ export type TransformContextOptions = {
   exclude?: string[];
   /** Working directory used to resolve relative paths. Defaults to `process.cwd()`. */
   cwd?: string;
-  /** How a failed client-side check is handled: "throw" (default) raises a TypeError; "warn" logs and lets the value through. */
-  clientValidation?: ValidationMode;
   /** How a failed server-side check is handled: "throw" (default) raises a TypeError; "warn" logs and lets the value through. */
   serverValidation?: ValidationMode;
 };

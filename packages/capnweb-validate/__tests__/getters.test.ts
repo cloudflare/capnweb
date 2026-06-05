@@ -96,20 +96,11 @@ describe("getter accessors on the RPC surface", () => {
       `interface Api {
   config: string;
 }
-export const api = newHttpBatchRpcSession<Api>("/rpc");`,
-      {
-        shim: `declare module "capnweb" {
-  type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
-  type Provider<T> = { readonly [K in keyof T]: T[K] };
-  export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
-  export function newHttpBatchRpcSession<T>(url: string): RpcStub<T>;
-}`,
-        imports: `import { newHttpBatchRpcSession } from "capnweb";
-`,
-      }
+const target: Api = { config: "x" };`,
+      { target: "target" }
     ).code;
     const config = checkedMethod(
-      loadValidator(code, "__capnweb_validate_Api_client"),
+      loadValidator(code, "__capnweb_validate_Api_server"),
       "config"
     );
     expect(config.returns).toBe(v.string);

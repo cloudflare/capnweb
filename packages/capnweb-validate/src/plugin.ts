@@ -3,8 +3,8 @@
 //     https://opensource.org/license/mit
 
 // Universal bundler plugin (vite / rollup / webpack / rspack / esbuild / farm)
-// built on `unplugin`. Rewrites capnweb-validate decorators and Cap'n Web
-// client session calls; nothing is written to disk.
+// built on `unplugin`. Rewrites capnweb-validate decorators and server markers;
+// nothing is written to disk.
 
 import { sep } from "node:path";
 import { createUnplugin } from "unplugin";
@@ -41,8 +41,8 @@ export const capnwebValidate = createUnplugin<
     },
 
     transform(code, id) {
-      // Fast bail-out: only modules that mention the validation package or
-      // Cap'n Web client session APIs can need a rewrite.
+      // Fast bail-out: only modules that mention the validation package can
+      // need a rewrite.
       if (!code.includes("capnweb-validate") && !code.includes("capnweb")) {
         return null;
       }
@@ -66,4 +66,3 @@ export const capnwebValidate = createUnplugin<
     },
   };
 });
-

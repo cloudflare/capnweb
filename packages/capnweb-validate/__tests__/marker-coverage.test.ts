@@ -43,15 +43,14 @@ function allCapnwebExports(): Set<string> {
   }
 }
 
-// A constructor that creates an RPC boundary: a session, a response, or a
-// handler (e.g. newBunWebSocketRpcHandler). Anything matching must be wrapped.
+// A constructor that exposes a server RPC boundary: a response or a handler
+// (e.g. newBunWebSocketRpcHandler). Anything matching must be wrapped.
 function isRpcEntryPoint(name: string): boolean {
-  return /Rpc(Session|Response|Handler)$/.test(name);
+  return /Rpc(Response|Handler)$/.test(name);
 }
 
 // capnweb entry points intentionally not wrapped, each with its reason.
 const INTENTIONALLY_UNSUPPORTED: Record<string, string> = {
-  newBunWebSocketRpcSession: "Bun {stub,transport} return shape needs a dedicated helper",
   newBunWebSocketRpcHandler: "Bun server handler (callback-supplied target) needs a dedicated helper",
 };
 

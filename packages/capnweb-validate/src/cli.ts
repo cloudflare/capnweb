@@ -22,7 +22,6 @@ Options:
   --out <dir>                 Directory to write transformed sources to. Required.
   --tsconfig <path>           Path to tsconfig.json. Defaults to ./tsconfig.json.
   --cwd <dir>                 Working directory. Defaults to process.cwd().
-  --client-validation <mode>  How client-side checks behave: throw | warn. Default throw.
   --server-validation <mode>  How server-side checks behave: throw | warn. Default throw.
   -h, --help                  Show this message.`);
   process.exit(exitCode);
@@ -32,7 +31,6 @@ type BuildArgs = {
   out?: string;
   tsconfig?: string;
   cwd?: string;
-  clientValidation?: ValidationMode;
   serverValidation?: ValidationMode;
 };
 
@@ -54,8 +52,6 @@ function parseBuildArgs(args: string[]): BuildArgs {
       let value = args[++i];
       if (value === undefined) throw new Error(`${arg} requires a value.`);
       parsed[arg.slice(2) as "out" | "tsconfig" | "cwd"] = value;
-    } else if (arg === "--client-validation") {
-      parsed.clientValidation = parseMode(arg, args[++i]);
     } else if (arg === "--server-validation") {
       parsed.serverValidation = parseMode(arg, args[++i]);
     } else if (arg.startsWith("--")) {
@@ -84,7 +80,6 @@ async function main(): Promise<void> {
     out: opts.out,
     tsconfig: opts.tsconfig,
     cwd: opts.cwd,
-    clientValidation: opts.clientValidation,
     serverValidation: opts.serverValidation,
   });
   console.log(

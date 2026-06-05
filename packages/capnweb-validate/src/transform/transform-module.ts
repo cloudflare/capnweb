@@ -70,7 +70,6 @@ function assertValidTextEdits(code: string, ordered: TextEdit[]): void {
 
 const PACKAGE_NAME = "capnweb-validate";
 const CAPNWEB_MARKER_PACKAGE_NAME = "capnweb-validate/capnweb";
-const CAPNWEB_PACKAGE_NAME = "capnweb";
 const RUNTIME_NAMESPACE = "__cw";
 
 const CORE_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/core";\n`;
@@ -110,45 +109,14 @@ export const MARKERS: Record<
     helper: "__nodeHttpBatchRpcResponseWithValidation",
     targetArgIndex: 2,
   },
-  newHttpBatchRpcSession: {
-    side: "client",
-    form: "call",
-    helper: "__newHttpBatchRpcSessionWithValidation",
-    targetArgIndex: -1,
-  },
-  newWebSocketRpcSession: {
-    side: "client",
-    form: "call",
-    helper: "__newWebSocketRpcSessionWithValidation",
-    targetArgIndex: -1,
-  },
-  newMessagePortRpcSession: {
-    side: "client",
-    form: "call",
-    helper: "__newMessagePortRpcSessionWithValidation",
-    targetArgIndex: -1,
-  },
-  RpcSession: {
-    side: "client",
-    form: "new",
-    helper: "__newRpcSessionWithValidation",
-    targetArgIndex: -1,
-  },
 };
-
-const CAPNWEB_CLIENT_MARKERS = new Set([
-  "newHttpBatchRpcSession",
-  "newWebSocketRpcSession",
-  "newMessagePortRpcSession",
-  "RpcSession",
-]);
 
 export function transformModule(
   context: TransformContext,
   id: string,
   code: string
 ): TransformResult | null {
-  if (!code.includes(PACKAGE_NAME) && !code.includes(CAPNWEB_PACKAGE_NAME)) {
+  if (!code.includes(PACKAGE_NAME)) {
     return null;
   }
   if (!fileMatchesTransformFilters(id, context.options)) return null;
@@ -161,15 +129,12 @@ export function transformModule(
     collectMarkerBindings(sourceFile);
   let decoratorBindings = collectDecoratorBindings(sourceFile);
 
-  let callSites = [
-    ...collectMarkerCallSites(
-      sourceFile,
-      markerBindings,
-      markerNamespaces,
-      checker
-    ),
-    ...collectCapnwebClientCallSites(sourceFile, checker),
-  ];
+  let callSites = collectMarkerCallSites(
+    sourceFile,
+    markerBindings,
+    markerNamespaces,
+    checker
+  );
   let decoratorSites = collectDecoratorSites(
     sourceFile,
     decoratorBindings,
@@ -187,7 +152,6 @@ export function transformModule(
     site.bindingName = dedup.bind(site.shape, "server");
   }
 
-  let clientMode = context.options.clientValidation ?? "throw";
   let serverMode = context.options.serverValidation ?? "throw";
 
   let edits: TextEdit[] = [];
@@ -196,8 +160,7 @@ export function transformModule(
     ? CAPNWEB_RUNTIME_IMPORT
     : CORE_RUNTIME_IMPORT;
   for (let entry of dedup.emitOrder()) {
-    let mode = entry.side === "client" ? clientMode : serverMode;
-    prelude += emitValidator(entry.bindingName, entry.shape, mode) + "\n";
+    prelude += emitValidator(entry.bindingName, entry.shape, serverMode) + "\n";
   }
   edits.push({ start: 0, end: 0, text: prelude });
 
@@ -369,30 +332,6 @@ function resolveMarkerCallee(
     };
   }
   return null;
-}
-
-function collectCapnwebClientCallSites(
-  sf: ts.SourceFile,
-  checker: ts.TypeChecker
-): CallSite[] {
-  let out: CallSite[] = [];
-  function visit(node: ts.Node): void {
-    if (isCallLike(node)) {
-      // Key off the resolved capnweb export name, not the call-site text, so a
-      // renamed import (`newHttpBatchRpcSession as connect`) is still matched.
-      let sym = resolveCapnwebSymbol(checker, node.expression);
-      let name = sym?.getName();
-      if (name !== undefined && CAPNWEB_CLIENT_MARKERS.has(name)) {
-        let marker = MARKERS[name]!;
-        let actual: "call" | "new" = ts.isNewExpression(node) ? "new" : "call";
-        if (marker.form === actual)
-          pushCallSite(out, sf, node, marker, name, checker);
-      }
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(sf);
-  return out;
 }
 
 function pushCallSite(
@@ -747,55 +686,11 @@ function resolveCallSiteShape(
   marker: (typeof MARKERS)[keyof typeof MARKERS],
   checker: ts.TypeChecker
 ): ServiceShape | null {
-  let type: ts.Type;
-  if (marker.side === "server") {
-    let arg = call.arguments?.[marker.targetArgIndex];
-    if (!arg) return null;
-    type = checker.getTypeAtLocation(arg);
-  } else if (marker.form === "new") {
-    let explicit = getExplicitTypeArgument(call, checker);
-    if (explicit) {
-      type = unwrapRpcStub(checker, explicit);
-    } else {
-      let sig = checker.getResolvedSignature(call);
-      if (!sig) return null;
-      let session = checker.getReturnTypeOfSignature(sig);
-      let args = checker.getTypeArguments(session as ts.TypeReference);
-      if (args.length !== 1) return null;
-      type = unwrapRpcStub(checker, args[0]!);
-    }
-  } else {
-    let explicit = getExplicitTypeArgument(call, checker);
-    if (explicit) {
-      type = unwrapRpcStub(checker, explicit);
-    } else {
-      let sig = checker.getResolvedSignature(call);
-      if (!sig) return null;
-      let ret = checker.getReturnTypeOfSignature(sig);
-      let unwrapped = unwrapRpcStub(checker, ret);
-      if (unwrapped === ret) return null;
-      type = unwrapped;
-    }
-  }
+  let arg = call.arguments?.[marker.targetArgIndex];
+  if (!arg) return null;
+  let type = checker.getTypeAtLocation(arg);
   if (isTooGeneric(type)) return null;
   return resolveServiceShape(ts, checker, type);
-}
-
-function getExplicitTypeArgument(
-  call: ts.CallExpression | ts.NewExpression,
-  checker: ts.TypeChecker
-): ts.Type | null {
-  let arg = call.typeArguments?.[0];
-  return arg ? checker.getTypeFromTypeNode(arg) : null;
-}
-
-function unwrapRpcStub(checker: ts.TypeChecker, type: ts.Type): ts.Type {
-  let sym = type.getSymbol();
-  if (sym && (sym.getName() === "RpcStub" || sym.getName() === "RpcPromise")) {
-    let args = checker.getTypeArguments(type as ts.TypeReference);
-    if (args.length === 1) return args[0]!;
-  }
-  return type;
 }
 
 function isTooGeneric(type: ts.Type): boolean {
@@ -807,46 +702,6 @@ function isTooGeneric(type: ts.Type): boolean {
   let name = type.getSymbol()?.getName();
   if (name === "RpcTarget" || name === "WorkerEntrypoint") return true;
   return false;
-}
-
-// Resolve a callee to its capnweb export symbol, following import aliases, or
-// undefined if it is not a capnweb export. Callers read the symbol's original
-// (pre-alias) name so detection is keyed on the export, not the local name.
-function resolveCapnwebSymbol(
-  checker: ts.TypeChecker,
-  node: ts.Node
-): ts.Symbol | undefined {
-  let local = checker.getSymbolAtLocation(node);
-  let sym =
-    local && local.flags & ts.SymbolFlags.Alias
-      ? checker.getAliasedSymbol(local)
-      : local;
-  if (!sym) return undefined;
-  for (let decl of sym.getDeclarations() ?? []) {
-    let fileName = decl.getSourceFile().fileName;
-    // Scoped to node_modules so a project under a `capnweb/` directory is not
-    // misdetected.
-    if (/[\\/]node_modules[\\/]capnweb[\\/]/.test(fileName)) return sym;
-  }
-  let parent = (sym as ts.Symbol & { parent?: ts.Symbol }).parent;
-  if (parent && (parent.escapedName as string) === '"capnweb"') return sym;
-  // Path-mapped / workspace capnweb (not node_modules, not ambient): trust the
-  // import specifier so it's still recognized.
-  return importModuleSpecifier(local) === CAPNWEB_PACKAGE_NAME ? sym : undefined;
-}
-
-// Module specifier that introduced `sym` (e.g. "capnweb"), or undefined.
-function importModuleSpecifier(sym: ts.Symbol | undefined): string | undefined {
-  for (let decl of sym?.getDeclarations() ?? []) {
-    for (let n: ts.Node | undefined = decl; n; n = n.parent) {
-      if (ts.isImportDeclaration(n)) {
-        return ts.isStringLiteral(n.moduleSpecifier)
-          ? n.moduleSpecifier.text
-          : undefined;
-      }
-    }
-  }
-  return undefined;
 }
 
 class ValidatorDedup {

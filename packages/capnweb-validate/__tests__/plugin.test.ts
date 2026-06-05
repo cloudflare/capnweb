@@ -30,13 +30,9 @@ vi.mock("capnweb", () => ({
 
 import {
   newHttpBatchRpcResponse,
-  newHttpBatchRpcSession,
-  newMessagePortRpcSession,
-  newWebSocketRpcSession,
   newWorkersRpcResponse,
   newWorkersWebSocketRpcResponse,
   nodeHttpBatchRpcResponse,
-  RpcSession,
 } from "../src/capnweb.js";
 import { capnwebValidate } from "../src/plugin.js";
 import { createTransformContext } from "../src/transform/context.js";
@@ -49,10 +45,6 @@ describe("marker APIs throw before the transform runs", () => {
   // runtime means the plugin/CLI didn't rewrite this module; the right
   // failure mode is a loud Error pointing at the misconfiguration.
   let markers: Array<[string, (...args: unknown[]) => unknown]> = [
-    ["RpcSession", RpcSession as unknown as () => unknown],
-    ["newWebSocketRpcSession", newWebSocketRpcSession as (...a: unknown[]) => unknown],
-    ["newHttpBatchRpcSession", newHttpBatchRpcSession as (...a: unknown[]) => unknown],
-    ["newMessagePortRpcSession", newMessagePortRpcSession as (...a: unknown[]) => unknown],
     ["newWorkersRpcResponse", newWorkersRpcResponse as (...a: unknown[]) => unknown],
     ["newWorkersWebSocketRpcResponse", newWorkersWebSocketRpcResponse as (...a: unknown[]) => unknown],
     ["newHttpBatchRpcResponse", newHttpBatchRpcResponse as (...a: unknown[]) => unknown],

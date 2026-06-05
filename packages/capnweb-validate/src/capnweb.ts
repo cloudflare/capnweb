@@ -14,23 +14,6 @@ export {
 export type { RpcCompatible, RpcSessionOptions, RpcTransport } from "capnweb";
 export { skipRpcValidation, validateRpc } from "./index.js";
 
-// Re-exported as a local alias so the value and type share a name without
-// hitting TS2323 ("cannot redeclare exported variable") in this module.
-export type RpcSession<T extends capnweb.RpcCompatible<T> = undefined> =
-  capnweb.RpcSession<T>;
-
-export const RpcSession: typeof capnweb.RpcSession =
-  uncompiledMarker as unknown as typeof capnweb.RpcSession;
-
-export const newWebSocketRpcSession: typeof capnweb.newWebSocketRpcSession =
-  uncompiledMarker as typeof capnweb.newWebSocketRpcSession;
-
-export const newHttpBatchRpcSession: typeof capnweb.newHttpBatchRpcSession =
-  uncompiledMarker as typeof capnweb.newHttpBatchRpcSession;
-
-export const newMessagePortRpcSession: typeof capnweb.newMessagePortRpcSession =
-  uncompiledMarker as typeof capnweb.newMessagePortRpcSession;
-
 export const newWorkersRpcResponse: typeof capnweb.newWorkersRpcResponse =
   uncompiledMarker as typeof capnweb.newWorkersRpcResponse;
 

@@ -5,8 +5,7 @@ Build-time runtime validation for Cap'n Web and Workers RPC services.
 `capnweb-validate` keeps TypeScript method signatures as the source of
 truth. Add `@validateRpc()` to the service class; a bundler plugin or CLI
 rewrites the decorator and injects validators generated from the resolved
-TypeScript types. Cap'n Web client sessions can also be wrapped for client-side
-argument and return-value checks.
+TypeScript types.
 
 If a validation decorator is left untransformed, it throws with a configuration
 error instead of silently running without validation.
@@ -88,33 +87,6 @@ Pass `@validateRpc<Cursor<string>>()` to validate the `Cursor<string>` surface,
 or `@validateRpc<Cursor<any>>()` to silence the warning while keeping `Cursor`
 positions permissive.
 
-## Client Usage
-
-```ts
-import { newHttpBatchRpcSession } from "capnweb";
-
-import type { Api } from "./worker";
-
-export const api = newHttpBatchRpcSession<Api>("/rpc");
-```
-
-Cap'n Web client session constructors are also recognized. Client calls validate
-outgoing arguments before transport and resolved return values before application
-code receives them. Native Workers RPC clients are not wrapped client-side; use
-`@validateRpc()` on the service class to validate the server boundary.
-
-For custom transports built on top of `RpcSession`, the constructor form is
-also recognized:
-
-```ts
-import { RpcSession } from "capnweb";
-
-import type { Api } from "./worker";
-
-const session = new RpcSession<Api>(myTransport);
-const api = session.getRemoteMain();
-```
-
 ## Bundler Plugins
 
 Use the adapter that matches your bundler:
@@ -193,8 +165,6 @@ Where errors surface depends on which boundary failed:
 
 | Boundary | Failure | How it surfaces |
 | -------- | ------- | --------------- |
-| Client outgoing call | Bad argument before transport | The stub method throws synchronously. |
-| Client resolved return | Bad return after transport | The returned promise rejects before user callbacks run. |
 | Server target | Bad incoming argument or outgoing return | The server throws and the caller observes an RPC rejection. |
 
 ## Current Type Coverage

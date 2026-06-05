@@ -10,8 +10,14 @@
 import { describe, expect, it } from "vitest";
 
 import { isTypeScriptLibFileName } from "../src/transform/type-introspector.js";
-import { checkedMethod, loadValidator, transformFixture } from "./helpers.js";
+import {
+  checkedMethod,
+  createVirtualTransformContext,
+  loadValidator,
+  transformFixture,
+} from "./helpers.js";
 import { v } from "../src/internal/core.js";
+import { transformModule } from "../src/transform/transform-module.js";
 
 function transform(source: string): { code: string } {
   return transformFixture(source, { shim: CAPNWEB_SHIM, imports: "" });
@@ -52,9 +58,7 @@ declare module "capnweb-validate" {
   export function validateRpc(...args: unknown[]): unknown;
 }
 declare module "capnweb-validate/capnweb" {
-  import type { RpcStub } from "capnweb";
   export function newWorkersRpcResponse(request: Request, target: object): Promise<Response>;
-  export function newHttpBatchRpcSession<T>(url: string | Request, options?: unknown): RpcStub<T>;
 }
 `;
 
@@ -79,22 +83,23 @@ describe("transformModule", () => {
     expect(greet.returns).toBe(v.string);
   });
 
-  it("client: rewrites newHttpBatchRpcSession from the explicit type argument", () => {
-    let { code } = transform(`
-      import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
+  it("client: does not rewrite capnweb client constructors", () => {
+    let code = `
+      import { newHttpBatchRpcSession } from "capnweb";
       import { RpcTarget } from "capnweb";
       interface Api extends RpcTarget {
         echo(value: string): Promise<string>;
       }
       export const api = newHttpBatchRpcSession<Api>("/rpc");
-    `);
-    expect(code).toContain(`__cw.__newHttpBatchRpcSessionWithValidation<Api>("/rpc"`);
-    const echo = checkedMethod(
-      loadValidator(code, "__capnweb_validate_Api_client"),
-      "echo"
-    );
-    expect(echo.args[0]).toBe(v.string);
-    expect(echo.returns).toBe(v.string);
+    `;
+    let ctx = createVirtualTransformContext({ shim: CAPNWEB_SHIM, worker: code });
+    try {
+      let id = [...ctx.listSourceFiles()].find((file) => file.endsWith("/worker.ts"));
+      expect(id).toBeDefined();
+      expect(transformModule(ctx, id!, code)).toBeNull();
+    } finally {
+      ctx.dispose();
+    }
   });
 
   it("decorator: rewrites @validateRpc to wrap the class", () => {
@@ -167,10 +172,12 @@ describe("transformModule", () => {
     `)).toContain("not a supported RPC validation type");
   });
 
-  it("fails loud when a marker call has no resolvable service type", () => {
+  it("fails loud when a server marker call has no resolvable service type", () => {
     expect(transformError(`
-      import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
-      export const api = newHttpBatchRpcSession("/rpc");
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      export function handler(req: Request): Promise<Response> {
+        return newWorkersRpcResponse(req, null as unknown);
+      }
     `)).toContain("could not resolve a concrete service type");
   });
 

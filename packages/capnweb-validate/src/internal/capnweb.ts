@@ -8,7 +8,6 @@
 import * as capnweb from "capnweb";
 import {
   splitTrailingValidator,
-  wrapClientStub,
   wrapServerTarget,
   type ServiceValidator,
 } from "./core.js";
@@ -84,72 +83,4 @@ export function __nodeHttpBatchRpcResponseWithValidation<
       opts?: capnweb.RpcSessionOptions
     ) => Promise<void>
   )(request, response, wrapServerTarget(localMain, validator), options);
-}
-
-export function __newHttpBatchRpcSessionWithValidation<T>(
-  urlOrRequest: string | Request,
-  ...rest:
-    | [ServiceValidator]
-    | [capnweb.RpcSessionOptions | undefined, ServiceValidator]
-): T {
-  let { args, validator } = splitTrailingValidator(rest);
-  let [options] = args as [capnweb.RpcSessionOptions?];
-  let stub = capnweb.newHttpBatchRpcSession(urlOrRequest, options);
-  return wrapClientStub(stub as unknown as object, validator) as T;
-}
-
-export function __newWebSocketRpcSessionWithValidation<T>(
-  webSocket: WebSocket | string,
-  ...rest:
-    | [ServiceValidator]
-    | [unknown, ServiceValidator]
-    | [unknown, capnweb.RpcSessionOptions | undefined, ServiceValidator]
-): T {
-  let { args, validator } = splitTrailingValidator(rest);
-  let [localMain, options] = args as [unknown?, capnweb.RpcSessionOptions?];
-  let stub = capnweb.newWebSocketRpcSession(webSocket, localMain, options);
-  return wrapClientStub(stub as unknown as object, validator) as T;
-}
-
-export function __newMessagePortRpcSessionWithValidation<T>(
-  port: MessagePort,
-  ...rest:
-    | [ServiceValidator]
-    | [unknown, ServiceValidator]
-    | [unknown, capnweb.RpcSessionOptions | undefined, ServiceValidator]
-): T {
-  let { args, validator } = splitTrailingValidator(rest);
-  let [localMain, options] = args as [unknown?, capnweb.RpcSessionOptions?];
-  let stub = capnweb.newMessagePortRpcSession(port, localMain, options);
-  return wrapClientStub(stub as unknown as object, validator) as T;
-}
-
-export function __newRpcSessionWithValidation<
-  T extends capnweb.RpcCompatible<T>
->(
-  transport: capnweb.RpcTransport,
-  ...rest:
-    | [ServiceValidator]
-    | [unknown, ServiceValidator]
-    | [unknown, capnweb.RpcSessionOptions | undefined, ServiceValidator]
-): capnweb.RpcSession<T> {
-  let { args, validator } = splitTrailingValidator(rest);
-  let [localMain, options] = args as [unknown?, capnweb.RpcSessionOptions?];
-  let session = new capnweb.RpcSession<T>(
-    transport,
-    localMain as undefined,
-    options
-  );
-  return new Proxy(session, {
-    get(target, prop, receiver) {
-      let orig = Reflect.get(target, prop, receiver);
-      if (prop === "getRemoteMain" && typeof orig === "function") {
-        return function (): unknown {
-          let remote = (orig as () => unknown).call(target);
-          return wrapClientStub(remote as object, validator);
-        };
-      }
-      return typeof orig === "function" ? orig.bind(target) : orig;
-    },
-  });
 }
