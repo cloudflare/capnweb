@@ -1,7 +1,13 @@
 // Overloaded methods pass through unvalidated (with a warning) since validating
 // against only the first signature would reject valid calls to other overloads.
 import { describe, it, expect } from "vitest";
-import { transformFixture, DECORATOR_SHIM } from "./helpers.js";
+import {
+  checkedMethod,
+  DECORATOR_SHIM,
+  loadValidator,
+  transformFixture,
+} from "./helpers.js";
+import { v } from "../src/internal/core.js";
 
 const IMPORTS =
   `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";\n` +
@@ -21,8 +27,7 @@ describe("method overloads", () => {
     const { code, warns } = compile(
       `@validateRpc()\nclass Api extends RpcTarget {\n  foo(x: string): Promise<string>;\n  foo(x: number): Promise<number>;\n  async foo(x: any): Promise<any> { return x; }\n}`);
     // unchecked, NOT validated against the first (string) signature
-    expect(code).toContain('"foo": { unchecked: true }');
-    expect(code).not.toMatch(/"foo":\s*\{\s*args:\s*\[__cw\.v\.string\]/);
+    expect(loadValidator(code).methods.foo).toEqual({ unchecked: true });
     // warned exactly once despite decorator + call-site both resolving Api
     const overloadWarns = warns.filter((w) => w.includes("is overloaded"));
     expect(overloadWarns.length).toBe(1);
@@ -31,27 +36,29 @@ describe("method overloads", () => {
   it("handles overloads that differ in arity", () => {
     const { code } = compile(
       `@validateRpc()\nclass Api extends RpcTarget {\n  foo(): Promise<string>;\n  foo(x: string): Promise<string>;\n  async foo(x?: string): Promise<string> { return x ?? ""; }\n}`);
-    expect(code).toContain('"foo": { unchecked: true }');
+    expect(loadValidator(code).methods.foo).toEqual({ unchecked: true });
   });
 
   it("still validates a single-signature method (no false positive)", () => {
     const { code, warns } = compile(
       `@validateRpc()\nclass Api extends RpcTarget { async foo(x: string): Promise<string> { return x; } }`);
-    expect(code).toContain('"foo": { args: [__cw.v.string], returns: __cw.v.string }');
+    const foo = checkedMethod(loadValidator(code), "foo");
+    expect(foo.args[0]).toBe(v.string);
+    expect(foo.returns).toBe(v.string);
     expect(warns.filter((w) => w.includes("is overloaded")).length).toBe(0);
   });
 
   it("does not warn when the overloaded method is explicitly @skipRpcValidation", () => {
     const { code, warns } = compile(
       `@validateRpc()\nclass Api extends RpcTarget {\n  @skipRpcValidation() foo(x: string): Promise<string>;\n  @skipRpcValidation() foo(x: number): Promise<number>;\n  async foo(x: any): Promise<any> { return x; }\n}`);
-    expect(code).toContain('"foo": { unchecked: true }');
+    expect(loadValidator(code).methods.foo).toEqual({ unchecked: true });
     expect(warns.filter((w) => w.includes("is overloaded")).length).toBe(0);
   });
 
   it("does not warn when @skipRpcValidation is on the overload implementation", () => {
     const { code, warns } = compile(
       `@validateRpc()\nclass Api extends RpcTarget {\n  foo(x: string): Promise<string>;\n  foo(x: number): Promise<number>;\n  @skipRpcValidation() async foo(x: any): Promise<any> { return x; }\n}`);
-    expect(code).toContain('"foo": { unchecked: true }');
+    expect(loadValidator(code).methods.foo).toEqual({ unchecked: true });
     expect(warns.filter((w) => w.includes("is overloaded")).length).toBe(0);
   });
 });

@@ -1,19 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { transformFixture, transformError, prelude } from "./helpers.js";
+import {
+  accepts,
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+  transformError,
+} from "./helpers.js";
 import { v } from "../src/internal/core.js";
-
-function accepts(
-  validator: (value: unknown, path: never[]) => void,
-  value: unknown
-): boolean {
-  try {
-    validator(value, []);
-    return true;
-  } catch (e) {
-    if (e instanceof TypeError) return false;
-    throw e;
-  }
-}
 
 describe("RPC-compatible value types", () => {
   it("accepts ArrayBuffer, DataView, RegExp, Map/Set, and typed arrays at build time", () => {
@@ -29,15 +22,32 @@ describe("RPC-compatible value types", () => {
        }`,
       { target: "new Api()" }
     );
-    const validator = prelude(code);
-    expect(validator).toContain("__cw.v.arrayBuffer");
-    expect(validator).toContain("__cw.v.dataView");
-    expect(validator).toContain('__cw.v.typedArray("Int16Array")');
-    expect(validator).toContain("__cw.v.regexp");
-    expect(validator).toContain("__cw.v.bytes");
-    expect(validator).toContain(
-      '__cw.v.map(__cw.v.string, __cw.v.set(__cw.v.typedArray("Float32Array")))'
+    const roundTrip = checkedMethod(loadValidator(code), "roundTrip");
+    expect(accepts(roundTrip.args[0]!, new ArrayBuffer(1))).toBe(true);
+    expect(accepts(roundTrip.args[1]!, new DataView(new ArrayBuffer(1)))).toBe(
+      true
     );
+    expect(accepts(roundTrip.args[2]!, new Int16Array(1))).toBe(true);
+    expect(accepts(roundTrip.args[3]!, /ok/u)).toBe(true);
+    expect(accepts(roundTrip.args[4]!, new Uint8Array(1))).toBe(true);
+    expect(accepts(roundTrip.args[0]!, new Uint8Array(1))).toBe(false);
+    expect(accepts(roundTrip.args[1]!, new Uint8Array(1))).toBe(false);
+    expect(accepts(roundTrip.args[2]!, new Uint8Array(1))).toBe(false);
+    expect(accepts(roundTrip.args[3]!, "ok")).toBe(false);
+    expect(accepts(roundTrip.args[4]!, new ArrayBuffer(1))).toBe(false);
+
+    expect(
+      accepts(
+        roundTrip.returns,
+        new Map([["ok", new Set([new Float32Array(1)])]])
+      )
+    ).toBe(true);
+    expect(
+      accepts(roundTrip.returns, new Map([[1, new Set([new Float32Array(1)])]]))
+    ).toBe(false);
+    expect(
+      accepts(roundTrip.returns, new Map([["ok", new Set([new Int16Array(1)])]]))
+    ).toBe(false);
   });
 
   it("lowers ReadonlyMap and ReadonlySet to Map/Set runtime validators", () => {
@@ -47,8 +57,15 @@ describe("RPC-compatible value types", () => {
        }`,
       { target: "new Api()" }
     );
-    expect(prelude(code)).toContain(
-      "returns: __cw.v.map(__cw.v.string, __cw.v.set(__cw.v.number))"
+    const getConfig = checkedMethod(loadValidator(code), "getConfig");
+    expect(accepts(getConfig.returns, new Map([["ok", new Set([1])]]))).toBe(
+      true
+    );
+    expect(accepts(getConfig.returns, new Map([[1, new Set([1])]]))).toBe(
+      false
+    );
+    expect(accepts(getConfig.returns, new Map([["ok", new Set(["x"])]]))).toBe(
+      false
     );
   });
 

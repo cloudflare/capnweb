@@ -1,7 +1,13 @@
 // Regression: collectors only matched bare-identifier callees, so namespace-qualified
 // markers (ns.marker(...)) were silently skipped instead of rewritten.
 import { describe, expect, it } from "vitest";
-import { transformFixture, transformError } from "./helpers.js";
+import {
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+  transformError,
+} from "./helpers.js";
+import { v } from "../src/internal/core.js";
 
 // Shim adds the client marker (newHttpBatchRpcSession + RpcStub shape) and a
 // capnweb-module copy of newWorkersRpcResponse so namespace calls resolve.
@@ -33,8 +39,12 @@ import { RpcTarget } from "capnweb";
       },
     );
     expect(code).toContain("__cw.__newHttpBatchRpcSessionWithValidation");
-    expect(code).toContain("import * as __cw from");
-    expect(code).toMatch(/echo[\s\S]*?args:\s*\[__cw\.v\.string\]/);
+    const echo = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Api_client"),
+      "echo"
+    );
+    expect(echo.args[0]).toBe(v.string);
+    expect(echo.returns).toBe(v.string);
   });
 
   it("server: import * as cv (validate pkg) -> cv.newWorkersRpcResponse()", () => {
@@ -52,7 +62,9 @@ import { RpcTarget } from "capnweb";
       },
     );
     expect(code).toContain("__cw.__newWorkersRpcResponseWithValidation");
-    expect(code).toMatch(/greet[\s\S]*?args:\s*\[__cw\.v\.string\]/);
+    const greet = checkedMethod(loadValidator(code), "greet");
+    expect(greet.args[0]).toBe(v.string);
+    expect(greet.returns).toBe(v.string);
   });
 
   it("client: a renamed import (newHttpBatchRpcSession as connect) is matched by resolved name", () => {
@@ -68,7 +80,12 @@ import { RpcTarget } from "capnweb";
       },
     );
     expect(code).toContain("__cw.__newHttpBatchRpcSessionWithValidation");
-    expect(code).toMatch(/echo[\s\S]*?args:\s*\[__cw\.v\.string\]/);
+    const echo = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Api_client"),
+      "echo"
+    );
+    expect(echo.args[0]).toBe(v.string);
+    expect(echo.returns).toBe(v.string);
   });
 
   it("decorator: import * as cv -> @cv.validateRpc() is transformed", () => {
@@ -91,7 +108,9 @@ import { RpcTarget } from "capnweb";
       },
     );
     expect(code).toContain("__cw.__validateRpcClass");
-    expect(code).toMatch(/greet[\s\S]*?args:\s*\[__cw\.v\.string\]/);
+    const greet = checkedMethod(loadValidator(code), "greet");
+    expect(greet.args[0]).toBe(v.string);
+    expect(greet.returns).toBe(v.string);
   });
 
   it("fails loud: a namespace marker call with no resolvable type throws", () => {

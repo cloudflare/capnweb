@@ -1,19 +1,20 @@
 // Named shapes are hoisted once and cross-referenced via `lazy` so cycles/order can't capture an unassigned binding; method refs stay direct.
 import { describe, it, expect } from "vitest";
-import { transformFixture, prelude } from "./helpers.js";
+import {
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+  validatorShape,
+} from "./helpers.js";
+import { v, type Validator } from "../src/internal/core.js";
 
-// Transform a worker exposing `class Api` and return only the generated
-// validator prelude (everything before the original user import line).
-function emitPrelude(body: string): string {
-  return prelude(
-    transformFixture(body, { target: "new Api()" }).code,
-    "import { newWorkersRpcResponse }"
-  );
+function apiValidator(body: string) {
+  return loadValidator(transformFixture(body, { target: "new Api()" }).code);
 }
 
 describe("emit: named-shape sharing", () => {
   it("emits a type used by two methods once and references it directly", () => {
-    const code = emitPrelude(
+    const validator = apiValidator(
       `interface User { id: string; name: string }
        class Api extends RpcTarget {
          async getUser(): Promise<User> { return null as any; }
@@ -21,34 +22,37 @@ describe("emit: named-shape sharing", () => {
        }`
     );
 
-    // The User shape body is emitted exactly once.
-    const bodies = code.match(/v\.object\(\{ "id": __cw\.v\.string, "name": __cw\.v\.string \}/g);
-    expect(bodies).toHaveLength(1);
+    const user = checkedMethod(validator, "getUser").returns;
+    const listUsers = checkedMethod(validator, "listUsers").returns;
+    const listShape = validatorShape(listUsers);
 
-    // Both methods reference the same hoisted binding, directly (no `lazy`)
-    // because method-level references are always assigned by emit time.
-    expect(code).toContain('"getUser": { args: [], returns: __capnweb_validate_Api_server_shape_0 }');
-    expect(code).toContain('"listUsers": { args: [], returns: __cw.v.array(__capnweb_validate_Api_server_shape_0) }');
-    expect(code).not.toMatch(/returns: __cw\.v\.lazy/);
+    // Both methods reference the same validator object directly.
+    expect(validatorShape(user)?.kind).toBe("object");
+    expect(listShape?.kind).toBe("array");
+    expect(listShape?.element).toBe(user);
   });
 
   it("does not double `undefined` on an optional property that already admits it", () => {
-    const code = emitPrelude(
+    const validator = apiValidator(
       `interface Contact { phone?: string | undefined }
        class Api extends RpcTarget {
          async getContact(): Promise<Contact> { return null as any; }
        }`
     );
 
-    expect(code).toContain('"phone": __cw.v.union([__cw.v.undefined_, __cw.v.string])');
+    const contact = checkedMethod(validator, "getContact").returns;
+    const contactShape = validatorShape(contact);
+    const phone = (contactShape?.properties as Record<string, Validator>).phone!;
+    const phoneShape = validatorShape(phone);
+
     // The optional-property widening must not wrap an already-undefined union
     // in another undefined.
-    expect(code).not.toMatch(/union\(\[__cw\.v\.union/);
-    expect(code.match(/undefined_/g)).toHaveLength(1);
+    expect(phoneShape?.kind).toBe("union");
+    expect(phoneShape?.branches).toEqual([v.undefined_, v.string]);
   });
 
   it("emits mutually recursive types in any order via deferred cross-references", () => {
-    const code = emitPrelude(
+    const validator = apiValidator(
       `interface Dir { name: string; entries: Entry[] }
        interface Entry { name: string; parent: Dir }
        class Api extends RpcTarget {
@@ -57,16 +61,25 @@ describe("emit: named-shape sharing", () => {
        }`
     );
 
-    // Both shapes are forward-declared with `let` so either assignment order works.
-    expect(code).toContain('let __capnweb_validate_Api_server_shape_0;');
-    expect(code).toContain('let __capnweb_validate_Api_server_shape_2;');
+    const dir = checkedMethod(validator, "getDir").returns;
+    const entry = checkedMethod(validator, "getEntry").returns;
+    const dirShape = validatorShape(dir);
+    const entryShape = validatorShape(entry);
+    const entries = (dirShape?.properties as Record<string, Validator>).entries!;
+    const parent = (entryShape?.properties as Record<string, Validator>).parent!;
+    const entriesShape = validatorShape(entries);
+    const entriesElementShape = validatorShape(entriesShape?.element as Validator);
+    const parentShape = validatorShape(parent);
+
+    // Method returns reference the object validators directly.
+    expect(dirShape?.kind).toBe("object");
+    expect(entryShape?.kind).toBe("object");
 
     // Cross-references inside a shape body are deferred with `lazy`.
-    expect(code).toMatch(/"entries": __cw\.v\.array\(__cw\.v\.lazy\(\(\) => __capnweb_validate_Api_server_shape_2\)\)/);
-    expect(code).toMatch(/"parent": __cw\.v\.lazy\(\(\) => __capnweb_validate_Api_server_shape_0\)/);
-
-    // Method returns reference the bindings directly.
-    expect(code).toContain('"getDir": { args: [], returns: __capnweb_validate_Api_server_shape_0 }');
-    expect(code).toContain('"getEntry": { args: [], returns: __capnweb_validate_Api_server_shape_2 }');
+    expect(entriesShape?.kind).toBe("array");
+    expect(entriesElementShape?.kind).toBe("lazy");
+    expect((entriesElementShape?.thunk as () => Validator)()).toBe(entry);
+    expect(parentShape?.kind).toBe("lazy");
+    expect((parentShape?.thunk as () => Validator)()).toBe(dir);
   });
 });

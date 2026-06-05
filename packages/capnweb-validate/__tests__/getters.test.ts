@@ -8,7 +8,12 @@ import {
   v,
   type ServiceValidator,
 } from "../src/internal/core.js";
-import { transformFixture, transformError as buildError } from "./helpers.js";
+import {
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+  transformError as buildError,
+} from "./helpers.js";
 
 function transform(body: string): string {
   return transformFixture(body, { target: "new Api()" }).code;
@@ -34,15 +39,22 @@ describe("getter accessors on the RPC surface", () => {
         `  async m(): Promise<number> { return 1; }\n` +
         `}`
     );
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
-    expect(code).toMatch(/"m":\s*\{ args: \[\], returns: __cw\.v\.number \}/);
+    const validator = loadValidator(code);
+    const config = checkedMethod(validator, "config");
+    expect(config.returns).toBe(v.string);
+    expect(config.isGetter).toBe(true);
+    const m = checkedMethod(validator, "m");
+    expect(m.returns).toBe(v.number);
+    expect(m.isGetter).not.toBe(true);
   });
 
   it("unwraps a Promise-returning getter", () => {
     const code = transform(
       `class Api extends RpcTarget {\n  get config(): Promise<string> { return Promise.resolve("x"); }\n}`
     );
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
+    const config = checkedMethod(loadValidator(code), "config");
+    expect(config.returns).toBe(v.string);
+    expect(config.isGetter).toBe(true);
   });
 
   it("rejects an unsupported getter type at build time (no longer silently dropped)", () => {
@@ -60,8 +72,7 @@ describe("getter accessors on the RPC surface", () => {
         `  get ok(): string { return "y"; }\n` +
         `}`
     );
-    expect(code).toContain('"ok"');
-    expect(code).not.toContain('"secret"');
+    expect(Object.keys(loadValidator(code).methods)).toEqual(["ok"]);
   });
 
   it("emits getter-style validators for declared data properties", () => {
@@ -78,7 +89,12 @@ describe("getter accessors on the RPC surface", () => {
         imports: `import { newHttpBatchRpcSession } from "capnweb";\n`,
       }
     ).code;
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
+    const config = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Api_client"),
+      "config"
+    );
+    expect(config.returns).toBe(v.string);
+    expect(config.isGetter).toBe(true);
   });
 
   it("emits getter-style validators for plain object target properties", () => {
@@ -86,7 +102,12 @@ describe("getter accessors on the RPC surface", () => {
       `const target = { config: "x" };`,
       { target: "target" }
     ).code;
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
+    const config = checkedMethod(
+      loadValidator(code, "__capnweb_validate___object_server"),
+      "config"
+    );
+    expect(config.returns).toBe(v.string);
+    expect(config.isGetter).toBe(true);
   });
 
   it("server: validates a data property on property read", () => {
@@ -197,6 +218,6 @@ describe("never type", () => {
       `class Api extends RpcTarget {\n  fail(): never { throw new Error("x"); }\n}`
     );
     expect(msg).toContain("the never type, which carries no value");
-    expect(msg).not.toMatch(/flags=\d+/);
+    expect(msg).not.toContain("flags=");
   });
 });

@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { transformFixture } from "./helpers.js";
+import {
+  accepts,
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+  validatorShape,
+} from "./helpers.js";
+import { v } from "../src/internal/core.js";
 
 // capnweb (RpcTarget brand + RpcStub) and a workers-types-shaped Fetcher alias.
 const SHIM = `declare module "capnweb" {
@@ -26,7 +33,7 @@ const IMPORTS =
   `import { RpcTarget } from "capnweb";\n` +
   `import { Fetcher } from "cloudflare:workers";\n`;
 
-function emit(returnType: string, extra = ""): string {
+function returnValidator(returnType: string, extra = "") {
   const { code } = transformFixture(
     `${extra}
 class Api extends RpcTarget {
@@ -34,36 +41,48 @@ class Api extends RpcTarget {
 }`,
     { shim: SHIM, imports: IMPORTS, lib: ["ES2022", "DOM"], target: "new Api()" }
   );
-  return code.split("\n").find((l) => l.includes("getThing")) ?? "";
+  return checkedMethod(loadValidator(code), "getThing").returns;
 }
 
 describe("Fetcher detection: structural false-positive", () => {
   it("validates an ordinary {fetch,connect} user type as an object, not a stub", () => {
     // Two methods named fetch/connect but a non-Fetcher fetch signature. Must be
     // validated structurally, not waved through as an opaque pass-by-ref stub.
-    const line = emit(
+    const validator = returnValidator(
       "NotAFetcher",
       `interface NotAFetcher {
   fetch(url: string): Promise<string>;
   connect(host: string): Promise<void>;
 }`
     );
-    expect(line).toMatch(/__cw\.v\.object\(/);
-    expect(line).toContain('"fetch": __cw.v.func');
-    expect(line).toContain('"connect": __cw.v.func');
-    expect(line).not.toMatch(/returns: __cw\.v\.stub\b/);
+    expect(validatorShape(validator)?.kind).toBe("object");
+    expect(accepts(validator, { fetch() {}, connect() {} })).toBe(true);
+    expect(accepts(validator, { fetch: "not a function", connect() {} })).toBe(
+      false
+    );
+    expect(accepts(validator, { fetch() {}, connect: "not a function" })).toBe(
+      false
+    );
   });
 
   it("keeps a real Fetcher<User> as a pass-by-reference stub", () => {
-    const line = emit("Fetcher<User>", "interface User { describe(): Promise<string>; }");
-    expect(line).toMatch(/__cw\.v\.stubOf\(/);
-    expect(line).toContain('serviceName: "User"');
+    const validator = returnValidator(
+      "Fetcher<User>",
+      "interface User { describe(): Promise<string>; }"
+    );
+    const shape = validatorShape(validator);
+    expect(shape?.kind).toBe("stub");
+    const service = shape?.service as ReturnType<typeof loadValidator>;
+    expect(service.serviceName).toBe("User");
+    expect(checkedMethod(service, "describe").returns).toBe(v.string);
   });
 
   it("keeps a bare Fetcher (alias erased) as a stub via the fetch signature", () => {
     // `Fetcher` with all type args defaulted drops the "Fetcher" alias name, so
     // the structural fallback must still recognise it by fetch -> Promise<Response>.
-    const line = emit("Fetcher");
-    expect(line).toMatch(/returns: __cw\.v\.stub\b/);
+    const validator = returnValidator("Fetcher");
+    const shape = validatorShape(validator);
+    expect(shape?.kind).toBe("stub");
+    expect(shape?.service).toBeUndefined();
   });
 });

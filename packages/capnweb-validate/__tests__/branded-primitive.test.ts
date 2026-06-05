@@ -1,7 +1,14 @@
 // Branded primitives (`string & { __brand }`) must collapse to their underlying
 // primitive, not be walked as objects (which would reject brand/.toString fields).
 import { describe, it, expect } from "vitest";
-import { transformFixture, transformError } from "./helpers.js";
+import {
+  accepts,
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+  transformError,
+} from "./helpers.js";
+import { v } from "../src/internal/core.js";
 
 function emitFor(body: string): string {
   return transformFixture(body, { target: "new Api()" }).code;
@@ -19,11 +26,11 @@ describe("branded primitives", () => {
          async getUser(id: UserId): Promise<string> { return id; }
        }`
     );
-    // Assert against the emitted validator only; source (incl. `type UserId`) is kept verbatim.
-    expect(code).toMatch(/getUser[\s\S]*?args:\s*\[\s*__cw\.v\.string\s*\]/);
-    const validator = code.slice(0, code.indexOf("class Api"));
-    expect(validator).not.toContain("toString");
-    expect(validator).not.toContain("v.object");
+    const getUser = checkedMethod(loadValidator(code), "getUser");
+    expect(getUser.args[0]).toBe(v.string);
+    expect(getUser.returns).toBe(v.string);
+    expect(accepts(getUser.args[0]!, "u1")).toBe(true);
+    expect(accepts(getUser.args[0]!, { toString: () => "u1" })).toBe(false);
   });
 
   it("validates a string-literal-branded string as v.string", () => {
@@ -33,7 +40,8 @@ describe("branded primitives", () => {
          async getOrder(id: OrderId): Promise<string> { return id; }
        }`
     );
-    expect(code).toMatch(/getOrder[\s\S]*args:\s*\[\s*__cw\.v\.string\s*\]/);
+    const getOrder = checkedMethod(loadValidator(code), "getOrder");
+    expect(getOrder.args[0]).toBe(v.string);
   });
 
   it("validates a branded number as v.number", () => {
@@ -43,7 +51,8 @@ describe("branded primitives", () => {
          async charge(amount: Cents): Promise<void> {}
        }`
     );
-    expect(code).toMatch(/charge[\s\S]*args:\s*\[\s*__cw\.v\.number\s*\]/);
+    const charge = checkedMethod(loadValidator(code), "charge");
+    expect(charge.args[0]).toBe(v.number);
   });
 
   it("still merges a genuine object intersection into an object shape", () => {
@@ -56,8 +65,10 @@ describe("branded primitives", () => {
          async save(v: HasId & HasName): Promise<void> {}
        }`
     );
-    expect(code).toMatch(/"id":\s*__cw\.v\.string/);
-    expect(code).toMatch(/"name":\s*__cw\.v\.string/);
+    const save = checkedMethod(loadValidator(code), "save");
+    expect(accepts(save.args[0]!, { id: "u1", name: "Ada" })).toBe(true);
+    expect(accepts(save.args[0]!, { id: "u1" })).toBe(false);
+    expect(accepts(save.args[0]!, { name: "Ada" })).toBe(false);
   });
 
   it("still rejects a genuinely unsupported type in a property position", () => {

@@ -2,59 +2,68 @@
 // symbols carry no declaration. A prior version dropped declaration-less properties,
 // emitting an empty v.object({}) that validates nothing. Pin a real validator per key.
 import { describe, it, expect } from "vitest";
-import { transformFixture, prelude } from "./helpers.js";
+import {
+  accepts,
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+} from "./helpers.js";
+import type { Validator } from "../src/internal/core.js";
 
-function emitFor(body: string): string {
-  return prelude(transformFixture(body, { target: "new Api()" }).code);
+function returnValidator(body: string): Validator {
+  const code = transformFixture(body, { target: "new Api()" }).code;
+  return checkedMethod(loadValidator(code), "get").returns;
 }
 
 describe("non-homomorphic mapped types", () => {
   it("validates each key of a Record with a literal-union key", () => {
-    const validator = emitFor(
+    const validator = returnValidator(
       `type M = Record<"a" | "b", number>;
        class Api extends RpcTarget {
          async get(): Promise<M> { return null as any; }
        }`
     );
-    // Each synthesized key must get its own validator, not an empty object.
-    expect(validator).toContain(
-      `__cw.v.object({ "a": __cw.v.number, "b": __cw.v.number }, "M")`
-    );
-    expect(validator).not.toMatch(/v\.object\(\{\s*\},\s*"M"\)/);
+    expect(accepts(validator, { a: 1, b: 2 })).toBe(true);
+    expect(accepts(validator, { a: 1 })).toBe(false);
+    expect(accepts(validator, { a: 1, b: "x" })).toBe(false);
   });
 
   it("validates a permission-map shape (the common dangerous case)", () => {
-    const validator = emitFor(
+    const validator = returnValidator(
       `class Api extends RpcTarget {
          async get(): Promise<Record<"read" | "write" | "admin", boolean>> { return null as any; }
        }`
     );
-    expect(validator).toContain(
-      `__cw.v.object({ "read": __cw.v.boolean, "write": __cw.v.boolean, "admin": __cw.v.boolean }, "Record")`
+    expect(accepts(validator, { read: true, write: false, admin: true })).toBe(
+      true
+    );
+    expect(accepts(validator, { read: true, write: false })).toBe(false);
+    expect(accepts(validator, { read: true, write: false, admin: "yes" })).toBe(
+      false
     );
   });
 
   it("validates the literal-union mapped-type form `{ [K in U]: V }`", () => {
-    const validator = emitFor(
+    const validator = returnValidator(
       `class Api extends RpcTarget {
          async get(): Promise<{ [K in "x" | "y"]: string }> { return null as any; }
        }`
     );
-    expect(validator).toContain(`"x": __cw.v.string`);
-    expect(validator).toContain(`"y": __cw.v.string`);
-    expect(validator).not.toMatch(/v\.object\(\{\s*\}\)/);
+    expect(accepts(validator, { x: "ok", y: "ok" })).toBe(true);
+    expect(accepts(validator, { x: "ok" })).toBe(false);
+    expect(accepts(validator, { x: "ok", y: 1 })).toBe(false);
   });
 
   it("still resolves homomorphic mapped types over a named interface (no regression)", () => {
-    const validator = emitFor(
+    const validator = returnValidator(
       `interface Src { a: number; b: string }
        type M = { [K in keyof Src]: Src[K] };
        class Api extends RpcTarget {
          async get(): Promise<M> { return null as any; }
        }`
     );
-    expect(validator).toContain(
-      `__cw.v.object({ "a": __cw.v.number, "b": __cw.v.string }, "M")`
-    );
+    expect(accepts(validator, { a: 1, b: "ok" })).toBe(true);
+    expect(accepts(validator, { a: "x", b: "ok" })).toBe(false);
+    expect(accepts(validator, { a: 1 })).toBe(false);
   });
 });

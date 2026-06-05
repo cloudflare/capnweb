@@ -2,7 +2,8 @@
 // the dedup signature includes isGetter, so a `get config(): string` service and
 // a `config(): string` service get distinct validators with the correct flag.
 import { describe, it, expect } from "vitest";
-import { transformFixture, prelude } from "./helpers.js";
+import { checkedMethod, loadValidator, transformFixture } from "./helpers.js";
+import { v } from "../src/internal/core.js";
 
 describe("getter vs method dedup", () => {
   it("emits a getter validator (isGetter) distinct from a same-shape method", () => {
@@ -19,9 +20,13 @@ describe("getter vs method dedup", () => {
         target: "new WithGetter()",
       },
     );
-    const validators = prelude(code, "class WithGetter");
     // The getter service's config carries isGetter: true.
-    expect(validators).toMatch(/"config":\s*\{[^}]*isGetter:\s*true/);
+    const config = checkedMethod(
+      loadValidator(code, "__capnweb_validate_WithGetter_server"),
+      "config"
+    );
+    expect(config.returns).toBe(v.string);
+    expect(config.isGetter).toBe(true);
   });
 
   it("does not reuse a getter validator for a plain method of the same shape", () => {
@@ -41,9 +46,19 @@ describe("getter vs method dedup", () => {
         target: "new WithGetter()",
       },
     );
-    const validators = prelude(code, "class WithGetter");
     // A getter form and a non-getter form of `config` both appear.
-    expect(validators).toMatch(/"config":\s*\{[^}]*isGetter:\s*true/);
-    expect(validators).toMatch(/"config":\s*\{\s*args:\s*\[\],\s*returns:\s*__cw\.v\.string\s*\}/);
+    const getterConfig = checkedMethod(
+      loadValidator(code, "__capnweb_validate_WithGetter_server"),
+      "config"
+    );
+    expect(getterConfig.returns).toBe(v.string);
+    expect(getterConfig.isGetter).toBe(true);
+
+    const methodConfig = checkedMethod(
+      loadValidator(code, "__capnweb_validate_WithMethod_server"),
+      "config"
+    );
+    expect(methodConfig.returns).toBe(v.string);
+    expect(methodConfig.isGetter).not.toBe(true);
   });
 });

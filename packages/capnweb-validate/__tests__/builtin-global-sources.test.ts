@@ -3,7 +3,13 @@
 // emit v.response for any of them, but not for a module-scoped type that just
 // reuses the name.
 import { describe, expect, it } from "vitest";
-import { transformFixture } from "./helpers.js";
+import {
+  accepts,
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+} from "./helpers.js";
+import { v } from "../src/internal/core.js";
 
 const GLOBALS = `export {};
 declare global {
@@ -39,7 +45,7 @@ function getThingValidator(options: {
   rootFiles?: string[];
   types?: string[];
   worker?: string;
-} = {}): string {
+} = {}) {
   const { code } = transformFixture(options.worker ?? WORKER, {
     imports: "",
     lib: ["ES2022"],
@@ -47,9 +53,7 @@ function getThingValidator(options: {
     rootFiles: options.rootFiles,
     compilerOptions: { types: options.types ?? [] },
   });
-  const line = code.split("\n").find((l) => l.includes("getThing"));
-  if (!line) throw new Error("getThing validator not found in output");
-  return line.trim();
+  return checkedMethod(loadValidator(code), "getThing").returns;
 }
 
 describe("built-in global Response from any source -> v.response", () => {
@@ -57,27 +61,27 @@ describe("built-in global Response from any source -> v.response", () => {
     expect(getThingValidator({
       files: typesPackage("@cloudflare/workers-types", GLOBALS),
       types: ["@cloudflare/workers-types"],
-    })).toContain("returns: __cw.v.response");
+    })).toBe(v.response);
   });
 
   it("wrangler-generated worker-configuration.d.ts (no package)", () => {
     expect(getThingValidator({
       files: { "worker-configuration.d.ts": GLOBALS },
       rootFiles: ["worker-configuration.d.ts"],
-    })).toContain("returns: __cw.v.response");
+    })).toBe(v.response);
   });
 
   it("@types/node", () => {
     expect(getThingValidator({
       files: typesPackage("@types/node", GLOBALS),
       types: ["node"],
-    })).toContain("returns: __cw.v.response");
+    })).toBe(v.response);
   });
 });
 
 describe("a module-scoped type reusing a built-in name is NOT the global", () => {
   it("node-fetch Response validates structurally, not as v.response", () => {
-    const line = getThingValidator({
+    const validator = getThingValidator({
       files: {
         "worker-configuration.d.ts": GLOBALS,
         ...typesPackage(
@@ -97,7 +101,8 @@ export function handler(req: Request, env: unknown): Response {
 }
 `,
     });
-    expect(line).toContain("__cw.v.object");
-    expect(line).not.toContain("v.response");
+    expect(validator).not.toBe(v.response);
+    expect(accepts(validator, { status: 200, text() {} })).toBe(true);
+    expect(accepts(validator, new Response())).toBe(false);
   });
 });

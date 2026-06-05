@@ -1,6 +1,7 @@
 // Regressions: optional methods (union with undefined reports no call signatures) were dropped, and unresolved generics leaked the raw TS flag bitmask.
 import { describe, it, expect } from "vitest";
-import { transformFixture } from "./helpers.js";
+import { checkedMethod, loadValidator, transformFixture } from "./helpers.js";
+import { v } from "../src/internal/core.js";
 
 function build(body: string): { code: string; error?: string } {
   try {
@@ -18,7 +19,9 @@ describe("method edge cases", () => {
     expect(error).toBeUndefined();
     // The optional method must appear in the validator with its arg + return
     // shape, not be silently omitted (which would reject a real call).
-    expect(code).toMatch(/"ping":\s*\{\s*args:\s*\[__cw\.v\.string\],\s*returns:\s*__cw\.v\.string\s*\}/);
+    const ping = checkedMethod(loadValidator(code), "ping");
+    expect(ping.args[0]).toBe(v.string);
+    expect(ping.returns).toBe(v.string);
   });
 
   it("validates a required method alongside an optional one", () => {
@@ -29,8 +32,10 @@ describe("method edge cases", () => {
        }`,
     );
     expect(error).toBeUndefined();
-    expect(code).toContain('"required":');
-    expect(code).toContain('"optional":');
+    const validator = loadValidator(code);
+    expect(Object.keys(validator.methods)).toEqual(["required", "optional"]);
+    expect(checkedMethod(validator, "required").returns).toBe(v.number);
+    expect(checkedMethod(validator, "optional").returns).toBe(v.string);
   });
 
   it("reports an unresolved generic type parameter in human terms", () => {
@@ -40,6 +45,6 @@ describe("method edge cases", () => {
     expect(error).toBeDefined();
     expect(error).toContain("unresolved generic type parameter");
     // Must not leak the raw TypeScript flag bitmask.
-    expect(error).not.toMatch(/flags=\d/);
+    expect(error).not.toContain("flags=");
   });
 });

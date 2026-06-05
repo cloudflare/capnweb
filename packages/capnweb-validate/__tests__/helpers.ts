@@ -5,6 +5,12 @@ import {
   createVirtualCompilerHost,
 } from "@typescript/vfs";
 import ts from "typescript";
+import * as cw from "../src/internal/core.js";
+import type {
+  MethodSpec,
+  ServiceValidator,
+  Validator,
+} from "../src/internal/core.js";
 import type {
   TransformContext,
   TransformContextOptions,
@@ -44,6 +50,11 @@ export type FixtureOptions = {
 };
 
 export type FixtureResult = { code: string; warns: string[] };
+
+export type CheckedMethodSpec = Extract<
+  MethodSpec,
+  { args: Validator[]; returns: Validator }
+>;
 
 export type VirtualTransformContextOptions = Pick<
   FixtureOptions,
@@ -191,8 +202,67 @@ export function transformError(body: string, opts: FixtureOptions = {}): string 
   throw new Error("expected a build error but transform succeeded");
 }
 
-/** Generated validator prelude: everything before `marker` in the code. */
-export function prelude(code: string, marker = "class Api"): string {
-  const i = code.indexOf(marker);
-  return i > 0 ? code.slice(0, i) : code;
+export function loadValidator(
+  code: string,
+  binding = "__capnweb_validate_Api_server"
+): ServiceValidator {
+  const runtimeImports = [
+    `import * as __cw from "capnweb-validate/internal/core";\n`,
+    `import * as __cw from "capnweb-validate/internal/capnweb";\n`,
+  ];
+  const runtimeImport = runtimeImports.find((text) => code.startsWith(text));
+  if (!runtimeImport) {
+    throw new Error("validator runtime import not found in:\n" + code);
+  }
+
+  const start = runtimeImport.length;
+  let end = code.length;
+  for (let lineStart = start; lineStart < code.length; ) {
+    let lineEnd = code.indexOf("\n", lineStart);
+    if (lineEnd === -1) lineEnd = code.length;
+    let line = code.slice(lineStart, lineEnd);
+    if (line.trimStart().startsWith("import ")) {
+      end = lineStart;
+      break;
+    }
+    lineStart = lineEnd + 1;
+  }
+  const declarations = code.slice(start, end);
+
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  return new Function("__cw", `${declarations}\nreturn ${binding};`)(
+    cw
+  ) as ServiceValidator;
+}
+
+export function checkedMethod(
+  validator: ServiceValidator,
+  name: string
+): CheckedMethodSpec {
+  const spec = validator.methods[name];
+  if (!spec || spec.unchecked === true) {
+    throw new Error(`expected checked method ${name}`);
+  }
+  return spec as CheckedMethodSpec;
+}
+
+export function accepts(validator: Validator, value: unknown): boolean {
+  try {
+    validator(value, []);
+    return true;
+  } catch (e) {
+    if (e instanceof TypeError) return false;
+    throw e;
+  }
+}
+
+export function validatorShape(
+  validator: Validator
+): Record<string, unknown> | undefined {
+  const symbol = Object.getOwnPropertySymbols(validator).find(
+    (s) => s.description === "capnweb-validate.validatorShape"
+  );
+  return symbol
+    ? (validator as Record<symbol, Record<string, unknown> | undefined>)[symbol]
+    : undefined;
 }

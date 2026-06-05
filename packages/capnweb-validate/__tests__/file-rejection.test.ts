@@ -3,7 +3,7 @@
 // v.blob, which would accept a subclass in a Blob-typed position. Blob itself
 // stays supported.
 import { describe, it, expect } from "vitest";
-import { transformFixture } from "./helpers.js";
+import { checkedMethod, loadValidator, transformFixture } from "./helpers.js";
 import { v } from "../src/internal/core.js";
 
 function accepts(validator: (value: unknown, path: never[]) => void, value: unknown): boolean {
@@ -46,7 +46,7 @@ describe("File is rejected at build time", () => {
       `class Api extends RpcTarget { async get(): Promise<Blob> { return null as any; } }`,
     );
     expect(error).toBeUndefined();
-    expect(code).toContain("returns: __cw.v.blob");
+    expect(checkedMethod(loadValidator(code), "get").returns).toBe(v.blob);
   });
 });
 
