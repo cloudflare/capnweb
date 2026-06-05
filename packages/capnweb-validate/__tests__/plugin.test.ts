@@ -34,6 +34,8 @@ import {
   newWorkersWebSocketRpcResponse,
   nodeHttpBatchRpcResponse,
 } from "../src/capnweb.js";
+import { __validateStub } from "../src/internal/core.js";
+import { validateStub } from "../src/index.js";
 import { capnwebValidate } from "../src/plugin.js";
 import { createTransformContext } from "../src/transform/context.js";
 import { runBuild } from "../src/transform/run.js";
@@ -55,6 +57,18 @@ describe("marker APIs throw before the transform runs", () => {
       expect(() => marker()).toThrow(/capnweb-validate marker API was called before it was transformed/);
     });
   }
+});
+
+describe("validateStub marker API", () => {
+  it("throws before the transform runs", () => {
+    expect(() => validateStub<unknown>({})).toThrow(
+      /capnweb-validate validateStub\(\) was called before it was transformed/
+    );
+  });
+
+  it("is exported from the internal runtime for transformed code", () => {
+    expect(typeof __validateStub).toBe("function");
+  });
 });
 
 describe("TransformContext stub", () => {

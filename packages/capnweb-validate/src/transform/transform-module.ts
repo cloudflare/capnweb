@@ -74,6 +74,8 @@ const RUNTIME_NAMESPACE = "__cw";
 
 const CORE_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/core";\n`;
 const CAPNWEB_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/capnweb";\n`;
+const CORE_RUNTIME_NAMESPACE = "__cvcore";
+const CORE_RUNTIME_EXTRA_IMPORT = `import * as ${CORE_RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/core";\n`;
 
 // Exported so marker-coverage.test.ts can assert this stays in sync with capnweb's actual RPC entry points.
 export const MARKERS: Record<
@@ -108,6 +110,12 @@ export const MARKERS: Record<
     form: "call",
     helper: "__nodeHttpBatchRpcResponseWithValidation",
     targetArgIndex: 2,
+  },
+  validateStub: {
+    side: "client",
+    form: "call",
+    helper: "__validateStub",
+    targetArgIndex: 0,
   },
 };
 
@@ -155,17 +163,27 @@ export function transformModule(
   let serverMode = context.options.serverValidation ?? "throw";
 
   let edits: TextEdit[] = [];
-  let needsCapnwebRuntime = callSites.length > 0;
+  let capnwebCallSites = callSites.filter((site) => site.marker.side === "server");
+  let coreCallSites = callSites.filter((site) => site.marker.side === "client");
+  let needsCapnwebRuntime = capnwebCallSites.length > 0;
+  let needsCoreExtraRuntime = needsCapnwebRuntime && coreCallSites.length > 0;
   let prelude = needsCapnwebRuntime
     ? CAPNWEB_RUNTIME_IMPORT
     : CORE_RUNTIME_IMPORT;
+  if (needsCoreExtraRuntime) prelude += CORE_RUNTIME_EXTRA_IMPORT;
   for (let entry of dedup.emitOrder()) {
-    prelude += emitValidator(entry.bindingName, entry.shape, serverMode) + "\n";
+    let mode = entry.side === "client" ? "throw" : serverMode;
+    prelude += emitValidator(entry.bindingName, entry.shape, mode) + "\n";
   }
   edits.push({ start: 0, end: 0, text: prelude });
 
   for (let cs of callSites) {
     let callee = cs.call.expression;
+    let runtimeNamespace = cs.marker.side === "client"
+      ? needsCapnwebRuntime
+        ? CORE_RUNTIME_NAMESPACE
+        : RUNTIME_NAMESPACE
+      : RUNTIME_NAMESPACE;
     let headStart =
       cs.marker.form === "new"
         ? cs.call.getStart(sourceFile)
@@ -173,7 +191,7 @@ export function transformModule(
     edits.push({
       start: headStart,
       end: callee.getEnd(),
-      text: `${RUNTIME_NAMESPACE}.${cs.marker.helper}`,
+      text: `${runtimeNamespace}.${cs.marker.helper}`,
     });
     let args = cs.call.arguments;
     if (args && args.length > 0) {
@@ -686,11 +704,42 @@ function resolveCallSiteShape(
   marker: (typeof MARKERS)[keyof typeof MARKERS],
   checker: ts.TypeChecker
 ): ServiceShape | null {
-  let arg = call.arguments?.[marker.targetArgIndex];
-  if (!arg) return null;
-  let type = checker.getTypeAtLocation(arg);
+  let type: ts.Type;
+  if (marker.side === "client") {
+    let explicit = getExplicitTypeArgument(call, checker);
+    if (explicit) {
+      type = unwrapRpcStub(checker, explicit);
+    } else {
+      let arg = call.arguments?.[marker.targetArgIndex];
+      if (!arg) return null;
+      let unwrapped = unwrapRpcStub(checker, checker.getTypeAtLocation(arg));
+      if (isTooGeneric(unwrapped)) return null;
+      type = unwrapped;
+    }
+  } else {
+    let arg = call.arguments?.[marker.targetArgIndex];
+    if (!arg) return null;
+    type = checker.getTypeAtLocation(arg);
+  }
   if (isTooGeneric(type)) return null;
   return resolveServiceShape(ts, checker, type);
+}
+
+function getExplicitTypeArgument(
+  call: ts.CallExpression | ts.NewExpression,
+  checker: ts.TypeChecker
+): ts.Type | null {
+  let arg = call.typeArguments?.[0];
+  return arg ? checker.getTypeFromTypeNode(arg) : null;
+}
+
+function unwrapRpcStub(checker: ts.TypeChecker, type: ts.Type): ts.Type {
+  let sym = type.getSymbol();
+  if (sym && (sym.getName() === "RpcStub" || sym.getName() === "RpcPromise")) {
+    let args = checker.getTypeArguments(type as ts.TypeReference);
+    if (args.length === 1) return args[0]!;
+  }
+  return type;
 }
 
 function isTooGeneric(type: ts.Type): boolean {

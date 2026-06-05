@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react'
 import { newHttpBatchRpcSession } from 'capnweb'
+import { validateStub } from 'capnweb-validate'
 import type { Api } from '../../../server/worker'
 import './App.css'
 
@@ -15,6 +16,10 @@ type Result = {
 type CallEvent = { label: string, start: number, end: number }
 type NetEvent = { label: string, start: number, end: number }
 type Trace = { total: number, calls: CallEvent[], network: NetEvent[] }
+
+function connectApi() {
+  return validateStub<Api>(newHttpBatchRpcSession<Api>('/api'))
+}
 
 export function App() {
   const [pipelined, setPipelined] = useState<Result | null>(null)
@@ -57,7 +62,7 @@ export function App() {
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
     const calls: CallEvent[] = []
-    const api = newHttpBatchRpcSession<Api>('/api')
+    const api = connectApi()
     const userStart = 0; calls.push({ label: 'authenticate', start: userStart, end: NaN })
     const user = api.authenticate('cookie-123')
     user.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
@@ -85,19 +90,19 @@ export function App() {
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
     const calls: CallEvent[] = []
-    const api1 = newHttpBatchRpcSession<Api>('/api')
+    const api1 = connectApi()
     const aStart = 0; calls.push({ label: 'authenticate', start: aStart, end: NaN })
     const uPromise = api1.authenticate('cookie-123')
     uPromise.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
     const u = await uPromise
 
-    const api2 = newHttpBatchRpcSession<Api>('/api')
+    const api2 = connectApi()
     const pStart = performance.now() - t0; calls.push({ label: 'getUserProfile', start: pStart, end: NaN })
     const pPromise = api2.getUserProfile(u.id)
     pPromise.then(() => { calls.find(c => c.label==='getUserProfile')!.end = performance.now() - t0 })
     const p = await pPromise
 
-    const api3 = newHttpBatchRpcSession<Api>('/api')
+    const api3 = connectApi()
     const nStart = performance.now() - t0; calls.push({ label: 'getNotifications', start: nStart, end: NaN })
     const nPromise = api3.getNotifications(u.id)
     nPromise.then(() => { calls.find(c => c.label==='getNotifications')!.end = performance.now() - t0 })

@@ -57,6 +57,106 @@ export type ServiceValidator = {
 
 type WrapSide = "server" | "client";
 
+interface StubBase<T = unknown> extends Disposable {
+  dup(): this;
+  onRpcBroken(callback: (error: unknown) => void): void;
+  readonly __RPC_STUB_BRAND: T;
+}
+
+type Stubable =
+  | { readonly __RPC_TARGET_BRAND: never }
+  | { readonly __WORKER_ENTRYPOINT_BRAND: never }
+  | { readonly __DURABLE_OBJECT_BRAND: never }
+  | ((...args: never[]) => unknown);
+
+type BaseType =
+  | void
+  | undefined
+  | null
+  | boolean
+  | number
+  | bigint
+  | string
+  | Date
+  | Error
+  | RegExp
+  | Blob
+  | ArrayBuffer
+  | DataView
+  | Uint8Array
+  | Uint8ClampedArray
+  | Uint16Array
+  | Uint32Array
+  | Int8Array
+  | Int16Array
+  | Int32Array
+  | BigUint64Array
+  | BigInt64Array
+  | Float32Array
+  | Float64Array
+  | ReadableStream<Uint8Array>
+  | WritableStream<unknown>
+  | Request
+  | Response
+  | Headers;
+
+type Stubify<T> = T extends Stubable
+  ? ValidatedStub<T>
+  : T extends Promise<infer U>
+    ? Stubify<U>
+    : T extends StubBase<unknown>
+      ? T
+    : T extends Map<infer K, infer V>
+      ? Map<Stubify<K>, Stubify<V>>
+      : T extends Set<infer V>
+        ? Set<Stubify<V>>
+        : T extends []
+          ? []
+          : T extends [infer Head, ...infer Tail]
+            ? [Stubify<Head>, ...Stubify<Tail>]
+            : T extends readonly []
+              ? readonly []
+              : T extends readonly [infer Head, ...infer Tail]
+                ? readonly [Stubify<Head>, ...Stubify<Tail>]
+                : T extends Array<infer V>
+                  ? Array<Stubify<V>>
+                  : T extends ReadonlyArray<infer V>
+                    ? ReadonlyArray<Stubify<V>>
+                    : T extends BaseType
+                      ? T
+                      : T extends object
+                        ? {
+                            [K in keyof T as K extends string | number ? K : never]: Stubify<
+                              T[K]
+                            >;
+                          }
+                        : T;
+
+type Unstubify<T> = T | Promise<T> | StubBase<T>;
+type UnstubifyAll<T extends readonly unknown[]> = {
+  [K in keyof T]: Unstubify<T[K]>;
+};
+type StubResult<T> = Promise<Stubify<T>> & ValidatedStub<T> & StubBase<T>;
+type StubMethodOrProperty<T> = T extends (...args: infer P) => infer R
+  ? (...args: UnstubifyAll<P>) => StubResult<Awaited<R>>
+  : StubResult<Awaited<T>>;
+type MaybeCallableStub<T> = T extends (...args: infer P) => infer R
+  ? (...args: UnstubifyAll<P>) => StubResult<Awaited<R>>
+  : unknown;
+export type ValidatedStub<T> = MaybeCallableStub<T> &
+  (T extends object
+    ? {
+        [K in Exclude<keyof T, symbol | keyof StubBase<never>>]: StubMethodOrProperty<
+          T[K]
+        >;
+      } & {
+        map<V>(callback: (value: ValidatedStub<NonNullable<T>>) => V): StubResult<
+          Array<V>
+        >;
+      } &
+        StubBase<T>
+    : StubBase<T>);
+
 function fail(path: PropertyPath, expected: string, value: unknown): never {
   let actual = describe(value);
   throw newValidationTypeError(
@@ -1063,6 +1163,13 @@ export function wrapClientStub(
       };
     },
   });
+}
+
+export function __validateStub<T>(
+  stub: object,
+  validator: ServiceValidator
+): ValidatedStub<T> {
+  return wrapClientStub(stub, validator) as ValidatedStub<T>;
 }
 
 export function __validateRpcClass<T extends new (...args: any[]) => object>(

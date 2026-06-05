@@ -56,6 +56,7 @@ declare module "cloudflare:workers" {
 }
 declare module "capnweb-validate" {
   export function validateRpc(...args: unknown[]): unknown;
+  export function validateStub<T>(stub: object): unknown;
 }
 declare module "capnweb-validate/capnweb" {
   export function newWorkersRpcResponse(request: Request, target: object): Promise<Response>;
@@ -100,6 +101,63 @@ describe("transformModule", () => {
     } finally {
       ctx.dispose();
     }
+  });
+
+  it("client: rewrites explicit validateStub with the explicit type argument", () => {
+    let { code } = transform(`
+      import { validateStub } from "capnweb-validate";
+      import { newHttpBatchRpcSession, RpcTarget } from "capnweb";
+      interface Api extends RpcTarget {
+        echo(value: string): Promise<string>;
+      }
+      export const api = validateStub<Api>(newHttpBatchRpcSession<Api>("/rpc"));
+    `);
+    expect(code).toContain(`import * as __cw from "capnweb-validate/internal/core"`);
+    expect(code).toContain(`__cw.__validateStub<Api>(newHttpBatchRpcSession<Api>("/rpc"), __capnweb_validate_Api_client)`);
+    const echo = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Api_client"),
+      "echo"
+    );
+    expect(echo.args[0]).toBe(v.string);
+    expect(echo.returns).toBe(v.string);
+  });
+
+  it("client: validateStub works for Workers RPC style service stubs", () => {
+    let { code } = transform(`
+      import { validateStub } from "capnweb-validate";
+      import { WorkerEntrypoint } from "cloudflare:workers";
+      interface Api extends WorkerEntrypoint {
+        echo(value: string): Promise<string>;
+      }
+      declare const env: { SERVICE: unknown };
+      export const api = validateStub<Api>(env.SERVICE as object);
+    `);
+    expect(code).toContain(`__cw.__validateStub<Api>(env.SERVICE as object, __capnweb_validate_Api_client)`);
+    const echo = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Api_client"),
+      "echo"
+    );
+    expect(echo.args[0]).toBe(v.string);
+    expect(echo.returns).toBe(v.string);
+  });
+
+  it("client: validateStub plus capnweb server marker imports both runtimes", () => {
+    let { code } = transform(`
+      import { validateStub } from "capnweb-validate";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      import { newHttpBatchRpcSession, RpcTarget } from "capnweb";
+      class Api extends RpcTarget {
+        echo(value: string): string { return value; }
+      }
+      export const api = validateStub<Api>(newHttpBatchRpcSession<Api>("/rpc"));
+      export function handler(req: Request): Promise<Response> {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+    expect(code).toContain(`import * as __cw from "capnweb-validate/internal/capnweb"`);
+    expect(code).toContain(`import * as __cvcore from "capnweb-validate/internal/core"`);
+    expect(code).toContain(`__cvcore.__validateStub<Api>(newHttpBatchRpcSession<Api>("/rpc"), __capnweb_validate_Api_client)`);
+    expect(code).toContain(`__cw.__newWorkersRpcResponseWithValidation(req, new Api(), __capnweb_validate_Api_server)`);
   });
 
   it("decorator: rewrites @validateRpc to wrap the class", () => {

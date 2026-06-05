@@ -3,8 +3,8 @@
 //     https://opensource.org/license/mit
 
 // Universal bundler plugin (vite / rollup / webpack / rspack / esbuild / farm)
-// built on `unplugin`. Rewrites capnweb-validate decorators and server markers;
-// nothing is written to disk.
+// built on `unplugin`. Rewrites capnweb-validate decorators, server markers,
+// and explicit validateStub() calls; nothing is written to disk.
 
 import { sep } from "node:path";
 import { createUnplugin } from "unplugin";

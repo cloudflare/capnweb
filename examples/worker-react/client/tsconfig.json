@@ -12,7 +12,10 @@
     "jsx": "react-jsx",
     "strict": true,
     "paths": {
-      "capnweb": ["../../../src/index.ts"]
+      "capnweb": ["../../../src/index.ts"],
+      "capnweb-validate": ["../../../packages/capnweb-validate/src/index.ts"],
+      "capnweb-validate/internal/core": ["../../../packages/capnweb-validate/src/internal/core.ts"],
+      "capnweb-validate/internal": ["../../../packages/capnweb-validate/src/internal/runtime.ts"]
     }
   },
   "include": ["src"]

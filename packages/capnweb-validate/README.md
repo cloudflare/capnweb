@@ -87,6 +87,40 @@ Pass `@validateRpc<Cursor<string>>()` to validate the `Cursor<string>` surface,
 or `@validateRpc<Cursor<any>>()` to silence the warning while keeping `Cursor`
 positions permissive.
 
+## Client Usage
+
+Client-side stub validation is explicit. Wrap a Cap'n Web client stub with
+`validateStub<T>()` when the caller wants return values and pipelined calls
+checked against a concrete surface:
+
+```ts
+import { newHttpBatchRpcSession } from "capnweb";
+import { validateStub } from "capnweb-validate";
+
+import type { Api } from "./worker";
+
+export const api = validateStub<Api>(newHttpBatchRpcSession<Api>("/rpc"));
+```
+
+The same helper can wrap Workers RPC service stubs:
+
+```ts
+import { validateStub } from "capnweb-validate";
+
+import type { Api } from "./worker";
+
+export default {
+  async fetch(_request: Request, env: { SERVICE: unknown }) {
+    const api = validateStub<Api>(env.SERVICE as object);
+    return Response.json(await api.status());
+  },
+};
+```
+
+`validateStub<T>()` validates arguments before calls through the stub and
+validates resolved return values on the caller side. Normal Cap'n Web client
+constructors are not rewritten automatically.
+
 ## Bundler Plugins
 
 Use the adapter that matches your bundler:
@@ -165,6 +199,7 @@ Where errors surface depends on which boundary failed:
 
 | Boundary | Failure | How it surfaces |
 | -------- | ------- | --------------- |
+| Client stub | Bad argument before transport or bad resolved return | The stub method throws synchronously for bad args; the returned promise rejects for bad returns. |
 | Server target | Bad incoming argument or outgoing return | The server throws and the caller observes an RPC rejection. |
 
 ## Current Type Coverage
