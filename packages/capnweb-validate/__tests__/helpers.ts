@@ -1,9 +1,14 @@
-// Shared fixtures for transform tests: build a throwaway project in a tmpdir,
+// Shared fixtures for transform tests: build an in-memory TypeScript project,
 // run the real transform, and return the generated code plus any warnings.
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { createTransformContext } from "../src/transform/context.js";
+import {
+  createFSBackedSystem,
+  createVirtualCompilerHost,
+} from "@typescript/vfs";
+import ts from "typescript";
+import type {
+  TransformContext,
+  TransformContextOptions,
+} from "../src/transform/context.js";
 import { transformModule } from "../src/transform/transform-module.js";
 
 /** Base capnweb shim: RpcTarget plus the server marker. */
@@ -26,6 +31,12 @@ export type FixtureOptions = {
   shim?: string;
   /** tsconfig `lib` list. Defaults to ["es2022", "DOM"]. */
   lib?: string[];
+  /** Extra compiler options layered over the default virtual project options. */
+  compilerOptions?: ts.CompilerOptions;
+  /** Additional virtual files, keyed by path relative to the virtual project root. */
+  files?: Record<string, string>;
+  /** Additional virtual files to include as Program roots. */
+  rootFiles?: string[];
   /** Import lines prepended to the body. Defaults to the server marker + RpcTarget. */
   imports?: string;
   /** When set, append a handler returning newWorkersRpcResponse(req, <target>). */
@@ -34,53 +45,132 @@ export type FixtureOptions = {
 
 export type FixtureResult = { code: string; warns: string[] };
 
+export type VirtualTransformContextOptions = Pick<
+  FixtureOptions,
+  "shim" | "lib" | "compilerOptions" | "files" | "rootFiles"
+> & {
+  /** Virtual worker.ts contents. */
+  worker?: string;
+};
+
 const DEFAULT_IMPORTS =
   `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";\n` +
   `import { RpcTarget } from "capnweb";\n`;
 
+const VIRTUAL_ROOT = "/capnweb-validate-vfs";
+const SHIM_PATH = `${VIRTUAL_ROOT}/capnweb.d.ts`;
+const WORKER_PATH = `${VIRTUAL_ROOT}/worker.ts`;
+
+function virtualPath(path: string): string {
+  return path.startsWith("/") ? path : `${VIRTUAL_ROOT}/${path}`;
+}
+
+function normalizeLibName(lib: string): string {
+  let name = lib.toLowerCase();
+  return name.startsWith("lib.") ? name : `lib.${name}.d.ts`;
+}
+
+function createVirtualContext(
+  files: Map<string, string>,
+  rootNames: string[],
+  compilerOptions: ts.CompilerOptions
+): TransformContext {
+  let options: ts.CompilerOptions = {
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    strict: true,
+    skipLibCheck: true,
+    types: [],
+    ...compilerOptions,
+    lib: (compilerOptions.lib ?? ["es2022", "DOM"]).map(normalizeLibName),
+  };
+  let sys = createFSBackedSystem(files, process.cwd(), ts);
+  let { compilerHost } = createVirtualCompilerHost(sys, options, ts);
+  compilerHost.getCurrentDirectory = () => VIRTUAL_ROOT;
+  let program = ts.createProgram({
+    rootNames,
+    options,
+    host: compilerHost,
+  });
+  let checker = program.getTypeChecker();
+  let contextOptions: TransformContextOptions = { cwd: VIRTUAL_ROOT };
+
+  return {
+    options: contextOptions,
+    listSourceFiles() {
+      return program
+        .getSourceFiles()
+        .filter(
+          (sf) =>
+            !sf.isDeclarationFile && sf.fileName.startsWith(`${VIRTUAL_ROOT}/`)
+        )
+        .map((sf) => sf.fileName);
+    },
+    getChecker() {
+      return checker;
+    },
+    getProgram() {
+      return program;
+    },
+    getSourceFile(id) {
+      return program.getSourceFile(id);
+    },
+    invalidateFile() {},
+    dispose() {},
+  };
+}
+
+export function createVirtualTransformContext(
+  opts: VirtualTransformContextOptions = {}
+): TransformContext {
+  let files = new Map<string, string>([
+    [SHIM_PATH, opts.shim ?? SHIM],
+    [WORKER_PATH, opts.worker ?? ""],
+  ]);
+  for (let [path, source] of Object.entries(opts.files ?? {})) {
+    files.set(virtualPath(path), source);
+  }
+  let rootNames = [
+    SHIM_PATH,
+    WORKER_PATH,
+    ...(opts.rootFiles ?? []).map(virtualPath),
+  ];
+  return createVirtualContext(files, rootNames, {
+    ...opts.compilerOptions,
+    lib: opts.compilerOptions?.lib ?? opts.lib ?? ["es2022", "DOM"],
+  });
+}
+
 /**
- * Transform `body` in a throwaway project, capturing console.warn. Returns the
+ * Transform `body` in a virtual project, capturing console.warn. Returns the
  * generated `code` and `warns`. Throws if the transform reports a build error.
  */
 export function transformFixture(
   body: string,
   opts: FixtureOptions = {}
 ): FixtureResult {
-  const dir = mkdtempSync(join(tmpdir(), "capnweb-validate-"));
   const warns: string[] = [];
   const origWarn = console.warn;
   console.warn = (m: unknown) => {
     warns.push(String(m));
   };
   try {
-    writeFileSync(join(dir, "capnweb.d.ts"), opts.shim ?? SHIM);
-    writeFileSync(
-      join(dir, "tsconfig.json"),
-      JSON.stringify({
-        compilerOptions: {
-          target: "es2022",
-          module: "esnext",
-          moduleResolution: "bundler",
-          strict: true,
-          skipLibCheck: true,
-          lib: opts.lib ?? ["es2022", "DOM"],
-          types: [],
-        },
-        include: ["**/*.ts"],
-      })
-    );
     const imports = opts.imports ?? DEFAULT_IMPORTS;
     const tail = opts.target
       ? `\nexport function handler(req: Request): Promise<Response> { return newWorkersRpcResponse(req, ${opts.target}); }`
       : "";
-    const wp = join(dir, "worker.ts");
-    writeFileSync(wp, imports + body + tail);
-    const ctx = createTransformContext({
-      tsconfig: join(dir, "tsconfig.json"),
-      cwd: dir,
+    const code = imports + body + tail;
+    const ctx = createVirtualTransformContext({
+      shim: opts.shim,
+      lib: opts.lib,
+      compilerOptions: opts.compilerOptions,
+      files: opts.files,
+      rootFiles: opts.rootFiles,
+      worker: code,
     });
     try {
-      const r = transformModule(ctx, wp, readFileSync(wp, "utf8"));
+      const r = transformModule(ctx, WORKER_PATH, code);
       if (!r) throw new Error("transformModule returned null");
       return { code: r.code, warns };
     } finally {
@@ -88,7 +178,6 @@ export function transformFixture(
     }
   } finally {
     console.warn = origWarn;
-    rmSync(dir, { recursive: true, force: true });
   }
 }
 

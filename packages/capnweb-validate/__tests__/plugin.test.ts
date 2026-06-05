@@ -10,7 +10,23 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("capnweb", () => ({
+  deserialize() {},
+  serialize() {},
+  RpcPromise: function RpcPromise() {},
+  RpcSession: function RpcSession() {},
+  RpcStub: function RpcStub() {},
+  RpcTarget: class RpcTarget {},
+  newHttpBatchRpcResponse() {},
+  newHttpBatchRpcSession() {},
+  newMessagePortRpcSession() {},
+  newWebSocketRpcSession() {},
+  newWorkersRpcResponse() {},
+  newWorkersWebSocketRpcResponse() {},
+  nodeHttpBatchRpcResponse() {},
+}));
 
 import {
   newHttpBatchRpcResponse,
@@ -26,6 +42,7 @@ import { capnwebValidate } from "../src/plugin.js";
 import { createTransformContext } from "../src/transform/context.js";
 import { runBuild } from "../src/transform/run.js";
 import { transformModule } from "../src/transform/transform-module.js";
+import { createVirtualTransformContext } from "./helpers.js";
 
 describe("marker APIs throw before the transform runs", () => {
   // Each marker is `uncompiledMarker` underneath. Calling any of them at
@@ -88,34 +105,26 @@ describe("TransformContext stub", () => {
 
 describe("transformModule fast bail-outs", () => {
   it("returns null for files that don't mention the package", () => {
-    let ctx = createTransformContext();
-    let result = transformModule(ctx, "/src/anywhere.ts",
-        `export const x = 1;`);
-    expect(result).toBeNull();
+    let ctx = createVirtualTransformContext();
+    try {
+      let result = transformModule(ctx, "/src/anywhere.ts",
+          `export const x = 1;`);
+      expect(result).toBeNull();
+    } finally {
+      ctx.dispose();
+    }
   });
 
   it("returns null when the file isn't in the Program", () => {
-    // Use an empty Program so this fast-path test does not parse the whole
-    // repository when the full suite is running under CI load.
-    let dir = mkdtempSync(join(tmpdir(), "capnweb-validate-fast-bail-"));
+    let ctx = createVirtualTransformContext({
+      worker: `export const inProgram = true;`,
+    });
     try {
-      writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
-        compilerOptions: { target: "es2022", module: "esnext", types: [] },
-        files: [],
-      }));
-      let ctx = createTransformContext({
-        tsconfig: join(dir, "tsconfig.json"),
-        cwd: dir,
-      });
-      try {
-        let result = transformModule(ctx, "/src/not-in-program.ts",
-            `import { newWorkersRpcResponse } from "capnweb-validate";`);
-        expect(result).toBeNull();
-      } finally {
-        ctx.dispose();
-      }
+      let result = transformModule(ctx, "/src/not-in-program.ts",
+          `import { newWorkersRpcResponse } from "capnweb-validate";`);
+      expect(result).toBeNull();
     } finally {
-      rmSync(dir, { recursive: true, force: true });
+      ctx.dispose();
     }
   });
 });
@@ -134,19 +143,15 @@ describe("unplugin adapters", () => {
   }
 
   it("honors include and exclude in transformInclude", () => {
-    let dir = mkdtempSync(join(tmpdir(), "capnweb-validate-plugin-"));
-    try {
-      let plugin = capnwebValidate.vite({
-        cwd: dir,
-        include: ["src/**"],
-        exclude: ["src/skip.ts"],
-      }) as { transformInclude(id: string): boolean };
-      expect(plugin.transformInclude(join(dir, "src/app.ts"))).toBe(true);
-      expect(plugin.transformInclude(join(dir, "src/skip.ts"))).toBe(false);
-      expect(plugin.transformInclude(join(dir, "other.ts"))).toBe(false);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    let cwd = "/capnweb-validate-plugin";
+    let plugin = capnwebValidate.vite({
+      cwd,
+      include: ["src/**"],
+      exclude: ["src/skip.ts"],
+    }) as { transformInclude(id: string): boolean };
+    expect(plugin.transformInclude(join(cwd, "src/app.ts"))).toBe(true);
+    expect(plugin.transformInclude(join(cwd, "src/skip.ts"))).toBe(false);
+    expect(plugin.transformInclude(join(cwd, "other.ts"))).toBe(false);
   });
 });
 

@@ -7,58 +7,18 @@
 // record-index, mapped-types, getters, namespace-imports, rpc-compatible-types,
 // method-overloads, generic-class, fetcher-detection, ...).
 
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { describe, expect, it } from "vitest";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import { createTransformContext } from "../src/transform/context.js";
-import { transformModule } from "../src/transform/transform-module.js";
 import { isTypeScriptLibFileName } from "../src/transform/type-introspector.js";
+import { transformFixture } from "./helpers.js";
 
-let dir: string;
-
-function write(rel: string, source: string): string {
-  let p = join(dir, rel);
-  writeFileSync(p, source);
-  return p;
+function transform(source: string): { code: string } {
+  return transformFixture(source, { shim: CAPNWEB_SHIM, imports: "" });
 }
 
-function setup(): void {
-  dir = mkdtempSync(join(tmpdir(), "capnweb-validate-tm-"));
-  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
-    compilerOptions: {
-      target: "es2022",
-      module: "esnext",
-      moduleResolution: "bundler",
-      strict: true,
-      skipLibCheck: true,
-      types: [],
-    },
-    include: ["**/*.ts"],
-  }));
-  write("capnweb.d.ts", CAPNWEB_SHIM);
-}
-
-function teardown(): void {
-  rmSync(dir, { recursive: true, force: true });
-}
-
-function transform(id: string): { code: string } {
-  let ctx = createTransformContext({ tsconfig: join(dir, "tsconfig.json"), cwd: dir });
+function transformError(source: string): string {
   try {
-    let result = transformModule(ctx, id, readFileSync(id, "utf8"));
-    if (!result) throw new Error("transformModule returned null");
-    return result;
-  } finally {
-    ctx.dispose();
-  }
-}
-
-function transformError(id: string): string {
-  try {
-    transform(id);
+    transform(source);
   } catch (err) {
     return err instanceof Error ? err.message : String(err);
   }
@@ -74,7 +34,7 @@ type TestServiceValidator = {
 };
 
 async function loadValidator(code: string, binding: string): Promise<TestServiceValidator> {
-  let rt = await import("../src/internal/runtime.js");
+  let rt = await import("../src/internal/core.js");
   let prelude = code.match(/import \* as __rt from "capnweb-validate\/internal(?:\/(?:core|capnweb))?";\n([\s\S]*?)\n\s*import\s+/);
   expect(prelude, "validator prelude not found in:\n" + code).not.toBeNull();
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
@@ -114,11 +74,8 @@ declare module "capnweb-validate/capnweb" {
 `;
 
 describe("transformModule", () => {
-  beforeEach(setup);
-  afterEach(teardown);
-
   it("server: rewrites newWorkersRpcResponse and emits a validator", () => {
-    let src = write("worker.ts", `
+    let { code } = transform(`
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget { greet(name: string): string { return name; } }
@@ -126,46 +83,42 @@ describe("transformModule", () => {
         return newWorkersRpcResponse(req, new Api());
       }
     `);
-    let { code } = transform(src);
     expect(code).toContain("__rt.__newWorkersRpcResponseWithValidation(req, new Api()");
     expect(code).toContain(`import * as __rt from "capnweb-validate/internal/capnweb"`);
     expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
   });
 
   it("client: rewrites newHttpBatchRpcSession from the explicit type argument", () => {
-    let src = write("client.ts", `
+    let { code } = transform(`
       import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       interface Api extends RpcTarget { echo(value: string): Promise<string>; }
       export const api = newHttpBatchRpcSession<Api>("/rpc");
     `);
-    let { code } = transform(src);
     expect(code).toMatch(/__rt\.__newHttpBatchRpcSessionWithValidation<Api>\("\/rpc"/);
     expect(code).toMatch(/echo[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
   });
 
   it("decorator: rewrites @validateRpc to wrap the class", () => {
-    let src = write("svc.ts", `
+    let { code } = transform(`
       import { validateRpc } from "capnweb-validate";
       import { RpcTarget } from "capnweb";
       @validateRpc()
       class Api extends RpcTarget { greet(name: string): string { return name; } }
       export default Api;
     `);
-    let { code } = transform(src);
     expect(code).toContain("__rt.__validateRpcClass(");
     expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
   });
 
   it("decorator: filters inherited WorkerEntrypoint platform methods", () => {
-    let src = write("we.ts", `
+    let { code } = transform(`
       import { WorkerEntrypoint } from "cloudflare:workers";
       import { validateRpc } from "capnweb-validate";
       @validateRpc()
       class Api extends WorkerEntrypoint { rpc(x: string): Promise<string> { return null as any; } }
       export default Api;
     `);
-    let { code } = transform(src);
     expect(code).toContain('"rpc":'); // validated RPC method
     // fetch/tailStream are platform hooks: pass-through, not validated methods.
     expect(code).toMatch(/passthrough:\s*\[[^\]]*"fetch"[^\]]*\]/);
@@ -174,14 +127,13 @@ describe("transformModule", () => {
   });
 
   it("decorator: filters inherited DurableObject platform methods", () => {
-    let src = write("do.ts", `
+    let { code } = transform(`
       import { DurableObject } from "cloudflare:workers";
       import { validateRpc } from "capnweb-validate";
       @validateRpc()
       class Api extends DurableObject { rpc(x: string): Promise<string> { return null as any; } }
       export default Api;
     `);
-    let { code } = transform(src);
     expect(code).toContain('"rpc":');
     // fetch/alarm are platform hooks: pass-through, not validated methods.
     // Assert membership independently; passthrough order is not contractual.
@@ -192,25 +144,23 @@ describe("transformModule", () => {
   });
 
   it("rejects a non-cloneable built-in at build time", () => {
-    let src = write("bad.ts", `
+    expect(transformError(`
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget { fn(m: WeakMap<object, number>): void {} }
       export function handler(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
-    `);
-    expect(transformError(src)).toContain("not a supported RPC validation type");
+    `)).toContain("not a supported RPC validation type");
   });
 
   it("fails loud when a marker call has no resolvable service type", () => {
-    let src = write("nogeneric.ts", `
+    expect(transformError(`
       import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
       export const api = newHttpBatchRpcSession("/rpc");
-    `);
-    expect(transformError(src)).toContain("could not resolve a concrete service type");
+    `)).toContain("could not resolve a concrete service type");
   });
 
   it("runtime: the emitted validator accepts good args and rejects bad ones", async () => {
-    let src = write("rt.ts", `
+    let { code } = transform(`
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
       class Api extends RpcTarget {
@@ -218,7 +168,6 @@ describe("transformModule", () => {
       }
       export function handler(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
     `);
-    let { code } = transform(src);
     let validator = await loadValidator(code, "__capnweb_validate_Api_server");
     let save = validator.methods.save!;
     expect(() => save.args[0]!({ id: "u1", age: 30 }, ["save", 0])).not.toThrow();

@@ -3,24 +3,33 @@
 // an explicit allowlist entry. A constructor capnweb adds later fails here
 // instead of going silently unvalidated at its call sites.
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import { describe, it, expect } from "vitest";
 import { MARKERS } from "../src/transform/transform-module.js";
 
-// capnweb resolves to a different bundle per export condition. Reading exports
-// at runtime would require executing each bundle, but the workers bundle imports
-// `cloudflare:workers`, which is unavailable under node. Instead, read the names
-// statically from each condition's .d.ts `export { ... }` declaration, which
-// lists every export without executing platform-coupled code.
-const require = createRequire(import.meta.url);
-const distDir = dirname(require.resolve("capnweb"));
-const CONDITION_DTS = ["index.d.ts", "index-workers.d.ts", "index-bun.d.ts"];
+// Read source entry points instead of importing capnweb: workers/bun entry
+// points are platform-coupled, and capnweb is an optional peer of this package.
+const testDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(testDir, "../../..");
+const ENTRYPOINTS = ["src/index.ts", "src/index-workers.ts", "src/index-bun.ts"];
 
 function allCapnwebExports(): Set<string> {
   let names = new Set<string>();
-  for (const file of CONDITION_DTS) {
-    let src = readFileSync(join(distDir, file), "utf8");
+  let seen = new Set<string>();
+  for (const file of ENTRYPOINTS) readExports(file);
+  return names;
+
+  function readExports(file: string): void {
+    if (seen.has(file)) return;
+    seen.add(file);
+    let src = readFileSync(join(repoRoot, file), "utf8");
+    for (let star of src.matchAll(/export\s+\*\s+from\s+["']([^"']+)["']/g)) {
+      let specifier = star[1]!;
+      if (!specifier.startsWith(".")) continue;
+      let resolved = join(dirname(file), specifier).replace(/\.js$/, ".ts");
+      readExports(resolved);
+    }
     for (let block of src.matchAll(/export\s*\{([^}]*)\}/g)) {
       for (let entry of block[1]!.split(",")) {
         // Strip `type ` and `X as Y` aliases; keep the exported name.
@@ -28,8 +37,10 @@ function allCapnwebExports(): Set<string> {
         if (name) names.add(name);
       }
     }
+    for (let decl of src.matchAll(/export\s+(?:async\s+)?(?:const|let|class|function|interface)\s+(\w+)/g)) {
+      names.add(decl[1]!);
+    }
   }
-  return names;
 }
 
 // A constructor that creates an RPC boundary: a session, a response, or a
