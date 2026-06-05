@@ -11,6 +11,8 @@ export default defineConfig({
       tsconfig: 'tsconfig.json',
     }),
   ],
+  // This example aliases packages to local monorepo source. External projects
+  // using the published packages should not need this `resolve.alias` block.
   resolve: {
     alias: {
       'capnweb-validate/internal/capnweb': path.resolve(repoRoot, 'packages/capnweb-validate/src/internal/capnweb.ts'),
