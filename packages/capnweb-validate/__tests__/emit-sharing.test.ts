@@ -15,11 +15,18 @@ function apiValidator(body: string) {
 describe("emit: named-shape sharing", () => {
   it("emits a type used by two methods once and references it directly", () => {
     const validator = apiValidator(
-      `interface User { id: string; name: string }
-       class Api extends RpcTarget {
-         async getUser(): Promise<User> { return null as any; }
-         async listUsers(): Promise<User[]> { return null as any; }
-       }`
+      `interface User {
+  id: string;
+  name: string;
+}
+class Api extends RpcTarget {
+  async getUser(): Promise<User> {
+    return null as any;
+  }
+  async listUsers(): Promise<User[]> {
+    return null as any;
+  }
+}`
     );
 
     const user = checkedMethod(validator, "getUser").returns;
@@ -34,10 +41,14 @@ describe("emit: named-shape sharing", () => {
 
   it("does not double `undefined` on an optional property that already admits it", () => {
     const validator = apiValidator(
-      `interface Contact { phone?: string | undefined }
-       class Api extends RpcTarget {
-         async getContact(): Promise<Contact> { return null as any; }
-       }`
+      `interface Contact {
+  phone?: string | undefined;
+}
+class Api extends RpcTarget {
+  async getContact(): Promise<Contact> {
+    return null as any;
+  }
+}`
     );
 
     const contact = checkedMethod(validator, "getContact").returns;
@@ -53,12 +64,22 @@ describe("emit: named-shape sharing", () => {
 
   it("emits mutually recursive types in any order via deferred cross-references", () => {
     const validator = apiValidator(
-      `interface Dir { name: string; entries: Entry[] }
-       interface Entry { name: string; parent: Dir }
-       class Api extends RpcTarget {
-         async getDir(): Promise<Dir> { return null as any; }
-         async getEntry(): Promise<Entry> { return null as any; }
-       }`
+      `interface Dir {
+  name: string;
+  entries: Entry[];
+}
+interface Entry {
+  name: string;
+  parent: Dir;
+}
+class Api extends RpcTarget {
+  async getDir(): Promise<Dir> {
+    return null as any;
+  }
+  async getEntry(): Promise<Entry> {
+    return null as any;
+  }
+}`
     );
 
     const dir = checkedMethod(validator, "getDir").returns;

@@ -63,7 +63,11 @@ describe("transformModule", () => {
     let { code } = transform(`
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
-      class Api extends RpcTarget { greet(name: string): string { return name; } }
+      class Api extends RpcTarget {
+        greet(name: string): string {
+          return name;
+        }
+      }
       export function handler(req: Request): Response {
         return newWorkersRpcResponse(req, new Api());
       }
@@ -79,7 +83,9 @@ describe("transformModule", () => {
     let { code } = transform(`
       import { newHttpBatchRpcSession } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
-      interface Api extends RpcTarget { echo(value: string): Promise<string>; }
+      interface Api extends RpcTarget {
+        echo(value: string): Promise<string>;
+      }
       export const api = newHttpBatchRpcSession<Api>("/rpc");
     `);
     expect(code).toContain(`__cw.__newHttpBatchRpcSessionWithValidation<Api>("/rpc"`);
@@ -96,7 +102,11 @@ describe("transformModule", () => {
       import { validateRpc } from "capnweb-validate";
       import { RpcTarget } from "capnweb";
       @validateRpc()
-      class Api extends RpcTarget { greet(name: string): string { return name; } }
+      class Api extends RpcTarget {
+        greet(name: string): string {
+          return name;
+        }
+      }
       export default Api;
     `);
     expect(code).toContain("__cw.__validateRpcClass(");
@@ -110,7 +120,11 @@ describe("transformModule", () => {
       import { WorkerEntrypoint } from "cloudflare:workers";
       import { validateRpc } from "capnweb-validate";
       @validateRpc()
-      class Api extends WorkerEntrypoint { rpc(x: string): Promise<string> { return null as any; } }
+      class Api extends WorkerEntrypoint {
+        rpc(x: string): Promise<string> {
+          return null as any;
+        }
+      }
       export default Api;
     `);
     const validator = loadValidator(code);
@@ -127,7 +141,11 @@ describe("transformModule", () => {
       import { DurableObject } from "cloudflare:workers";
       import { validateRpc } from "capnweb-validate";
       @validateRpc()
-      class Api extends DurableObject { rpc(x: string): Promise<string> { return null as any; } }
+      class Api extends DurableObject {
+        rpc(x: string): Promise<string> {
+          return null as any;
+        }
+      }
       export default Api;
     `);
     const validator = loadValidator(code);
@@ -140,8 +158,12 @@ describe("transformModule", () => {
     expect(transformError(`
       import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
       import { RpcTarget } from "capnweb";
-      class Api extends RpcTarget { fn(m: WeakMap<object, number>): void {} }
-      export function handler(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
+      class Api extends RpcTarget {
+        fn(m: WeakMap<object, number>): void {}
+      }
+      export function handler(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
     `)).toContain("not a supported RPC validation type");
   });
 
@@ -159,7 +181,9 @@ describe("transformModule", () => {
       class Api extends RpcTarget {
         save(user: { id: string; age: number }): void {}
       }
-      export function handler(req: Request): Response { return newWorkersRpcResponse(req, new Api()); }
+      export function handler(req: Request): Response {
+        return newWorkersRpcResponse(req, new Api());
+      }
     `);
     let validator = loadValidator(code);
     let save = validator.methods.save!;

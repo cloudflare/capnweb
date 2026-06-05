@@ -12,14 +12,16 @@ describe("RPC-compatible value types", () => {
   it("accepts ArrayBuffer, DataView, RegExp, Map/Set, and typed arrays at build time", () => {
     const { code } = transformFixture(
       `class Api extends RpcTarget {
-         async roundTrip(
-           buffer: ArrayBuffer,
-           view: DataView,
-           ints: Int16Array,
-           pattern: RegExp,
-           bytes: Uint8Array,
-         ): Promise<Map<string, Set<Float32Array>>> { return null as any; }
-       }`,
+  async roundTrip(
+    buffer: ArrayBuffer,
+    view: DataView,
+    ints: Int16Array,
+    pattern: RegExp,
+    bytes: Uint8Array,
+  ): Promise<Map<string, Set<Float32Array>>> {
+    return null as any;
+  }
+}`,
       { target: "new Api()" }
     );
     const roundTrip = checkedMethod(loadValidator(code), "roundTrip");
@@ -53,8 +55,10 @@ describe("RPC-compatible value types", () => {
   it("lowers ReadonlyMap and ReadonlySet to Map/Set runtime validators", () => {
     const { code } = transformFixture(
       `class Api extends RpcTarget {
-         getConfig(): ReadonlyMap<string, ReadonlySet<number>> { return null as any; }
-       }`,
+  getConfig(): ReadonlyMap<string, ReadonlySet<number>> {
+    return null as any;
+  }
+}`,
       { target: "new Api()" }
     );
     const getConfig = checkedMethod(loadValidator(code), "getConfig");
@@ -72,8 +76,10 @@ describe("RPC-compatible value types", () => {
   it("rejects non-cloneable collection types at build time", () => {
     const msg = transformError(
       `class Api extends RpcTarget {
-         async m(): Promise<Map<string, WeakSet<object>>> { return null as any; }
-       }`,
+  async m(): Promise<Map<string, WeakSet<object>>> {
+    return null as any;
+  }
+}`,
       { target: "new Api()" }
     );
     expect(msg).toContain("WeakSet");
@@ -84,8 +90,8 @@ describe("RPC-compatible value types", () => {
   it("rejects explicit SharedArrayBuffer-backed views at build time", () => {
     const msg = transformError(
       `class Api extends RpcTarget {
-         setBytes(value: Int16Array<SharedArrayBuffer>): void {}
-       }`,
+  setBytes(value: Int16Array<SharedArrayBuffer>): void {}
+}`,
       { target: "new Api()" }
     );
     expect(msg).toContain("Int16Array<SharedArrayBuffer>");
@@ -95,9 +101,9 @@ describe("RPC-compatible value types", () => {
   it("rejects explicit union view backing types that include SharedArrayBuffer", () => {
     const msg = transformError(
       `type Backing = ArrayBuffer | SharedArrayBuffer;
-       class Api extends RpcTarget {
-         setBytes(value: Int16Array<Backing>): void {}
-       }`,
+class Api extends RpcTarget {
+  setBytes(value: Int16Array<Backing>): void {}
+}`,
       { target: "new Api()" }
     );
     expect(msg).toContain("Int16Array<Backing>");
@@ -107,8 +113,8 @@ describe("RPC-compatible value types", () => {
   it("rejects generic view backing constraints that include SharedArrayBuffer", () => {
     const msg = transformError(
       `class Api extends RpcTarget {
-         setBytes<T extends ArrayBuffer | SharedArrayBuffer>(value: Int16Array<T>): void {}
-       }`,
+  setBytes<T extends ArrayBuffer | SharedArrayBuffer>(value: Int16Array<T>): void {}
+}`,
       { target: "new Api()" }
     );
     expect(msg).toContain("Int16Array<T>");

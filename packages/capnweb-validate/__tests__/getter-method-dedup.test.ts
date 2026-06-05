@@ -10,12 +10,20 @@ describe("getter vs method dedup", () => {
     // One class exposes `get config(): string`, another `config(): string`.
     // Both are server targets via separate handlers so both validators emit.
     const { code } = transformFixture(
-      `class WithGetter extends RpcTarget { get config(): string { return "x"; } }
-       class WithMethod extends RpcTarget { config(): string { return "y"; } }`,
+      `class WithGetter extends RpcTarget {
+  get config(): string {
+    return "x";
+  }
+}
+class WithMethod extends RpcTarget {
+  config(): string {
+    return "y";
+  }
+}`,
       {
-        imports:
-          `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";\n` +
-          `import { RpcTarget } from "capnweb";\n`,
+        imports: `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+import { RpcTarget } from "capnweb";
+`,
         // two handlers so both surfaces are reachable
         target: "new WithGetter()",
       },
@@ -34,15 +42,23 @@ describe("getter vs method dedup", () => {
     // collapsed them, only one config validator (with one isGetter value) would
     // exist and one of the two would be wrong. Assert both forms are present.
     const { code } = transformFixture(
-      `class WithGetter extends RpcTarget { get config(): string { return "x"; } }
-       class WithMethod extends RpcTarget { config(): string { return "y"; } }
-       export function h2(req: Request): Promise<Response> {
-         return newWorkersRpcResponse(req, new WithMethod());
-       }`,
+      `class WithGetter extends RpcTarget {
+  get config(): string {
+    return "x";
+  }
+}
+class WithMethod extends RpcTarget {
+  config(): string {
+    return "y";
+  }
+}
+export function h2(req: Request): Promise<Response> {
+  return newWorkersRpcResponse(req, new WithMethod());
+}`,
       {
-        imports:
-          `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";\n` +
-          `import { RpcTarget } from "capnweb";\n`,
+        imports: `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+import { RpcTarget } from "capnweb";
+`,
         target: "new WithGetter()",
       },
     );

@@ -13,16 +13,23 @@ import { v } from "../src/internal/core.js";
 
 const GLOBALS = `export {};
 declare global {
-  interface Request { readonly url: string; }
+  interface Request {
+    readonly url: string;
+  }
   var Request: { new (): Request };
-  interface Response { readonly status: number; text(): Promise<string>; }
+  interface Response {
+    readonly status: number;
+    text(): Promise<string>;
+  }
   var Response: { new (): Response };
 }
 `;
 const WORKER = `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
 import { RpcTarget } from "capnweb";
 class Api extends RpcTarget {
-  getThing(): Response { return new Response(); }
+  getThing(): Response {
+    return new Response();
+  }
 }
 export function handler(req: Request, env: unknown): Response {
   return newWorkersRpcResponse(req, new Api());
@@ -86,7 +93,11 @@ describe("a module-scoped type reusing a built-in name is NOT the global", () =>
         "worker-configuration.d.ts": GLOBALS,
         ...typesPackage(
           "node-fetch",
-          `export class Response { readonly status: number; text(): Promise<string>; }\n`
+          `export class Response {
+  readonly status: number;
+  text(): Promise<string>;
+}
+`
         ),
       },
       rootFiles: ["worker-configuration.d.ts"],
@@ -94,7 +105,9 @@ describe("a module-scoped type reusing a built-in name is NOT the global", () =>
 import { RpcTarget } from "capnweb";
 import { Response as NFResponse } from "node-fetch";
 class Api extends RpcTarget {
-  getThing(): NFResponse { return null as any; }
+  getThing(): NFResponse {
+    return null as any;
+  }
 }
 export function handler(req: Request, env: unknown): Response {
   return newWorkersRpcResponse(req, new Api());

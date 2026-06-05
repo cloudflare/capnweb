@@ -27,7 +27,9 @@ function build(body: string): { code: string; error?: string } {
 describe("File is rejected at build time", () => {
   it("rejects a File argument with a wire-type error and a fix hint", () => {
     const { error } = build(
-      `class Api extends RpcTarget { async upload(f: File): Promise<void> {} }`,
+      `class Api extends RpcTarget {
+  async upload(f: File): Promise<void> {}
+}`,
     );
     expect(error).toContain("Api.upload argument 1 is File");
     expect(error).toContain("not a supported RPC validation type");
@@ -36,14 +38,22 @@ describe("File is rejected at build time", () => {
 
   it("rejects a File nested in a returned object", () => {
     const { error } = build(
-      `class Api extends RpcTarget { async get(): Promise<{ avatar: File }> { return null as any; } }`,
+      `class Api extends RpcTarget {
+  async get(): Promise<{ avatar: File }> {
+    return null as any;
+  }
+}`,
     );
     expect(error).toContain("not a supported RPC validation type");
   });
 
   it("still accepts Blob (the supported base type)", () => {
     const { code, error } = build(
-      `class Api extends RpcTarget { async get(): Promise<Blob> { return null as any; } }`,
+      `class Api extends RpcTarget {
+  async get(): Promise<Blob> {
+    return null as any;
+  }
+}`,
     );
     expect(error).toBeUndefined();
     expect(checkedMethod(loadValidator(code), "get").returns).toBe(v.blob);

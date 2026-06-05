@@ -10,10 +10,10 @@ import {
 } from "./helpers.js";
 import { v, type ServiceValidator } from "../src/internal/core.js";
 
-const IMPORTS =
-  `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";\n` +
-  `import { skipRpcValidation, validateRpc } from "capnweb-validate";\n` +
-  `import { RpcTarget } from "capnweb";\n`;
+const IMPORTS = `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+import { skipRpcValidation, validateRpc } from "capnweb-validate";
+import { RpcTarget } from "capnweb";
+`;
 
 function compile(body: string, ctor: string): { code: string | null; warns: string[]; error?: string } {
   try {
@@ -37,7 +37,18 @@ function compileValidator(
 describe("generic service classes", () => {
   it("keeps public class methods outside a single implemented interface", () => {
     const { validator, warns } = compileValidator(
-      `interface A { a(): Promise<string>; }\n@validateRpc()\nclass Api extends RpcTarget implements A { async a(): Promise<string> { return ""; } async extra(x: number): Promise<number> { return x; } }`,
+      `interface A {
+  a(): Promise<string>;
+}
+@validateRpc()
+class Api extends RpcTarget implements A {
+  async a(): Promise<string> {
+    return "";
+  }
+  async extra(x: number): Promise<number> {
+    return x;
+  }
+}`,
       "new Api()");
     expect(checkedMethod(validator, "a").returns).toBe(v.string);
     const extra = checkedMethod(validator, "extra");
@@ -48,7 +59,18 @@ describe("generic service classes", () => {
 
   it("uses a single implemented interface to sharpen matching method signatures", () => {
     const { validator, warns } = compileValidator(
-      `interface A { a(x: string): Promise<string>; }\n@validateRpc()\nclass Api extends RpcTarget implements A { async a(x: any): Promise<any> { return x; } async extra(x: number): Promise<number> { return x; } }`,
+      `interface A {
+  a(x: string): Promise<string>;
+}
+@validateRpc()
+class Api extends RpcTarget implements A {
+  async a(x: any): Promise<any> {
+    return x;
+  }
+  async extra(x: number): Promise<number> {
+    return x;
+  }
+}`,
       "new Api()",
       "__capnweb_validate_Api_server_2");
     const a = checkedMethod(validator, "a");
@@ -62,7 +84,15 @@ describe("generic service classes", () => {
 
   it("defaults an unconstrained class type parameter to any, with a warning", () => {
     const { validator, warns } = compileValidator(
-      `interface Cursor<T> { next(): Promise<T>; }\n@validateRpc()\nclass Api<T> extends RpcTarget implements Cursor<T> { async next(): Promise<T> { return null as any; } }`,
+      `interface Cursor<T> {
+  next(): Promise<T>;
+}
+@validateRpc()
+class Api<T> extends RpcTarget implements Cursor<T> {
+  async next(): Promise<T> {
+    return null as any;
+  }
+}`,
       "new Api()");
     expect(checkedMethod(validator, "next").returns).toBe(v.any);
     expect(warns.join("")).toContain("unconstrained type parameters default to `any`");
@@ -70,7 +100,15 @@ describe("generic service classes", () => {
 
   it("validates against the constraint for a constrained parameter, with no warning", () => {
     const { validator, warns } = compileValidator(
-      `interface Cursor<T> { next(): Promise<T>; }\n@validateRpc()\nclass Api<T extends { id: string }> extends RpcTarget implements Cursor<T> { async next(): Promise<T> { return null as any; } }`,
+      `interface Cursor<T> {
+  next(): Promise<T>;
+}
+@validateRpc()
+class Api<T extends { id: string }> extends RpcTarget implements Cursor<T> {
+  async next(): Promise<T> {
+    return null as any;
+  }
+}`,
       "new Api<{ id: string }>()");
     const next = checkedMethod(validator, "next");
     expect(accepts(next.returns, { id: "ok" })).toBe(true);
@@ -80,7 +118,18 @@ describe("generic service classes", () => {
 
   it("uses an explicit decorator type argument to specialize matching class methods only", () => {
     const { validator, warns } = compileValidator(
-      `interface Cursor<T> { next(): Promise<T>; }\n@validateRpc<Cursor<string>>()\nclass Api<T> extends RpcTarget implements Cursor<T> { async next(): Promise<T> { return null as any; } async extra(x: number): Promise<number> { return x; } }`,
+      `interface Cursor<T> {
+  next(): Promise<T>;
+}
+@validateRpc<Cursor<string>>()
+class Api<T> extends RpcTarget implements Cursor<T> {
+  async next(): Promise<T> {
+    return null as any;
+  }
+  async extra(x: number): Promise<number> {
+    return x;
+  }
+}`,
       "new Api<string>()");
     expect(checkedMethod(validator, "next").returns).toBe(v.string);
     const extra = checkedMethod(validator, "extra");
@@ -91,7 +140,15 @@ describe("generic service classes", () => {
 
   it("does not let an explicit method signature turn a getter into a method", () => {
     const { validator } = compileValidator(
-      `interface Sig { config(): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { get config(): Promise<string> { return Promise.resolve("ok"); } }`,
+      `interface Sig {
+  config(): Promise<string>;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  get config(): Promise<string> {
+    return Promise.resolve("ok");
+  }
+}`,
       "new Api()");
     const config = checkedMethod(validator, "config");
     expect(config.returns).toBe(v.string);
@@ -100,7 +157,15 @@ describe("generic service classes", () => {
 
   it("does not let an explicit getter signature turn a method into a getter", () => {
     const { validator } = compileValidator(
-      `interface Sig { value: string; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { value(): string { return "ok"; } }`,
+      `interface Sig {
+  value: string;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  value(): string {
+    return "ok";
+  }
+}`,
       "new Api()");
     const value = checkedMethod(validator, "value");
     expect(value.returns).toBe(v.string);
@@ -109,7 +174,16 @@ describe("generic service classes", () => {
 
   it("keeps an overloaded explicit signature unchecked for a callable class method", () => {
     const { validator } = compileValidator(
-      `interface Sig { foo(): Promise<string>; foo(x: string): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { async foo(x?: any): Promise<any> { return ""; } }`,
+      `interface Sig {
+  foo(): Promise<string>;
+  foo(x: string): Promise<string>;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  async foo(x?: any): Promise<any> {
+    return "";
+  }
+}`,
       "new Api()",
       "__capnweb_validate_Api_server_2");
     expect(validator.methods.foo).toEqual({ unchecked: true });
@@ -117,7 +191,17 @@ describe("generic service classes", () => {
 
   it("does not warn for an overloaded explicit signature when the class method is skipped", () => {
     const { validator, warns } = compileValidator(
-      `interface Sig { foo(x: string): Promise<string>; foo(x: number): Promise<number>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { @skipRpcValidation() async foo(x: any): Promise<any> { return x; } }`,
+      `interface Sig {
+  foo(x: string): Promise<string>;
+  foo(x: number): Promise<number>;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  @skipRpcValidation()
+  async foo(x: any): Promise<any> {
+    return x;
+  }
+}`,
       "new Api()");
     expect(validator.methods.foo).toEqual({ unchecked: true });
     expect(warns.join("")).not.toContain("overloaded");
@@ -125,7 +209,16 @@ describe("generic service classes", () => {
 
   it("ignores explicit signature members outside the class surface", () => {
     const { validator, warns } = compileValidator(
-      `interface Sig { extra(): Promise<string>; extra(x: string): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { ok(): string { return "ok"; } }`,
+      `interface Sig {
+  extra(): Promise<string>;
+  extra(x: string): Promise<string>;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  ok(): string {
+    return "ok";
+  }
+}`,
       "new Api()");
     expect(Object.keys(validator.methods)).toEqual(["ok"]);
     expect(checkedMethod(validator, "ok").returns).toBe(v.string);
@@ -134,7 +227,17 @@ describe("generic service classes", () => {
 
   it("does not resolve explicit signature members matching non-RPC class fields", () => {
     const { validator, warns } = compileValidator(
-      `interface Sig { field(): Promise<string>; field(x: string): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { field = 1; ok(): string { return "ok"; } }`,
+      `interface Sig {
+  field(): Promise<string>;
+  field(x: string): Promise<string>;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  field = 1;
+  ok(): string {
+    return "ok";
+  }
+}`,
       "new Api()");
     expect(Object.keys(validator.methods)).toEqual(["ok"]);
     expect(checkedMethod(validator, "ok").returns).toBe(v.string);
@@ -143,7 +246,16 @@ describe("generic service classes", () => {
 
   it("does not warn when an overloaded signature name is a class getter", () => {
     const { validator, warns } = compileValidator(
-      `interface Sig { foo(): Promise<string>; foo(x: string): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { get foo(): Promise<string> { return Promise.resolve("ok"); } }`,
+      `interface Sig {
+  foo(): Promise<string>;
+  foo(x: string): Promise<string>;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  get foo(): Promise<string> {
+    return Promise.resolve("ok");
+  }
+}`,
       "new Api()");
     const foo = checkedMethod(validator, "foo");
     expect(foo.returns).toBe(v.string);
@@ -153,7 +265,20 @@ describe("generic service classes", () => {
 
   it("does not reuse a filtered signature source for nested stub validation", () => {
     const { validator } = compileValidator(
-      `type RpcStub<T> = T & { readonly __RPC_STUB_BRAND: T };\ninterface Sig { a(): Promise<string>; admin(): Promise<number>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { a(): Promise<string> { return Promise.resolve(""); } peer(p: RpcStub<Sig>): Promise<void> { return Promise.resolve(); } }`,
+      `type RpcStub<T> = T & { readonly __RPC_STUB_BRAND: T };
+interface Sig {
+  a(): Promise<string>;
+  admin(): Promise<number>;
+}
+@validateRpc<Sig>()
+class Api extends RpcTarget {
+  a(): Promise<string> {
+    return Promise.resolve("");
+  }
+  peer(p: RpcStub<Sig>): Promise<void> {
+    return Promise.resolve();
+  }
+}`,
       "new Api()");
     expect(checkedMethod(validator, "a").returns).toBe(v.string);
     const peerArg = checkedMethod(validator, "peer").args[0]!;
@@ -166,7 +291,21 @@ describe("generic service classes", () => {
 
   it("resolves a class with multiple implemented interfaces via the class surface", () => {
     const { validator, warns } = compileValidator(
-      `interface A { a(): Promise<string>; }\ninterface B { b(): Promise<number>; }\n@validateRpc()\nclass Api extends RpcTarget implements A, B { async a(): Promise<string> { return ""; } async b(): Promise<number> { return 0; } }`,
+      `interface A {
+  a(): Promise<string>;
+}
+interface B {
+  b(): Promise<number>;
+}
+@validateRpc()
+class Api extends RpcTarget implements A, B {
+  async a(): Promise<string> {
+    return "";
+  }
+  async b(): Promise<number> {
+    return 0;
+  }
+}`,
       "new Api()");
     expect(checkedMethod(validator, "a").returns).toBe(v.string);
     expect(checkedMethod(validator, "b").returns).toBe(v.number);
@@ -175,7 +314,12 @@ describe("generic service classes", () => {
 
   it("still errors on a generic method, because no class type argument can fix it", () => {
     const { code, error } = compile(
-      `@validateRpc()\nclass Api extends RpcTarget { async get<T>(x: T): Promise<T> { return null as any; } }`,
+      `@validateRpc()
+class Api extends RpcTarget {
+  async get<T>(x: T): Promise<T> {
+    return null as any;
+  }
+}`,
       "new Api()");
     expect(code).toBeNull();
     expect(error).toContain("unresolved generic type parameter");

@@ -14,7 +14,11 @@ function build(body: string): { code: string; error?: string } {
 describe("method edge cases", () => {
   it("validates an optional method instead of dropping it", () => {
     const { code, error } = build(
-      `class Api extends RpcTarget { ping?(x: string): Promise<string> { return null as any; } }`,
+      `class Api extends RpcTarget {
+  ping?(x: string): Promise<string> {
+    return null as any;
+  }
+}`,
     );
     expect(error).toBeUndefined();
     // The optional method must appear in the validator with its arg + return
@@ -27,9 +31,13 @@ describe("method edge cases", () => {
   it("validates a required method alongside an optional one", () => {
     const { code, error } = build(
       `class Api extends RpcTarget {
-         required(x: number): Promise<number> { return null as any; }
-         optional?(y: string): Promise<string> { return null as any; }
-       }`,
+  required(x: number): Promise<number> {
+    return null as any;
+  }
+  optional?(y: string): Promise<string> {
+    return null as any;
+  }
+}`,
     );
     expect(error).toBeUndefined();
     const validator = loadValidator(code);
@@ -40,7 +48,11 @@ describe("method edge cases", () => {
 
   it("reports an unresolved generic type parameter in human terms", () => {
     const { error } = build(
-      `class Api extends RpcTarget { get<T>(x: T): Promise<T> { return null as any; } }`,
+      `class Api extends RpcTarget {
+  get<T>(x: T): Promise<T> {
+    return null as any;
+  }
+}`,
     );
     expect(error).toBeDefined();
     expect(error).toContain("unresolved generic type parameter");

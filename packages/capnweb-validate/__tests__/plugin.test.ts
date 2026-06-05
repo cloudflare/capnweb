@@ -246,12 +246,12 @@ describe("runBuild orchestration", () => {
         include: ["src/**/*.ts"],
       }));
       mkdirSync(join(src, "src", "icons"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `import email from "./email.txt?raw";\n` +
-        `export { default as logo } from "./icons/logo.svg#asset";\n` +
-        `const dynamic = import("./dynamic.html");\n` +
-        `const icon = new URL("./icons/icon.bin?url", import.meta.url);\n` +
-        `export { dynamic, email, icon };\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `import email from "./email.txt?raw";
+export { default as logo } from "./icons/logo.svg#asset";
+const dynamic = import("./dynamic.html");
+const icon = new URL("./icons/icon.bin?url", import.meta.url);
+export { dynamic, email, icon };
+`);
       writeFileSync(join(src, "src", "email.txt"), "hello\n");
       writeFileSync(join(src, "src", "icons", "logo.svg"), "<svg />\n");
       writeFileSync(join(src, "src", "icons", "icon.bin"), "binary\n");
@@ -277,10 +277,10 @@ describe("runBuild orchestration", () => {
         include: ["src/**/*.ts"],
       }));
       mkdirSync(join(src, "src"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `// import secret from "./secret.txt";\n` +
-        `const text = "new URL('./also-secret.txt', import.meta.url)";\n` +
-        `export { text };\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `// import secret from "./secret.txt";
+const text = "new URL('./also-secret.txt', import.meta.url)";
+export { text };
+`);
       writeFileSync(join(src, "src", "secret.txt"), "secret\n");
       writeFileSync(join(src, "src", "also-secret.txt"), "secret\n");
 
@@ -301,9 +301,9 @@ describe("runBuild orchestration", () => {
         include: ["src/**/*.ts"],
       }));
       mkdirSync(join(src, "src"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `import type schema from "./schema.json";\n` +
-        `export type { schema };\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `import type schema from "./schema.json";
+export type { schema };
+`);
       writeFileSync(join(src, "src", "schema.json"), "{}\n");
 
       let result = await runBuild({ cwd: src, out: ".out" });
@@ -322,9 +322,9 @@ describe("runBuild orchestration", () => {
         include: ["src/**/*.ts"],
       }));
       mkdirSync(join(src, "src"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `import {} from "./empty-import.css";\n` +
-        `export {} from "./empty-export.css";\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `import {} from "./empty-import.css";
+export {} from "./empty-export.css";
+`);
       writeFileSync(join(src, "src", "empty-import.css"), ".import {}\n");
       writeFileSync(join(src, "src", "empty-export.css"), ".export {}\n");
 
@@ -345,9 +345,9 @@ describe("runBuild orchestration", () => {
         include: ["src/**/*.ts"],
       }));
       mkdirSync(join(src, "src"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `import { value } from "./config";\n` +
-        `export { value };\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `import { value } from "./config";
+export { value };
+`);
       writeFileSync(join(src, "src", "config.ts"), "export const value = 1;\n");
       writeFileSync(join(src, "src", "config"), "not an asset\n");
 
@@ -371,11 +371,11 @@ describe("runBuild orchestration", () => {
       mkdirSync(join(src, "src", "node_modules", "pkg"), { recursive: true });
       mkdirSync(join(src, "src", ".git"), { recursive: true });
       mkdirSync(join(src, ".out"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `import asset from "./asset.txt";\n` +
-        `import ignoredDep from "./node_modules/pkg/asset.txt";\n` +
-        `import ignoredGit from "./.git/config.txt";\n` +
-        `export { asset, ignoredDep, ignoredGit };\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `import asset from "./asset.txt";
+import ignoredDep from "./node_modules/pkg/asset.txt";
+import ignoredGit from "./.git/config.txt";
+export { asset, ignoredDep, ignoredGit };
+`);
       writeFileSync(join(src, "src", "asset.txt"), "asset\n");
       writeFileSync(join(src, "src", ".env"), "SECRET=1\n");
       writeFileSync(join(src, "src", "node_modules", "pkg", "asset.txt"), "dep\n");
@@ -402,9 +402,9 @@ describe("runBuild orchestration", () => {
         include: ["src/**/*.ts"],
       }));
       mkdirSync(join(src, "src"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `import types from "./types.txt";\n` +
-        `export { types };\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `import types from "./types.txt";
+export { types };
+`);
       writeFileSync(join(src, "src", "types.d.ts"), "export type T = string;\n");
       symlinkSync(join(src, "src", "types.d.ts"), join(src, "src", "types.txt"));
 
@@ -428,9 +428,9 @@ describe("runBuild orchestration", () => {
         compilerOptions: { target: "es2022", module: "esnext", types: [] },
         include: ["src/**/*.ts"],
       }));
-      writeFileSync(join(app, "src", "worker.ts"),
-        `import token from "./token.txt";\n` +
-        `export { token };\n`);
+      writeFileSync(join(app, "src", "worker.ts"), `import token from "./token.txt";
+export { token };
+`);
       writeFileSync(join(secrets, "token.txt"), "secret\n");
       symlinkSync(join(secrets, "token.txt"), join(app, "src", "token.txt"));
 
@@ -450,9 +450,9 @@ describe("runBuild orchestration", () => {
         include: ["src/**/*.ts"],
       }));
       mkdirSync(join(src, "src"), { recursive: true });
-      writeFileSync(join(src, "src", "worker.ts"),
-        `import leak from "./leak.txt";\n` +
-        `export { leak };\n`);
+      writeFileSync(join(src, "src", "worker.ts"), `import leak from "./leak.txt";
+export { leak };
+`);
       writeFileSync(join(src, "src", "secret.ts"), "export const secret = 1;\n");
       symlinkSync(join(src, ".out", "src", "secret.ts"), join(src, "src", "leak.txt"));
 
@@ -476,9 +476,9 @@ describe("runBuild orchestration", () => {
         compilerOptions: { target: "es2022", module: "esnext", types: [] },
         include: ["src/**/*.ts"],
       }));
-      writeFileSync(join(app, "src", "worker.ts"),
-        `import token from "./assets/token.txt";\n` +
-        `export { token };\n`);
+      writeFileSync(join(app, "src", "worker.ts"), `import token from "./assets/token.txt";
+export { token };
+`);
       writeFileSync(join(secrets, "token.txt"), "secret\n");
       symlinkSync(secrets, join(app, "src", "assets"));
 
@@ -584,9 +584,9 @@ describe("runBuild orchestration", () => {
         compilerOptions: { target: "es2022", module: "esnext", types: [] },
         include: ["**/*.ts", "../shared/**/*.ts"],
       }));
-      writeFileSync(join(app, "main.ts"),
-        `import asset from "../shared/asset.txt";\n` +
-        `export const main = asset;\n`);
+      writeFileSync(join(app, "main.ts"), `import asset from "../shared/asset.txt";
+export const main = asset;
+`);
       writeFileSync(join(shared, "util.ts"), "export const util = 2;\n");
       writeFileSync(join(shared, "asset.txt"), "asset\n");
 

@@ -28,10 +28,10 @@ declare module "capnweb-validate/capnweb" {
   export function newWorkersRpcResponse(request: Request, target: object): Promise<Response>;
 }`;
 
-const IMPORTS =
-  `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";\n` +
-  `import { RpcTarget } from "capnweb";\n` +
-  `import { Fetcher } from "cloudflare:workers";\n`;
+const IMPORTS = `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+import { RpcTarget } from "capnweb";
+import { Fetcher } from "cloudflare:workers";
+`;
 
 function returnValidator(returnType: string, extra = "") {
   const { code } = transformFixture(
@@ -68,7 +68,9 @@ describe("Fetcher detection: structural false-positive", () => {
   it("keeps a real Fetcher<User> as a pass-by-reference stub", () => {
     const validator = returnValidator(
       "Fetcher<User>",
-      "interface User { describe(): Promise<string>; }"
+      `interface User {
+  describe(): Promise<string>;
+}`
     );
     const shape = validatorShape(validator);
     expect(shape?.kind).toBe("stub");

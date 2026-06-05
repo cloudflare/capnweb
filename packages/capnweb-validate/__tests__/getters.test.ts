@@ -34,10 +34,14 @@ function fakeRpcPromise(value: unknown): (...a: unknown[]) => unknown {
 describe("getter accessors on the RPC surface", () => {
   it("emits an isGetter validator for a getter alongside methods", () => {
     const code = transform(
-      `class Api extends RpcTarget {\n` +
-        `  get config(): string { return "x"; }\n` +
-        `  async m(): Promise<number> { return 1; }\n` +
-        `}`
+      `class Api extends RpcTarget {
+  get config(): string {
+    return "x";
+  }
+  async m(): Promise<number> {
+    return 1;
+  }
+}`
     );
     const validator = loadValidator(code);
     const config = checkedMethod(validator, "config");
@@ -50,7 +54,11 @@ describe("getter accessors on the RPC surface", () => {
 
   it("unwraps a Promise-returning getter", () => {
     const code = transform(
-      `class Api extends RpcTarget {\n  get config(): Promise<string> { return Promise.resolve("x"); }\n}`
+      `class Api extends RpcTarget {
+  get config(): Promise<string> {
+    return Promise.resolve("x");
+  }
+}`
     );
     const config = checkedMethod(loadValidator(code), "config");
     expect(config.returns).toBe(v.string);
@@ -59,7 +67,11 @@ describe("getter accessors on the RPC surface", () => {
 
   it("rejects an unsupported getter type at build time (no longer silently dropped)", () => {
     const msg = transformError(
-      `class Api extends RpcTarget {\n  get config(): WeakMap<object, number> { return new WeakMap(); }\n}`
+      `class Api extends RpcTarget {
+  get config(): WeakMap<object, number> {
+    return new WeakMap();
+  }
+}`
     );
     expect(msg).toContain("Api.config");
     expect(msg).toContain("not a supported RPC validation type");
@@ -67,18 +79,24 @@ describe("getter accessors on the RPC surface", () => {
 
   it("skips private and #-prefixed accessors", () => {
     const code = transform(
-      `class Api extends RpcTarget {\n` +
-        `  private get secret(): string { return "x"; }\n` +
-        `  get ok(): string { return "y"; }\n` +
-        `}`
+      `class Api extends RpcTarget {
+  private get secret(): string {
+    return "x";
+  }
+  get ok(): string {
+    return "y";
+  }
+}`
     );
     expect(Object.keys(loadValidator(code).methods)).toEqual(["ok"]);
   });
 
   it("emits getter-style validators for declared data properties", () => {
     const code = transformFixture(
-      `interface Api { config: string; }
-       export const api = newHttpBatchRpcSession<Api>("/rpc");`,
+      `interface Api {
+  config: string;
+}
+export const api = newHttpBatchRpcSession<Api>("/rpc");`,
       {
         shim: `declare module "capnweb" {
   type StubBase<T> = { readonly __RPC_STUB_BRAND: T };
@@ -86,7 +104,8 @@ describe("getter accessors on the RPC surface", () => {
   export type RpcStub<T> = T extends object ? Provider<T> & StubBase<T> : StubBase<T>;
   export function newHttpBatchRpcSession<T>(url: string): RpcStub<T>;
 }`,
-        imports: `import { newHttpBatchRpcSession } from "capnweb";\n`,
+        imports: `import { newHttpBatchRpcSession } from "capnweb";
+`,
       }
     ).code;
     const config = checkedMethod(
@@ -215,7 +234,11 @@ describe("getter accessors on the RPC surface", () => {
 describe("never type", () => {
   it("rejects a never return with a readable reason", () => {
     const msg = transformError(
-      `class Api extends RpcTarget {\n  fail(): never { throw new Error("x"); }\n}`
+      `class Api extends RpcTarget {
+  fail(): never {
+    throw new Error("x");
+  }
+}`
     );
     expect(msg).toContain("the never type, which carries no value");
     expect(msg).not.toContain("flags=");

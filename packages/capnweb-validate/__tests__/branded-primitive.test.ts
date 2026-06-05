@@ -22,9 +22,11 @@ describe("branded primitives", () => {
   it("validates a symbol-branded string as v.string", () => {
     const code = emitFor(
       `type UserId = string & { readonly __brand: unique symbol };
-       class Api extends RpcTarget {
-         async getUser(id: UserId): Promise<string> { return id; }
-       }`
+class Api extends RpcTarget {
+  async getUser(id: UserId): Promise<string> {
+    return id;
+  }
+}`
     );
     const getUser = checkedMethod(loadValidator(code), "getUser");
     expect(getUser.args[0]).toBe(v.string);
@@ -36,9 +38,11 @@ describe("branded primitives", () => {
   it("validates a string-literal-branded string as v.string", () => {
     const code = emitFor(
       `type OrderId = string & { readonly __brand: "OrderId" };
-       class Api extends RpcTarget {
-         async getOrder(id: OrderId): Promise<string> { return id; }
-       }`
+class Api extends RpcTarget {
+  async getOrder(id: OrderId): Promise<string> {
+    return id;
+  }
+}`
     );
     const getOrder = checkedMethod(loadValidator(code), "getOrder");
     expect(getOrder.args[0]).toBe(v.string);
@@ -47,9 +51,9 @@ describe("branded primitives", () => {
   it("validates a branded number as v.number", () => {
     const code = emitFor(
       `type Cents = number & { readonly __brand: unique symbol };
-       class Api extends RpcTarget {
-         async charge(amount: Cents): Promise<void> {}
-       }`
+class Api extends RpcTarget {
+  async charge(amount: Cents): Promise<void> {}
+}`
     );
     const charge = checkedMethod(loadValidator(code), "charge");
     expect(charge.args[0]).toBe(v.number);
@@ -59,11 +63,15 @@ describe("branded primitives", () => {
     // No primitive constituent -> must keep walking as an object so both halves
     // of the intersection are validated.
     const code = emitFor(
-      `interface HasId { id: string }
-       interface HasName { name: string }
-       class Api extends RpcTarget {
-         async save(v: HasId & HasName): Promise<void> {}
-       }`
+      `interface HasId {
+  id: string;
+}
+interface HasName {
+  name: string;
+}
+class Api extends RpcTarget {
+  async save(v: HasId & HasName): Promise<void> {}
+}`
     );
     const save = checkedMethod(loadValidator(code), "save");
     expect(accepts(save.args[0]!, { id: "u1", name: "Ada" })).toBe(true);
@@ -76,8 +84,8 @@ describe("branded primitives", () => {
     // property still fails the build loudly.
     const msg = buildError(
       `class Api extends RpcTarget {
-         async save(v: { data: WeakMap<object, number> }): Promise<void> {}
-       }`
+  async save(v: { data: WeakMap<object, number> }): Promise<void> {}
+}`
     );
     expect(msg).toContain("capnweb-validate");
   });

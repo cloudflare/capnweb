@@ -19,9 +19,11 @@ describe("non-homomorphic mapped types", () => {
   it("validates each key of a Record with a literal-union key", () => {
     const validator = returnValidator(
       `type M = Record<"a" | "b", number>;
-       class Api extends RpcTarget {
-         async get(): Promise<M> { return null as any; }
-       }`
+class Api extends RpcTarget {
+  async get(): Promise<M> {
+    return null as any;
+  }
+}`
     );
     expect(accepts(validator, { a: 1, b: 2 })).toBe(true);
     expect(accepts(validator, { a: 1 })).toBe(false);
@@ -31,8 +33,10 @@ describe("non-homomorphic mapped types", () => {
   it("validates a permission-map shape (the common dangerous case)", () => {
     const validator = returnValidator(
       `class Api extends RpcTarget {
-         async get(): Promise<Record<"read" | "write" | "admin", boolean>> { return null as any; }
-       }`
+  async get(): Promise<Record<"read" | "write" | "admin", boolean>> {
+    return null as any;
+  }
+}`
     );
     expect(accepts(validator, { read: true, write: false, admin: true })).toBe(
       true
@@ -46,8 +50,10 @@ describe("non-homomorphic mapped types", () => {
   it("validates the literal-union mapped-type form `{ [K in U]: V }`", () => {
     const validator = returnValidator(
       `class Api extends RpcTarget {
-         async get(): Promise<{ [K in "x" | "y"]: string }> { return null as any; }
-       }`
+  async get(): Promise<{ [K in "x" | "y"]: string }> {
+    return null as any;
+  }
+}`
     );
     expect(accepts(validator, { x: "ok", y: "ok" })).toBe(true);
     expect(accepts(validator, { x: "ok" })).toBe(false);
@@ -56,11 +62,18 @@ describe("non-homomorphic mapped types", () => {
 
   it("still resolves homomorphic mapped types over a named interface (no regression)", () => {
     const validator = returnValidator(
-      `interface Src { a: number; b: string }
-       type M = { [K in keyof Src]: Src[K] };
-       class Api extends RpcTarget {
-         async get(): Promise<M> { return null as any; }
-       }`
+      `interface Src {
+  a: number;
+  b: string;
+}
+type M = {
+  [K in keyof Src]: Src[K];
+};
+class Api extends RpcTarget {
+  async get(): Promise<M> {
+    return null as any;
+  }
+}`
     );
     expect(accepts(validator, { a: 1, b: "ok" })).toBe(true);
     expect(accepts(validator, { a: "x", b: "ok" })).toBe(false);

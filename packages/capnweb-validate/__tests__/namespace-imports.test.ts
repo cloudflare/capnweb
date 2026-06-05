@@ -28,7 +28,9 @@ declare module "capnweb-validate/capnweb" {
 describe("namespace-import marker calls are transformed, not silently skipped", () => {
   it("client: import * as capnweb -> capnweb.newHttpBatchRpcSession<Api>()", () => {
     const { code } = transformFixture(
-      `interface Api extends RpcTarget { echo(value: string): Promise<string>; }
+      `interface Api extends RpcTarget {
+  echo(value: string): Promise<string>;
+}
 export const api = capnweb.newHttpBatchRpcSession<Api>("/rpc");
 `,
       {
@@ -49,7 +51,11 @@ import { RpcTarget } from "capnweb";
 
   it("server: import * as cv (validate pkg) -> cv.newWorkersRpcResponse()", () => {
     const { code } = transformFixture(
-      `class Api extends RpcTarget { greet(name: string): string { return "hi " + name; } }
+      `class Api extends RpcTarget {
+  greet(name: string): string {
+    return "hi " + name;
+  }
+}
 export function handler(req: Request): Promise<Response> {
   return cv.newWorkersRpcResponse(req, new Api());
 }
@@ -69,7 +75,9 @@ import { RpcTarget } from "capnweb";
 
   it("client: a renamed import (newHttpBatchRpcSession as connect) is matched by resolved name", () => {
     const { code } = transformFixture(
-      `interface Api extends RpcTarget { echo(value: string): Promise<string>; }
+      `interface Api extends RpcTarget {
+  echo(value: string): Promise<string>;
+}
 export const api = connect<Api>("/rpc");
 `,
       {
@@ -91,7 +99,11 @@ import { RpcTarget } from "capnweb";
   it("decorator: import * as cv -> @cv.validateRpc() is transformed", () => {
     const { code } = transformFixture(
       `@cv.validateRpc()
-class Api extends RpcTarget { greet(name: string): string { return name; } }
+class Api extends RpcTarget {
+  greet(name: string): string {
+    return name;
+  }
+}
 export function handler(req: Request): Promise<Response> {
   return cv2.newWorkersRpcResponse(req, new Api());
 }
