@@ -20,7 +20,7 @@ describe("branded primitives", () => {
        }`
     );
     // Assert against the emitted validator only; source (incl. `type UserId`) is kept verbatim.
-    expect(code).toMatch(/getUser[\s\S]*?args:\s*\[\s*__rt\.v\.string\s*\]/);
+    expect(code).toMatch(/getUser[\s\S]*?args:\s*\[\s*__cw\.v\.string\s*\]/);
     const validator = code.slice(0, code.indexOf("class Api"));
     expect(validator).not.toContain("toString");
     expect(validator).not.toContain("v.object");
@@ -33,7 +33,7 @@ describe("branded primitives", () => {
          async getOrder(id: OrderId): Promise<string> { return id; }
        }`
     );
-    expect(code).toMatch(/getOrder[\s\S]*args:\s*\[\s*__rt\.v\.string\s*\]/);
+    expect(code).toMatch(/getOrder[\s\S]*args:\s*\[\s*__cw\.v\.string\s*\]/);
   });
 
   it("validates a branded number as v.number", () => {
@@ -43,7 +43,7 @@ describe("branded primitives", () => {
          async charge(amount: Cents): Promise<void> {}
        }`
     );
-    expect(code).toMatch(/charge[\s\S]*args:\s*\[\s*__rt\.v\.number\s*\]/);
+    expect(code).toMatch(/charge[\s\S]*args:\s*\[\s*__cw\.v\.number\s*\]/);
   });
 
   it("still merges a genuine object intersection into an object shape", () => {
@@ -56,8 +56,8 @@ describe("branded primitives", () => {
          async save(v: HasId & HasName): Promise<void> {}
        }`
     );
-    expect(code).toMatch(/"id":\s*__rt\.v\.string/);
-    expect(code).toMatch(/"name":\s*__rt\.v\.string/);
+    expect(code).toMatch(/"id":\s*__cw\.v\.string/);
+    expect(code).toMatch(/"name":\s*__cw\.v\.string/);
   });
 
   it("still rejects a genuinely unsupported type in a property position", () => {

@@ -46,7 +46,7 @@ describe("File is rejected at build time", () => {
       `class Api extends RpcTarget { async get(): Promise<Blob> { return null as any; } }`,
     );
     expect(error).toBeUndefined();
-    expect(code).toContain("returns: __rt.v.blob");
+    expect(code).toContain("returns: __cw.v.blob");
   });
 });
 

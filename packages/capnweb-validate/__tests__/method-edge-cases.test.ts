@@ -18,7 +18,7 @@ describe("method edge cases", () => {
     expect(error).toBeUndefined();
     // The optional method must appear in the validator with its arg + return
     // shape, not be silently omitted (which would reject a real call).
-    expect(code).toMatch(/"ping":\s*\{\s*args:\s*\[__rt\.v\.string\],\s*returns:\s*__rt\.v\.string\s*\}/);
+    expect(code).toMatch(/"ping":\s*\{\s*args:\s*\[__cw\.v\.string\],\s*returns:\s*__cw\.v\.string\s*\}/);
   });
 
   it("validates a required method alongside an optional one", () => {

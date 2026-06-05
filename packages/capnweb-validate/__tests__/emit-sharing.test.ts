@@ -22,14 +22,14 @@ describe("emit: named-shape sharing", () => {
     );
 
     // The User shape body is emitted exactly once.
-    const bodies = code.match(/v\.object\(\{ "id": __rt\.v\.string, "name": __rt\.v\.string \}/g);
+    const bodies = code.match(/v\.object\(\{ "id": __cw\.v\.string, "name": __cw\.v\.string \}/g);
     expect(bodies).toHaveLength(1);
 
     // Both methods reference the same hoisted binding, directly (no `lazy`)
     // because method-level references are always assigned by emit time.
     expect(code).toContain('"getUser": { args: [], returns: __capnweb_validate_Api_server_shape_0 }');
-    expect(code).toContain('"listUsers": { args: [], returns: __rt.v.array(__capnweb_validate_Api_server_shape_0) }');
-    expect(code).not.toMatch(/returns: __rt\.v\.lazy/);
+    expect(code).toContain('"listUsers": { args: [], returns: __cw.v.array(__capnweb_validate_Api_server_shape_0) }');
+    expect(code).not.toMatch(/returns: __cw\.v\.lazy/);
   });
 
   it("does not double `undefined` on an optional property that already admits it", () => {
@@ -40,10 +40,10 @@ describe("emit: named-shape sharing", () => {
        }`
     );
 
-    expect(code).toContain('"phone": __rt.v.union([__rt.v.undefined_, __rt.v.string])');
+    expect(code).toContain('"phone": __cw.v.union([__cw.v.undefined_, __cw.v.string])');
     // The optional-property widening must not wrap an already-undefined union
     // in another undefined.
-    expect(code).not.toMatch(/union\(\[__rt\.v\.union/);
+    expect(code).not.toMatch(/union\(\[__cw\.v\.union/);
     expect(code.match(/undefined_/g)).toHaveLength(1);
   });
 
@@ -62,8 +62,8 @@ describe("emit: named-shape sharing", () => {
     expect(code).toContain('let __capnweb_validate_Api_server_shape_2;');
 
     // Cross-references inside a shape body are deferred with `lazy`.
-    expect(code).toMatch(/"entries": __rt\.v\.array\(__rt\.v\.lazy\(\(\) => __capnweb_validate_Api_server_shape_2\)\)/);
-    expect(code).toMatch(/"parent": __rt\.v\.lazy\(\(\) => __capnweb_validate_Api_server_shape_0\)/);
+    expect(code).toMatch(/"entries": __cw\.v\.array\(__cw\.v\.lazy\(\(\) => __capnweb_validate_Api_server_shape_2\)\)/);
+    expect(code).toMatch(/"parent": __cw\.v\.lazy\(\(\) => __capnweb_validate_Api_server_shape_0\)/);
 
     // Method returns reference the bindings directly.
     expect(code).toContain('"getDir": { args: [], returns: __capnweb_validate_Api_server_shape_0 }');

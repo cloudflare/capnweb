@@ -12,7 +12,7 @@ describe("Error subclass lowering", () => {
       `class AppError extends Error { code = 1; }
        class Api extends RpcTarget { async get(): Promise<AppError> { return null as any; } }`
     );
-    expect(code).toMatch(/"get":\s*\{\s*args:\s*\[\],\s*returns:\s*__rt\.v\.error\s*\}/);
+    expect(code).toMatch(/"get":\s*\{\s*args:\s*\[\],\s*returns:\s*__cw\.v\.error\s*\}/);
     // Must not walk the error's own/inherited properties into an object validator.
     expect(code).not.toContain('"code"');
     expect(code).not.toContain('"stack"');
@@ -25,7 +25,7 @@ describe("Error subclass lowering", () => {
        class C extends B {}
        class Api extends RpcTarget { async get(): Promise<C> { return null as any; } }`
     );
-    expect(code).toContain("returns: __rt.v.error");
+    expect(code).toContain("returns: __cw.v.error");
   });
 
   it("still lowers the global Error and standard subclasses to v.error", () => {
@@ -35,8 +35,8 @@ describe("Error subclass lowering", () => {
          async b(): Promise<TypeError> { return null as any; }
        }`
     );
-    expect(code).toMatch(/"a":\s*\{\s*args:\s*\[\],\s*returns:\s*__rt\.v\.error\s*\}/);
-    expect(code).toMatch(/"b":\s*\{\s*args:\s*\[\],\s*returns:\s*__rt\.v\.error\s*\}/);
+    expect(code).toMatch(/"a":\s*\{\s*args:\s*\[\],\s*returns:\s*__cw\.v\.error\s*\}/);
+    expect(code).toMatch(/"b":\s*\{\s*args:\s*\[\],\s*returns:\s*__cw\.v\.error\s*\}/);
   });
 
   it("does not hijack a user type merely named Error that is not the global", () => {
@@ -45,7 +45,7 @@ describe("Error subclass lowering", () => {
       `interface Error { kind: string; detail: string; }
        class Api extends RpcTarget { async get(): Promise<Error> { return null as any; } }`
     );
-    expect(code).toContain('"kind": __rt.v.string');
-    expect(code).not.toContain("returns: __rt.v.error");
+    expect(code).toContain('"kind": __cw.v.string');
+    expect(code).not.toContain("returns: __cw.v.error");
   });
 });

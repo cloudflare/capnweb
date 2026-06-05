@@ -18,7 +18,7 @@ describe("non-homomorphic mapped types", () => {
     );
     // Each synthesized key must get its own validator, not an empty object.
     expect(validator).toContain(
-      `__rt.v.object({ "a": __rt.v.number, "b": __rt.v.number }, "M")`
+      `__cw.v.object({ "a": __cw.v.number, "b": __cw.v.number }, "M")`
     );
     expect(validator).not.toMatch(/v\.object\(\{\s*\},\s*"M"\)/);
   });
@@ -30,7 +30,7 @@ describe("non-homomorphic mapped types", () => {
        }`
     );
     expect(validator).toContain(
-      `__rt.v.object({ "read": __rt.v.boolean, "write": __rt.v.boolean, "admin": __rt.v.boolean }, "Record")`
+      `__cw.v.object({ "read": __cw.v.boolean, "write": __cw.v.boolean, "admin": __cw.v.boolean }, "Record")`
     );
   });
 
@@ -40,8 +40,8 @@ describe("non-homomorphic mapped types", () => {
          async get(): Promise<{ [K in "x" | "y"]: string }> { return null as any; }
        }`
     );
-    expect(validator).toContain(`"x": __rt.v.string`);
-    expect(validator).toContain(`"y": __rt.v.string`);
+    expect(validator).toContain(`"x": __cw.v.string`);
+    expect(validator).toContain(`"y": __cw.v.string`);
     expect(validator).not.toMatch(/v\.object\(\{\s*\}\)/);
   });
 
@@ -54,7 +54,7 @@ describe("non-homomorphic mapped types", () => {
        }`
     );
     expect(validator).toContain(
-      `__rt.v.object({ "a": __rt.v.number, "b": __rt.v.string }, "M")`
+      `__cw.v.object({ "a": __cw.v.number, "b": __cw.v.string }, "M")`
     );
   });
 });

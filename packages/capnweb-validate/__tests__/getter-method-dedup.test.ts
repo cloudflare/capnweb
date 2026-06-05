@@ -44,6 +44,6 @@ describe("getter vs method dedup", () => {
     const validators = prelude(code, "class WithGetter");
     // A getter form and a non-getter form of `config` both appear.
     expect(validators).toMatch(/"config":\s*\{[^}]*isGetter:\s*true/);
-    expect(validators).toMatch(/"config":\s*\{\s*args:\s*\[\],\s*returns:\s*__rt\.v\.string\s*\}/);
+    expect(validators).toMatch(/"config":\s*\{\s*args:\s*\[\],\s*returns:\s*__cw\.v\.string\s*\}/);
   });
 });

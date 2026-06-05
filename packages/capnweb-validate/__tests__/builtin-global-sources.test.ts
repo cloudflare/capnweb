@@ -57,21 +57,21 @@ describe("built-in global Response from any source -> v.response", () => {
     expect(getThingValidator({
       files: typesPackage("@cloudflare/workers-types", GLOBALS),
       types: ["@cloudflare/workers-types"],
-    })).toContain("returns: __rt.v.response");
+    })).toContain("returns: __cw.v.response");
   });
 
   it("wrangler-generated worker-configuration.d.ts (no package)", () => {
     expect(getThingValidator({
       files: { "worker-configuration.d.ts": GLOBALS },
       rootFiles: ["worker-configuration.d.ts"],
-    })).toContain("returns: __rt.v.response");
+    })).toContain("returns: __cw.v.response");
   });
 
   it("@types/node", () => {
     expect(getThingValidator({
       files: typesPackage("@types/node", GLOBALS),
       types: ["node"],
-    })).toContain("returns: __rt.v.response");
+    })).toContain("returns: __cw.v.response");
   });
 });
 
@@ -97,7 +97,7 @@ export function handler(req: Request, env: unknown): Response {
 }
 `,
     });
-    expect(line).toContain("__rt.v.object");
+    expect(line).toContain("__cw.v.object");
     expect(line).not.toContain("v.response");
   });
 });

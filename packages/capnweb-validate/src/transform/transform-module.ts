@@ -71,7 +71,7 @@ function assertValidTextEdits(code: string, ordered: TextEdit[]): void {
 const PACKAGE_NAME = "capnweb-validate";
 const CAPNWEB_MARKER_PACKAGE_NAME = "capnweb-validate/capnweb";
 const CAPNWEB_PACKAGE_NAME = "capnweb";
-const RUNTIME_NAMESPACE = "__rt";
+const RUNTIME_NAMESPACE = "__cw";
 
 const CORE_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/core";\n`;
 const CAPNWEB_RUNTIME_IMPORT = `import * as ${RUNTIME_NAMESPACE} from "${PACKAGE_NAME}/internal/capnweb";\n`;

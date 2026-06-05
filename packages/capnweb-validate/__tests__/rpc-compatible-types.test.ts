@@ -30,13 +30,13 @@ describe("RPC-compatible value types", () => {
       { target: "new Api()" }
     );
     const validator = prelude(code);
-    expect(validator).toContain("__rt.v.arrayBuffer");
-    expect(validator).toContain("__rt.v.dataView");
-    expect(validator).toContain('__rt.v.typedArray("Int16Array")');
-    expect(validator).toContain("__rt.v.regexp");
-    expect(validator).toContain("__rt.v.bytes");
+    expect(validator).toContain("__cw.v.arrayBuffer");
+    expect(validator).toContain("__cw.v.dataView");
+    expect(validator).toContain('__cw.v.typedArray("Int16Array")');
+    expect(validator).toContain("__cw.v.regexp");
+    expect(validator).toContain("__cw.v.bytes");
     expect(validator).toContain(
-      '__rt.v.map(__rt.v.string, __rt.v.set(__rt.v.typedArray("Float32Array")))'
+      '__cw.v.map(__cw.v.string, __cw.v.set(__cw.v.typedArray("Float32Array")))'
     );
   });
 
@@ -48,7 +48,7 @@ describe("RPC-compatible value types", () => {
       { target: "new Api()" }
     );
     expect(prelude(code)).toContain(
-      "returns: __rt.v.map(__rt.v.string, __rt.v.set(__rt.v.number))"
+      "returns: __cw.v.map(__cw.v.string, __cw.v.set(__cw.v.number))"
     );
   });
 

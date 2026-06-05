@@ -48,15 +48,15 @@ describe("Fetcher detection: structural false-positive", () => {
   connect(host: string): Promise<void>;
 }`
     );
-    expect(line).toMatch(/__rt\.v\.object\(/);
-    expect(line).toContain('"fetch": __rt.v.func');
-    expect(line).toContain('"connect": __rt.v.func');
-    expect(line).not.toMatch(/returns: __rt\.v\.stub\b/);
+    expect(line).toMatch(/__cw\.v\.object\(/);
+    expect(line).toContain('"fetch": __cw.v.func');
+    expect(line).toContain('"connect": __cw.v.func');
+    expect(line).not.toMatch(/returns: __cw\.v\.stub\b/);
   });
 
   it("keeps a real Fetcher<User> as a pass-by-reference stub", () => {
     const line = emit("Fetcher<User>", "interface User { describe(): Promise<string>; }");
-    expect(line).toMatch(/__rt\.v\.stubOf\(/);
+    expect(line).toMatch(/__cw\.v\.stubOf\(/);
     expect(line).toContain('serviceName: "User"');
   });
 
@@ -64,6 +64,6 @@ describe("Fetcher detection: structural false-positive", () => {
     // `Fetcher` with all type args defaulted drops the "Fetcher" alias name, so
     // the structural fallback must still recognise it by fetch -> Promise<Response>.
     const line = emit("Fetcher");
-    expect(line).toMatch(/returns: __rt\.v\.stub\b/);
+    expect(line).toMatch(/returns: __cw\.v\.stub\b/);
   });
 });

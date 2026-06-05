@@ -22,7 +22,7 @@ describe("method overloads", () => {
       `@validateRpc()\nclass Api extends RpcTarget {\n  foo(x: string): Promise<string>;\n  foo(x: number): Promise<number>;\n  async foo(x: any): Promise<any> { return x; }\n}`);
     // unchecked, NOT validated against the first (string) signature
     expect(code).toContain('"foo": { unchecked: true }');
-    expect(code).not.toMatch(/"foo":\s*\{\s*args:\s*\[__rt\.v\.string\]/);
+    expect(code).not.toMatch(/"foo":\s*\{\s*args:\s*\[__cw\.v\.string\]/);
     // warned exactly once despite decorator + call-site both resolving Api
     const overloadWarns = warns.filter((w) => w.includes("is overloaded"));
     expect(overloadWarns.length).toBe(1);
@@ -37,7 +37,7 @@ describe("method overloads", () => {
   it("still validates a single-signature method (no false positive)", () => {
     const { code, warns } = compile(
       `@validateRpc()\nclass Api extends RpcTarget { async foo(x: string): Promise<string> { return x; } }`);
-    expect(code).toContain('"foo": { args: [__rt.v.string], returns: __rt.v.string }');
+    expect(code).toContain('"foo": { args: [__cw.v.string], returns: __cw.v.string }');
     expect(warns.filter((w) => w.includes("is overloaded")).length).toBe(0);
   });
 

@@ -18,7 +18,7 @@ describe("numeric index signatures", () => {
     // Third argument to v.object is the index validator. It must be present
     // and carry the value shape, not be dropped.
     expect(validator).toMatch(
-      /v\.object\(\{\s*\},\s*"Record",\s*__rt\.v\.object\(\{\s*"id":\s*__rt\.v\.string\s*\},\s*"V"\)\)/
+      /v\.object\(\{\s*\},\s*"Record",\s*__cw\.v\.object\(\{\s*"id":\s*__cw\.v\.string\s*\},\s*"V"\)\)/
     );
   });
 
@@ -28,7 +28,7 @@ describe("numeric index signatures", () => {
          async get(): Promise<{ [k: number]: string }> { return null as any; }
        }`
     );
-    expect(validator).toMatch(/v\.object\(\{\s*\},\s*undefined,\s*__rt\.v\.string\)/);
+    expect(validator).toMatch(/v\.object\(\{\s*\},\s*undefined,\s*__cw\.v\.string\)/);
   });
 
   it("still validates string-keyed records (no regression)", () => {
@@ -37,6 +37,6 @@ describe("numeric index signatures", () => {
          async get(): Promise<Record<string, number>> { return null as any; }
        }`
     );
-    expect(validator).toMatch(/v\.object\(\{\s*\},\s*"Record",\s*__rt\.v\.number\)/);
+    expect(validator).toMatch(/v\.object\(\{\s*\},\s*"Record",\s*__cw\.v\.number\)/);
   });
 });

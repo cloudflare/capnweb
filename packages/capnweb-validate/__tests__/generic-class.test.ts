@@ -21,8 +21,8 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface A { a(): Promise<string>; }\n@validateRpc()\nclass Api extends RpcTarget implements A { async a(): Promise<string> { return ""; } async extra(x: number): Promise<number> { return x; } }`,
       "new Api()");
-    expect(code).toContain('"a": { args: [], returns: __rt.v.string }');
-    expect(code).toContain('"extra": { args: [__rt.v.number], returns: __rt.v.number }');
+    expect(code).toContain('"a": { args: [], returns: __cw.v.string }');
+    expect(code).toContain('"extra": { args: [__cw.v.number], returns: __cw.v.number }');
     expect(warns.join("")).not.toContain("unconstrained");
   });
 
@@ -30,8 +30,8 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface A { a(x: string): Promise<string>; }\n@validateRpc()\nclass Api extends RpcTarget implements A { async a(x: any): Promise<any> { return x; } async extra(x: number): Promise<number> { return x; } }`,
       "new Api()");
-    expect(code).toContain('"a": { args: [__rt.v.string], returns: __rt.v.string }');
-    expect(code).toContain('"extra": { args: [__rt.v.number], returns: __rt.v.number }');
+    expect(code).toContain('"a": { args: [__cw.v.string], returns: __cw.v.string }');
+    expect(code).toContain('"extra": { args: [__cw.v.number], returns: __cw.v.number }');
     expect(warns.join("")).not.toContain("unconstrained");
   });
 
@@ -39,7 +39,7 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface Cursor<T> { next(): Promise<T>; }\n@validateRpc()\nclass Api<T> extends RpcTarget implements Cursor<T> { async next(): Promise<T> { return null as any; } }`,
       "new Api()");
-    expect(code).toContain('"next": { args: [], returns: __rt.v.any }');
+    expect(code).toContain('"next": { args: [], returns: __cw.v.any }');
     expect(warns.join("")).toContain("unconstrained type parameters default to `any`");
   });
 
@@ -47,7 +47,7 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface Cursor<T> { next(): Promise<T>; }\n@validateRpc()\nclass Api<T extends { id: string }> extends RpcTarget implements Cursor<T> { async next(): Promise<T> { return null as any; } }`,
       "new Api<{ id: string }>()");
-    expect(code).toMatch(/next[\s\S]*returns:\s*__rt\.v\.object\(\{\s*"id":\s*__rt\.v\.string\s*\}\)/);
+    expect(code).toMatch(/next[\s\S]*returns:\s*__cw\.v\.object\(\{\s*"id":\s*__cw\.v\.string\s*\}\)/);
     expect(warns.join("")).not.toContain("unconstrained");
   });
 
@@ -55,8 +55,8 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface Cursor<T> { next(): Promise<T>; }\n@validateRpc<Cursor<string>>()\nclass Api<T> extends RpcTarget implements Cursor<T> { async next(): Promise<T> { return null as any; } async extra(x: number): Promise<number> { return x; } }`,
       "new Api<string>()");
-    expect(code).toContain('"next": { args: [], returns: __rt.v.string }');
-    expect(code).toContain('"extra": { args: [__rt.v.number], returns: __rt.v.number }');
+    expect(code).toContain('"next": { args: [], returns: __cw.v.string }');
+    expect(code).toContain('"extra": { args: [__cw.v.number], returns: __cw.v.number }');
     expect(warns.join("")).not.toContain("unconstrained");
   });
 
@@ -64,14 +64,14 @@ describe("generic service classes", () => {
     const { code } = compile(
       `interface Sig { config(): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { get config(): Promise<string> { return Promise.resolve("ok"); } }`,
       "new Api()");
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
+    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
   });
 
   it("does not let an explicit getter signature turn a method into a getter", () => {
     const { code } = compile(
       `interface Sig { value: string; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { value(): string { return "ok"; } }`,
       "new Api()");
-    expect(code).toMatch(/"value":\s*\{ args: \[\], returns: __rt\.v\.string \}/);
+    expect(code).toMatch(/"value":\s*\{ args: \[\], returns: __cw\.v\.string \}/);
     expect(code).not.toMatch(/"value"[\s\S]*isGetter: true/);
   });
 
@@ -94,7 +94,7 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface Sig { extra(): Promise<string>; extra(x: string): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { ok(): string { return "ok"; } }`,
       "new Api()");
-    expect(code).toContain('"ok": { args: [], returns: __rt.v.string }');
+    expect(code).toContain('"ok": { args: [], returns: __cw.v.string }');
     expect(code).not.toContain('"extra"');
     expect(warns.join("")).not.toContain("overloaded");
   });
@@ -103,7 +103,7 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface Sig { field(): Promise<string>; field(x: string): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { field = 1; ok(): string { return "ok"; } }`,
       "new Api()");
-    expect(code).toContain('"ok": { args: [], returns: __rt.v.string }');
+    expect(code).toContain('"ok": { args: [], returns: __cw.v.string }');
     expect(code).not.toContain('"field"');
     expect(warns.join("")).not.toContain("overloaded");
   });
@@ -112,7 +112,7 @@ describe("generic service classes", () => {
     const { code, warns } = compile(
       `interface Sig { foo(): Promise<string>; foo(x: string): Promise<string>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { get foo(): Promise<string> { return Promise.resolve("ok"); } }`,
       "new Api()");
-    expect(code).toMatch(/"foo":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
+    expect(code).toMatch(/"foo":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
     expect(warns.join("")).not.toContain("overloaded");
   });
 
@@ -120,17 +120,17 @@ describe("generic service classes", () => {
     const { code } = compile(
       `type RpcStub<T> = T & { readonly __RPC_STUB_BRAND: T };\ninterface Sig { a(): Promise<string>; admin(): Promise<number>; }\n@validateRpc<Sig>()\nclass Api extends RpcTarget { a(): Promise<string> { return Promise.resolve(""); } peer(p: RpcStub<Sig>): Promise<void> { return Promise.resolve(); } }`,
       "new Api()");
-    expect(code).toContain('"a": { args: [], returns: __rt.v.string }');
-    expect(code).toContain('"peer": { args: [__rt.v.stubOf(');
-    expect(code).toContain('"admin": { args: [], returns: __rt.v.number }');
+    expect(code).toContain('"a": { args: [], returns: __cw.v.string }');
+    expect(code).toContain('"peer": { args: [__cw.v.stubOf(');
+    expect(code).toContain('"admin": { args: [], returns: __cw.v.number }');
   });
 
   it("resolves a class with multiple implemented interfaces via the class surface", () => {
     const { code, warns } = compile(
       `interface A { a(): Promise<string>; }\ninterface B { b(): Promise<number>; }\n@validateRpc()\nclass Api extends RpcTarget implements A, B { async a(): Promise<string> { return ""; } async b(): Promise<number> { return 0; } }`,
       "new Api()");
-    expect(code).toContain('"a": { args: [], returns: __rt.v.string }');
-    expect(code).toContain('"b": { args: [], returns: __rt.v.number }');
+    expect(code).toContain('"a": { args: [], returns: __cw.v.string }');
+    expect(code).toContain('"b": { args: [], returns: __cw.v.number }');
     expect(warns.join("")).not.toContain("unconstrained");
   });
 

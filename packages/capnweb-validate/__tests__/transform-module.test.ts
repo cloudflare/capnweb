@@ -34,11 +34,11 @@ type TestServiceValidator = {
 };
 
 async function loadValidator(code: string, binding: string): Promise<TestServiceValidator> {
-  let rt = await import("../src/internal/core.js");
-  let prelude = code.match(/import \* as __rt from "capnweb-validate\/internal(?:\/(?:core|capnweb))?";\n([\s\S]*?)\n\s*import\s+/);
+  let cw = await import("../src/internal/core.js");
+  let prelude = code.match(/import \* as __cw from "capnweb-validate\/internal(?:\/(?:core|capnweb))?";\n([\s\S]*?)\n\s*import\s+/);
   expect(prelude, "validator prelude not found in:\n" + code).not.toBeNull();
   // eslint-disable-next-line @typescript-eslint/no-implied-eval
-  return new Function("__rt", `${prelude![1]!}\nreturn ${binding};`)(rt) as TestServiceValidator;
+  return new Function("__cw", `${prelude![1]!}\nreturn ${binding};`)(cw) as TestServiceValidator;
 }
 
 // Minimal capnweb type stand-ins so the fixture's TypeChecker resolves the
@@ -83,9 +83,9 @@ describe("transformModule", () => {
         return newWorkersRpcResponse(req, new Api());
       }
     `);
-    expect(code).toContain("__rt.__newWorkersRpcResponseWithValidation(req, new Api()");
-    expect(code).toContain(`import * as __rt from "capnweb-validate/internal/capnweb"`);
-    expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
+    expect(code).toContain("__cw.__newWorkersRpcResponseWithValidation(req, new Api()");
+    expect(code).toContain(`import * as __cw from "capnweb-validate/internal/capnweb"`);
+    expect(code).toMatch(/greet[^}]*args:\s*\[\s*__cw\.v\.string\s*\]/s);
   });
 
   it("client: rewrites newHttpBatchRpcSession from the explicit type argument", () => {
@@ -95,8 +95,8 @@ describe("transformModule", () => {
       interface Api extends RpcTarget { echo(value: string): Promise<string>; }
       export const api = newHttpBatchRpcSession<Api>("/rpc");
     `);
-    expect(code).toMatch(/__rt\.__newHttpBatchRpcSessionWithValidation<Api>\("\/rpc"/);
-    expect(code).toMatch(/echo[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
+    expect(code).toMatch(/__cw\.__newHttpBatchRpcSessionWithValidation<Api>\("\/rpc"/);
+    expect(code).toMatch(/echo[^}]*args:\s*\[\s*__cw\.v\.string\s*\]/s);
   });
 
   it("decorator: rewrites @validateRpc to wrap the class", () => {
@@ -107,8 +107,8 @@ describe("transformModule", () => {
       class Api extends RpcTarget { greet(name: string): string { return name; } }
       export default Api;
     `);
-    expect(code).toContain("__rt.__validateRpcClass(");
-    expect(code).toMatch(/greet[^}]*args:\s*\[\s*__rt\.v\.string\s*\]/s);
+    expect(code).toContain("__cw.__validateRpcClass(");
+    expect(code).toMatch(/greet[^}]*args:\s*\[\s*__cw\.v\.string\s*\]/s);
   });
 
   it("decorator: filters inherited WorkerEntrypoint platform methods", () => {

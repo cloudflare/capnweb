@@ -34,15 +34,15 @@ describe("getter accessors on the RPC surface", () => {
         `  async m(): Promise<number> { return 1; }\n` +
         `}`
     );
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
-    expect(code).toMatch(/"m":\s*\{ args: \[\], returns: __rt\.v\.number \}/);
+    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
+    expect(code).toMatch(/"m":\s*\{ args: \[\], returns: __cw\.v\.number \}/);
   });
 
   it("unwraps a Promise-returning getter", () => {
     const code = transform(
       `class Api extends RpcTarget {\n  get config(): Promise<string> { return Promise.resolve("x"); }\n}`
     );
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
+    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
   });
 
   it("rejects an unsupported getter type at build time (no longer silently dropped)", () => {
@@ -78,7 +78,7 @@ describe("getter accessors on the RPC surface", () => {
         imports: `import { newHttpBatchRpcSession } from "capnweb";\n`,
       }
     ).code;
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
+    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
   });
 
   it("emits getter-style validators for plain object target properties", () => {
@@ -86,7 +86,7 @@ describe("getter accessors on the RPC surface", () => {
       `const target = { config: "x" };`,
       { target: "target" }
     ).code;
-    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __rt\.v\.string, isGetter: true \}/);
+    expect(code).toMatch(/"config":\s*\{ args: \[\], returns: __cw\.v\.string, isGetter: true \}/);
   });
 
   it("server: validates a data property on property read", () => {

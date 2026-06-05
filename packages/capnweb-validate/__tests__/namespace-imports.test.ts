@@ -32,9 +32,9 @@ import { RpcTarget } from "capnweb";
 `,
       },
     );
-    expect(code).toContain("__rt.__newHttpBatchRpcSessionWithValidation");
-    expect(code).toContain("import * as __rt from");
-    expect(code).toMatch(/echo[\s\S]*?args:\s*\[__rt\.v\.string\]/);
+    expect(code).toContain("__cw.__newHttpBatchRpcSessionWithValidation");
+    expect(code).toContain("import * as __cw from");
+    expect(code).toMatch(/echo[\s\S]*?args:\s*\[__cw\.v\.string\]/);
   });
 
   it("server: import * as cv (validate pkg) -> cv.newWorkersRpcResponse()", () => {
@@ -51,8 +51,8 @@ import { RpcTarget } from "capnweb";
 `,
       },
     );
-    expect(code).toContain("__rt.__newWorkersRpcResponseWithValidation");
-    expect(code).toMatch(/greet[\s\S]*?args:\s*\[__rt\.v\.string\]/);
+    expect(code).toContain("__cw.__newWorkersRpcResponseWithValidation");
+    expect(code).toMatch(/greet[\s\S]*?args:\s*\[__cw\.v\.string\]/);
   });
 
   it("client: a renamed import (newHttpBatchRpcSession as connect) is matched by resolved name", () => {
@@ -67,8 +67,8 @@ import { RpcTarget } from "capnweb";
 `,
       },
     );
-    expect(code).toContain("__rt.__newHttpBatchRpcSessionWithValidation");
-    expect(code).toMatch(/echo[\s\S]*?args:\s*\[__rt\.v\.string\]/);
+    expect(code).toContain("__cw.__newHttpBatchRpcSessionWithValidation");
+    expect(code).toMatch(/echo[\s\S]*?args:\s*\[__cw\.v\.string\]/);
   });
 
   it("decorator: import * as cv -> @cv.validateRpc() is transformed", () => {
@@ -90,8 +90,8 @@ import { RpcTarget } from "capnweb";
 `,
       },
     );
-    expect(code).toContain("__rt.__validateRpcClass");
-    expect(code).toMatch(/greet[\s\S]*?args:\s*\[__rt\.v\.string\]/);
+    expect(code).toContain("__cw.__validateRpcClass");
+    expect(code).toMatch(/greet[\s\S]*?args:\s*\[__cw\.v\.string\]/);
   });
 
   it("fails loud: a namespace marker call with no resolvable type throws", () => {

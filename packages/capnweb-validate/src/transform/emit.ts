@@ -12,7 +12,7 @@ import type {
 } from "./type-introspector.js";
 
 // Emit a `const <name> = { serviceName, methods: { ... } };` declaration.
-// References `__rt`; the transform adds the runtime import to each module.
+// References `__cw`; the transform adds the runtime import to each module.
 export function emitValidator(
   bindingName: string,
   shape: ServiceShape,
@@ -73,7 +73,7 @@ function bindingRef(id: number, ctx: EmitContext): string {
   let binding = shapeBinding(ctx.bindingName, id);
   return ctx.definingId === undefined
     ? binding
-    : `__rt.v.lazy(() => ${binding})`;
+    : `__cw.v.lazy(() => ${binding})`;
 }
 
 function shapeId(shape: TypeShape): number | undefined {
@@ -125,35 +125,35 @@ function serviceMetaParts(shape: ServiceShape, mode: ValidationMode): string[] {
 function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
   switch (shape.kind) {
     case "string":
-      return `__rt.v.string`;
+      return `__cw.v.string`;
     case "number":
-      return `__rt.v.number`;
+      return `__cw.v.number`;
     case "boolean":
-      return `__rt.v.boolean`;
+      return `__cw.v.boolean`;
     case "bigint":
-      return `__rt.v.bigint`;
+      return `__cw.v.bigint`;
     case "null":
-      return `__rt.v.null_`;
+      return `__cw.v.null_`;
     case "undefined":
-      return `__rt.v.undefined_`;
+      return `__cw.v.undefined_`;
     case "void":
-      return `__rt.v.undefined_`;
+      return `__cw.v.undefined_`;
     case "any":
-      return `__rt.v.any`;
+      return `__cw.v.any`;
     case "literal":
-      return `__rt.v.literal(${JSON.stringify(shape.value)})`;
+      return `__cw.v.literal(${JSON.stringify(shape.value)})`;
     case "array": {
       let hoisted = hoistedBinding(shape, ctx);
       if (hoisted) return hoisted;
-      return `__rt.v.array(${emitValidator_(shape.element, ctx)})`;
+      return `__cw.v.array(${emitValidator_(shape.element, ctx)})`;
     }
     case "map":
-      return `__rt.v.map(${emitValidator_(shape.key, ctx)}, ${emitValidator_(
+      return `__cw.v.map(${emitValidator_(shape.key, ctx)}, ${emitValidator_(
         shape.value,
         ctx
       )})`;
     case "set":
-      return `__rt.v.set(${emitValidator_(shape.element, ctx)})`;
+      return `__cw.v.set(${emitValidator_(shape.element, ctx)})`;
     case "tuple": {
       let hoisted = hoistedBinding(shape, ctx);
       if (hoisted) return hoisted;
@@ -171,7 +171,7 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
         opts.push(`rest: ${emitValidator_(shape.rest, ctx)}`);
       }
       let optsArg = opts.length ? `, { ${opts.join(", ")} }` : "";
-      return `__rt.v.tuple([${elements}]${optsArg})`;
+      return `__cw.v.tuple([${elements}]${optsArg})`;
     }
     case "object": {
       let hoisted = hoistedBinding(shape, ctx);
@@ -187,7 +187,7 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
             ctx
           )}`
         : "";
-      return `__rt.v.object({ ${entries.join(", ")} }${nameArg}${indexArg})`;
+      return `__cw.v.object({ ${entries.join(", ")} }${nameArg}${indexArg})`;
     }
     case "union": {
       let hoisted = hoistedBinding(shape, ctx);
@@ -195,7 +195,7 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
       let branches = shape.branches
         .map((b) => emitValidator_(b, ctx))
         .join(", ");
-      return `__rt.v.union([${branches}])`;
+      return `__cw.v.union([${branches}])`;
     }
     case "ref":
       return bindingRef(shape.id, ctx);
@@ -214,18 +214,18 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
     case "headers":
     case "request":
     case "response":
-      return `__rt.v.${shape.kind}`;
+      return `__cw.v.${shape.kind}`;
     case "typedArray":
-      return `__rt.v.typedArray(${JSON.stringify(shape.name)})`;
+      return `__cw.v.typedArray(${JSON.stringify(shape.name)})`;
     // Pass-by-reference: keep the stub service shape so pipelined calls validate too.
     case "function":
-      return `__rt.v.func`;
+      return `__cw.v.func`;
     case "stub":
       return shape.service
-        ? `__rt.v.stubOf(${emitServiceLiteral(shape.service, ctx)})`
-        : `__rt.v.stub`;
+        ? `__cw.v.stubOf(${emitServiceLiteral(shape.service, ctx)})`
+        : `__cw.v.stub`;
     case "unsupported":
       // Normally rejected before here; this fallback covers unrepresentable corners and keeps the lowerer total.
-      return `__rt.v.any`;
+      return `__cw.v.any`;
   }
 }
