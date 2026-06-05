@@ -102,11 +102,14 @@ export function resolveServiceShape(
   checker: ts.TypeChecker,
   type: ts.Type,
   generic?: GenericFallback,
-  signatureType?: ts.Type | null
+  signatureType?: ts.Type | null,
+  signatureMode: "sharpen" | "exact" = "sharpen"
 ): ServiceShape | null {
   let ctx = createResolveContext(tsm, checker, generic);
   if (!signatureType) return resolveServiceShapeInner(ctx, type);
-  // `type` owns the method set; `signatureType` only sharpens matching members.
+  // `type` provides the runtime implementation. `signatureType` can either
+  // sharpen matching members (`implements T`) or, for explicit
+  // `@validateRpc<T>()`, also filter the exposed method set to T's names.
   let surfaceKinds = collectServiceSurfaceNames(ctx, type);
   let signature = resolveServiceShapeInner(
     ctx,
@@ -117,15 +120,19 @@ export function resolveServiceShape(
   let overrides = signature
     ? new Map(signature.methods.map((method) => [method.name, method]))
     : undefined;
-  return resolveServiceShapeInner(ctx, type, overrides);
+  let includeMethods = signatureMode === "exact"
+    ? collectServiceSurfaceNames(ctx, signatureType)
+    : undefined;
+  return resolveServiceShapeInner(ctx, type, overrides, includeMethods);
 }
 
-// Resolve `type` into a ServiceShape. Two optional, mutually exclusive modes
-// support the decorator's "class surface + signature source" split:
+// Resolve `type` into a ServiceShape. Two optional modes support the
+// decorator's "class surface + signature source" split:
 // - `methodOverrides`: replace a resolved member with a precomputed shape when
 //   the names match. Used by the final class pass to adopt sharper signatures.
 // - `includeMethods`: restrict resolution to these surface names (the signature
-//   pass), so signature-only members never warn, error, or emit named shapes.
+//   pass, or explicit `@validateRpc<T>()`), so members outside the active
+//   surface never warn, error, or emit named shapes.
 // Both modes bypass the service cache so the filtered/overridden shape is never
 // observed by an unrelated resolution of the same `type`.
 function resolveServiceShapeInner(

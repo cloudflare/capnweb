@@ -8,14 +8,14 @@ import {
   transformFixture,
   validatorShape,
 } from "./helpers.js";
-import { v, type ServiceValidator } from "../src/internal/core.js";
+import { v, wrapServerTarget, type ServiceValidator } from "../src/internal/core.js";
 
 const IMPORTS = `import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
 import { skipRpcValidation, validateRpc } from "capnweb-validate";
 import { RpcTarget } from "capnweb";
 `;
 
-function compile(body: string, ctor: string): { code: string | null; warns: string[]; error?: string } {
+function compile(body: string, ctor?: string): { code: string | null; warns: string[]; error?: string } {
   try {
     const { code, warns } = transformFixture(body, { shim: DECORATOR_SHIM, imports: IMPORTS, target: ctor });
     return { code, warns };
@@ -26,7 +26,7 @@ function compile(body: string, ctor: string): { code: string | null; warns: stri
 
 function compileValidator(
   body: string,
-  ctor: string,
+  ctor?: string,
   binding?: string
 ): { validator: ServiceValidator; warns: string[] } {
   const { code, warns, error } = compile(body, ctor);
@@ -116,7 +116,7 @@ class Api<T extends { id: string }> extends RpcTarget implements Cursor<T> {
     expect(warns.join("")).not.toContain("unconstrained");
   });
 
-  it("uses an explicit decorator type argument to specialize matching class methods only", () => {
+  it("uses an explicit decorator type argument as the RPC surface", () => {
     const { validator, warns } = compileValidator(
       `interface Cursor<T> {
   next(): Promise<T>;
@@ -130,11 +130,14 @@ class Api<T> extends RpcTarget implements Cursor<T> {
     return x;
   }
 }`,
-      "new Api<string>()");
+      undefined);
     expect(checkedMethod(validator, "next").returns).toBe(v.string);
-    const extra = checkedMethod(validator, "extra");
-    expect(extra.args[0]).toBe(v.number);
-    expect(extra.returns).toBe(v.number);
+    expect(Object.keys(validator.methods)).toEqual(["next"]);
+    const wrapped = wrapServerTarget(
+      { next: async () => "", extra: async (x: number) => x },
+      validator
+    ) as { extra(x: number): Promise<number> };
+    expect(() => wrapped.extra(1)).toThrow(/not in the generated validator/);
     expect(warns.join("")).not.toContain("unconstrained");
   });
 
@@ -149,7 +152,7 @@ class Api extends RpcTarget {
     return Promise.resolve("ok");
   }
 }`,
-      "new Api()");
+      undefined);
     const config = checkedMethod(validator, "config");
     expect(config.returns).toBe(v.string);
     expect(config.isGetter).toBe(true);
@@ -166,7 +169,7 @@ class Api extends RpcTarget {
     return "ok";
   }
 }`,
-      "new Api()");
+      undefined);
     const value = checkedMethod(validator, "value");
     expect(value.returns).toBe(v.string);
     expect(value.isGetter).not.toBe(true);
@@ -184,8 +187,7 @@ class Api extends RpcTarget {
     return "";
   }
 }`,
-      "new Api()",
-      "__capnweb_validate_Api_server_2");
+      undefined);
     expect(validator.methods.foo).toEqual({ unchecked: true });
   });
 
@@ -202,12 +204,12 @@ class Api extends RpcTarget {
     return x;
   }
 }`,
-      "new Api()");
+      undefined);
     expect(validator.methods.foo).toEqual({ unchecked: true });
     expect(warns.join("")).not.toContain("overloaded");
   });
 
-  it("ignores explicit signature members outside the class surface", () => {
+  it("does not add explicit signature members missing from the class surface", () => {
     const { validator, warns } = compileValidator(
       `interface Sig {
   extra(): Promise<string>;
@@ -219,9 +221,8 @@ class Api extends RpcTarget {
     return "ok";
   }
 }`,
-      "new Api()");
-    expect(Object.keys(validator.methods)).toEqual(["ok"]);
-    expect(checkedMethod(validator, "ok").returns).toBe(v.string);
+      undefined);
+    expect(Object.keys(validator.methods)).toEqual([]);
     expect(warns.join("")).not.toContain("overloaded");
   });
 
@@ -238,9 +239,8 @@ class Api extends RpcTarget {
     return "ok";
   }
 }`,
-      "new Api()");
-    expect(Object.keys(validator.methods)).toEqual(["ok"]);
-    expect(checkedMethod(validator, "ok").returns).toBe(v.string);
+      undefined);
+    expect(Object.keys(validator.methods)).toEqual([]);
     expect(warns.join("")).not.toContain("overloaded");
   });
 
@@ -256,7 +256,7 @@ class Api extends RpcTarget {
     return Promise.resolve("ok");
   }
 }`,
-      "new Api()");
+      undefined);
     const foo = checkedMethod(validator, "foo");
     expect(foo.returns).toBe(v.string);
     expect(foo.isGetter).toBe(true);
@@ -270,7 +270,11 @@ interface Sig {
   a(): Promise<string>;
   admin(): Promise<number>;
 }
-@validateRpc<Sig>()
+interface Peer {
+  a(): Promise<string>;
+  peer(p: RpcStub<Sig>): Promise<void>;
+}
+@validateRpc<Peer>()
 class Api extends RpcTarget {
   a(): Promise<string> {
     return Promise.resolve("");
@@ -279,7 +283,7 @@ class Api extends RpcTarget {
     return Promise.resolve();
   }
 }`,
-      "new Api()");
+      undefined);
     expect(checkedMethod(validator, "a").returns).toBe(v.string);
     const peerArg = checkedMethod(validator, "peer").args[0]!;
     const shape = validatorShape(peerArg);

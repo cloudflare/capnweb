@@ -5,8 +5,9 @@
 type AnyClass = abstract new (...args: any[]) => object;
 type AnyMethod = (this: unknown, ...args: any[]) => unknown;
 
-// Optional `@validateRpc<TSurface>()` arg: the class must satisfy TSurface
-// (narrow or pin a generic). No arg => `unknown`, so any class is accepted.
+// Optional `@validateRpc<TSurface>()` arg: the class instance must satisfy
+// TSurface, and the transform uses TSurface as the exact RPC surface. No arg =>
+// `unknown`, so any class is accepted and the transform uses the class surface.
 type ClassDecoratorMarker<TSurface = unknown> = <
   TClass extends abstract new (...args: any[]) => TSurface
 >(

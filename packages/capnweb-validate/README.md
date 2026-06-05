@@ -46,10 +46,14 @@ export default {
 `@validateRpc()` validates calls on class instances, so it works with Cap'n Web,
 Workers `WorkerEntrypoint`, and Workers `DurableObject` services.
 
-The RPC surface is the class's public string-named methods and RPC-readable
-getters/properties, matching Cap'n Web dispatch. `implements SomeInterface` and
-`@validateRpc<SomeInterface>()` only sharpen matching signatures; they do not
-hide extra public class methods. Keep local-only helpers private or symbol-named.
+With no explicit type argument, the RPC surface is the class's public
+string-named methods and RPC-readable getters/properties, matching Cap'n Web
+dispatch. `implements SomeInterface` can sharpen matching signatures, but it
+does not hide extra public class methods. Keep local-only helpers private or
+symbol-named.
+
+An explicit `@validateRpc<SomeInterface>()` makes `SomeInterface` the RPC
+surface. Public class methods outside that interface are rejected over RPC.
 
 ## Generic service classes
 
@@ -57,8 +61,7 @@ A decorator emits one validator at the class declaration. If the class itself
 is generic, the transform cannot specialize that validator for each later
 `new` expression.
 
-Use an explicit signature source when type arguments are known at the decorator
-site:
+Use an explicit RPC surface when type arguments are known at the decorator site:
 
 ```ts
 @validateRpc<Gatekeeper<GmailSession, number, undefined>>()
@@ -81,9 +84,9 @@ class ArrayCursor<T> extends RpcTarget implements Cursor<T> {
 }
 ```
 
-Pass `@validateRpc<Cursor<string>>()` to validate matching generic positions, or
-`@validateRpc<Cursor<any>>()` to silence the warning. Either way, the class's
-public RPC surface is still validated; `any` positions are permissive.
+Pass `@validateRpc<Cursor<string>>()` to validate the `Cursor<string>` surface,
+or `@validateRpc<Cursor<any>>()` to silence the warning while keeping `Cursor`
+positions permissive.
 
 ## Client Usage
 

@@ -496,7 +496,8 @@ function resolveDecoratorShape(
     checker,
     classType,
     generic,
-    signatureType
+    signatureType,
+    decoratorTypeArg ? "exact" : "sharpen"
   );
   if (resolved === null) {
     throw buildError(
