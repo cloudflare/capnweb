@@ -10,9 +10,7 @@ import {
   type PropertyPath,
 } from "../error.js";
 
-type ValidationOptions = {
-  allowDeferred?: boolean;
-};
+const MAX_VALIDATION_DEPTH = 64;
 
 type RuntimeShape =
   | { kind: "array"; element: Validator }
@@ -28,14 +26,13 @@ const VALIDATOR_SHAPE = Symbol("capnweb-validate.validatorShape");
 
 export type Validator = ((
   value: unknown,
-  path: PropertyPath,
-  options?: ValidationOptions
+  path: PropertyPath
 ) => void) & { [VALIDATOR_SHAPE]?: RuntimeShape };
 
 export type MethodSpec =
   | { unchecked: true }
   | {
-      args: Validator[];
+      args?: Validator[];
       rest?: Validator;
       returns: Validator;
       unchecked?: false;
@@ -132,7 +129,30 @@ type Stubify<T> = T extends Stubable
                           }
                         : T;
 
-type Unstubify<T> = T | Promise<T> | StubBase<T>;
+declare const __RPC_MAP_VALUE_BRAND: unique symbol;
+interface MapValuePlaceholder<T> {
+  [__RPC_MAP_VALUE_BRAND]: T;
+}
+type NonStubMembers<T> = Exclude<T, StubBase<any>>;
+type UnstubifyInner<T> =
+  T extends StubBase<infer V> ? (T extends V ? UnstubifyInner<V> : (T | UnstubifyInner<V>))
+  : T extends Promise<infer U> ? UnstubifyInner<U>
+  : T extends Map<infer K, infer V> ? Map<Unstubify<K>, Unstubify<V>>
+  : T extends Set<infer V> ? Set<Unstubify<V>>
+  : T extends [] ? []
+  : T extends [infer Head, ...infer Tail] ? [Unstubify<Head>, ...UnstubifyInner<Tail>]
+  : T extends readonly [] ? readonly []
+  : T extends readonly [infer Head, ...infer Tail] ? readonly [Unstubify<Head>, ...UnstubifyInner<Tail>]
+  : T extends Array<infer V> ? Array<Unstubify<V>>
+  : T extends ReadonlyArray<infer V> ? ReadonlyArray<Unstubify<V>>
+  : T extends BaseType ? T
+  : T extends { [key: string | number]: unknown } ? { [K in keyof T as K extends string | number ? K : never]: Unstubify<T[K]> }
+  : T;
+type Unstubify<T> =
+  | NonStubMembers<T>
+  | UnstubifyInner<T>
+  | Promise<UnstubifyInner<T>>
+  | MapValuePlaceholder<UnstubifyInner<T>>;
 type UnstubifyAll<T extends readonly unknown[]> = {
   [K in keyof T]: Unstubify<T[K]>;
 };
@@ -143,6 +163,35 @@ type StubMethodOrProperty<T> = T extends (...args: infer P) => infer R
 type MaybeCallableStub<T> = T extends (...args: infer P) => infer R
   ? (...args: UnstubifyAll<P>) => StubResult<Awaited<R>>
   : unknown;
+type InvalidNativePromiseInMapResult<T, Seen = never> =
+  T extends unknown ? InvalidNativePromiseInMapResultImpl<T, Seen> : never;
+type InvalidNativePromiseInMapResultImpl<T, Seen> =
+  [T] extends [Seen] ? never
+  : T extends StubBase<any> ? never
+  : T extends PromiseLike<unknown> ? T
+  : T extends Map<infer K, infer V>
+    ? InvalidNativePromiseInMapResult<K, Seen | T> |
+        InvalidNativePromiseInMapResult<V, Seen | T>
+  : T extends Set<infer V> ? InvalidNativePromiseInMapResult<V, Seen | T>
+  : T extends readonly [] ? never
+  : T extends readonly [infer Head, ...infer Tail]
+    ? InvalidNativePromiseInMapResult<Head, Seen | T> |
+        InvalidNativePromiseInMapResult<Tail[number], Seen | T>
+  : T extends ReadonlyArray<infer V> ? InvalidNativePromiseInMapResult<V, Seen | T>
+  : T extends { [key: string | number]: unknown }
+    ? InvalidNativePromiseInMapResult<
+        T[Extract<keyof T, string | number>],
+        Seen | T
+      >
+  : never;
+type MapCallbackValue<T> =
+  T extends unknown
+    ? Omit<StubResult<T>, keyof Promise<unknown>> &
+        MaybeCallableStub<T> &
+        MapValuePlaceholder<T>
+    : never;
+type MapCallbackReturn<V> =
+  InvalidNativePromiseInMapResult<V> extends never ? V : never;
 export type ValidatedStub<T> = MaybeCallableStub<T> &
   (T extends object
     ? {
@@ -150,7 +199,7 @@ export type ValidatedStub<T> = MaybeCallableStub<T> &
           T[K]
         >;
       } & {
-        map<V>(callback: (value: ValidatedStub<NonNullable<T>>) => V): StubResult<
+        map<V>(callback: (value: MapCallbackValue<NonNullable<T>>) => MapCallbackReturn<V>): StubResult<
           Array<V>
         >;
       } &
@@ -191,60 +240,36 @@ function shapeOf(validator: Validator): RuntimeShape | undefined {
 
 function validateStubBrand(
   value: unknown,
-  path: PropertyPath,
-  options?: ValidationOptions
+  path: PropertyPath
 ): void {
-  if (isDeferredValidationValue(value, options)) return;
   let valueType = typeof value;
-  if (value === null || (valueType !== "object" && valueType !== "function")) {
+  if (
+    value === null ||
+    (valueType !== "object" && valueType !== "function") ||
+    typeof (value as Record<string, unknown>).dup !== "function"
+  ) {
     fail(path, "stub", value);
   }
 }
 
 /** Validator primitives. The transform emits references like `v.string`, `v.array(v.string)` when building service validators. */
 export const v = {
-  string(
-    value: unknown,
-    path: PropertyPath,
-    options?: ValidationOptions
-  ): void {
-    if (isDeferredValidationValue(value, options)) return;
+  string(value: unknown, path: PropertyPath): void {
     if (typeof value !== "string") fail(path, "string", value);
   },
-  number(
-    value: unknown,
-    path: PropertyPath,
-    options?: ValidationOptions
-  ): void {
-    if (isDeferredValidationValue(value, options)) return;
+  number(value: unknown, path: PropertyPath): void {
     if (typeof value !== "number") fail(path, "number", value);
   },
-  boolean(
-    value: unknown,
-    path: PropertyPath,
-    options?: ValidationOptions
-  ): void {
-    if (isDeferredValidationValue(value, options)) return;
+  boolean(value: unknown, path: PropertyPath): void {
     if (typeof value !== "boolean") fail(path, "boolean", value);
   },
-  bigint(
-    value: unknown,
-    path: PropertyPath,
-    options?: ValidationOptions
-  ): void {
-    if (isDeferredValidationValue(value, options)) return;
+  bigint(value: unknown, path: PropertyPath): void {
     if (typeof value !== "bigint") fail(path, "bigint", value);
   },
-  null_(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
-    if (isDeferredValidationValue(value, options)) return;
+  null_(value: unknown, path: PropertyPath): void {
     if (value !== null) fail(path, "null", value);
   },
-  undefined_(
-    value: unknown,
-    path: PropertyPath,
-    options?: ValidationOptions
-  ): void {
-    if (isDeferredValidationValue(value, options)) return;
+  undefined_(value: unknown, path: PropertyPath): void {
     if (value !== undefined) fail(path, "undefined", value);
   },
   any(_value: unknown, _path: PropertyPath): void {
@@ -252,11 +277,12 @@ export const v = {
   },
   array(elem: Validator): Validator {
     return withShape(
-      (value, path, options) => {
-        if (isDeferredValidationValue(value, options)) return;
+      (value, path) => {
         if (!Array.isArray(value)) fail(path, "array", value);
+        if (path.length >= MAX_VALIDATION_DEPTH)
+          fail(path, `a value nested at most ${MAX_VALIDATION_DEPTH} levels deep`, value);
         for (let i = 0; i < value.length; i++) {
-          elem(value[i], [...path, i], options);
+          elem(value[i], [...path, i]);
         }
       },
       { kind: "array", element: elem }
@@ -264,13 +290,14 @@ export const v = {
   },
   map(keyValidator: Validator, valueValidator: Validator): Validator {
     return withShape(
-      (value, path, options) => {
-        if (isDeferredValidationValue(value, options)) return;
+      (value, path) => {
         if (!(value instanceof Map)) fail(path, "Map", value);
+        if (path.length >= MAX_VALIDATION_DEPTH)
+          fail(path, `a value nested at most ${MAX_VALIDATION_DEPTH} levels deep`, value);
         let i = 0;
         for (let [key, entryValue] of value) {
-          keyValidator(key, [...path, i, "key"], options);
-          valueValidator(entryValue, [...path, i, "value"], options);
+          keyValidator(key, [...path, i, "key"]);
+          valueValidator(entryValue, [...path, i, "value"]);
           i++;
         }
       },
@@ -279,12 +306,13 @@ export const v = {
   },
   set(elem: Validator): Validator {
     return withShape(
-      (value, path, options) => {
-        if (isDeferredValidationValue(value, options)) return;
+      (value, path) => {
         if (!(value instanceof Set)) fail(path, "Set", value);
+        if (path.length >= MAX_VALIDATION_DEPTH)
+          fail(path, `a value nested at most ${MAX_VALIDATION_DEPTH} levels deep`, value);
         let i = 0;
         for (let elemValue of value) {
-          elem(elemValue, [...path, i], options);
+          elem(elemValue, [...path, i]);
           i++;
         }
       },
@@ -302,17 +330,18 @@ export const v = {
     else if (minLength !== elements.length)
       label = `tuple(${minLength}..${elements.length})`;
     return withShape(
-      (value, path, options) => {
-        if (isDeferredValidationValue(value, options)) return;
+      (value, path) => {
         if (!Array.isArray(value)) fail(path, "tuple", value);
         if (
           value.length < minLength ||
           (!rest && value.length > elements.length)
         )
           fail(path, label, value);
+        if (path.length >= MAX_VALIDATION_DEPTH)
+          fail(path, `a value nested at most ${MAX_VALIDATION_DEPTH} levels deep`, value);
         for (let i = 0; i < value.length; i++) {
           let elem = i < elements.length ? elements[i]! : rest;
-          if (elem) elem(value[i], [...path, i], options);
+          if (elem) elem(value[i], [...path, i]);
         }
       },
       rest ? { kind: "tuple", elements, rest } : { kind: "tuple", elements }
@@ -327,10 +356,7 @@ export const v = {
     let keys = Object.keys(shape);
     let fixed = new Set(keys);
     return withShape(
-      (value, path, options) => {
-        if (isDeferredValidationValue(value, options)) return;
-        // Object shapes describe plain records, not class instances,
-        // null-prototype objects, or arrays.
+      (value, path) => {
         if (
           value === null ||
           typeof value !== "object" ||
@@ -338,13 +364,15 @@ export const v = {
         ) {
           fail(path, label, value);
         }
+        if (path.length >= MAX_VALIDATION_DEPTH)
+          fail(path, `a value nested at most ${MAX_VALIDATION_DEPTH} levels deep`, value);
         let rec = value as Record<string, unknown>;
         for (let key of keys) {
-          shape[key]!(rec[key], [...path, key], options);
+          shape[key]!(rec[key], [...path, key]);
         }
         if (index) {
           for (let key of Object.keys(rec)) {
-            if (!fixed.has(key)) index(rec[key], [...path, key], options);
+            if (!fixed.has(key)) index(rec[key], [...path, key]);
           }
         }
       },
@@ -354,11 +382,10 @@ export const v = {
   union(branches: Validator[], name?: string): Validator {
     let label = name ?? "union";
     return withShape(
-      (value, path, options) => {
-        if (isDeferredValidationValue(value, options)) return;
+      (value, path) => {
         for (let branch of branches) {
           try {
-            branch(value, path, options);
+            branch(value, path);
             return;
           } catch (err) {
             if (!isValidationTypeError(err)) throw err;
@@ -374,18 +401,16 @@ export const v = {
     label?: string
   ): Validator {
     let display = label ?? JSON.stringify(expected);
-    return (value, path, options) => {
-      if (isDeferredValidationValue(value, options)) return;
+    return (value, path) => {
       if (value !== expected) fail(path, display, value);
     };
   },
   lazy(thunk: () => Validator): Validator {
     let inner: Validator | undefined;
     return withShape(
-      (value, path, options) => {
-        if (isDeferredValidationValue(value, options)) return;
+      (value, path) => {
         inner ??= thunk();
-        inner(value, path, options);
+        inner(value, path);
       },
       { kind: "lazy", thunk }
     );
@@ -409,58 +434,36 @@ export const v = {
   typedArray(name: string): Validator {
     return arrayBufferViewBrand(name);
   },
-  bytes(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
-    if (isDeferredValidationValue(value, options)) return;
+  bytes(value: unknown, path: PropertyPath): void {
     if (!(value instanceof Uint8Array)) {
       fail(path, "Uint8Array", value);
     }
     rejectSharedArrayBufferBacking(value, path, "Uint8Array");
   },
-  error(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
-    if (isDeferredValidationValue(value, options)) return;
+  error(value: unknown, path: PropertyPath): void {
     if (!(value instanceof Error)) fail(path, "Error", value);
   },
-  // ---- Pass-by-reference brands. Method shape is enforced statically by TS; at runtime only confirm the receiver is callable / an object to catch accidental primitives.
-  func(value: unknown, path: PropertyPath, options?: ValidationOptions): void {
-    if (isDeferredValidationValue(value, options)) return;
+  func(value: unknown, path: PropertyPath): void {
     if (typeof value !== "function") fail(path, "function", value);
   },
   stub: withShape(
-    function stub(
-      value: unknown,
-      path: PropertyPath,
-      options?: ValidationOptions
-    ): void {
-      validateStubBrand(value, path, options);
+    function stub(value: unknown, path: PropertyPath): void {
+      validateStubBrand(value, path);
     },
     { kind: "stub" }
   ),
   stubOf(service: ServiceValidator): Validator {
     return withShape(
-      function stubOf(
-        value: unknown,
-        path: PropertyPath,
-        options?: ValidationOptions
-      ): void {
-        validateStubBrand(value, path, options);
+      function stubOf(value: unknown, path: PropertyPath): void {
+        validateStubBrand(value, path);
       },
       { kind: "stub", service }
     );
   },
 };
 
-function isDeferredValidationValue(
-  value: unknown,
-  options: ValidationOptions | undefined
-): boolean {
-  // Client args may hold RpcPromise placeholders for pipelining; the concrete value is checked at the server boundary.
-  return options?.allowDeferred === true && isRpcPromiseLike(value);
-}
-
-/** Exact-prototype brand for a possibly-absent global constructor (e.g. `Blob` outside Workers). A subclass instance (File extends Blob) is rejected. A missing constructor fails like a wrong-type value, since the user can't satisfy the type. */
 function exactBrand(name: string): Validator {
-  return (value, path, options) => {
-    if (isDeferredValidationValue(value, options)) return;
+  return (value, path) => {
     let ctor = (globalThis as Record<string, unknown>)[name] as
       | { prototype: unknown }
       | undefined;
@@ -476,8 +479,7 @@ function exactBrand(name: string): Validator {
 }
 
 function instanceBrand(name: string): Validator {
-  return (value, path, options) => {
-    if (isDeferredValidationValue(value, options)) return;
+  return (value, path) => {
     let ctor = (globalThis as Record<string, unknown>)[name];
     if (typeof ctor !== "function" || !(value instanceof ctor)) {
       fail(path, name, value);
@@ -486,8 +488,7 @@ function instanceBrand(name: string): Validator {
 }
 
 function arrayBufferViewBrand(name: string): Validator {
-  return (value, path, options) => {
-    if (isDeferredValidationValue(value, options)) return;
+  return (value, path) => {
     let ctor = (globalThis as Record<string, unknown>)[name];
     if (typeof ctor !== "function" || !(value instanceof ctor)) {
       fail(path, name, value);
@@ -529,26 +530,26 @@ export function validateArgs(
   args: unknown[],
   methodSpec: Exclude<MethodSpec, { unchecked: true }>,
   serviceName: string,
-  prop: string,
-  options?: ValidationOptions
+  prop: string
 ): void {
-  for (let i = 0; i < methodSpec.args.length; i++) {
-    methodSpec.args[i]!(args[i], [serviceName, prop, i], options);
+  let specArgs = methodSpec.args ?? [];
+  for (let i = 0; i < specArgs.length; i++) {
+    specArgs[i]!(args[i], [serviceName, prop, i]);
   }
   if (methodSpec.rest) {
-    for (let i = methodSpec.args.length; i < args.length; i++) {
-      methodSpec.rest(args[i], [serviceName, prop, i], options);
+    for (let i = specArgs.length; i < args.length; i++) {
+      methodSpec.rest(args[i], [serviceName, prop, i]);
     }
-  } else if (args.length > methodSpec.args.length) {
+  } else if (args.length > specArgs.length) {
     fail(
-      [serviceName, prop, methodSpec.args.length],
+      [serviceName, prop, specArgs.length],
       "no extra argument",
-      args[methodSpec.args.length]
+      args[specArgs.length]
     );
   }
 }
 
-const PASSTHROUGH_METHODS = new Set([
+const SERVER_PASSTHROUGH_METHODS = new Set([
   "constructor",
   "toString",
   "toLocaleString",
@@ -556,6 +557,10 @@ const PASSTHROUGH_METHODS = new Set([
   "hasOwnProperty",
   "isPrototypeOf",
   "propertyIsEnumerable",
+]);
+
+const STUB_PASSTHROUGH_METHODS = new Set([
+  ...SERVER_PASSTHROUGH_METHODS,
   "dup",
   "onRpcBroken",
   "map",
@@ -567,9 +572,15 @@ const PASSTHROUGH_METHODS = new Set([
 
 // A method absent from the surface passes through only if it is infrastructure
 // or a platform hook; anything else is refused.
-function canPassThrough(prop: string, validator: ServiceValidator): boolean {
+function canPassThrough(
+  prop: string,
+  validator: ServiceValidator,
+  side: WrapSide
+): boolean {
+  let infrastructure =
+    side === "server" ? SERVER_PASSTHROUGH_METHODS : STUB_PASSTHROUGH_METHODS;
   return (
-    PASSTHROUGH_METHODS.has(prop) || validator.passthrough?.includes(prop) === true
+    infrastructure.has(prop) || validator.passthrough?.includes(prop) === true
   );
 }
 
@@ -613,18 +624,46 @@ function checkArgs(
   args: unknown[],
   methodSpec: Exclude<MethodSpec, { unchecked: true }>,
   serviceName: string,
-  prop: string,
-  options?: ValidationOptions
+  prop: string
 ): void {
   if (mode === "throw") {
-    validateArgs(args, methodSpec, serviceName, prop, options);
+    validateArgs(args, methodSpec, serviceName, prop);
     return;
   }
   try {
-    validateArgs(args, methodSpec, serviceName, prop, options);
+    validateArgs(args, methodSpec, serviceName, prop);
   } catch (err) {
     reportValidationFailure(err);
   }
+}
+
+function wrapArgs(
+  args: unknown[],
+  methodSpec: Exclude<MethodSpec, { unchecked: true }>,
+  serviceName: string,
+  prop: string
+): unknown[] {
+  let specArgs = methodSpec.args ?? [];
+  let next: unknown[] | undefined;
+  let wrapOne = (i: number, validator: Validator): void => {
+    let wrapped = wrapResolvedValue(
+      args[i],
+      validator,
+      [serviceName, prop, i],
+      "client"
+    );
+    if (wrapped !== args[i]) {
+      next ??= args.slice();
+      next[i] = wrapped;
+    }
+  };
+  for (let i = 0; i < specArgs.length; i++) wrapOne(i, specArgs[i]!);
+  if (methodSpec.rest) {
+    for (let i = specArgs.length; i < args.length; i++) {
+      wrapOne(i, methodSpec.rest);
+    }
+  }
+  return next ?? args;
 }
 
 export function wrapServerTarget<T extends object>(
@@ -641,7 +680,7 @@ export function wrapServerTarget<T extends object>(
       let methodSpec = own(validator.methods, prop);
       if (!methodSpec) {
         // Infra / platform hook: forward the real member (read or bound).
-        if (canPassThrough(prop, validator)) {
+        if (canPassThrough(prop, validator, "server")) {
           let orig = Reflect.get(t, prop, t);
           return typeof orig === "function" ? orig.bind(t) : orig;
         }
@@ -672,10 +711,11 @@ export function wrapServerTarget<T extends object>(
           return Reflect.apply(orig as (...a: unknown[]) => unknown, t, args);
         }
         checkArgs(mode, args, methodSpec, validator.serviceName, prop);
+        let wrappedArgs = wrapArgs(args, methodSpec, validator.serviceName, prop);
         let result = Reflect.apply(
           orig as (...a: unknown[]) => unknown,
           t,
-          args
+          wrappedArgs
         );
         return validateReturn(
           result,
@@ -719,16 +759,20 @@ function validateResolvedValue(
   side: WrapSide,
   mode: ValidationMode
 ): unknown {
-  if (mode === "warn") {
-    try {
+  // Only the receiver validates. Returns are received by the client, so it
+  // checks them; the server is the sender and only wraps nested capabilities.
+  if (side === "client") {
+    if (mode === "warn") {
+      try {
+        validator(value, path);
+      } catch (err) {
+        // Validation failed: warn and pass the original value through unwrapped.
+        reportValidationFailure(err);
+        return value;
+      }
+    } else {
       validator(value, path);
-    } catch (err) {
-      // Validation failed: warn and pass the original value through unwrapped.
-      reportValidationFailure(err);
-      return value;
     }
-  } else {
-    validator(value, path);
   }
   return wrapResolvedValue(value, validator, path, side);
 }
@@ -739,6 +783,7 @@ function wrapResolvedValue(
   path: PropertyPath,
   side: WrapSide
 ): unknown {
+  if (path.length >= MAX_VALIDATION_DEPTH) return value;
   let shape = shapeOf(validator);
   if (!shape) return value;
   if (shape.kind === "lazy")
@@ -780,6 +825,7 @@ function wrapResolvedValue(
       );
       if (wrapped !== value[i]) {
         next ??= value.slice();
+        copyDisposeDescriptor(value, next);
         next[i] = wrapped;
       }
     }
@@ -805,6 +851,7 @@ function wrapResolvedValue(
       );
       if (wrappedKey !== key || wrappedValue !== entryValue) {
         next ??= new Map(entries.slice(0, i));
+        copyDisposeDescriptor(value, next);
       }
       if (next) next.set(wrappedKey, wrappedValue);
     }
@@ -819,6 +866,7 @@ function wrapResolvedValue(
       let wrapped = wrapResolvedValue(elemValue, shape.element, [...path, i], side);
       if (wrapped !== elemValue) {
         next ??= new Set(values.slice(0, i));
+        copyDisposeDescriptor(value, next);
       }
       if (next) next.add(wrapped);
     }
@@ -838,6 +886,7 @@ function wrapResolvedValue(
       );
       if (wrapped !== rec[key]) {
         next ??= { ...rec };
+        copyDisposeDescriptor(value, next);
         next[key] = wrapped;
       }
     }
@@ -846,10 +895,11 @@ function wrapResolvedValue(
     // wrapped and their pipelined calls validate.
     if (shape.index) {
       for (let key of Object.keys(rec)) {
-        if (key in shape.properties) continue;
+        if (own(shape.properties, key) !== undefined) continue;
         let wrapped = wrapResolvedValue(rec[key], shape.index, [...path, key], side);
         if (wrapped !== rec[key]) {
           next ??= { ...rec };
+          copyDisposeDescriptor(value, next);
           next[key] = wrapped;
         }
       }
@@ -857,6 +907,17 @@ function wrapResolvedValue(
     return next ?? value;
   }
   return value;
+}
+
+function copyDisposeDescriptor(source: object, target: object): void {
+  if (typeof Symbol.dispose !== "symbol") return;
+  let descriptor = Object.getOwnPropertyDescriptor(source, Symbol.dispose);
+  if (
+    descriptor &&
+    !Object.prototype.hasOwnProperty.call(target, Symbol.dispose)
+  ) {
+    Object.defineProperty(target, Symbol.dispose, descriptor);
+  }
 }
 
 function isRpcPromiseLike(
@@ -953,20 +1014,29 @@ function wrapRpcPromise(
               args
             );
           }
-          checkArgs(
-            mode,
-            args,
-            methodSpec,
-            serviceNameFor(returns) ?? "Service",
-            prop,
-            {
-              allowDeferred: side === "client",
-            }
-          );
+          // Only the receiving side checks args; a client's pipelined call is outgoing.
+          if (side === "server") {
+            checkArgs(
+              mode,
+              args,
+              methodSpec,
+              serviceNameFor(returns) ?? "Service",
+              prop
+            );
+          }
+          let wrappedArgs =
+            side === "server"
+              ? wrapArgs(
+                  args,
+                  methodSpec,
+                  serviceNameFor(returns) ?? "Service",
+                  prop
+                )
+              : args;
           let result = Reflect.apply(
             orig as (...a: unknown[]) => unknown,
             target,
-            args
+            wrappedArgs
           );
           return validateReturn(
             result,
@@ -987,7 +1057,22 @@ function wrapRpcPromise(
           return wrapRpcPromise(next, propValidator, nextPath, side, mode);
         return validateResolvedValue(next, propValidator, nextPath, side, mode);
       }
-      if (PASSTHROUGH_METHODS.has(prop))
+      if (prop === "dup") {
+        let orig = Reflect.get(target, prop, receiver);
+        if (typeof orig === "function") {
+          return (...args: unknown[]): unknown => {
+            let duplicate = (orig as (...a: unknown[]) => unknown).apply(
+              target,
+              args
+            );
+            // Keep the duplicate validated; pass non-promise results through.
+            return isRpcPromiseLike(duplicate)
+              ? wrapRpcPromise(duplicate, returns, path, side, mode)
+              : duplicate;
+          };
+        }
+      }
+      if (STUB_PASSTHROUGH_METHODS.has(prop))
         return Reflect.get(target, prop, receiver);
       // A service-less stub (e.g. recursive) has no method list to check, so pass the call through instead of throwing.
       if (isUnknownSurfaceStub(returns))
@@ -1103,8 +1188,8 @@ function isServiceValidator(value: unknown): value is ServiceValidator {
 // ---------------------------------------------------------------------------
 // Client-side wrapping.
 //
-// The helper builds the capnweb stub then wraps it in a Proxy that validates
-// outgoing args before the network call and the resolved return before user code.
+// The helper wraps a client stub in a Proxy that validates resolved returns
+// before user code; outgoing args are validated by the receiving side.
 // ---------------------------------------------------------------------------
 
 export function wrapClientStub(
@@ -1121,8 +1206,6 @@ export function wrapClientStub(
       }
       let methodSpec = own(validator.methods, prop);
       if (methodSpec && !isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
-        // A getter read returns an RpcPromise for the value; validate its
-        // resolved value (and keep pipelining working) like a method return.
         return validateReturn(
           orig,
           methodSpec.returns,
@@ -1133,26 +1216,26 @@ export function wrapClientStub(
       }
       if (typeof orig !== "function") return orig;
       if (!methodSpec) {
-        // capnweb's stub manufactures a callable for every property; refuse
-        // names outside the typed surface instead of sending undeclared calls.
-        if (canPassThrough(prop, validator))
+        if (prop === "dup") {
+          return (...args: unknown[]): unknown =>
+            wrapClientStub(
+              (orig as (...a: unknown[]) => unknown).apply(t, args) as object,
+              validator
+            );
+        }
+        if (canPassThrough(prop, validator, "client"))
           return (orig as (...a: unknown[]) => unknown).bind(t);
         return (..._args: unknown[]): never =>
           missingMethod(validator.serviceName, prop);
       }
       let mode = validator.mode ?? "throw";
       return function wrapped(this: unknown, ...args: unknown[]): unknown {
-        if (isUncheckedMethod(methodSpec)) {
-          return Reflect.apply(orig as (...a: unknown[]) => unknown, t, args);
-        }
-        checkArgs(mode, args, methodSpec, validator.serviceName, prop, {
-          allowDeferred: true,
-        });
         let result = Reflect.apply(
           orig as (...a: unknown[]) => unknown,
           t,
           args
         );
+        if (isUncheckedMethod(methodSpec)) return result;
         return validateReturn(
           result,
           methodSpec.returns,

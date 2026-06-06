@@ -117,9 +117,9 @@ export default {
 };
 ```
 
-`validateStub<T>()` validates arguments before calls through the stub and
-validates resolved return values on the caller side. Normal Cap'n Web client
-constructors are not rewritten automatically.
+`validateStub<T>()` validates resolved return values on the caller side. It does
+not validate outgoing arguments; the receiver validates those on arrival. Normal
+Cap'n Web client constructors are not rewritten automatically.
 
 ## Bundler Plugins
 
@@ -199,8 +199,8 @@ Where errors surface depends on which boundary failed:
 
 | Boundary | Failure | How it surfaces |
 | -------- | ------- | --------------- |
-| Client stub | Bad argument before transport or bad resolved return | The stub method throws synchronously for bad args; the returned promise rejects for bad returns. |
-| Server target | Bad incoming argument or outgoing return | The server throws and the caller observes an RPC rejection. |
+| Client stub | Bad resolved return | The returned promise rejects. |
+| Server target | Bad incoming argument | The server throws and the caller observes an RPC rejection. |
 
 ## Current Type Coverage
 

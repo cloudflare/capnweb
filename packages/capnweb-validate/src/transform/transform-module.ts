@@ -173,7 +173,8 @@ export function transformModule(
   if (needsCoreExtraRuntime) prelude += CORE_RUNTIME_EXTRA_IMPORT;
   for (let entry of dedup.emitOrder()) {
     let mode = entry.side === "client" ? "throw" : serverMode;
-    prelude += emitValidator(entry.bindingName, entry.shape, mode) + "\n";
+    prelude +=
+      emitValidator(entry.bindingName, entry.shape, mode, entry.side) + "\n";
   }
   edits.push({ start: 0, end: 0, text: prelude });
 
@@ -315,7 +316,12 @@ function collectMarkerCallSites(
   let out: CallSite[] = [];
   function visit(node: ts.Node): void {
     if (isCallLike(node)) {
-      let resolved = resolveMarkerCallee(node.expression, bindings, namespaces);
+      let resolved = resolveMarkerCallee(
+        node.expression,
+        bindings,
+        namespaces,
+        checker
+      );
       if (resolved)
         pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker);
     }
@@ -329,13 +335,16 @@ function collectMarkerCallSites(
 function resolveMarkerCallee(
   callee: ts.Expression,
   bindings: Map<string, MarkerBinding>,
-  namespaces: Set<string>
+  namespaces: Set<string>,
+  checker: ts.TypeChecker
 ): { marker: (typeof MARKERS)[keyof typeof MARKERS]; localName: string } | null {
   if (ts.isIdentifier(callee)) {
     let binding = bindings.get(callee.text);
-    return binding
-      ? { marker: MARKERS[binding.markerName], localName: binding.localName }
-      : null;
+    // Confirm the name resolves to the imported marker, not a local that shadows it.
+    if (!binding || !resolvesToMarker(checker, callee, binding.markerName)) {
+      return null;
+    }
+    return { marker: MARKERS[binding.markerName], localName: binding.localName };
   }
   if (
     ts.isPropertyAccessExpression(callee) &&
@@ -344,12 +353,25 @@ function resolveMarkerCallee(
     callee.name.text in MARKERS
   ) {
     let markerName = callee.name.text as keyof typeof MARKERS;
+    if (!resolvesToMarker(checker, callee.name, markerName)) return null;
     return {
       marker: MARKERS[markerName],
       localName: `${callee.expression.text}.${callee.name.text}`,
     };
   }
   return null;
+}
+
+// True when the callee resolves to the capnweb-validate marker export, so a local
+// binding that shadows the imported name is not rewritten as a marker call.
+function resolvesToMarker(
+  checker: ts.TypeChecker,
+  node: ts.Node,
+  markerName: string
+): boolean {
+  let sym = checker.getSymbolAtLocation(node);
+  if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
+  return sym?.getName() === markerName && isCapnwebValidateSymbol(sym);
 }
 
 function pushCallSite(
@@ -388,7 +410,14 @@ function collectDecoratorSites(
   function visit(node: ts.Node): void {
     if (ts.isClassDeclaration(node)) {
       for (let decorator of ts.getDecorators(node) ?? []) {
-        if (!isValidateRpcDecorator(decorator, decoratorBindings, namespaces))
+        if (
+          !isValidateRpcDecorator(
+            decorator,
+            decoratorBindings,
+            namespaces,
+            checker
+          )
+        )
           continue;
         let shape = resolveDecoratorShape(sf, node, decorator, checker);
         rejectUnsupported(sf, decorator, "validateRpc", shape);
@@ -404,17 +433,24 @@ function collectDecoratorSites(
 function isValidateRpcDecorator(
   decorator: ts.Decorator,
   bindings: Set<string>,
-  namespaces: Set<string>
+  namespaces: Set<string>,
+  checker: ts.TypeChecker
 ): boolean {
   let expression = decorator.expression;
   if (ts.isCallExpression(expression)) expression = expression.expression;
-  if (ts.isIdentifier(expression)) return bindings.has(expression.text);
+  if (ts.isIdentifier(expression)) {
+    return (
+      bindings.has(expression.text) &&
+      resolvesToMarker(checker, expression, "validateRpc")
+    );
+  }
   // `@ns.validateRpc()` from `import * as ns from "capnweb-validate"`.
   return (
     ts.isPropertyAccessExpression(expression) &&
     ts.isIdentifier(expression.expression) &&
     namespaces.has(expression.expression.text) &&
-    expression.name.text === "validateRpc"
+    expression.name.text === "validateRpc" &&
+    resolvesToMarker(checker, expression.name, "validateRpc")
   );
 }
 
@@ -478,7 +514,18 @@ function resolveDecoratorShape(
   // Pass-through names come from the class (the proxy wraps its instances), not
   // the possibly-narrowed resolved surface.
   let platform = collectPlatformMethodNames(checker, classType);
-  shape.passthrough = platform.length ? platform : undefined;
+  if (platform.length) {
+    let platformMethods = new Set(platform);
+    shape = {
+      ...shape,
+      methods: shape.methods.filter(
+        (method) => !platformMethods.has(method.name)
+      ),
+      passthrough: platform,
+    };
+  } else {
+    shape.passthrough = undefined;
+  }
   return shape;
 }
 
@@ -739,6 +786,11 @@ function unwrapRpcStub(checker: ts.TypeChecker, type: ts.Type): ts.Type {
     let args = checker.getTypeArguments(type as ts.TypeReference);
     if (args.length === 1) return args[0]!;
   }
+  // `RpcStub<T>` resolves to `Provider<T> & StubBase<T>`, an intersection with no
+  // `RpcStub` symbol; recover `T` from the `__RPC_STUB_BRAND` marker it carries.
+  let brand = checker.getPropertyOfType(type, "__RPC_STUB_BRAND");
+  let decl = brand?.valueDeclaration ?? brand?.declarations?.[0];
+  if (brand && decl) return checker.getTypeOfSymbolAtLocation(brand, decl);
   return type;
 }
 
@@ -824,6 +876,10 @@ function typeSignature(shape: TypeShape): unknown {
       return [shape.kind, shape.value];
     case "array":
       return [shape.kind, typeSignature(shape.element)];
+    case "map":
+      return [shape.kind, typeSignature(shape.key), typeSignature(shape.value)];
+    case "set":
+      return [shape.kind, typeSignature(shape.element)];
     case "tuple":
       return [
         shape.kind,
@@ -845,6 +901,8 @@ function typeSignature(shape: TypeShape): unknown {
       ];
     case "ref":
       return [shape.kind, shape.id];
+    case "typedArray":
+      return [shape.kind, shape.name];
     case "stub":
       return [
         shape.kind,

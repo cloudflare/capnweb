@@ -11,12 +11,15 @@ import type {
   TypeShape,
 } from "./type-introspector.js";
 
+type EmitSide = "server" | "client";
+
 // Emit a `const <name> = { serviceName, methods: { ... } };` declaration.
 // References `__cw`; the transform adds the runtime import to each module.
 export function emitValidator(
   bindingName: string,
   shape: ServiceShape,
-  mode: ValidationMode = "throw"
+  mode: ValidationMode = "throw",
+  side: EmitSide = "server"
 ): string {
   let lines: string[] = [];
   let ctx: EmitContext = {
@@ -24,6 +27,7 @@ export function emitValidator(
     namedShapes: shape.namedShapes,
     definingId: undefined,
     mode,
+    side,
   };
   for (let id of shape.namedShapes.keys()) {
     lines.push(`let ${shapeBinding(bindingName, id)};`);
@@ -53,6 +57,7 @@ type EmitContext = {
   namedShapes: Map<number, TypeShape>;
   definingId: number | undefined;
   mode: ValidationMode;
+  side: EmitSide;
 };
 
 function shapeBinding(bindingName: string, id: number): string {
@@ -90,13 +95,15 @@ function shapeId(shape: TypeShape): number | undefined {
 
 function emitMethod(method: MethodShape, ctx: EmitContext): string {
   if (method.skipValidation) return `{ unchecked: true }`;
-  let args = method.params.map((p) => emitValidator_(p, ctx)).join(", ");
-  let rest = method.rest ? `, rest: ${emitValidator_(method.rest, ctx)}` : "";
-  let getter = method.isGetter ? `, isGetter: true` : "";
-  return `{ args: [${args}]${rest}, returns: ${emitValidator_(
-    method.returns,
-    ctx
-  )}${getter} }`;
+  let parts: string[] = [];
+  if (ctx.side !== "client") {
+    let args = method.params.map((p) => emitValidator_(p, ctx)).join(", ");
+    parts.push(`args: [${args}]`);
+    if (method.rest) parts.push(`rest: ${emitValidator_(method.rest, ctx)}`);
+  }
+  parts.push(`returns: ${emitValidator_(method.returns, ctx)}`);
+  if (method.isGetter) parts.push(`isGetter: true`);
+  return `{ ${parts.join(", ")} }`;
 }
 
 function emitServiceLiteral(shape: ServiceShape, ctx: EmitContext): string {

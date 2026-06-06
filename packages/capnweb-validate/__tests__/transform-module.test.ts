@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { isTypeScriptLibFileName } from "../src/transform/type-introspector.js";
 import {
+  accepts,
   checkedMethod,
   createVirtualTransformContext,
   loadValidator,
@@ -95,7 +96,9 @@ describe("transformModule", () => {
     `;
     let ctx = createVirtualTransformContext({ shim: CAPNWEB_SHIM, worker: code });
     try {
-      let id = [...ctx.listSourceFiles()].find((file) => file.endsWith("/worker.ts"));
+      let id = [...ctx.listSourceFiles()].find((file) =>
+        file.endsWith("/worker.ts")
+      );
       expect(id).toBeDefined();
       expect(transformModule(ctx, id!, code)).toBeNull();
     } finally {
@@ -118,8 +121,76 @@ describe("transformModule", () => {
       loadValidator(code, "__capnweb_validate_Api_client"),
       "echo"
     );
-    expect(echo.args[0]).toBe(v.string);
+    expect(echo.args).toBeUndefined();
     expect(echo.returns).toBe(v.string);
+  });
+
+  it("client: validateStub without a type argument unwraps the stub structurally", () => {
+    // `RpcStub<Api>` resolves to `Provider<Api> & StubBase<Api>`, an intersection
+    // with no `RpcStub` symbol; the fallback recovers `Api` from __RPC_STUB_BRAND.
+    let { code } = transform(`
+      import { validateStub } from "capnweb-validate";
+      import { newHttpBatchRpcSession, RpcTarget } from "capnweb";
+      interface Api extends RpcTarget {
+        echo(value: string): Promise<string>;
+      }
+      export const api = validateStub(newHttpBatchRpcSession<Api>("/rpc"));
+    `);
+    const echo = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Api_client"),
+      "echo"
+    );
+    expect(echo.args).toBeUndefined();
+    expect(echo.returns).toBe(v.string);
+  });
+
+  it("does not rewrite a local binding that shadows the marker name", () => {
+    let code = `
+      import { validateStub } from "capnweb-validate";
+      import { newHttpBatchRpcSession, RpcTarget } from "capnweb";
+      interface Api extends RpcTarget {
+        echo(value: string): Promise<string>;
+      }
+      function run(validateStub: (x: unknown) => unknown) {
+        return validateStub(newHttpBatchRpcSession<Api>("/rpc"));
+      }
+      export const api = run((x) => x);
+    `;
+    let ctx = createVirtualTransformContext({ shim: CAPNWEB_SHIM, worker: code });
+    try {
+      let id = [...ctx.listSourceFiles()].find((file) => file.endsWith("/worker.ts"));
+      expect(id).toBeDefined();
+      // The only validateStub(...) call refers to the shadowing parameter, so the
+      // module has no real marker call and is left untouched.
+      expect(transformModule(ctx, id!, code)).toBeNull();
+    } finally {
+      ctx.dispose();
+    }
+  });
+
+  it("does not rewrite a decorator binding that shadows the marker name", () => {
+    let code = `
+      import { validateRpc } from "capnweb-validate";
+      import { RpcTarget } from "capnweb";
+      function make(validateRpc: () => unknown) {
+        @validateRpc()
+        class Api extends RpcTarget {
+          echo(value: string): string {
+            return value;
+          }
+        }
+        return Api;
+      }
+      export const Api = make(() => (x: unknown) => x);
+    `;
+    let ctx = createVirtualTransformContext({ shim: CAPNWEB_SHIM, worker: code });
+    try {
+      let id = [...ctx.listSourceFiles()].find((file) => file.endsWith("/worker.ts"));
+      expect(id).toBeDefined();
+      expect(transformModule(ctx, id!, code)).toBeNull();
+    } finally {
+      ctx.dispose();
+    }
   });
 
   it("client: validateStub works for Workers RPC style service stubs", () => {
@@ -137,8 +208,41 @@ describe("transformModule", () => {
       loadValidator(code, "__capnweb_validate_Api_client"),
       "echo"
     );
-    expect(echo.args[0]).toBe(v.string);
+    expect(echo.args).toBeUndefined();
     expect(echo.returns).toBe(v.string);
+  });
+
+  it("client: does not dedup anonymous surfaces with different collection validators", () => {
+    let { code } = transform(`
+      import { validateStub } from "capnweb-validate";
+      declare const one: object;
+      declare const two: object;
+      export const apiOne = validateStub<{ read(): Promise<Map<string, Set<Int16Array>>> }>(one);
+      export const apiTwo = validateStub<{ read(): Promise<Map<number, Set<Float32Array>>> }>(two);
+    `);
+    expect(code).toContain("__capnweb_validate_Service_client_2");
+
+    const first = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Service_client"),
+      "read"
+    ).returns;
+    const second = checkedMethod(
+      loadValidator(code, "__capnweb_validate_Service_client_2"),
+      "read"
+    ).returns;
+
+    expect(accepts(first, new Map([["ok", new Set([new Int16Array(1)])]]))).toBe(
+      true
+    );
+    expect(accepts(first, new Map([[1, new Set([new Float32Array(1)])]]))).toBe(
+      false
+    );
+    expect(
+      accepts(second, new Map([[1, new Set([new Float32Array(1)])]]))
+    ).toBe(true);
+    expect(
+      accepts(second, new Map([["ok", new Set([new Int16Array(1)])]]))
+    ).toBe(false);
   });
 
   it("client: validateStub plus capnweb server marker imports both runtimes", () => {
@@ -199,6 +303,26 @@ describe("transformModule", () => {
     );
   });
 
+  it("decorator: filters overridden WorkerEntrypoint platform methods", () => {
+    let { code } = transform(`
+      import { WorkerEntrypoint } from "cloudflare:workers";
+      import { validateRpc } from "capnweb-validate";
+      @validateRpc()
+      class Api extends WorkerEntrypoint {
+        fetch(request: Request): Response {
+          return new Response(request.url);
+        }
+        rpc(x: string): Promise<string> {
+          return null as any;
+        }
+      }
+      export default Api;
+    `);
+    const validator = loadValidator(code);
+    expect(Object.keys(validator.methods)).toEqual(["rpc"]);
+    expect(validator.passthrough).toEqual(expect.arrayContaining(["fetch"]));
+  });
+
   it("decorator: filters inherited DurableObject platform methods", () => {
     let { code } = transform(`
       import { DurableObject } from "cloudflare:workers";
@@ -215,6 +339,9 @@ describe("transformModule", () => {
     expect(Object.keys(validator.methods)).toEqual(["rpc"]);
     // fetch/alarm are platform hooks: pass-through, not validated methods.
     expect(validator.passthrough).toEqual(expect.arrayContaining(["fetch", "alarm"]));
+    // The nominal brand is filtered as a capability marker, not exposed as a method or pass-through.
+    expect(validator.passthrough).not.toContain("__DURABLE_OBJECT_BRAND");
+    expect(Object.keys(validator.methods)).not.toContain("__DURABLE_OBJECT_BRAND");
   });
 
   it("rejects a non-cloneable built-in at build time", () => {

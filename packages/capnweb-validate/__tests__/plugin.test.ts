@@ -244,6 +244,24 @@ describe("runBuild orchestration", () => {
     }
   });
 
+  it("rejects output paths under a symlinked parent before cleanup", async () => {
+    let workspace = mkdtempSync(join(tmpdir(), "capnweb-validate-ws-"));
+    let app = join(workspace, "app");
+    let external = join(workspace, "external");
+    try {
+      mkdirSync(app, { recursive: true });
+      mkdirSync(join(external, "validate"), { recursive: true });
+      writeFileSync(join(external, "validate", "sentinel.txt"), "keep\n");
+      symlinkSync(external, join(app, ".wrangler"));
+
+      await expect(runBuild({ cwd: app, out: ".wrangler/validate" }))
+        .rejects.toThrow(/--out must not be inside a symlinked directory/);
+      expect(existsSync(join(external, "validate", "sentinel.txt"))).toBe(true);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+
   it("copies non-TypeScript assets into the output tree", async () => {
     let src = mkdtempSync(join(tmpdir(), "capnweb-validate-src-"));
     try {

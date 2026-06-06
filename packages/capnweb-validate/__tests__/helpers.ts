@@ -53,7 +53,7 @@ export type FixtureResult = { code: string; warns: string[] };
 
 export type CheckedMethodSpec = Extract<
   MethodSpec,
-  { args: Validator[]; returns: Validator }
+  { returns: Validator }
 >;
 
 export type VirtualTransformContextOptions = Pick<

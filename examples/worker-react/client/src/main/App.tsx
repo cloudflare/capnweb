@@ -25,6 +25,7 @@ export function App() {
   const [pipelined, setPipelined] = useState<Result | null>(null)
   const [sequential, setSequential] = useState<Result | null>(null)
   const [running, setRunning] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
 
   // Network RTT is now simulated on the server (Worker). See wrangler.jsonc vars.
 
@@ -116,6 +117,17 @@ export function App() {
       trace: { total, calls, network: net } }
   }, [wrapFetch])
 
+  const runValidationFailure = useCallback(async () => {
+    setValidationError(null)
+    const api = connectApi() as any
+    try {
+      await api.authenticate(12345)
+      setValidationError('(no error — unexpected)')
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
+
   const runDemo = useCallback(async () => {
     if (running) return
     setRunning(true)
@@ -143,6 +155,15 @@ export function App() {
       <button onClick={runDemo} disabled={running}>
         {running ? 'Running…' : 'Run demo'}
       </button>
+
+      <section style={{ marginTop: 24 }}>
+        <h2>Validation</h2>
+        <p>Calls <code>authenticate(12345)</code> instead of a string — the server rejects the wrong-typed argument.</p>
+        <button onClick={runValidationFailure}>Test validation failure</button>
+        {validationError && (
+          <pre style={{ color: '#ef4444', marginTop: 8, whiteSpace: 'pre-wrap' }}>{validationError}</pre>
+        )}
+      </section>
 
       {(pipelined && sequential) ? (<>
         <section style={{ marginTop: 24 }}>

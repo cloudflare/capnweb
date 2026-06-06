@@ -245,6 +245,12 @@ function resolveServiceShapeInner(
       }
       let pType = checker.getTypeOfSymbolAtLocation(p, pDecl);
       let shape = resolveType(ctx, pType);
+      if (
+        tsm.isParameter(pDecl) &&
+        (pDecl.questionToken || pDecl.initializer)
+      ) {
+        shape = withUndefined(shape);
+      }
       if (tsm.isParameter(pDecl) && pDecl.dotDotDotToken) {
         if (shape.kind === "array") {
           rest = shape.element;
@@ -420,7 +426,13 @@ function unwrapPromise(
   if (depth > MAX_RESOLVE_DEPTH) return type;
   let sym = type.getSymbol() ?? type.aliasSymbol;
   let name = sym?.getName();
-  if (name === "Promise" || name === "PromiseLike") {
+  // Gate on the global symbol so a user type named `Promise`/`PromiseLike` is
+  // not unwrapped as if it were the standard awaitable.
+  if (
+    (name === "Promise" || name === "PromiseLike") &&
+    sym &&
+    isGlobalSymbol(tsm, sym)
+  ) {
     let args = checker.getTypeArguments(type as ts.TypeReference);
     // Unwrap nested awaitables too (`Promise<Promise<T>>`).
     if (args.length === 1)
@@ -458,6 +470,7 @@ const RPC_STUB_NAMES = new Set(["RpcStub", "RpcPromise"]);
 const RPC_CAPABILITY_BRAND_NAMES = new Set([
   "__RPC_TARGET_BRAND",
   "__WORKER_ENTRYPOINT_BRAND",
+  "__DURABLE_OBJECT_BRAND",
 ]);
 
 
@@ -1107,7 +1120,10 @@ function fetchReturnsResponse(ctx: ResolveContext, type: ts.Type): boolean {
   if (sigs.length === 0) return false;
   let ret = ctx.checker.getReturnTypeOfSignature(sigs[0]!);
   let unwrapped = unwrapPromise(ctx.tsm, ctx.checker, ret);
-  return unwrapped.getSymbol()?.getName() === "Response";
+  let retSym = unwrapped.getSymbol();
+  // Gate on the global symbol so a user type merely named `Response` does not
+  // make a plain object look like a pass-through Fetcher capability.
+  return retSym?.getName() === "Response" && isGlobalSymbol(ctx.tsm, retSym);
 }
 
 function hasFetcherMethods(ctx: ResolveContext, type: ts.Type): boolean {
@@ -1141,9 +1157,7 @@ function getProperty(
   type: ts.Type,
   name: string
 ): ts.Symbol | undefined {
-  return ctx.checker
-    .getPropertiesOfType(type)
-    .find((prop) => prop.getName() === name);
+  return ctx.checker.getPropertyOfType(type, name);
 }
 
 function isUndefinedType(ctx: ResolveContext, type: ts.Type): boolean {

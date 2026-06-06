@@ -120,7 +120,7 @@ const target: Api = { config: "x" };`,
     expect(config.isGetter).toBe(true);
   });
 
-  it("server: validates a data property on property read", () => {
+  it("server: passes a getter read through unvalidated (the client checks returns)", () => {
     const validator: ServiceValidator = {
       serviceName: "Api",
       methods: { config: { args: [], returns: v.string, isGetter: true } },
@@ -129,10 +129,10 @@ const target: Api = { config: "x" };`,
     const wrapped = wrapServerTarget(target, validator);
     expect(wrapped.config).toBe("ok");
     target.config = 123;
-    expect(() => wrapped.config).toThrow(TypeError);
+    expect(wrapped.config).toBe(123); // outgoing read is not checked on the server
   });
 
-  it("server: validates the getter value on property read", () => {
+  it("server: passes a getter value through unvalidated", () => {
     class Api {
       _v: unknown = "ok";
       get config(): string {
@@ -145,24 +145,9 @@ const target: Api = { config: "x" };`,
     };
     const api = new Api();
     const wrapped = wrapServerTarget(api, validator);
-    expect(wrapped.config).toBe("ok"); // good value passes through
-    api._v = 123; // inject a value the type lies about
-    expect(() => wrapped.config).toThrow(TypeError); // bad value rejected
-  });
-
-  it("server: warn mode lets a bad getter value through", () => {
-    class Api {
-      get config(): string {
-        return 123 as unknown as string;
-      }
-    }
-    const validator: ServiceValidator = {
-      serviceName: "Api",
-      mode: "warn",
-      methods: { config: { args: [], returns: v.string, isGetter: true } },
-    };
-    const wrapped = wrapServerTarget(new Api(), validator);
-    expect(wrapped.config).toBe(123); // warn: original value passes through
+    expect(wrapped.config).toBe("ok");
+    api._v = 123; // a value the type lies about
+    expect(wrapped.config).toBe(123); // server does not validate outgoing reads
   });
 
   it("client: validates a pipelined getter's resolved value", async () => {

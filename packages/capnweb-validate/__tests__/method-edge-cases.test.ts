@@ -1,6 +1,11 @@
 // Regressions: optional methods (union with undefined reports no call signatures) were dropped, and unresolved generics leaked the raw TS flag bitmask.
 import { describe, it, expect } from "vitest";
-import { checkedMethod, loadValidator, transformFixture } from "./helpers.js";
+import {
+  accepts,
+  checkedMethod,
+  loadValidator,
+  transformFixture,
+} from "./helpers.js";
 import { v } from "../src/internal/core.js";
 
 function build(body: string): { code: string; error?: string } {
@@ -44,6 +49,39 @@ describe("method edge cases", () => {
     expect(Object.keys(validator.methods)).toEqual(["required", "optional"]);
     expect(checkedMethod(validator, "required").returns).toBe(v.number);
     expect(checkedMethod(validator, "optional").returns).toBe(v.string);
+  });
+
+  it("allows undefined for optional parameters when strictNullChecks is off", () => {
+    const { code } = transformFixture(
+      `class Api extends RpcTarget {
+  ping(x?: string): Promise<string> {
+    return null as any;
+  }
+}`,
+      {
+        target: "new Api()",
+        compilerOptions: { strictNullChecks: false },
+      }
+    );
+    const ping = checkedMethod(loadValidator(code), "ping");
+    expect(accepts(ping.args[0]!, undefined)).toBe(true);
+    expect(accepts(ping.args[0]!, "ok")).toBe(true);
+    expect(accepts(ping.args[0]!, 1)).toBe(false);
+  });
+
+  it("allows undefined for default-initialized parameters", () => {
+    const { code } = transformFixture(
+      `class Api extends RpcTarget {
+  ping(x = "default"): Promise<string> {
+    return null as any;
+  }
+}`,
+      { target: "new Api()" }
+    );
+    const ping = checkedMethod(loadValidator(code), "ping");
+    expect(accepts(ping.args[0]!, undefined)).toBe(true);
+    expect(accepts(ping.args[0]!, "ok")).toBe(true);
+    expect(accepts(ping.args[0]!, 1)).toBe(false);
   });
 
   it("reports an unresolved generic type parameter in human terms", () => {

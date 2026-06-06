@@ -137,7 +137,13 @@ async function hasSymlinkParentPathPart(
   for (let part of parts.slice(0, -1)) {
     if (!part) continue;
     current = resolve(current, part);
-    let stat = await lstat(current);
+    let stat: Awaited<ReturnType<typeof lstat>>;
+    try {
+      stat = await lstat(current);
+    } catch (err) {
+      if ((err as { code?: string }).code === "ENOENT") return false;
+      throw err;
+    }
     if (stat.isSymbolicLink()) return true;
   }
   return false;
@@ -150,6 +156,12 @@ export async function runBuild(options: BuildOptions): Promise<BuildResult> {
     throw new Error(
       `capnweb-validate: --out must not be the project directory or a parent ` +
       `of it (cwd=${cwd}, out=${out}).`,
+    );
+  }
+  if (await hasSymlinkParentPathPart(out, cwd)) {
+    throw new Error(
+      `capnweb-validate: --out must not be inside a symlinked directory ` +
+      `(cwd=${cwd}, out=${out}).`,
     );
   }
 

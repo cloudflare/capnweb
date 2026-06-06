@@ -101,32 +101,13 @@ describe("wrapRpcPromise: promise pipelining (method access before resolve)", ()
     await expect(wrapped.getName()).rejects.toBeInstanceOf(TypeError);
   });
 
-  it("throws synchronously on a pipelined call with a bad argument", () => {
+  it("does not validate a pipelined call's outgoing argument (the server does)", () => {
     const p = rpcPromise(undefined, { setName: () => Promise.resolve("ok") });
     const wrapped = validateReturn(p, userStub(), [], "client") as {
       setName(x: unknown): Promise<string>;
     };
-    expect(() => wrapped.setName(123)).toThrow(TypeError);
-  });
-});
-
-describe("wrapRpcPromise: allowDeferred for client pipeline placeholders", () => {
-  it("accepts an RpcPromise placeholder where a concrete arg is expected (client)", () => {
-    const p = rpcPromise(undefined, { setName: () => Promise.resolve("ok") });
-    const wrapped = validateReturn(p, userStub(), [], "client") as {
-      setName(x: unknown): Promise<string>;
-    };
-    // The placeholder is itself an RpcPromise (a pipelined id), legal on the
-    // client because the real value is checked at the server boundary.
-    const placeholder = rpcPromise("deferred");
-    expect(() => wrapped.setName(placeholder)).not.toThrow();
-  });
-
-  it("still rejects a plain wrong-typed (non-deferred) argument", () => {
-    const p = rpcPromise(undefined, { setName: () => Promise.resolve("ok") });
-    const wrapped = validateReturn(p, userStub(), [], "client") as {
-      setName(x: unknown): Promise<string>;
-    };
-    expect(() => wrapped.setName(123)).toThrow(TypeError);
+    // The client sends args without checking them; the server validates on
+    // arrival. A wrong-typed (or RpcPromise placeholder) arg passes through here.
+    expect(() => wrapped.setName(123)).not.toThrow();
   });
 });
