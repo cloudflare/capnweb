@@ -76,7 +76,7 @@
   },
   "peerDependencies": {
     "capnweb": ">=0.7.0",
-    "typescript": ">=5.0.0"
+    "typescript": ">=5.7.0"
   },
   "devDependencies": {
     "@typescript/vfs": "^1.6.4",
