@@ -176,9 +176,11 @@ A `Uint8Array`, represented as a base64-encoded string.
 
 A `Blob` value. `type` is the MIME type string (`blob.type`), which may be an empty string. `readableExpression` is an expression that evaluates to a `ReadableStream` carrying the blob's bytes; in practice, the encoder always uses a `["readable", importId]` expression backed by a pipe. Because reading a `Blob`'s bytes is inherently asynchronous, the pipe path is always used — there is no inline fast path even for small blobs. The receiver must collect all chunks from the stream before delivering the value to application code.
 
-`["bigint", decimal]`
+`["bigint", digits]`
 
-A bigint value, represented as a decimal string.
+A bigint value. Senders represent this as a hex string with an explicit `0x` marker, e.g.
+`"0xff"` or `"-0xff"`. The sign, when present, appears before the `0x` marker. Receivers also
+accept legacy decimal strings, e.g. `"255"` or `"-255"`, for backwards compatibility.
 
 `["date", number]`
 

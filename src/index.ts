@@ -5,6 +5,7 @@
 import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPromiseImpl } from "./core.js";
 import { serialize, deserialize } from "./serialize.js";
 import { RpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
+import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
 import { RpcTargetBranded, RpcCompatible, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse } from "./websocket.js";
@@ -19,8 +20,8 @@ forceInitStreams();
 
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse };
-export type { RpcTransport, RpcSessionOptions, RpcCompatible };
+         nodeHttpBatchRpcResponse, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH };
+export type { RpcTransport, RpcSessionOptions, RpcCompatible, RpcLimits };
 
 // Hack the type system to make RpcStub's types work nicely!
 /**
@@ -143,9 +144,10 @@ export let newMessagePortRpcSession:<T extends RpcCompatible<T> = Empty>
  * credentials as parameters and returns the authorized API), then cross-origin requests should
  * be safe.
  */
-export async function newWorkersRpcResponse(request: Request, localMain: any) {
+export async function newWorkersRpcResponse(
+    request: Request, localMain: any, options?: RpcSessionOptions) {
   if (request.method === "POST") {
-    let response = await newHttpBatchRpcResponse(request, localMain);
+    let response = await newHttpBatchRpcResponse(request, localMain, options);
     // Since we're exposing the same API over WebSocket, too, and WebSocket always allows
     // cross-origin requests, the API necessarily must be safe for cross-origin use (e.g. because
     // it uses in-band authorization, as recommended in the readme). So, we might as well allow
@@ -153,7 +155,7 @@ export async function newWorkersRpcResponse(request: Request, localMain: any) {
     response.headers.set("Access-Control-Allow-Origin", "*");
     return response;
   } else if (request.headers.get("Upgrade")?.toLowerCase() === "websocket") {
-    return newWorkersWebSocketRpcResponse(request, localMain);
+    return newWorkersWebSocketRpcResponse(request, localMain, options);
   } else {
     return new Response("This endpoint only accepts POST or WebSocket requests.", { status: 400 });
   }

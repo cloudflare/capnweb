@@ -3,7 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
-import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize } from "./serialize.js";
+import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize, RpcLimits, DEFAULT_LIMITS } from "./serialize.js";
 
 /**
  * Interface for an RPC transport, which is a simple bidirectional message stream. Implement this
@@ -316,6 +316,17 @@ export type RpcSessionOptions = {
    * to serialize the error with the stack omitted.
    */
   onSendError?: (error: Error) => Error | void;
+
+  /**
+   * Overrides for the resource limits enforced while deserializing messages from the peer. Any
+   * field left unset falls back to `DEFAULT_LIMITS`. These guard against resource-exhaustion
+   * attacks from untrusted peers; see `RpcLimits` for the meaning and defaults of each field.
+   *
+   * Limits are a purely local, receiver-side decision -- the protocol has no negotiation step, so
+   * the peer never learns these values. A message that exceeds a limit is rejected, aborting the
+   * session.
+   */
+  limits?: Partial<RpcLimits>;
 };
 
 class RpcSessionImpl implements Importer, Exporter {
@@ -340,8 +351,14 @@ class RpcSessionImpl implements Importer, Exporter {
   // may be deleted from the middle (hence leaving the array sparse).
   onBrokenCallbacks: ((error: any) => void)[] = [];
 
+  // Resource limits enforced on incoming messages, resolved once from the defaults plus any
+  // per-session overrides.
+  private limits: RpcLimits;
+
   constructor(private transport: RpcTransport, mainHook: StubHook,
       private options: RpcSessionOptions) {
+    this.limits = { ...DEFAULT_LIMITS, ...options.limits };
+
     // Export zero is automatically the bootstrap object.
     this.exports.push({hook: mainHook, refcount: 1});
 
@@ -532,6 +549,10 @@ class RpcSessionImpl implements Importer, Exporter {
     let readable = entry.pipeReadable;
     entry.pipeReadable = undefined;
     return readable;
+  }
+
+  getLimits(): RpcLimits {
+    return this.limits;
   }
 
   createPipe(readable: ReadableStream, readableHook: StubHook): ImportId {
@@ -744,6 +765,15 @@ class RpcSessionImpl implements Importer, Exporter {
         if (this.cancelReadLoop === readCanceled.reject) {
           this.cancelReadLoop = undefined;
         }
+      }
+
+      // Bound a single message before parsing it. At this point the transport has already
+      // buffered the complete string; true pre-read enforcement belongs in the transport/socket.
+      // This backstop still prevents oversized messages from reaching JSON.parse and downstream
+      // deserialization work. A throw here propagates out of readLoop and aborts the session.
+      if (msgText.length > this.limits.maxMessageSize) {
+        throw new TypeError(
+            `Incoming message exceeds maximum size of ${this.limits.maxMessageSize} characters.`);
       }
 
       let msg = JSON.parse(msgText);
