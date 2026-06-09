@@ -26,5 +26,5 @@ jobs:
           path-to-document: 'https://www.cloudflare.com/cla/'
           # branch should not be protected
           branch: 'cla-signatures'
-          allowlist: dependabot[bot],workers-devprod
+          allowlist: dependabot[bot],workers-devprod,github-actions[bot]
           lock-pullrequest-aftermerge: false
