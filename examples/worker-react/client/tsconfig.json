@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2024", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "paths": {
+      "capnweb": ["../../../src/index.ts"],
+      "capnweb-validate": ["../../../packages/capnweb-validate/src/index.ts"],
+      "capnweb-validate/internal/core": ["../../../packages/capnweb-validate/src/internal/core.ts"],
+      "capnweb-validate/internal": ["../../../packages/capnweb-validate/src/internal/runtime.ts"]
+    }
+  },
+  "include": ["src"]
+}

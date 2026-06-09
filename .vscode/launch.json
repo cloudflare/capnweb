@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "node",
+      "request": "attach",
+      "name": "validate: Worker",
+      "address": "127.0.0.1",
+      "port": 9229,
+      "timeout": 60000,
+      "restart": true,
+      "preLaunchTask": "validate: Worker dev server",
+      "skipFiles": [
+        "<node_internals>/**"
+      ],
+      "presentation": {
+        "hidden": true
+      }
+    },
+    {
+      "type": "chrome",
+      "request": "launch",
+      "name": "validate: client",
+      "url": "http://127.0.0.1:5173",
+      "webRoot": "${workspaceFolder}/examples/worker-react/client",
+      "sourceMaps": true,
+      "preLaunchTask": "validate: client dev server",
+      "presentation": {
+        "hidden": true
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "validate: debug all",
+      "configurations": [
+        "validate: Worker",
+        "validate: client"
+      ],
+      "stopAll": true
+    }
+  ]
+}
