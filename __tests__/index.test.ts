@@ -2423,6 +2423,72 @@ describe("WritableStream over RPC", () => {
     clientTransport.releaseFence();
   });
 
+  it("uses the size reported by a custom transport's send() for flow control", async () => {
+    // Mirror image of the previous test: the sending side's transport reports a tiny encoded
+    // size from send(), so even though the chunks are large (and their *estimated* size would
+    // fill the flow control window after a few writes, as proven above), all 20 writes proceed
+    // without blocking. This proves the number returned by send() is what feeds flow control.
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    class SizeReportingTestTransport extends ObjectTestTransport {
+      sendCount = 0;
+      send(message: unknown): number {
+        super.send(message);
+        ++this.sendCount;
+        return 10;  // report a tiny encoded size, regardless of the actual message
+      }
+    }
+
+    let clientTransport = new ObjectTestTransport();
+    let serverTransport = new SizeReportingTestTransport(clientTransport);
+    let client = new RpcSession<StreamReceiver>(clientTransport);
+    new RpcSession(serverTransport, new StreamReceiver());
+    using clientStub = client.getRemoteMain();
+
+    // Fence the client so it never processes incoming messages, and thus never sends acks.
+    clientTransport.fence();
+
+    let promise = clientStub.receiveStream(stream);
+
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (writesSent == oldWritesSent) break;
+    }
+
+    // All writes completed despite no acks, because the reported sizes never filled the window.
+    expect(writesSent).toBe(20);
+    expect(serverTransport.sendCount).toBeGreaterThan(0);
+    expect(writesReceived).toBe(0);
+    expect(closeReceived).toBe(false);
+
+    // Let the messages through and verify everything arrives.
+    clientTransport.releaseFence();
+    await promise;
+    expect(writesReceived).toBe(20);
+    expect(closeReceived).toBe(true);
+  });
+
   it("uses stream messages instead of push+pull+release", async () => {
     // Verify that WritableStream writes use the optimized "stream" message type,
     // which avoids sending separate "pull" and "release" messages.
