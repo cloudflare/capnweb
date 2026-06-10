@@ -6,6 +6,7 @@
 import { expect, it, describe } from "vitest";
 import { RpcStub as NativeRpcStub, RpcTarget as NativeRpcTarget, env, DurableObject } from "cloudflare:workers";
 import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcTarget } from "../src/index-workers.js";
+import { v, wrapServerTarget, type ServiceValidator } from "../packages/capnweb-validate/src/internal/core.js";
 import { Counter, TestTarget } from "./test-util.js";
 
 class JsCounter extends RpcTarget {
@@ -221,6 +222,7 @@ describe("workerd compatibility", () => {
     let result = await new RpcStub((<any>env).testServer).greet("World");
     expect(result).toBe("Hello, World!");
   });
+
 });
 
 interface Env {
@@ -230,6 +232,7 @@ interface Env {
 interface TestDo extends DurableObject {
   setValue(val: any): void;
   getValue(): any;
+  callCounter(callback: { increment(): Promise<number> }): Promise<number>;
 
   subscribe(callback: (s: string) => void): void;
   notify(value: string): void;
@@ -283,6 +286,55 @@ describe("workerd RPC server", () => {
 
       expect(receivedValue).toBe("hello");
     }
+
+  })
+
+  it("forwards capnweb-validate callback stubs to Durable Objects", async () => {
+    let resp = await (<Env>env).testServer.fetch("http://foo", {headers: {Upgrade: "websocket"}});
+    let ws = resp.webSocket;
+    expect(ws).toBeTruthy();
+
+    ws!.accept();
+    let cap = newWebSocketRpcSession<WorkerdTestTarget>(ws!);
+    let callbackValidator: ServiceValidator = {
+      serviceName: "Counter",
+      methods: { increment: { args: [], returns: v.number } },
+    };
+    let account = cap.getDurableObject("validated-forward");
+    let vendor = wrapServerTarget(
+      {
+        connect(callback: { increment(): Promise<number> }): Promise<number> {
+          return account.callCounter(callback);
+        },
+        connectNested(value: {
+          callback: { increment(): Promise<number> };
+        }): Promise<number> {
+          return account.callCounter(value.callback);
+        },
+      },
+      {
+        serviceName: "Vendor",
+        methods: {
+          connect: {
+            args: [v.stubOf(callbackValidator)],
+            returns: v.number,
+          },
+          connectNested: {
+            args: [v.object({ callback: v.stubOf(callbackValidator) })],
+            returns: v.number,
+          },
+        },
+      }
+    ) as {
+      connect(callback: { increment(): Promise<number> }): Promise<number>;
+      connectNested(value: {
+        callback: { increment(): Promise<number> };
+      }): Promise<number>;
+    };
+
+    let callback = new NativeRpcStub(new NativeCounter());
+    expect(await vendor.connect(callback)).toBe(1);
+    expect(await vendor.connectNested({ callback })).toBe(2);
   })
 
   it("can accept HTTP batch RPC connections", async () => {

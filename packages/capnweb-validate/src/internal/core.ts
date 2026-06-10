@@ -654,7 +654,10 @@ function wrapArgs(
       args[i],
       validator,
       [serviceName, prop, i],
-      "client"
+      "client",
+      // Preserve native stubs so user code can forward them over workerd RPC
+      // without leaking a non-cloneable validation Proxy.
+      false
     );
     if (wrapped !== args[i]) {
       next ??= args.slice();
@@ -790,18 +793,19 @@ function wrapResolvedValue(
   value: unknown,
   validator: Validator,
   path: PropertyPath,
-  side: WrapSide
+  side: WrapSide,
+  wrapStubs = true
 ): unknown {
   if (path.length >= MAX_VALIDATION_DEPTH) return value;
   let shape = shapeOf(validator);
   if (!shape) return value;
   if (shape.kind === "lazy")
-    return wrapResolvedValue(value, shape.thunk(), path, side);
+    return wrapResolvedValue(value, shape.thunk(), path, side, wrapStubs);
   if (shape.kind === "union") {
     for (let branch of shape.branches) {
       try {
         branch(value, path);
-        return wrapResolvedValue(value, branch, path, side);
+        return wrapResolvedValue(value, branch, path, side, wrapStubs);
       } catch (err) {
         if (!isValidationTypeError(err)) throw err;
       }
@@ -809,6 +813,7 @@ function wrapResolvedValue(
     return value;
   }
   if (shape.kind === "stub") {
+    if (!wrapStubs) return value;
     if (!shape.service) return value;
     let valueType = typeof value;
     if (value === null || (valueType !== "object" && valueType !== "function"))
@@ -830,7 +835,8 @@ function wrapResolvedValue(
         value[i],
         elemValidator,
         [...path, i],
-        side
+        side,
+        wrapStubs
       );
       if (wrapped !== value[i]) {
         next ??= value.slice();
@@ -850,13 +856,15 @@ function wrapResolvedValue(
         key,
         shape.key,
         [...path, i, "key"],
-        side
+        side,
+        wrapStubs
       );
       let wrappedValue = wrapResolvedValue(
         entryValue,
         shape.value,
         [...path, i, "value"],
-        side
+        side,
+        wrapStubs
       );
       if (wrappedKey !== key || wrappedValue !== entryValue) {
         next ??= new Map(entries.slice(0, i));
@@ -872,7 +880,13 @@ function wrapResolvedValue(
     let next: Set<unknown> | undefined;
     for (let i = 0; i < values.length; i++) {
       let elemValue = values[i]!;
-      let wrapped = wrapResolvedValue(elemValue, shape.element, [...path, i], side);
+      let wrapped = wrapResolvedValue(
+        elemValue,
+        shape.element,
+        [...path, i],
+        side,
+        wrapStubs
+      );
       if (wrapped !== elemValue) {
         next ??= new Set(values.slice(0, i));
         copyDisposeDescriptor(value, next);
@@ -891,7 +905,8 @@ function wrapResolvedValue(
         rec[key],
         propValidator,
         [...path, key],
-        side
+        side,
+        wrapStubs
       );
       if (wrapped !== rec[key]) {
         next ??= { ...rec };
@@ -905,7 +920,13 @@ function wrapResolvedValue(
     if (shape.index) {
       for (let key of Object.keys(rec)) {
         if (own(shape.properties, key) !== undefined) continue;
-        let wrapped = wrapResolvedValue(rec[key], shape.index, [...path, key], side);
+        let wrapped = wrapResolvedValue(
+          rec[key],
+          shape.index,
+          [...path, key],
+          side,
+          wrapStubs
+        );
         if (wrapped !== rec[key]) {
           next ??= { ...rec };
           copyDisposeDescriptor(value, next);
