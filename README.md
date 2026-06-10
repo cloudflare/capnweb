@@ -732,35 +732,27 @@ Note that you should not use a `Window` object itself as a port for RPC -- you s
 
 ### Custom transports
 
-You can implement a custom RPC transport across any bidirectional stream. For string-based transports, implement `RpcTransport`:
+You can implement a custom RPC transport across any bidirectional stream. To do so, implement the interface `RpcTransport`, which is defined as follows:
 
 ```ts
+// Interface for an RPC transport, which is a simple bidirectional message stream.
 export interface RpcTransport {
-  // Sends a JSON string message.
-  send(message: string): number | void | Promise<void>;
+  // Sends a message to the other end.
+  send(message: string): Promise<void>;
 
   // Receives a message sent by the other end.
+  //
+  // If and when the transport becomes disconnected, this will reject. The thrown error will be
+  // propagated to all outstanding calls and future calls on any stubs associated with the session.
+  // If there are no outstanding calls (and none are made in the future), then the error does not
+  // propagate anywhere -- this is considered a "clean" shutdown.
   receive(): Promise<string>;
 
-  // Called when the RPC system needs to abort the session.
-  abort?(reason: any): void;
-}
-```
-
-For transports with custom encoding (CBOR, MessagePack, structured clone, etc.), implement `RpcTransportWithCustomEncoding`:
-
-```ts
-export interface RpcTransportWithCustomEncoding {
-  // Declares what encoding level this transport uses.
-  readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone";
-
-  // Encodes and sends a message. Returns the encoded byte size if known.
-  // If unavailable, Cap'n Web estimates stream message sizes for flow control.
-  send(message: unknown): number | void;
-
-  // Receives and decodes a message.
-  receive(): Promise<unknown>;
-
+  // Indicates that the RPC system has suffered an error that prevents the session from continuing.
+  // The transport should ideally try to send any queued messages if it can, and then close the
+  // connection. (It's not strictly necessary to deliver queued messages, but the last message sent
+  // before abort() is called is often an "abort" message, which communicates the error to the
+  // peer, so if that is dropped, the peer may have less information about what happened.)
   abort?(reason: any): void;
 }
 ```
@@ -785,10 +777,9 @@ let stub: RemoteMainInterface = session.getRemoteMain();
 
 Note that sessions are entirely symmetric: neither side is defined as the "client" nor the "server". Each side can optionally expose a "main interface" to the other. In typical scenarios with a logical client and server, the server exposes a main interface but the client does not.
 
-#### Custom encoding levels
+By default, `send()` accepts a string, and `receive()` returns a string, with Cap'n Web handling the encoding all the way to and from strings. However, transports that want more control over the serialization can declare the property `encodingLevel` to control just how much encoding Cap'n Web does before passing off the message:
 
-By default, `RpcTransport` sends and receives JSON strings, with Cap'n Web handling the encoding all the way to and from strings. Transports that want more control over serialization can implement `RpcTransportWithCustomEncoding` and declare an `encodingLevel`:
-
-* `"json"`: Messages are JSON-compatible objects. The transport is responsible for serializing and deserializing them.
-* `"jsonWithBytes"`: Like `"json"`, except byte arrays are left as `Uint8Array` instead of base64-encoded. This is useful for serializations like CBOR or MessagePack that support bytes efficiently.
-* `"structuredClone"`: Messages are structured-clonable objects. Cap'n Web applies special handling for RPC stubs and errors. This is useful for custom transports built on `MessagePort` or similar APIs.
+* `"string"`: The default. Messages are strings.
+* `"json"`: Messages are JSON-compatible objects. The transport is responsible for serializing/deserializing.
+* `"jsonWithBytes"`: Like "json" except that byte arrays are left as `Uint8Array` instead of base64-encoded. Handy for use with serializations like CBOR or MessagePack that support this efficiently.
+* `"structuredClone"`: Messages are structured-clonable objects. Cap'n Web will only implement special handling of RPC stubs. This is useful when the transport is a `MessagePort` or similar.
