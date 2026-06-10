@@ -71,7 +71,7 @@ describe("server wrapper: checks arguments, not outgoing returns", () => {
       string,
       (...args: unknown[]) => unknown
     >;
-    expect(() => api.map()).toThrow(/not in the generated validator/);
+    expect(() => api.map()).toThrow(/not declared on .* RPC interface/);
   });
 
   it("wraps received callback stubs before user code calls them", () => {

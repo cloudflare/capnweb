@@ -606,7 +606,11 @@ function exposedDescriptor(
 
 function missingMethod(serviceName: string, prop: string): never {
   throw newValidationTypeError(
-    `capnweb-validate: ${serviceName}.${prop} is not in the generated validator`
+    `capnweb-validate: refused ${serviceName}.${prop}: it is not declared on ` +
+      `${serviceName}'s RPC interface. To expose it, declare it on the ` +
+      `interface type and rebuild so the validator regenerates. Note that ` +
+      `instance properties cannot be accessed over RPC; define a method or ` +
+      `getter instead.`
   );
 }
 
@@ -695,6 +699,11 @@ export function wrapServerTarget<T extends object>(
       }
       // `t` as receiver so a declared getter can read private state.
       let orig = Reflect.get(t, prop, t);
+      if (isWrappedMethod(orig)) {
+        // Already wrapped in place by @validateRpc() on the class; don't
+        // validate twice.
+        return (orig as (...a: unknown[]) => unknown).bind(t);
+      }
       if (!isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
         return validateReturn(
           orig,
@@ -1259,11 +1268,111 @@ export function __validateRpcClass<T extends new (...args: any[]) => object>(
   validator: ServiceValidator
 ): (value: T, context?: unknown) => T {
   return function validateRpcClass(value: T, _context?: unknown): T {
-    return class extends value {
-      constructor(...args: any[]) {
-        super(...args);
-        return wrapServerTarget(this, validator);
-      }
-    } as T;
+    // Wrap the declared methods in place on the class's prototype instead of
+    // returning a Proxy from the constructor: workerd's native RPC serializes
+    // branded RpcTargets, not Proxies; `#` fields, `instanceof`, and identity
+    // keep working; and decorated-extends-decorated composes through ordinary
+    // prototype inheritance (subclass-only methods wrapped by the subclass
+    // validator, inherited methods by the base's). Undeclared members are
+    // left untouched; the RPC layers refuse instance properties themselves.
+    wrapPrototypeMethods(
+      (value as unknown as { prototype: object }).prototype,
+      validator
+    );
+    return value;
   };
+}
+
+/**
+ * Marks prototype methods that `__validateRpcClass` has already wrapped, so
+ * decorating a subclass of a decorated base (or decorating twice) never
+ * double-validates, and session wrappers can pass such methods through.
+ */
+const WRAPPED_METHOD = Symbol.for("capnweb-validate.wrappedMethod");
+
+export function isWrappedMethod(fn: unknown): boolean {
+  return (
+    typeof fn === "function" &&
+    (fn as unknown as Record<PropertyKey, unknown>)[WRAPPED_METHOD] === true
+  );
+}
+
+function markWrapped<F extends (...args: never[]) => unknown>(
+  fn: F,
+  like: (...args: never[]) => unknown
+): F {
+  Object.defineProperty(fn, WRAPPED_METHOD, { value: true });
+  Object.defineProperty(fn, "name", { value: like.name, configurable: true });
+  Object.defineProperty(fn, "length", {
+    value: like.length,
+    configurable: true,
+  });
+  return fn;
+}
+
+function wrapPrototypeMethods(
+  proto: object,
+  validator: ServiceValidator
+): void {
+  let mode = validator.mode ?? "throw";
+  for (let prop of Object.keys(validator.methods)) {
+    let methodSpec = validator.methods[prop]!;
+    // Unchecked members (overloads, platform hooks) stay raw by design.
+    if (isUncheckedMethod(methodSpec)) continue;
+    // Find the implementation wherever it lives on the chain. If it's
+    // inherited from an undecorated base we shadow it with a wrapper on this
+    // prototype; if it's inherited from a decorated base it's already
+    // wrapped and the base's validator governs it.
+    let desc = exposedDescriptor(proto, prop);
+    if (!desc) continue; // Declared but implemented as an instance member (or
+    // absent): there's nothing on the prototype to wrap, and the RPC layers
+    // refuse instance properties themselves.
+    if (methodSpec.isGetter) {
+      let origGet = desc.get;
+      if (typeof origGet !== "function" || isWrappedMethod(origGet)) continue;
+      let spec = methodSpec;
+      let wrappedGet = markWrapped(function (this: unknown): unknown {
+        return validateReturn(
+          origGet.call(this),
+          spec.returns,
+          [validator.serviceName, prop],
+          "server",
+          mode
+        );
+      }, origGet);
+      Object.defineProperty(proto, prop, {
+        get: wrappedGet,
+        set: desc.set,
+        enumerable: desc.enumerable ?? false,
+        configurable: true,
+      });
+      continue;
+    }
+    let orig = desc.value;
+    if (typeof orig !== "function" || isWrappedMethod(orig)) continue;
+    let spec = methodSpec;
+    let origFn = orig as (...a: unknown[]) => unknown;
+    let wrapped = markWrapped(function (
+      this: unknown,
+      ...args: unknown[]
+    ): unknown {
+      checkArgs(mode, args, spec, validator.serviceName, prop);
+      let wrappedArgs = wrapArgs(args, spec, validator.serviceName, prop);
+      let result = Reflect.apply(origFn, this, wrappedArgs);
+      return validateReturn(
+        result,
+        spec.returns,
+        [validator.serviceName, prop, "<return>"],
+        "server",
+        mode
+      );
+    },
+    origFn);
+    Object.defineProperty(proto, prop, {
+      value: wrapped,
+      writable: desc.writable ?? true,
+      enumerable: desc.enumerable ?? false,
+      configurable: true,
+    });
+  }
 }
