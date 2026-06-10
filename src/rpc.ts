@@ -12,9 +12,16 @@ import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serializ
  */
 export interface RpcTransport {
   /**
-   * Sends a message to the other end.
+   * The encoding level this transport works with. For this interface it is always "string";
+   * it may be omitted. (See `RpcTransportWithCustomEncoding` for the other levels.)
    */
-  send(message: string): number | void | Promise<void>;
+  readonly encodingLevel?: "string";
+
+  /**
+   * Sends a message to the other end. May optionally return a promise; if the promise rejects,
+   * the session is aborted.
+   */
+  send(message: string): void | Promise<void>;
 
   /**
    * Receives a message sent by the other end.
@@ -698,27 +705,54 @@ class RpcSessionImpl implements Importer, Exporter {
       return 0;
     }
 
-    try {
-      if (this.encodingLevel === "string") {
-        // Stringify and send via string transport. We know the size from the string length.
-        let msgText = JSON.stringify(msg);
-        let sent = (this.transport as RpcTransport).send(msgText);
-        if (sent !== undefined && typeof sent !== "number") {
+    if (this.encodingLevel === "string") {
+      let msgText: string;
+      try {
+        msgText = JSON.stringify(msg);
+      } catch (err) {
+        // If JSON stringification failed, there's something wrong with the devaluator, as it
+        // should not allow non-JSONable values to be injected in the first place.
+        try { this.abort(err); } catch (err2) {}
+        throw err;
+      }
+
+      try {
+        let sent = (this.transport as RpcTransport).send(msgText) as Promise<void> | undefined;
+        if (sent !== undefined && typeof sent.catch === "function") {
+          // If send fails, abort the connection, but don't try to send an abort message since
+          // that'll probably also fail.
           sent.catch(err => this.abort(err, false));
         }
-        return msgText.length;
-      } else {
-        // Custom encoding transport encodes and returns the actual encoded size,
-        // or void if size is unavailable (e.g. structured clone).
-        let size = (this.transport as RpcTransportWithCustomEncoding).send(msg);
-        return size === undefined ? undefined : size;
+      } catch (err) {
+        // The transport threw synchronously. Treat it like an async send failure: abort the
+        // session (without trying to send an abort message over the broken transport), but
+        // defer to a microtask so the caller finishes its own bookkeeping first, matching the
+        // timing of a rejected promise from an async transport.
+        queueMicrotask(() => this.abort(err, false));
       }
-    } catch (err) {
-      // If JSON stringification failed, there's something wrong with the devaluator, as it should
-      // not allow non-JSONable values to be injected in the first place. If send() threw, the
-      // transport is broken. Either way, abort the session.
-      try { this.abort(err); } catch (err2) {}
-      throw err;
+      return msgText.length;
+    } else {
+      // Custom encoding transport encodes and returns the actual encoded size, or void if size
+      // is unavailable (e.g. structured clone).
+      try {
+        let size = (this.transport as RpcTransportWithCustomEncoding).send(msg);
+        if (typeof size === "number") {
+          return size;
+        }
+        // Defend against transports that return something other than a number, e.g. an
+        // accidentally-async `send()` returning a promise: treat the size as unknown, and
+        // observe any returned thenable so a rejection aborts the session rather than going
+        // unhandled. (The documented contract is to report errors via `receive()`.)
+        let thenable = size as unknown;
+        if (thenable && typeof (thenable as PromiseLike<unknown>).then === "function") {
+          Promise.resolve(thenable).catch(err => this.abort(err, false));
+        }
+        return undefined;
+      } catch (err) {
+        // Same as the synchronous failure case above.
+        queueMicrotask(() => this.abort(err, false));
+        return undefined;
+      }
     }
   }
 
@@ -832,12 +866,16 @@ class RpcSessionImpl implements Importer, Exporter {
       try {
         let abortMsg = ["abort", Devaluator.devaluate(error, undefined, this, undefined, this.encodingLevel)];
         if (this.encodingLevel === "string") {
-          let sent = (this.transport as RpcTransport).send(JSON.stringify(abortMsg));
-          if (sent !== undefined && typeof sent !== "number") {
+          let sent = (this.transport as RpcTransport)
+              .send(JSON.stringify(abortMsg)) as Promise<void> | undefined;
+          if (sent !== undefined && typeof sent.catch === "function") {
             sent.catch(err => {});
           }
         } else {
-          (this.transport as RpcTransportWithCustomEncoding).send(abortMsg);
+          let result = (this.transport as RpcTransportWithCustomEncoding).send(abortMsg) as unknown;
+          if (result && typeof (result as PromiseLike<unknown>).then === "function") {
+            Promise.resolve(result).catch(err => {});
+          }
         }
       } catch (err) {
         // ignore, probably the whole reason we're aborting is because the transport is broken

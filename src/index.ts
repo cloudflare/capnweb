@@ -7,7 +7,7 @@ import { serialize, deserialize, EncodingLevel } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcTargetBranded, RpcCompatible, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
-         newWorkersWebSocketRpcResponse } from "./websocket.js";
+         newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
          newHttpBatchRpcResponse, nodeHttpBatchRpcResponse } from "./batch.js";
 import { newMessagePortRpcSession as newMessagePortRpcSessionImpl } from "./messageport.js";
@@ -19,7 +19,7 @@ forceInitStreams();
 
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse };
+         nodeHttpBatchRpcResponse, WebSocketTransport };
 export type { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport,
          RpcSessionOptions, RpcCompatible, EncodingLevel };
 

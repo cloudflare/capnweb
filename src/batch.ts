@@ -98,9 +98,8 @@ class BatchServerTransport implements RpcTransport {
   #batchToReceive: string[];
   #allReceived: PromiseWithResolvers<void> = Promise.withResolvers<void>();
 
-  send(message: string): number {
+  send(message: string): void {
     this.#batchToSend.push(message);
-    return message.length;
   }
 
   async receive(): Promise<string> {

@@ -625,10 +625,12 @@ export class Evaluator {
   }
 
   private evaluateImpl(value: unknown, parent: object, property: string | number): unknown {
-    // At structuredClone level, native types come through directly
-    if (this.encodingLevel === "structuredClone" || this.encodingLevel === "jsonWithBytes") {
-      if (value instanceof Date || value instanceof Uint8Array ||
-          value instanceof Error || typeof value === "bigint") {
+    // At structuredClone level, some native types pass through devaluation unencoded: Date and
+    // BigInt (as well as undefined and non-finite numbers, which the generic paths below already
+    // handle). Note that bytes and errors are tuple-encoded at every level, so raw `Uint8Array`
+    // and `Error` values are intentionally *not* accepted here.
+    if (this.encodingLevel === "structuredClone") {
+      if (value instanceof Date || typeof value === "bigint") {
         return value;
       }
     }
