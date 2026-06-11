@@ -1935,6 +1935,12 @@ describe("HTTP requests", () => {
     expect(await Promise.all([promise1, promise2, promise3]))
         .toStrictEqual([36, 5, 9]);
   });
+
+  it("rejects non-POST requests with 405", async () => {
+    let response = await fetch(`http://${inject("testServerHost")}`, { method: "GET" });
+    expect(response.status).toBe(405);
+    await response.text();
+  });
 });
 
 describe("WebSockets", () => {
