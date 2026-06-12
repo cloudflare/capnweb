@@ -71,36 +71,7 @@ describe("server wrapper: checks arguments, not outgoing returns", () => {
       string,
       (...args: unknown[]) => unknown
     >;
-    expect(() => api.map()).toThrow(/not in the generated validator/);
+    expect(() => api.map()).toThrow(/not declared on .* RPC interface/);
   });
 
-  it("wraps received callback stubs before user code calls them", () => {
-    const callbackValidator: ServiceValidator = {
-      serviceName: "Callback",
-      methods: { getName: { args: [], returns: v.string } },
-    };
-    const api = wrapServerTarget(
-      {
-        use(callback: { getName(): unknown }): unknown {
-          return callback.getName();
-        },
-      },
-      {
-        serviceName: "Api",
-        methods: {
-          use: { args: [v.stubOf(callbackValidator)], returns: v.string },
-        },
-      }
-    ) as { use(callback: { getName(): unknown }): unknown };
-
-    const callbackStub = (
-      value: unknown
-    ): { getName(): unknown; dup(): unknown } => ({
-      getName: () => value,
-      dup: () => callbackStub(value),
-    });
-
-    expect(api.use(callbackStub("Ada"))).toBe("Ada");
-    expect(() => api.use(callbackStub(123))).toThrow(TypeError);
-  });
 });

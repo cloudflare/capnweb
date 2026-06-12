@@ -137,7 +137,7 @@ class Api<T> extends RpcTarget implements Cursor<T> {
       { next: async () => "", extra: async (x: number) => x },
       validator
     ) as { extra(x: number): Promise<number> };
-    expect(() => wrapped.extra(1)).toThrow(/not in the generated validator/);
+    expect(() => wrapped.extra(1)).toThrow(/not declared on .* RPC interface/);
     expect(warns.join("")).not.toContain("unconstrained");
   });
 

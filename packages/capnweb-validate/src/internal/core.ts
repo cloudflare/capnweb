@@ -606,7 +606,11 @@ function exposedDescriptor(
 
 function missingMethod(serviceName: string, prop: string): never {
   throw newValidationTypeError(
-    `capnweb-validate: ${serviceName}.${prop} is not in the generated validator`
+    `capnweb-validate: refused ${serviceName}.${prop}: it is not declared on ` +
+      `${serviceName}'s RPC interface. To expose it, declare it on the ` +
+      `interface type and rebuild so the validator regenerates. Note that ` +
+      `instance properties cannot be accessed over RPC; define a method or ` +
+      `getter instead.`
   );
 }
 
@@ -650,7 +654,10 @@ function wrapArgs(
       args[i],
       validator,
       [serviceName, prop, i],
-      "client"
+      "client",
+      // Preserve native stubs so user code can forward them over workerd RPC
+      // without leaking a non-cloneable validation Proxy.
+      false
     );
     if (wrapped !== args[i]) {
       next ??= args.slice();
@@ -695,6 +702,11 @@ export function wrapServerTarget<T extends object>(
       }
       // `t` as receiver so a declared getter can read private state.
       let orig = Reflect.get(t, prop, t);
+      if (isWrappedMethod(orig)) {
+        // Already wrapped in place by @validateRpc() on the class; don't
+        // validate twice.
+        return (orig as (...a: unknown[]) => unknown).bind(t);
+      }
       if (!isUncheckedMethod(methodSpec) && methodSpec.isGetter) {
         return validateReturn(
           orig,
@@ -781,18 +793,19 @@ function wrapResolvedValue(
   value: unknown,
   validator: Validator,
   path: PropertyPath,
-  side: WrapSide
+  side: WrapSide,
+  wrapStubs = true
 ): unknown {
   if (path.length >= MAX_VALIDATION_DEPTH) return value;
   let shape = shapeOf(validator);
   if (!shape) return value;
   if (shape.kind === "lazy")
-    return wrapResolvedValue(value, shape.thunk(), path, side);
+    return wrapResolvedValue(value, shape.thunk(), path, side, wrapStubs);
   if (shape.kind === "union") {
     for (let branch of shape.branches) {
       try {
         branch(value, path);
-        return wrapResolvedValue(value, branch, path, side);
+        return wrapResolvedValue(value, branch, path, side, wrapStubs);
       } catch (err) {
         if (!isValidationTypeError(err)) throw err;
       }
@@ -800,6 +813,7 @@ function wrapResolvedValue(
     return value;
   }
   if (shape.kind === "stub") {
+    if (!wrapStubs) return value;
     if (!shape.service) return value;
     let valueType = typeof value;
     if (value === null || (valueType !== "object" && valueType !== "function"))
@@ -821,7 +835,8 @@ function wrapResolvedValue(
         value[i],
         elemValidator,
         [...path, i],
-        side
+        side,
+        wrapStubs
       );
       if (wrapped !== value[i]) {
         next ??= value.slice();
@@ -841,13 +856,15 @@ function wrapResolvedValue(
         key,
         shape.key,
         [...path, i, "key"],
-        side
+        side,
+        wrapStubs
       );
       let wrappedValue = wrapResolvedValue(
         entryValue,
         shape.value,
         [...path, i, "value"],
-        side
+        side,
+        wrapStubs
       );
       if (wrappedKey !== key || wrappedValue !== entryValue) {
         next ??= new Map(entries.slice(0, i));
@@ -863,7 +880,13 @@ function wrapResolvedValue(
     let next: Set<unknown> | undefined;
     for (let i = 0; i < values.length; i++) {
       let elemValue = values[i]!;
-      let wrapped = wrapResolvedValue(elemValue, shape.element, [...path, i], side);
+      let wrapped = wrapResolvedValue(
+        elemValue,
+        shape.element,
+        [...path, i],
+        side,
+        wrapStubs
+      );
       if (wrapped !== elemValue) {
         next ??= new Set(values.slice(0, i));
         copyDisposeDescriptor(value, next);
@@ -882,7 +905,8 @@ function wrapResolvedValue(
         rec[key],
         propValidator,
         [...path, key],
-        side
+        side,
+        wrapStubs
       );
       if (wrapped !== rec[key]) {
         next ??= { ...rec };
@@ -896,7 +920,13 @@ function wrapResolvedValue(
     if (shape.index) {
       for (let key of Object.keys(rec)) {
         if (own(shape.properties, key) !== undefined) continue;
-        let wrapped = wrapResolvedValue(rec[key], shape.index, [...path, key], side);
+        let wrapped = wrapResolvedValue(
+          rec[key],
+          shape.index,
+          [...path, key],
+          side,
+          wrapStubs
+        );
         if (wrapped !== rec[key]) {
           next ??= { ...rec };
           copyDisposeDescriptor(value, next);
@@ -1259,11 +1289,114 @@ export function __validateRpcClass<T extends new (...args: any[]) => object>(
   validator: ServiceValidator
 ): (value: T, context?: unknown) => T {
   return function validateRpcClass(value: T, _context?: unknown): T {
-    return class extends value {
-      constructor(...args: any[]) {
-        super(...args);
-        return wrapServerTarget(this, validator);
-      }
-    } as T;
+    // Wrap the declared methods in place on the class's prototype instead of
+    // returning a Proxy from the constructor: workerd's native RPC serializes
+    // branded RpcTargets, not Proxies; `#` fields, `instanceof`, and identity
+    // keep working; and decorated-extends-decorated composes through ordinary
+    // prototype inheritance (subclass-only methods wrapped by the subclass
+    // validator, inherited methods by the base's). Undeclared members are
+    // left untouched; the RPC layers refuse instance properties themselves.
+    wrapPrototypeMethods(
+      (value as unknown as { prototype: object }).prototype,
+      validator
+    );
+    return value;
   };
+}
+
+/**
+ * Marks prototype methods that `__validateRpcClass` has already wrapped, so
+ * decorating a subclass of a decorated base (or decorating twice) never
+ * double-validates, and session wrappers can pass such methods through.
+ * `Symbol.for` so duplicate bundled copies of this package recognize each
+ * other's wrappers; not a security boundary (symbols never cross the wire).
+ */
+const WRAPPED_METHOD = Symbol.for("capnweb-validate.wrappedMethod");
+
+export function isWrappedMethod(fn: unknown): boolean {
+  return (
+    typeof fn === "function" &&
+    (fn as unknown as Record<PropertyKey, unknown>)[WRAPPED_METHOD] === true
+  );
+}
+
+function markWrapped<F extends (...args: never[]) => unknown>(
+  fn: F,
+  like: (...args: never[]) => unknown
+): F {
+  Object.defineProperty(fn, WRAPPED_METHOD, { value: true });
+  Object.defineProperty(fn, "name", { value: like.name, configurable: true });
+  Object.defineProperty(fn, "length", {
+    value: like.length,
+    configurable: true,
+  });
+  return fn;
+}
+
+function wrapPrototypeMethods(
+  proto: object,
+  validator: ServiceValidator
+): void {
+  let mode = validator.mode ?? "throw";
+  for (let prop of Object.keys(validator.methods)) {
+    let methodSpec = validator.methods[prop]!;
+    // Unchecked members (overloads, platform hooks) stay raw by design.
+    if (isUncheckedMethod(methodSpec)) continue;
+    // Find the implementation wherever it lives on the chain. If it's
+    // inherited from an undecorated base we shadow it with a wrapper on this
+    // prototype; if it's inherited from a decorated base it's already
+    // wrapped and the base's validator governs it.
+    let desc = exposedDescriptor(proto, prop);
+    // Declared but implemented as an instance member (or absent): there's
+    // nothing on the prototype to wrap, and the RPC layers refuse instance
+    // properties themselves.
+    if (!desc) continue;
+    if (methodSpec.isGetter) {
+      let origGet = desc.get;
+      if (typeof origGet !== "function" || isWrappedMethod(origGet)) continue;
+      let spec = methodSpec;
+      let wrappedGet = markWrapped(function (this: unknown): unknown {
+        return validateReturn(
+          origGet.call(this),
+          spec.returns,
+          [validator.serviceName, prop],
+          "server",
+          mode
+        );
+      }, origGet);
+      Object.defineProperty(proto, prop, {
+        get: wrappedGet,
+        set: desc.set,
+        enumerable: desc.enumerable ?? false,
+        configurable: true,
+      });
+      continue;
+    }
+    let orig = desc.value;
+    if (typeof orig !== "function" || isWrappedMethod(orig)) continue;
+    let spec = methodSpec;
+    let origFn = orig as (...a: unknown[]) => unknown;
+    let wrapped = markWrapped(function (
+      this: unknown,
+      ...args: unknown[]
+    ): unknown {
+      checkArgs(mode, args, spec, validator.serviceName, prop);
+      let wrappedArgs = wrapArgs(args, spec, validator.serviceName, prop);
+      let result = Reflect.apply(origFn, this, wrappedArgs);
+      return validateReturn(
+        result,
+        spec.returns,
+        [validator.serviceName, prop, "<return>"],
+        "server",
+        mode
+      );
+    },
+    origFn);
+    Object.defineProperty(proto, prop, {
+      value: wrapped,
+      writable: desc.writable ?? true,
+      enumerable: desc.enumerable ?? false,
+      configurable: true,
+    });
+  }
 }
