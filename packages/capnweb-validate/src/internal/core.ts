@@ -1308,6 +1308,8 @@ export function __validateRpcClass<T extends new (...args: any[]) => object>(
  * Marks prototype methods that `__validateRpcClass` has already wrapped, so
  * decorating a subclass of a decorated base (or decorating twice) never
  * double-validates, and session wrappers can pass such methods through.
+ * `Symbol.for` so duplicate bundled copies of this package recognize each
+ * other's wrappers; not a security boundary (symbols never cross the wire).
  */
 const WRAPPED_METHOD = Symbol.for("capnweb-validate.wrappedMethod");
 
@@ -1345,9 +1347,10 @@ function wrapPrototypeMethods(
     // prototype; if it's inherited from a decorated base it's already
     // wrapped and the base's validator governs it.
     let desc = exposedDescriptor(proto, prop);
-    if (!desc) continue; // Declared but implemented as an instance member (or
-    // absent): there's nothing on the prototype to wrap, and the RPC layers
-    // refuse instance properties themselves.
+    // Declared but implemented as an instance member (or absent): there's
+    // nothing on the prototype to wrap, and the RPC layers refuse instance
+    // properties themselves.
+    if (!desc) continue;
     if (methodSpec.isGetter) {
       let origGet = desc.get;
       if (typeof origGet !== "function" || isWrappedMethod(origGet)) continue;
