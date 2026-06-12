@@ -7,6 +7,26 @@ import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, 
 export type ImportId = number;
 export type ExportId = number;
 
+/**
+ * Encoding levels determine how much pre-processing the RPC system does before handing
+ * messages to the transport.
+ *
+ * - `"string"`: Full JSON encoding (string output). Default, used by HTTP batch.
+ * - `"json"`: JS object tree with all types encoded (JSON-compatible). For custom encoders.
+ * - `"jsonWithBytes"`: Like json but Uint8Array stays raw. For CBOR/MessagePack.
+ * - `"structuredClone"`: Native structured-clone types pass through, except errors.
+ *
+ * @example
+ * ```ts
+ * // What happens to Uint8Array([1, 2, 3]) at each level:
+ * "string"          → '["bytes","AQID"]'           // JSON string with base64
+ * "json"            → ["bytes", "AQID"]            // JS array with base64
+ * "jsonWithBytes"   → ["bytes", Uint8Array]        // JS array with raw bytes
+ * "structuredClone" → ["bytes", Uint8Array]        // + Date, BigInt stay native
+ * ```
+ */
+export type EncodingLevel = "string" | "json" | "jsonWithBytes" | "structuredClone";
+
 // =======================================================================================
 
 export interface Exporter {
@@ -68,7 +88,11 @@ const ERROR_TYPES: Record<string, any> = {
 // actually converting to a string. (The name is meant to be the opposite of "Evaluator", which
 // implements the opposite direction.)
 export class Devaluator {
-  private constructor(private exporter: Exporter, private source: RpcPayload | undefined) {}
+  private constructor(
+    private exporter: Exporter,
+    private source: RpcPayload | undefined,
+    private encodingLevel: EncodingLevel
+  ) {}
 
   // Devaluate the given value.
   // * value: The value to devaluate.
@@ -76,12 +100,15 @@ export class Devaluator {
   //     as a function.
   // * exporter: Callbacks to the RPC session for exporting capabilities found in this message.
   // * source: The RpcPayload which contains the value, and therefore owns stubs within.
+  // * encodingLevel: How much encoding to apply (default "string").
   //
-  // Returns: The devaluated value, ready to be JSON-serialized.
+  // Returns: The devaluated value, ready to be JSON-serialized (or passed to transport directly
+  // for non-string levels).
   public static devaluate(
-      value: unknown, parent?: object, exporter: Exporter = NULL_EXPORTER, source?: RpcPayload)
+      value: unknown, parent?: object, exporter: Exporter = NULL_EXPORTER, source?: RpcPayload,
+      encodingLevel: EncodingLevel = "string")
       : unknown {
-    let devaluator = new Devaluator(exporter, source);
+    let devaluator = new Devaluator(exporter, source, encodingLevel);
     try {
       return devaluator.devaluateImpl(value, parent, 0);
     } catch (err) {
@@ -121,6 +148,10 @@ export class Devaluator {
 
       case "primitive":
         if (typeof value === "number" && !isFinite(value)) {
+          // At passthrough level, keep Infinity/NaN as native values
+          if (this.encodingLevel === "structuredClone") {
+            return value;
+          }
           if (value === Infinity) {
             return ["inf"];
           } else if (value === -Infinity) {
@@ -154,15 +185,28 @@ export class Devaluator {
       }
 
       case "bigint":
+        // At structuredClone level, keep BigInt as native value
+        if (this.encodingLevel === "structuredClone") {
+          return value;
+        }
         return ["bigint", (<bigint>value).toString()];
 
       case "date": {
+        // At structuredClone level, keep Date as native value
+        if (this.encodingLevel === "structuredClone") {
+          return value;
+        }
         const time = (<Date>value).getTime();
         return ["date", Number.isNaN(time) ? null : time];
       }
 
       case "bytes": {
         let bytes = value as Uint8Array;
+        // At structuredClone or jsonWithBytes level, keep Uint8Array raw
+        if (this.encodingLevel === "structuredClone" || this.encodingLevel === "jsonWithBytes") {
+          return ["bytes", bytes];
+        }
+        // Otherwise encode as base64
         if (bytes.toBase64) {
           return ["bytes", bytes.toBase64({omitPadding: true})];
         }
@@ -395,6 +439,10 @@ export class Devaluator {
       }
 
       case "undefined":
+        // At structuredClone level, keep undefined as native value
+        if (this.encodingLevel === "structuredClone") {
+          return undefined;
+        }
         return ["undefined"];
 
       case "stub":
@@ -555,7 +603,7 @@ function streamToBlobPromise(stream: ReadableStream, type: string): RpcPromise {
 // delivery to the app. This is used to implement deserialization, except that it doesn't actually
 // start from a raw string.
 export class Evaluator {
-  constructor(private importer: Importer) {}
+  constructor(private importer: Importer, private encodingLevel: EncodingLevel = "string") {}
 
   private hooks: StubHook[] = [];
   private promises: LocatedPromise[] = [];
@@ -577,6 +625,16 @@ export class Evaluator {
   }
 
   private evaluateImpl(value: unknown, parent: object, property: string | number): unknown {
+    // At structuredClone level, some native types pass through devaluation unencoded: Date and
+    // BigInt (as well as undefined and non-finite numbers, which the generic paths below already
+    // handle). Note that bytes and errors are tuple-encoded at every level, so raw `Uint8Array`
+    // and `Error` values are intentionally *not* accepted here.
+    if (this.encodingLevel === "structuredClone") {
+      if (value instanceof Date || typeof value === "bigint") {
+        return value;
+      }
+    }
+
     if (value instanceof Array) {
       if (value.length == 1 && value[0] instanceof Array) {
         // Escaped array. Evaluate the contents.
@@ -600,6 +658,11 @@ export class Evaluator {
           }
           break;
         case "bytes": {
+          // At jsonWithBytes/structuredClone level, bytes may already be a Uint8Array
+          if (value[1] instanceof Uint8Array) {
+            return value[1];
+          }
+          // Otherwise decode from base64
           if (typeof value[1] == "string") {
             if (typeof Buffer !== "undefined") {
               return Buffer.from(value[1], "base64");

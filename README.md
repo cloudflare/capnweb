@@ -776,3 +776,10 @@ let stub: RemoteMainInterface = session.getRemoteMain();
 ```
 
 Note that sessions are entirely symmetric: neither side is defined as the "client" nor the "server". Each side can optionally expose a "main interface" to the other. In typical scenarios with a logical client and server, the server exposes a main interface but the client does not.
+
+By default, `send()` accepts a string, and `receive()` returns a string, with Cap'n Web handling the encoding all the way to and from strings. However, transports that want more control over the serialization can declare the property `encodingLevel` to control just how much encoding Cap'n Web does before passing off the message:
+
+* `"string"`: The default. Messages are strings.
+* `"json"`: Messages are JSON-compatible objects. The transport is responsible for serializing/deserializing.
+* `"jsonWithBytes"`: Like "json" except that byte arrays are left as `Uint8Array` instead of base64-encoded. Handy for use with serializations like CBOR or MessagePack that support this efficiently.
+* `"structuredClone"`: Messages are structured-clonable objects. Cap'n Web will only implement special handling of RPC stubs. This is useful when the transport is a `MessagePort` or similar.

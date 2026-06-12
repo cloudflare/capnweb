@@ -3,8 +3,9 @@
 //     https://opensource.org/license/mit
 
 import { expect, it, describe, inject } from "vitest"
-import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport, RpcTarget,
-         RpcStub, newWebSocketRpcSession, newMessagePortRpcSession,
+import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
+         type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, newWebSocketRpcSession,
+         newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
 import { Counter, TestTarget } from "./test-util.js";
 
@@ -422,7 +423,7 @@ class TestTransport implements RpcTransport {
   public log = false;
   private fenced = false;
 
-  async send(message: string): Promise<void> {
+  send(message: string): void {
     // HACK: If the string "$remove$" appears in the message, remove it. This is used in some
     //   tests to hack the RPC protocol.
     message = message.replaceAll("$remove$", "");
@@ -470,6 +471,62 @@ class TestTransport implements RpcTransport {
 
   forceReceiveError(error: any) {
     this.aborter!(error);
+  }
+}
+
+class ObjectTestTransport implements RpcTransportWithCustomEncoding {
+  constructor(
+      private partner?: ObjectTestTransport,
+      readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone" = "json") {
+    if (partner) {
+      partner.partner = this;
+    }
+  }
+
+  private queue: unknown[] = [];
+  private waiter?: () => void;
+  private aborter?: (err: any) => void;
+  private fenced = false;
+
+  send(message: unknown): void {
+    let cloned = this.encodingLevel === "json" ? JSON.parse(JSON.stringify(message))
+                                               : structuredClone(message);
+    this.partner!.queue.push(cloned);
+    if (this.partner!.waiter && !this.partner!.fenced) {
+      this.partner!.waiter();
+      this.partner!.waiter = undefined;
+      this.partner!.aborter = undefined;
+    }
+  }
+
+  async receive(): Promise<unknown> {
+    while (this.queue.length == 0 || this.fenced) {
+      await new Promise<void>((resolve, reject) => {
+        this.waiter = resolve;
+        this.aborter = reject;
+      });
+    }
+
+    return this.queue.shift()!;
+  }
+
+  fence() {
+    this.fenced = true;
+  }
+
+  releaseFence() {
+    this.fenced = false;
+    if (this.queue.length > 0 && this.waiter) {
+      this.waiter();
+      this.waiter = undefined;
+      this.aborter = undefined;
+    }
+  }
+
+  abort(reason: any): void {
+    this.aborter?.(reason);
+    this.waiter = undefined;
+    this.aborter = undefined;
   }
 }
 
@@ -535,6 +592,23 @@ class TestHarness<T extends RpcTarget> {
     }
   }
 }
+
+it("propagates async send failures from string transports", async () => {
+  let sendError = new Error("send failed");
+  let transport: RpcTransport = {
+    send(_message: string): Promise<void> {
+      return Promise.reject(sendError);
+    },
+    receive(): Promise<string> {
+      return new Promise(() => {});
+    },
+  };
+
+  let session = new RpcSession<TestTarget>(transport);
+  using stub = session.getRemoteMain();
+
+  await expect(() => stub.square(1)).rejects.toThrow(sendError);
+});
 
 describe("local stub", () => {
   it("supports wrapping an RpcTarget", async () => {
@@ -1748,6 +1822,25 @@ describe("error serialization", () => {
     expect(result).toBe("caught");
   });
 
+  it("hides the stack by default with structured clone transports", async () => {
+    let clientTransport = new ObjectTestTransport(undefined, "structuredClone");
+    let serverTransport = new ObjectTestTransport(clientTransport, "structuredClone");
+    let client = new RpcSession<TestTarget>(clientTransport);
+    new RpcSession(serverTransport, new TestTarget());
+    using stub = client.getRemoteMain();
+
+    let result = await stub.throwError()
+      .catch(err => {
+        expect(err).toBeInstanceOf(RangeError);
+        expect((err as Error).message).toBe("test error");
+        expect((err as Error).stack).not.toContain("throwErrorImpl");
+        expect((err as Error).stack).not.toContain("test-util.ts");
+
+        return "caught";
+      });
+    expect(result).toBe("caught");
+  });
+
   it("reveals the stack if the callback returns the error", async () => {
     await using harness = new TestHarness(new TestTarget(), {
       onSendError: (error) => {
@@ -2283,6 +2376,119 @@ describe("WritableStream over RPC", () => {
     await rpcPromise;
   });
 
+  it("applies backpressure when custom transport omits stream message size", async () => {
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    let clientTransport = new ObjectTestTransport();
+    let serverTransport = new ObjectTestTransport(clientTransport);
+    let client = new RpcSession<StreamReceiver>(clientTransport);
+    new RpcSession(serverTransport, new StreamReceiver());
+    using clientStub = client.getRemoteMain();
+
+    clientTransport.fence();
+
+    clientStub.receiveStream(stream).catch(() => {});
+
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (writesSent == oldWritesSent) break;
+    }
+
+    expect(writesSent).toBeGreaterThan(1);
+    expect(writesSent).toBeLessThan(20);
+    expect(writesReceived).toBe(0);
+    expect(closeReceived).toBe(false);
+
+    clientTransport.releaseFence();
+  });
+
+  it("uses the size reported by a custom transport's send() for flow control", async () => {
+    // Mirror image of the previous test: the sending side's transport reports a tiny encoded
+    // size from send(), so even though the chunks are large (and their *estimated* size would
+    // fill the flow control window after a few writes, as proven above), all 20 writes proceed
+    // without blocking. This proves the number returned by send() is what feeds flow control.
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    class SizeReportingTestTransport extends ObjectTestTransport {
+      sendCount = 0;
+      send(message: unknown): number {
+        super.send(message);
+        ++this.sendCount;
+        return 10;  // report a tiny encoded size, regardless of the actual message
+      }
+    }
+
+    let clientTransport = new ObjectTestTransport();
+    let serverTransport = new SizeReportingTestTransport(clientTransport);
+    let client = new RpcSession<StreamReceiver>(clientTransport);
+    new RpcSession(serverTransport, new StreamReceiver());
+    using clientStub = client.getRemoteMain();
+
+    // Fence the client so it never processes incoming messages, and thus never sends acks.
+    clientTransport.fence();
+
+    let promise = clientStub.receiveStream(stream);
+
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (writesSent == oldWritesSent) break;
+    }
+
+    // All writes completed despite no acks, because the reported sizes never filled the window.
+    expect(writesSent).toBe(20);
+    expect(serverTransport.sendCount).toBeGreaterThan(0);
+    expect(writesReceived).toBe(0);
+    expect(closeReceived).toBe(false);
+
+    // Let the messages through and verify everything arrives.
+    clientTransport.releaseFence();
+    await promise;
+    expect(writesReceived).toBe(20);
+    expect(closeReceived).toBe(true);
+  });
+
   it("uses stream messages instead of push+pull+release", async () => {
     // Verify that WritableStream writes use the optimized "stream" message type,
     // which avoids sending separate "pull" and "release" messages.
@@ -2306,7 +2512,7 @@ describe("WritableStream over RPC", () => {
     // Collect all messages sent by the server (which appear in the client's queue).
     let serverMessages: any[] = [];
     let origServerSend = harness.serverTransport.send;
-    harness.serverTransport.send = async function(message: string) {
+    harness.serverTransport.send = function(message: string) {
       serverMessages.push(JSON.parse(message));
       return origServerSend.call(this, message);
     };
@@ -2314,7 +2520,7 @@ describe("WritableStream over RPC", () => {
     // Collect all messages sent by the client (which appear in the server's queue).
     let clientMessages: any[] = [];
     let origClientSend = harness.clientTransport.send;
-    harness.clientTransport.send = async function(message: string) {
+    harness.clientTransport.send = function(message: string) {
       clientMessages.push(JSON.parse(message));
       return origClientSend.call(this, message);
     };
@@ -2417,6 +2623,43 @@ describe("WritableStream over RPC", () => {
     expect(rpcDone).toBe(true);
     expect(rpcError).not.toBeNull();
     expect(rpcError.message).toContain("Simulated write failure");
+  });
+});
+
+describe("transport encoding levels", () => {
+  class EchoService extends RpcTarget {
+    echo(value: unknown): unknown {
+      return value;
+    }
+  }
+
+  // Native values should survive a round trip through a custom-encoding transport at every
+  // non-string level: base64 bytes at "json", raw Uint8Array at "jsonWithBytes", and native
+  // structured-clone types at "structuredClone".
+  for (let level of ["json", "jsonWithBytes", "structuredClone"] as const) {
+    it(`round-trips native types over a ${level} transport`, async () => {
+      let clientTransport = new ObjectTestTransport(undefined, level);
+      let serverTransport = new ObjectTestTransport(clientTransport, level);
+      let client = new RpcSession<EchoService>(clientTransport);
+      new RpcSession(serverTransport, new EchoService());
+      using stub = client.getRemoteMain();
+
+      let bytes = await stub.echo(new Uint8Array([1, 2, 3])) as Uint8Array;
+      expect(new Uint8Array(bytes)).toStrictEqual(new Uint8Array([1, 2, 3]));
+
+      let date = await stub.echo(new Date(1234567890)) as Date;
+      expect(date).toBeInstanceOf(Date);
+      expect(date.getTime()).toBe(1234567890);
+
+      expect(await stub.echo(123n)).toBe(123n);
+    });
+  }
+
+  it("aborts the receive loop when the transport is aborted", async () => {
+    let transport = new ObjectTestTransport();
+    let pending = transport.receive();
+    transport.abort(new Error("boom"));
+    await expect(pending).rejects.toThrow("boom");
   });
 });
 
