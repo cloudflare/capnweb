@@ -1,5 +1,11 @@
 # capnweb-validate
 
+## 0.2.1
+
+### Patch Changes
+
+- [#194](https://github.com/cloudflare/capnweb/pull/194) [`4093556`](https://github.com/cloudflare/capnweb/commit/4093556c84ab7193a289c62bce6fd75996840cda) Thanks [@teamchong](https://github.com/teamchong)! - Fix `@validateRpc()` breaking decorated classes that extend other decorated classes: prototype methods are now wrapped in place instead of returning a Proxy from the constructor, so subclass-only methods validate correctly, instances stay real branded `RpcTarget`s, and incoming callback stubs pass through as native stubs (opt in to validating them with `validateStub<T>(stub)`).
+
 ## 0.2.0
 
 ### Minor Changes
