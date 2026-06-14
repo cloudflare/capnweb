@@ -511,22 +511,7 @@ function resolveDecoratorShape(
   if (isWorkerEntrypointType(checker, classType)) {
     shape.targetKind = "workerEntrypoint";
   }
-  // Pass-through names come from the class (the proxy wraps its instances), not
-  // the possibly-narrowed resolved surface.
-  let platform = collectPlatformMethodNames(checker, classType);
-  if (platform.length) {
-    let platformMethods = new Set(platform);
-    shape = {
-      ...shape,
-      methods: shape.methods.filter(
-        (method) => !platformMethods.has(method.name)
-      ),
-      passthrough: platform,
-    };
-  } else {
-    shape.passthrough = undefined;
-  }
-  return shape;
+  return applyPlatformPassthrough(checker, classType, shape);
 }
 
 function getDecoratorTypeArgumentNode(
@@ -769,7 +754,25 @@ function resolveCallSiteShape(
     type = checker.getTypeAtLocation(arg);
   }
   if (isTooGeneric(type)) return null;
-  return resolveServiceShape(ts, checker, type);
+  let shape = resolveServiceShape(ts, checker, type);
+  return shape && applyPlatformPassthrough(checker, type, shape);
+}
+
+function applyPlatformPassthrough(
+  checker: ts.TypeChecker,
+  type: ts.Type,
+  shape: ServiceShape
+): ServiceShape {
+  // Pass-through names come from the concrete target type, not the
+  // possibly-narrowed resolved surface, since the proxy wraps the instance.
+  let platform = collectPlatformMethodNames(checker, type);
+  if (platform.length === 0) return { ...shape, passthrough: undefined };
+  let platformMethods = new Set(platform);
+  return {
+    ...shape,
+    methods: shape.methods.filter((method) => !platformMethods.has(method.name)),
+    passthrough: platform,
+  };
 }
 
 function getExplicitTypeArgument(

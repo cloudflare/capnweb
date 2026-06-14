@@ -64,6 +64,47 @@ declare module "capnweb-validate/capnweb" {
 }
 `;
 
+const CAPNWEB_MARKER_SHIM = `
+declare module "capnweb-validate/capnweb" {
+  export function newWorkersRpcResponse(request: Request, target: object): Promise<Response>;
+}
+`;
+
+// Matches how @cloudflare/workers-types ships these bases: a
+// `CloudflareWorkersModule` namespace re-exported with `export =`.
+const WORKERS_TYPES_PACKAGE = `
+declare namespace CloudflareWorkersModule {
+  export abstract class WorkerEntrypoint<Env = unknown> {
+    protected ctx: unknown;
+    protected env: Env;
+    fetch?(request: Request): Response | Promise<Response>;
+    tailStream?(event: unknown): unknown;
+  }
+  export abstract class DurableObject<Env = unknown> {
+    protected ctx: unknown;
+    protected env: Env;
+    alarm?(): void | Promise<void>;
+    fetch?(request: Request): Response | Promise<Response>;
+  }
+}
+declare module "cloudflare:workers" {
+  export = CloudflareWorkersModule;
+}
+`;
+
+// Resolve the declarations from a real `@cloudflare/workers-types` path so the
+// transform's origin checks fire, without depending on the installed types.
+function typesPackage(name: string, body: string): Record<string, string> {
+  return {
+    [`node_modules/${name}/package.json`]: JSON.stringify({
+      name,
+      version: "0.0.0",
+      types: "index.d.ts",
+    }),
+    [`node_modules/${name}/index.d.ts`]: body,
+  };
+}
+
 describe("transformModule", () => {
   it("server: rewrites newWorkersRpcResponse and emits a validator", () => {
     let { code } = transform(`
@@ -321,6 +362,89 @@ describe("transformModule", () => {
     const validator = loadValidator(code);
     expect(Object.keys(validator.methods)).toEqual(["rpc"]);
     expect(validator.passthrough).toEqual(expect.arrayContaining(["fetch"]));
+  });
+
+  // The server-marker path did no platform filtering before this change. Assert
+  // parity with the decorator path for both an inherited hook and `connect`.
+  it.each([
+    ["WorkerEntrypoint", "tailStream"],
+    ["DurableObject", "alarm"],
+  ] as const)(
+    "server marker: filters %s subclass platform + connect methods",
+    (baseName, inheritedHook) => {
+      let { code } = transform(`
+        import { ${baseName} } from "cloudflare:workers";
+        import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+        class Base extends ${baseName} {}
+        class Api extends Base {
+          // Non-cloneable arg: the build would fail here if connect were
+          // validated instead of passed through.
+          connect(socket: WeakMap<object, number>): void {}
+          rpc(x: string): Promise<string> {
+            return null as any;
+          }
+        }
+        export function handler(req: Request): Promise<Response> {
+          return newWorkersRpcResponse(req, new Api());
+        }
+      `);
+      const validator = loadValidator(code);
+      expect(Object.keys(validator.methods)).toEqual(["rpc"]);
+      expect(validator.passthrough).toEqual(
+        expect.arrayContaining(["fetch", inheritedHook, "connect"])
+      );
+    }
+  );
+
+  it("server marker: filters connect from package-shaped workers types", () => {
+    // Drives the `@cloudflare/workers-types` path and `CloudflareWorkersModule`
+    // namespace origin checks that the inline `cloudflare:workers` shim does not.
+    let { code } = transformFixture(
+      `
+        import { WorkerEntrypoint } from "cloudflare:workers";
+        import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+        class Api extends WorkerEntrypoint {
+          connect(socket: WeakMap<object, number>): void {}
+          rpc(x: string): Promise<string> {
+            return null as any;
+          }
+        }
+        export function handler(req: Request): Promise<Response> {
+          return newWorkersRpcResponse(req, new Api(undefined as any, {}));
+        }
+      `,
+      {
+        shim: CAPNWEB_MARKER_SHIM,
+        imports: "",
+        compilerOptions: { esModuleInterop: true },
+        files: typesPackage("@cloudflare/workers-types", WORKERS_TYPES_PACKAGE),
+        rootFiles: ["node_modules/@cloudflare/workers-types/index.d.ts"],
+      }
+    );
+    const validator = loadValidator(code);
+    expect(Object.keys(validator.methods)).toEqual(["rpc"]);
+    expect(validator.passthrough).toEqual(
+      expect.arrayContaining(["fetch", "connect"])
+    );
+  });
+
+  it("server marker: keeps non-Workers RpcTarget connect methods validated", () => {
+    let { code } = transform(`
+      import { RpcTarget } from "capnweb";
+      import { newWorkersRpcResponse } from "capnweb-validate/capnweb";
+      class Api extends RpcTarget {
+        connect(x: string): Promise<string> {
+          return null as any;
+        }
+      }
+      export function handler(req: Request): Promise<Response> {
+        return newWorkersRpcResponse(req, new Api());
+      }
+    `);
+    const validator = loadValidator(code);
+    expect(Object.keys(validator.methods)).toEqual(["connect"]);
+    expect(checkedMethod(validator, "connect").args[0]).toBe(v.string);
+    expect(validator.passthrough).toBeUndefined();
   });
 
   it("decorator: filters inherited DurableObject platform methods", () => {
