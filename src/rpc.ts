@@ -44,17 +44,16 @@ export interface RpcTransport {
 }
 
 /**
- * Interface for a transport with custom binary encoding (e.g. CBOR, MessagePack). The transport
- * is responsible for encoding/decoding messages and reporting the encoded byte size for flow
- * control.
+ * Interface for a transport that receives partially encoded JS values instead of JSON strings.
+ * The selected `encodingLevel` describes what the transport can assume about message values.
  */
 export interface RpcTransportWithCustomEncoding {
   /**
    * The encoding level this transport works with.
    *
-   * - "json": Transport encodes/decodes JS objects (JSON-compatible).
+   * - "json": JSON-compatible JS value tree; transport handles final serialization.
    * - "jsonWithBytes": Like "json" but Uint8Array values are left raw (not base64-encoded).
-   * - "structuredClone": Native types like Date and BigInt pass through.
+   * - "structuredClone": Structured-clonable native values pass through where possible.
    */
   readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone";
 

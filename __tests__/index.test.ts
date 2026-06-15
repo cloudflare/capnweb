@@ -9,6 +9,8 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          newHttpBatchRpcSession} from "../src/index.js"
 import { Counter, TestTarget } from "./test-util.js";
 
+type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
+
 let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '123': 123,
   'null': null,
@@ -477,7 +479,7 @@ class TestTransport implements RpcTransport {
 class ObjectTestTransport implements RpcTransportWithCustomEncoding {
   constructor(
       private partner?: ObjectTestTransport,
-      readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone" = "json") {
+      readonly encodingLevel: CustomEncodingLevel = "json") {
     if (partner) {
       partner.partner = this;
     }

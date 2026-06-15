@@ -8,13 +8,13 @@ export type ImportId = number;
 export type ExportId = number;
 
 /**
- * Encoding levels determine how much pre-processing the RPC system does before handing
- * messages to the transport.
+ * Encoding levels determine what representation the RPC system hands to the transport.
+ * Each level names what the transport can assume about message values.
  *
- * - `"string"`: Full JSON encoding (string output). Default, used by HTTP batch.
- * - `"json"`: JS object tree with all types encoded (JSON-compatible). For custom encoders.
- * - `"jsonWithBytes"`: Like json but Uint8Array stays raw. For CBOR/MessagePack.
- * - `"structuredClone"`: Native structured-clone types pass through, except errors.
+ * - `"string"`: JSON string. Default, used by HTTP batch and WebSocket transports.
+ * - `"json"`: JSON-compatible JS value tree. For custom encoders.
+ * - `"jsonWithBytes"`: Like `"json"` but Uint8Array stays raw. For CBOR/MessagePack.
+ * - `"structuredClone"`: Structured-clonable native values pass through where possible.
  *
  * @example
  * ```ts
