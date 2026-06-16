@@ -1245,12 +1245,25 @@ function isRpcReadableProperty(
   );
 }
 
+// Lifecycle entrypoints the Workers runtime invokes directly, not over RPC.
+// Matched by name because `connect` is not declared on either base type.
+const WORKERS_LIFECYCLE_METHOD_NAME_FALLBACKS = ["fetch", "connect"] as const;
+
+function isWorkersLifecycleBaseSymbol(sym: ts.Symbol): boolean {
+  let name = sym.getName();
+  return (
+    (name === "WorkerEntrypoint" || name === "DurableObject") &&
+    isRpcRuntimeSymbol(sym)
+  );
+}
+
 // Platform-inherited method names of `type` (e.g. WorkerEntrypoint `fetch`).
 export function collectPlatformMethodNames(
   checker: ts.TypeChecker,
   type: ts.Type
 ): string[] {
   let names = new Set<string>();
+  let isWorkersPlatformTarget = false;
   let add = (prop: ts.Symbol): void => {
     if (isSymbolNamedProperty(prop)) return;
     if (RPC_CAPABILITY_BRAND_NAMES.has(prop.getName())) return;
@@ -1275,12 +1288,20 @@ export function collectPlatformMethodNames(
       seen.add(base);
       let sym = base.getSymbol();
       if (sym && isRpcRuntimeSymbol(sym)) {
+        if (isWorkersLifecycleBaseSymbol(sym)) isWorkersPlatformTarget = true;
         for (let prop of checker.getPropertiesOfType(base)) add(prop);
       }
       walk(base);
     }
   };
   walk(type);
+  if (isWorkersPlatformTarget) {
+    // Catches overrides and undeclared hooks that the base-type walk misses.
+    for (let name of WORKERS_LIFECYCLE_METHOD_NAME_FALLBACKS) {
+      let prop = checker.getPropertyOfType(type, name);
+      if (prop) add(prop);
+    }
+  }
   return [...names];
 }
 
