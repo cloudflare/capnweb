@@ -1,5 +1,11 @@
 # capnweb-validate
 
+## 0.2.2
+
+### Patch Changes
+
+- [#197](https://github.com/cloudflare/capnweb/pull/197) [`0409821`](https://github.com/cloudflare/capnweb/commit/040982108c4c35820f61292819a276a495aa982d) Thanks [@teamchong](https://github.com/teamchong)! - Treat Workers `fetch` and `connect` lifecycle methods as passthrough methods on `WorkerEntrypoint` and `DurableObject` targets.
+
 ## 0.2.1
 
 ### Patch Changes
