@@ -12,7 +12,14 @@ concurrency:
 
 jobs:
   bonk:
-    if: github.event.sender.type != 'Bot' && (contains(github.event.comment.body, '/bonk') || contains(github.event.comment.body, '@ask-bonk'))
+    if: >-
+      github.event.sender.type != 'Bot' &&
+      (contains(github.event.comment.body, '/bonk') || contains(github.event.comment.body, '@ask-bonk')) &&
+      (
+        github.event.comment.author_association == 'MEMBER' ||
+        github.event.comment.author_association == 'COLLABORATOR' ||
+        github.event.comment.author_association == 'OWNER'
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -21,22 +28,6 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Check if comment author is Cloudflare org member
-        run: |
-          STATUS=$(gh api \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "/orgs/cloudflare/members/${COMMENT_AUTHOR}" \
-            --silent -i 2>/dev/null | head -1 | awk '{print $2}') || true
-          if [ "$STATUS" != "204" ]; then
-            echo "User ${COMMENT_AUTHOR} is not a member of the Cloudflare organization"
-            exit 1
-          fi
-          echo "User ${COMMENT_AUTHOR} is a Cloudflare org member"
-        env:
-          GH_TOKEN: ${{ secrets.READ_ONLY_ORG_GITHUB_TOKEN }}
-          COMMENT_AUTHOR: ${{ github.event.comment.user.login }}
-
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
