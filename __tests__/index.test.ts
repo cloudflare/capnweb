@@ -612,6 +612,45 @@ it("propagates async send failures from string transports", async () => {
   await expect(() => stub.square(1)).rejects.toThrow(sendError);
 });
 
+it("propagates synchronous send failures from string transports", async () => {
+  // A transport whose send() throws synchronously (rather than rejecting a promise) must still
+  // abort the session. The abort is deliberately deferred to a microtask so the caller finishes
+  // its own bookkeeping first, matching the timing of a rejected promise from an async transport.
+  let sendError = new Error("sync send failed");
+  let transport: RpcTransport = {
+    send(_message: string): void {
+      throw sendError;
+    },
+    receive(): Promise<string> {
+      return new Promise(() => {});
+    },
+  };
+
+  let session = new RpcSession<TestTarget>(transport);
+  using stub = session.getRemoteMain();
+
+  await expect(() => stub.square(1)).rejects.toThrow(sendError);
+});
+
+it("propagates synchronous send failures from custom-encoding transports", async () => {
+  // Same as above, but exercising the custom-encoding (non-string) send path.
+  let sendError = new Error("sync custom send failed");
+  let transport: RpcTransportWithCustomEncoding = {
+    encodingLevel: "structuredClone",
+    send(_message: unknown): void {
+      throw sendError;
+    },
+    receive(): Promise<unknown> {
+      return new Promise(() => {});
+    },
+  };
+
+  let session = new RpcSession<TestTarget>(transport);
+  using stub = session.getRemoteMain();
+
+  await expect(() => stub.square(1)).rejects.toThrow(sendError);
+});
+
 describe("local stub", () => {
   it("supports wrapping an RpcTarget", async () => {
     let stub = new RpcStub(new TestTarget());

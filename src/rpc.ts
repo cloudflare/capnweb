@@ -121,6 +121,13 @@ function estimateEncodedSize(value: unknown, seen?: WeakSet<object>, depth: numb
       }
       if (value instanceof Date) return 16;
 
+      // `seen` is only ever added to, never removed, so it dedupes by object identity across the
+      // entire traversal rather than just along the current path. This is intentional: it keeps the
+      // estimate safe against cyclic graphs (which would otherwise recurse forever). The trade-off
+      // is that a value reachable via two different paths (shared but acyclic) is counted in full
+      // the first time and only as ESTIMATED_ENTRY_OVERHEAD afterward, so shared substructure
+      // under-counts slightly. That's acceptable here — this is a flow-control estimate, not an
+      // exact serialized size, and it otherwise biases high.
       seen ??= new WeakSet();
       if (seen.has(value)) return ESTIMATED_ENTRY_OVERHEAD;
       seen.add(value);
