@@ -51,11 +51,11 @@ export interface RpcTransportWithCustomEncoding {
   /**
    * The encoding level this transport works with.
    *
-   * - "json": JSON-compatible JS value tree; transport handles final serialization.
-   * - "jsonWithBytes": Like "json" but Uint8Array values are left raw (not base64-encoded).
-   * - "structuredClone": Structured-clonable native values pass through where possible.
+   * - "jsonCompatible": JSON-compatible JS value tree; transport handles final serialization.
+   * - "jsonCompatibleWithBytes": Like "jsonCompatible" but Uint8Array values are left raw.
+   * - "structuredClonable": Structured-clonable native values pass through where possible.
    */
-  readonly encodingLevel: "json" | "jsonWithBytes" | "structuredClone";
+  readonly encodingLevel: "jsonCompatible" | "jsonCompatibleWithBytes" | "structuredClonable";
 
   /**
    * Encodes and sends a message to the other end. Returns the encoded byte size if known.
@@ -481,8 +481,8 @@ class RpcSessionImpl implements Importer, Exporter {
     if ('encodingLevel' in transport) {
       let raw = transport.encodingLevel as unknown;
       if (raw !== undefined) {
-        if (raw !== "string" && raw !== "json" &&
-            raw !== "jsonWithBytes" && raw !== "structuredClone") {
+        if (raw !== "string" && raw !== "jsonCompatible" &&
+            raw !== "jsonCompatibleWithBytes" && raw !== "structuredClonable") {
           throw new TypeError(`Unknown transport encodingLevel: ${String(raw)}`);
         }
         level = raw;

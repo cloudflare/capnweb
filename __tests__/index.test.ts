@@ -479,7 +479,7 @@ class TestTransport implements RpcTransport {
 class ObjectTestTransport implements RpcTransportWithCustomEncoding {
   constructor(
       private partner?: ObjectTestTransport,
-      readonly encodingLevel: CustomEncodingLevel = "json") {
+      readonly encodingLevel: CustomEncodingLevel = "jsonCompatible") {
     if (partner) {
       partner.partner = this;
     }
@@ -491,8 +491,8 @@ class ObjectTestTransport implements RpcTransportWithCustomEncoding {
   private fenced = false;
 
   send(message: unknown): void {
-    let cloned = this.encodingLevel === "json" ? JSON.parse(JSON.stringify(message))
-                                               : structuredClone(message);
+    let cloned = this.encodingLevel === "jsonCompatible" ? JSON.parse(JSON.stringify(message))
+                                                         : structuredClone(message);
     this.partner!.queue.push(cloned);
     if (this.partner!.waiter && !this.partner!.fenced) {
       this.partner!.waiter();
@@ -636,7 +636,7 @@ it("propagates synchronous send failures from custom-encoding transports", async
   // Same as above, but exercising the custom-encoding (non-string) send path.
   let sendError = new Error("sync custom send failed");
   let transport: RpcTransportWithCustomEncoding = {
-    encodingLevel: "structuredClone",
+    encodingLevel: "structuredClonable",
     send(_message: unknown): void {
       throw sendError;
     },
@@ -1864,8 +1864,8 @@ describe("error serialization", () => {
   });
 
   it("hides the stack by default with structured clone transports", async () => {
-    let clientTransport = new ObjectTestTransport(undefined, "structuredClone");
-    let serverTransport = new ObjectTestTransport(clientTransport, "structuredClone");
+    let clientTransport = new ObjectTestTransport(undefined, "structuredClonable");
+    let serverTransport = new ObjectTestTransport(clientTransport, "structuredClonable");
     let client = new RpcSession<TestTarget>(clientTransport);
     new RpcSession(serverTransport, new TestTarget());
     using stub = client.getRemoteMain();
@@ -2675,9 +2675,9 @@ describe("transport encoding levels", () => {
   }
 
   // Native values should survive a round trip through a custom-encoding transport at every
-  // non-string level: base64 bytes at "json", raw Uint8Array at "jsonWithBytes", and native
-  // structured-clone types at "structuredClone".
-  for (let level of ["json", "jsonWithBytes", "structuredClone"] as const) {
+  // non-string level: base64 bytes at "jsonCompatible", raw Uint8Array at
+  // "jsonCompatibleWithBytes", and native structured-clone types at "structuredClonable".
+  for (let level of ["jsonCompatible", "jsonCompatibleWithBytes", "structuredClonable"] as const) {
     it(`round-trips native types over a ${level} transport`, async () => {
       let clientTransport = new ObjectTestTransport(undefined, level);
       let serverTransport = new ObjectTestTransport(clientTransport, level);

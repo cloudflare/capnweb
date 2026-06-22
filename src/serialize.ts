@@ -12,20 +12,21 @@ export type ExportId = number;
  * Each level names what the transport can assume about message values.
  *
  * - `"string"`: JSON string. Default, used by HTTP batch and WebSocket transports.
- * - `"json"`: JSON-compatible JS value tree. For custom encoders.
- * - `"jsonWithBytes"`: Like `"json"` but Uint8Array stays raw. For CBOR/MessagePack.
- * - `"structuredClone"`: Structured-clonable native values pass through where possible.
+ * - `"jsonCompatible"`: JSON-compatible JS value tree. For custom encoders.
+ * - `"jsonCompatibleWithBytes"`: Like `"jsonCompatible"` but Uint8Array stays raw.
+ * - `"structuredClonable"`: Structured-clonable native values pass through where possible.
  *
  * @example
  * ```ts
  * // What happens to Uint8Array([1, 2, 3]) at each level:
  * "string"          → '["bytes","AQID"]'           // JSON string with base64
- * "json"            → ["bytes", "AQID"]            // JS array with base64
- * "jsonWithBytes"   → ["bytes", Uint8Array]        // JS array with raw bytes
- * "structuredClone" → ["bytes", Uint8Array]        // + Date, BigInt stay native
+ * "jsonCompatible"          → ["bytes", "AQID"]      // JS array with base64
+ * "jsonCompatibleWithBytes" → ["bytes", Uint8Array]  // JS array with raw bytes
+ * "structuredClonable"      → ["bytes", Uint8Array]  // + Date, BigInt stay native
  * ```
  */
-export type EncodingLevel = "string" | "json" | "jsonWithBytes" | "structuredClone";
+export type EncodingLevel = "string" | "jsonCompatible" | "jsonCompatibleWithBytes" |
+    "structuredClonable";
 
 // =======================================================================================
 
@@ -148,8 +149,8 @@ export class Devaluator {
 
       case "primitive":
         if (typeof value === "number" && !isFinite(value)) {
-          // At passthrough level, keep Infinity/NaN as native values
-          if (this.encodingLevel === "structuredClone") {
+          // At structuredClonable level, keep Infinity/NaN as native values
+          if (this.encodingLevel === "structuredClonable") {
             return value;
           }
           if (value === Infinity) {
@@ -185,15 +186,15 @@ export class Devaluator {
       }
 
       case "bigint":
-        // At structuredClone level, keep BigInt as native value
-        if (this.encodingLevel === "structuredClone") {
+        // At structuredClonable level, keep BigInt as native value
+        if (this.encodingLevel === "structuredClonable") {
           return value;
         }
         return ["bigint", (<bigint>value).toString()];
 
       case "date": {
-        // At structuredClone level, keep Date as native value
-        if (this.encodingLevel === "structuredClone") {
+        // At structuredClonable level, keep Date as native value
+        if (this.encodingLevel === "structuredClonable") {
           return value;
         }
         const time = (<Date>value).getTime();
@@ -202,8 +203,9 @@ export class Devaluator {
 
       case "bytes": {
         let bytes = value as Uint8Array;
-        // At structuredClone or jsonWithBytes level, keep Uint8Array raw
-        if (this.encodingLevel === "structuredClone" || this.encodingLevel === "jsonWithBytes") {
+        // At structuredClonable or jsonCompatibleWithBytes level, keep Uint8Array raw
+        if (this.encodingLevel === "structuredClonable" ||
+            this.encodingLevel === "jsonCompatibleWithBytes") {
           return ["bytes", bytes];
         }
         // Otherwise encode as base64
@@ -439,8 +441,8 @@ export class Devaluator {
       }
 
       case "undefined":
-        // At structuredClone level, keep undefined as native value
-        if (this.encodingLevel === "structuredClone") {
+        // At structuredClonable level, keep undefined as native value
+        if (this.encodingLevel === "structuredClonable") {
           return undefined;
         }
         return ["undefined"];
@@ -625,11 +627,11 @@ export class Evaluator {
   }
 
   private evaluateImpl(value: unknown, parent: object, property: string | number): unknown {
-    // At structuredClone level, some native types pass through devaluation unencoded: Date and
+    // At structuredClonable level, some native types pass through devaluation unencoded: Date and
     // BigInt (as well as undefined and non-finite numbers, which the generic paths below already
     // handle). Note that bytes and errors are tuple-encoded at every level, so raw `Uint8Array`
     // and `Error` values are intentionally *not* accepted here.
-    if (this.encodingLevel === "structuredClone") {
+    if (this.encodingLevel === "structuredClonable") {
       if (value instanceof Date || typeof value === "bigint") {
         return value;
       }
@@ -658,7 +660,7 @@ export class Evaluator {
           }
           break;
         case "bytes": {
-          // At jsonWithBytes/structuredClone level, bytes may already be a Uint8Array
+          // At jsonCompatibleWithBytes/structuredClonable level, bytes may already be a Uint8Array
           if (value[1] instanceof Uint8Array) {
             return value[1];
           }
