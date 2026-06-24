@@ -50,8 +50,14 @@ export async function setup(project: TestProject) {
     newWebSocketRpcSession(ws as any, new TestTarget());
   })
 
-  // Listen on an ephemeral port for testing purposes.
-  httpServer.listen(0);
+  // Listen on an ephemeral port for testing purposes. Bind explicitly to the IPv4 loopback
+  // address: with no host, Node binds the IPv6 wildcard `::`, which is then handed to clients as
+  // the connect target. Chromium tolerates connecting to `[::]`, but Firefox and WebKit reject it
+  // ("connection failed" / NetworkError), so use a concrete loopback address all clients accept.
+  //
+  // Passing a host makes listen() take the async DNS-resolution path, so we must wait for the
+  // "listening" event before address() is populated (with no host, binding is synchronous).
+  await new Promise<void>((resolve) => httpServer!.listen(0, "127.0.0.1", resolve));
   let addr = httpServer.address() as AddressInfo;
 
   // Provide the server address to tests.
