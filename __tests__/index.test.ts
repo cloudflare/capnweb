@@ -160,6 +160,16 @@ describe("simple serialization", () => {
     expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
   })
 
+  it("can serialize Uint8Array as legacy bytes without a type marker", () => {
+    let bytes = new Uint8Array([72, 101, 108, 108, 111]);
+    let serialized = serialize(bytes);
+    expect(serialized).toBe('["bytes","SGVsbG8"]');
+
+    let deserialized = deserialize(serialized) as Uint8Array;
+    expect(deserialized).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
+  })
+
   it("can serialize Node.js Buffer as bytes", () => {
     if (typeof Buffer === "undefined") return; // skip in browsers
     let buf = Buffer.from("hello!");
@@ -168,6 +178,73 @@ describe("simple serialization", () => {
     let deserialized = deserialize(serialized) as Uint8Array;
     expect(deserialized).toBeInstanceOf(Uint8Array);
     expect(new Uint8Array(deserialized)).toStrictEqual(new Uint8Array(buf));
+  })
+
+  it("can serialize ArrayBuffer as bytes with an ArrayBuffer marker", () => {
+    let bytes = new Uint8Array([72, 101, 108, 108, 111]);
+    let serialized = serialize(bytes.buffer);
+    expect(serialized).toBe('["bytes","SGVsbG8","ArrayBuffer"]');
+
+    let deserialized = deserialize(serialized);
+    expect(deserialized).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(deserialized as ArrayBuffer)).toStrictEqual(bytes);
+  })
+
+  it("can serialize typed array views as bytes with type markers", () => {
+    let cases = [
+      {
+        name: "DataView",
+        elementSize: 1,
+        makeView: (buffer: ArrayBuffer, offset: number, byteLength: number) =>
+            new DataView(buffer, offset, byteLength),
+      },
+      ...[
+        Int8Array,
+        Uint8ClampedArray,
+        Int16Array,
+        Uint16Array,
+        Int32Array,
+        Uint32Array,
+        BigInt64Array,
+        BigUint64Array,
+        Float32Array,
+        Float64Array,
+      ].map(Type => ({
+        name: Type.name,
+        elementSize: Type.BYTES_PER_ELEMENT,
+        makeView: (buffer: ArrayBuffer, offset: number, byteLength: number) =>
+            new Type(buffer, offset, byteLength / Type.BYTES_PER_ELEMENT),
+      })),
+    ];
+
+    for (let {name, elementSize, makeView} of cases) {
+      // Use a non-zero offset and extra trailing byte to verify only the view's visible byte range
+      // is serialized, not the whole backing buffer.
+      let byteLength = elementSize * 2;
+      let offset = elementSize;
+      let backing = new ArrayBuffer(offset + byteLength + 1);
+      let bytes = new Uint8Array(byteLength);
+      for (let i = 0; i < bytes.length; i++) bytes[i] = i + 1;
+      new Uint8Array(backing, offset, byteLength).set(bytes);
+
+      let view = makeView(backing, offset, byteLength);
+      let serialized = serialize(view);
+      let parsed = JSON.parse(serialized) as [string, string, string];
+      expect(parsed[0]).toBe("bytes");
+      expect(parsed[2]).toBe(name);
+
+      let deserialized = deserialize(serialized) as ArrayBufferView;
+      expect(Object.getPrototypeOf(deserialized)).toBe(Object.getPrototypeOf(view));
+      expect(new Uint8Array(
+          deserialized.buffer, deserialized.byteOffset, deserialized.byteLength)).toStrictEqual(bytes);
+    }
+  })
+
+  it("throws for unknown bytes type markers", () => {
+    expect(() => deserialize('["bytes","SGVsbG8","invalidUint8Array"]')).toThrowError(
+        "Unknown bytes type marker: invalidUint8Array");
+    expect(() => deserialize('["bytes","SGVsbG8",123]')).toThrowError(
+        "Unknown bytes type marker type: number");
   })
 
   it("preserves Invalid Date values through serialization", () => {

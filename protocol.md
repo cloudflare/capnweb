@@ -168,9 +168,11 @@ The literal value `undefined`.
 
 The values Infinity, -Infinity, and NaN.
 
-`["bytes", base64]`
+`["bytes", base64]`, `["bytes", base64, type]`
 
-A `Uint8Array`, represented as a base64-encoded string.
+A `Uint8Array`, `ArrayBuffer`, `DataView`, or typed array, represented as a base64-encoded string.
+The optional third element preserves the byte container type across the wire. If it is
+omitted, the receiver should deserialize bytes as its default `Uint8Array` for backwards compatibility.
 
 `["blob", type, readableExpression]`
 

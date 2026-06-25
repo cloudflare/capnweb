@@ -199,7 +199,7 @@ The following types can be passed over RPC (in arguments or return values), and 
 * Arrays
 * `bigint`
 * `Date`
-* `Uint8Array`
+* `ArrayBuffer`, `DataView`, and typed arrays
 * `Error` and its well-known subclasses
 * `Blob`
 * `ReadableStream` and `WritableStream`, with automatic flow control.
@@ -207,7 +207,6 @@ The following types can be passed over RPC (in arguments or return values), and 
 
 The following types are not supported as of this writing, but may be added in the future:
 * `Map` and `Set`
-* `ArrayBuffer` and typed arrays other than `Uint8Array`
 * `RegExp`
 
 The following are intentionally NOT supported:

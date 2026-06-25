@@ -162,12 +162,59 @@ export class Devaluator {
       }
 
       case "bytes": {
-        let bytes = value as Uint8Array;
-        if (bytes.toBase64) {
-          return ["bytes", bytes.toBase64({omitPadding: true})];
+        let alternateTypeName: string | undefined;
+        let bytes: Uint8Array | undefined;
+        switch (Object.getPrototypeOf(value)) {
+          case ArrayBuffer.prototype:
+            alternateTypeName = "ArrayBuffer";
+            bytes = new Uint8Array(value as ArrayBuffer);
+            break;
+          case DataView.prototype:
+            alternateTypeName = "DataView";
+            break;
+          case Int8Array.prototype:
+            alternateTypeName = "Int8Array";
+            break;
+          case Uint8ClampedArray.prototype:
+            alternateTypeName = "Uint8ClampedArray";
+            break;
+          case Int16Array.prototype:
+            alternateTypeName = "Int16Array";
+            break;
+          case Uint16Array.prototype:
+            alternateTypeName = "Uint16Array";
+            break;
+          case Int32Array.prototype:
+            alternateTypeName = "Int32Array";
+            break;
+          case Uint32Array.prototype:
+            alternateTypeName = "Uint32Array";
+            break;
+          case BigInt64Array.prototype:
+            alternateTypeName = "BigInt64Array";
+            break;
+          case BigUint64Array.prototype:
+            alternateTypeName = "BigUint64Array";
+            break;
+          case Float32Array.prototype:
+            alternateTypeName = "Float32Array";
+            break;
+          case Float64Array.prototype:
+            alternateTypeName = "Float64Array";
+            break;
+          default:
+            bytes = value as Uint8Array;
+            break;
         }
+        if (bytes === undefined) {
+          let view = value as ArrayBufferView;
+          bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+        }
+
         let b64: string;
-        if (typeof Buffer !== "undefined") {
+        if (bytes.toBase64) {
+          b64 = bytes.toBase64({omitPadding: true});
+        } else if (typeof Buffer !== "undefined") {
           let buf = bytes instanceof Buffer ? bytes
               : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
           b64 = buf.toString("base64");
@@ -178,7 +225,8 @@ export class Devaluator {
           }
           b64 = btoa(binary);
         }
-        return ["bytes", b64.replace(/=+$/, "")];
+        b64 = b64.replace(/=+$/, "");
+        return alternateTypeName === undefined ? ["bytes", b64] : ["bytes", b64, alternateTypeName];
       }
 
       case "headers":
@@ -601,18 +649,44 @@ export class Evaluator {
           break;
         case "bytes": {
           if (typeof value[1] == "string") {
+            let bytes: Uint8Array;
             if (typeof Buffer !== "undefined") {
-              return Buffer.from(value[1], "base64");
+              bytes = Buffer.from(value[1], "base64");
             } else if (Uint8Array.fromBase64) {
-              return Uint8Array.fromBase64(value[1]);
+              bytes = Uint8Array.fromBase64(value[1]);
             } else {
               let bs = atob(value[1]);
               let len = bs.length;
-              let bytes = new Uint8Array(len);
+              bytes = new Uint8Array(len);
               for (let i = 0; i < len; i++) {
                 bytes[i] = bs.charCodeAt(i);
               }
+            }
+            if (value.length === 2) {
               return bytes;
+            }
+            if (typeof value[2] !== "string") {
+              throw new TypeError(`Unknown bytes type marker type: ${typeof value[2]}`);
+            }
+
+            let buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            switch (value[2]) {
+              case "ArrayBuffer": return buffer;
+              case "DataView": return new DataView(buffer);
+              case "Int8Array": return new Int8Array(buffer);
+              case "Uint8ClampedArray": return new Uint8ClampedArray(buffer);
+              case "Int16Array": return new Int16Array(buffer);
+              case "Uint16Array": return new Uint16Array(buffer);
+              case "Int32Array": return new Int32Array(buffer);
+              case "Uint32Array": return new Uint32Array(buffer);
+              case "BigInt64Array": return new BigInt64Array(buffer);
+              case "BigUint64Array": return new BigUint64Array(buffer);
+              case "Float32Array": return new Float32Array(buffer);
+              case "Float64Array": return new Float64Array(buffer);
+              default: {
+                let marker = value[2].slice(0, 64);
+                throw new TypeError(`Unknown bytes type marker: ${marker}`);
+              }
             }
           }
           break;
