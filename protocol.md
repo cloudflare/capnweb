@@ -170,9 +170,12 @@ The values Infinity, -Infinity, and NaN.
 
 `["bytes", base64]`, `["bytes", base64, type]`
 
-A `Uint8Array`, `ArrayBuffer`, `DataView`, or typed array, represented as a base64-encoded string.
-The optional third element preserves the byte container type across the wire. If it is
-omitted, the receiver should deserialize bytes as its default `Uint8Array` for backwards compatibility.
+A byte container, represented as a base64-encoded string. If `type` is omitted, the receiver
+should deserialize bytes as its default `Uint8Array` for backwards compatibility. Otherwise,
+`type` preserves the byte container type across the wire. The supported `type` values are
+`ArrayBuffer`, `DataView`, `Int8Array`, `Uint8ClampedArray`,
+`Int16Array`, `Uint16Array`, `Int32Array`, `Uint32Array`, `BigInt64Array`, `BigUint64Array`,
+`Float32Array`, and `Float64Array`.
 
 `["blob", type, readableExpression]`
 
