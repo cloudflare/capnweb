@@ -95,6 +95,18 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case Uint8Array.prototype:
     case BUFFER_PROTOTYPE:
+    case ArrayBuffer.prototype:
+    case DataView.prototype:
+    case Int8Array.prototype:
+    case Uint8ClampedArray.prototype:
+    case Int16Array.prototype:
+    case Uint16Array.prototype:
+    case Int32Array.prototype:
+    case Uint32Array.prototype:
+    case BigInt64Array.prototype:
+    case BigUint64Array.prototype:
+    case Float32Array.prototype:
+    case Float64Array.prototype:
       return "bytes";
 
     case WritableStream.prototype:
