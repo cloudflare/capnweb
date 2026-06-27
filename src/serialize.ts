@@ -58,10 +58,18 @@ async function streamToBlob(stream: ReadableStream, type: string): Promise<Blob>
 }
 
 // Maps error name to error class for deserialization.
-const ERROR_TYPES: Record<string, any> = {
+//
+// Uses a null prototype so that an attacker-supplied error type name from the wire
+// (`value[1]`) cannot resolve to an inherited `Object.prototype` member. Without this,
+// e.g. `ERROR_TYPES["constructor"]` would resolve to `Object` (truthy, so the `|| Error`
+// fallback below is skipped), producing `new Object(message)` -- a `String` wrapper rather
+// than an `Error` (type confusion / `instanceof Error` bypass), and a name like `"toString"`
+// would resolve to a non-constructor and throw. With a null prototype, every non-own key
+// resolves to `undefined` and correctly falls back to `Error`.
+const ERROR_TYPES: Record<string, any> = Object.assign(Object.create(null), {
   Error, EvalError, RangeError, ReferenceError, SyntaxError, TypeError, URIError, AggregateError,
   // TODO: DOMError? Others?
-};
+});
 
 // Converts fully-hydrated messages into object trees that are JSON-serializable for sending over
 // the wire. This is used to implement serialization -- but it doesn't take the last step of

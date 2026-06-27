@@ -3106,6 +3106,42 @@ describe("deserialization and transport correctness", () => {
     expect(({} as any).polluted).toBeUndefined();
   });
 
+  it("does not let an error type name resolve to an Object.prototype member (type confusion)", () => {
+    // The error type name (value[1]) is attacker-controlled and is used to look up the error
+    // class in ERROR_TYPES. ERROR_TYPES must not resolve names to inherited Object.prototype
+    // members. Before it was given a null prototype, ERROR_TYPES["constructor"] resolved to
+    // `Object` (truthy, so the `|| Error` fallback was skipped), so `new Object(message)`
+    // produced a `String` wrapper rather than an `Error` -- an `instanceof Error` bypass that
+    // still carried the attacker's own-property bag. A name like "toString" resolved to a
+    // non-constructor and threw, aborting the RPC session.
+    let confused = deserialize(
+      '["error","constructor","attacker-payload",null,{"injected":true,"httpStatus":200}]'
+    ) as Error & Record<string, unknown>;
+
+    // Must be a real Error, not a type-confused String wrapper.
+    expect(confused).toBeInstanceOf(Error);
+    expect(confused).not.toBeInstanceOf(String);
+    expect(confused.name).toBe("Error");
+    expect(confused.message).toBe("attacker-payload");
+    // Legitimate (non-prototype) own properties still round-trip onto the correctly-typed Error.
+    expect(confused.injected).toBe(true);
+    expect(confused.httpStatus).toBe(200);
+
+    // Any Object.prototype member name used as the error type must fall back to Error and must
+    // never throw.
+    for (let name of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__",
+                      "isPrototypeOf", "propertyIsEnumerable"]) {
+      let err = deserialize(`["error",${JSON.stringify(name)},"msg"]`) as Error;
+      expect(err).toBeInstanceOf(Error);
+      expect(err.name).toBe("Error");
+      expect(err.message).toBe("msg");
+    }
+
+    // Legitimate built-in error types still resolve correctly.
+    expect(deserialize('["error","TypeError","t"]')).toBeInstanceOf(TypeError);
+    expect(deserialize('["error","RangeError","r"]')).toBeInstanceOf(RangeError);
+  });
+
   it("delivers the unwrapped abort reason to onRpcBroken (not the payload wrapper)", async () => {
     // Intentionally not using `using` here: the session is deliberately aborted below, so the
     // end-of-test "everything disposed" check would not apply.
