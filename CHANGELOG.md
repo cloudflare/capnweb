@@ -1,5 +1,13 @@
 # capnweb
 
+## 0.9.0
+
+### Minor Changes
+
+- [#186](https://github.com/cloudflare/capnweb/pull/186) [`c70bbb7`](https://github.com/cloudflare/capnweb/commit/c70bbb77ee5b25672f77d7befef7e711f4a98836) Thanks [@teamchong](https://github.com/teamchong)! - Add transport encoding levels so custom RPC transports can work with `jsonCompatible` values, `jsonCompatibleWithBytes` values, or `structuredClonable` messages instead of always receiving JSON strings.
+
+  Note: `MessagePort` sessions now post structured-clonable objects over the port instead of JSON strings. This changes the wire format between the two ends of the port, so both ends of a `MessagePort` session must upgrade to this version together.
+
 ## 0.8.0
 
 ### Minor Changes

@@ -80,7 +80,7 @@
   },
   "devDependencies": {
     "@typescript/vfs": "^1.6.4",
-    "capnweb": "^0.8.0",
+    "capnweb": "^0.9.0",
     "tsdown": "^0.22.0",
     "typescript": "^5.9.3"
   },
