@@ -5,6 +5,8 @@
 import { StubHook, PropertyPath, RpcPayload, RpcStub, RpcPromise, withCallInterceptor, ErrorStubHook, mapImpl, PayloadStubHook, unwrapStubAndPath, unwrapStubNoProperties } from "./core.js";
 import { Devaluator, Exporter, Importer, ExportId, ImportId, Evaluator } from "./serialize.js";
 
+const AsyncFunction = (async function () {}).constructor;
+
 let currentMapBuilder: MapBuilder | undefined;
 
 // We use this type signature when building the instructions for type checking purposes. It
@@ -16,27 +18,18 @@ export type MapInstruction =
 
 class MapBuilder implements Exporter {
   private context:
-    | {parent: undefined, captures: StubHook[], subject: StubHook, path: PropertyPath}
-    | {parent: MapBuilder, captures: number[], subject: number, path: PropertyPath};
+    | {parent: undefined, captures: StubHook[]}
+    | {parent: MapBuilder, captures: number[]};
   private captureMap: Map<StubHook, number> = new Map();
 
   private instructions: MapInstruction[] = [];
+  exportFunctionAsClosure = true;
 
-  constructor(subject: StubHook, path: PropertyPath) {
+  constructor() {
     if (currentMapBuilder) {
-      this.context = {
-        parent: currentMapBuilder,
-        captures: [],
-        subject: currentMapBuilder.capture(subject),
-        path
-      };
+      this.context = { parent: currentMapBuilder, captures: [] };
     } else {
-      this.context = {
-        parent: undefined,
-        captures: [],
-        subject,
-        path
-      };
+      this.context = { parent: undefined, captures: [] };
     }
 
     currentMapBuilder = this;
@@ -50,7 +43,8 @@ class MapBuilder implements Exporter {
     return new MapVariableHook(this, 0);
   }
 
-  makeOutput(result: RpcPayload): StubHook {
+  // Devalue the callback's return and push it as the terminal instruction.
+  private finalize(result: RpcPayload): void {
     let devalued: unknown;
     try {
       devalued = Devaluator.devaluate(result.value, undefined, this, result);
@@ -61,17 +55,29 @@ class MapBuilder implements Exporter {
     // The result is the final instruction. This doesn't actually fit our MapInstruction type
     // signature, so we cheat a bit.
     this.instructions.push(<any>devalued);
+  }
+
+  finalizeAsRemap(result: RpcPayload, subject: StubHook, path: PropertyPath): StubHook {
+    this.finalize(result);
 
     if (this.context.parent) {
+      const subjectIdx = this.context.parent.capture(subject);
       this.context.parent.instructions.push(
-        ["remap", this.context.subject, this.context.path,
+        ["remap", subjectIdx, path,
                   this.context.captures.map(cap => ["import", cap]),
                   this.instructions]
       );
       return new MapVariableHook(this.context.parent, this.context.parent.instructions.length);
     } else {
-      return this.context.subject.map(this.context.path, this.context.captures, this.instructions);
+      return subject.map(path, this.context.captures, this.instructions);
     }
+  }
+
+  finalizeAsClosure(result: RpcPayload): unknown[] {
+    this.finalize(result);
+    return ["closure",
+            this.context.captures.map(cap => ["import", cap]),
+            this.instructions];
   }
 
   pushCall(hook: StubHook, path: PropertyPath, params: RpcPayload): StubHook {
@@ -154,8 +160,15 @@ class MapBuilder implements Exporter {
   }
 };
 
-mapImpl.sendMap = (hook: StubHook, path: PropertyPath, func: (promise: RpcPromise) => unknown) => {
-  let builder = new MapBuilder(hook, path);
+mapImpl.serializeClosure = (func: (promise: RpcPromise) => unknown): unknown[] => {
+  if (func.length !== 1) {
+    throw new Error("Only single-argument functions can be serialized as closures.");
+  }
+  if (Object.getPrototypeOf(func) === AsyncFunction.prototype) {
+    throw new Error("RPC closures cannot be async functions.");
+  }
+
+  let builder = new MapBuilder();
   let result: RpcPayload;
   try {
     result = RpcPayload.fromAppReturn(withCallInterceptor(builder.pushCall.bind(builder), () => {
@@ -165,17 +178,28 @@ mapImpl.sendMap = (hook: StubHook, path: PropertyPath, func: (promise: RpcPromis
     builder.unregister();
   }
 
-  // Detect misuse: Map callbacks cannot be async.
-  if (result instanceof Promise) {
-    // Squelch unhandled rejections from the map function itself -- it'll probably just throw
-    // something about pulling a MapVariableHook.
-    result.catch(err => {});
+  return builder.finalizeAsClosure(result);
+}
 
-    // Throw an understandable error.
+mapImpl.sendMap = (hook: StubHook, path: PropertyPath, func: (promise: RpcPromise) => unknown) => {
+  if (Object.getPrototypeOf(func) === AsyncFunction.prototype) {
     throw new Error("RPC map() callbacks cannot be async.");
   }
 
-  return new RpcPromise(builder.makeOutput(result), []);
+  if (currentMapBuilder) {
+    currentMapBuilder.capture(hook);
+  }
+  let builder = new MapBuilder();
+  let result: RpcPayload;
+  try {
+    result = RpcPayload.fromAppReturn(withCallInterceptor(builder.pushCall.bind(builder), () => {
+      return func(new RpcPromise(builder.makeInput(), []));
+    }));
+  } finally {
+    builder.unregister();
+  }
+
+  return new RpcPromise(builder.finalizeAsRemap(result, hook, path), []);
 }
 
 function throwMapperBuilderUseError(): never {
@@ -348,6 +372,56 @@ mapImpl.applyMap = (input: unknown, parent: object | undefined, owner: RpcPayloa
       cap.dispose();
     }
   }
+}
+
+mapImpl.evaluateCaptures = (rawCaptures: unknown[], importer: Importer) => {
+  return rawCaptures.map(cap => {
+    if (!(cap instanceof Array) ||
+        cap.length !== 2 ||
+        (cap[0] !== "import" && cap[0] !== "export") ||
+        typeof cap[1] !== "number") {
+      throw new TypeError(`unknown map capture: ${JSON.stringify(cap)}`);
+    }
+
+    if (cap[0] === "export") {
+      return importer.importStub(cap[1]);
+    } else {
+      let exp = importer.getExport(cap[1]);
+      if (!exp) {
+        throw new Error(`no such entry on exports table: ${cap[1]}`);
+      }
+      return exp.dup();
+    }
+  });
+}
+
+mapImpl.evaluateClosure = (captures: StubHook[], instructions: unknown[]): (arg: unknown) => Promise<unknown> => {
+  let disposed = false;
+  const dispose = () => {
+    disposed = true;
+    for (let cap of captures) {
+      cap.dispose();
+    }
+  }
+
+  const fn = (arg: unknown): Promise<unknown> => {
+    if (disposed) {
+      throw new Error("Attempted to call a closure after it was disposed.");
+    }
+    const payload = applyMapToElement(arg, undefined, null, captures, instructions);
+    return payload.deliverResolve();
+  }
+
+  fn.dup = () => {
+    if (disposed) {
+      throw new Error("Attempted to dup a disposed closure.");
+    }
+    return mapImpl.evaluateClosure(captures.map(cap => cap.dup()), instructions);
+  }
+
+  fn[Symbol.dispose] = dispose;
+
+  return fn;
 }
 
 export function forceInitMap() {}
