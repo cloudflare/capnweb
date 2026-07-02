@@ -3358,3 +3358,193 @@ describe("Blob over RPC", () => {
     await pumpMicrotasks();
   });
 });
+
+describe("deserialization and transport correctness", () => {
+  it("does not let serialized error properties override Object.prototype members", () => {
+    // Wire format for an error is ["error", name, message, stack, propsBag]. The props bag
+    // carries own properties the sender attached to the error. These must be filtered the same
+    // way the plain-object deserializer filters them, so that keys like `__proto__`, `toString`,
+    // `valueOf`, `hasOwnProperty` and `toJSON` cannot be assigned onto the resulting error.
+    let wire = '["error","Error","boom","at test (x:1:1)",' +
+      '{"code":"E_TEST","toString":"nope","valueOf":"nope","hasOwnProperty":"nope",' +
+      '"toJSON":"nope","__proto__":{"polluted":true}}]';
+    let err = deserialize(wire) as Error & Record<string, unknown>;
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe("boom");
+
+    // The legitimate own property is still copied across.
+    expect(Object.prototype.hasOwnProperty.call(err, "code")).toBe(true);
+    expect(err.code).toBe("E_TEST");
+
+    // Object.prototype members and toJSON must not become own properties of the error.
+    for (let key of ["toString", "valueOf", "hasOwnProperty", "toJSON", "__proto__"]) {
+      expect(Object.prototype.hasOwnProperty.call(err, key)).toBe(false);
+    }
+
+    // The error's prototype and behavior are unchanged.
+    expect(Object.getPrototypeOf(err)).toBe(Error.prototype);
+    expect(typeof err.toString).toBe("function");
+    expect(err.toString()).toBe("Error: boom");
+    expect((err as any).polluted).toBeUndefined();
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
+  it("does not let an error type name resolve to an Object.prototype member (type confusion)", () => {
+    // The error type name (value[1]) is attacker-controlled and is used to look up the error
+    // class in ERROR_TYPES. ERROR_TYPES must not resolve names to inherited Object.prototype
+    // members. Before it was given a null prototype, ERROR_TYPES["constructor"] resolved to
+    // `Object` (truthy, so the `|| Error` fallback was skipped), so `new Object(message)`
+    // produced a `String` wrapper rather than an `Error` -- an `instanceof Error` bypass that
+    // still carried the attacker's own-property bag. A name like "toString" resolved to a
+    // non-constructor and threw, aborting the RPC session.
+    let confused = deserialize(
+      '["error","constructor","attacker-payload",null,{"injected":true,"httpStatus":200}]'
+    ) as Error & Record<string, unknown>;
+
+    // Must be a real Error, not a type-confused String wrapper.
+    expect(confused).toBeInstanceOf(Error);
+    expect(confused).not.toBeInstanceOf(String);
+    expect(confused.name).toBe("Error");
+    expect(confused.message).toBe("attacker-payload");
+    // Legitimate (non-prototype) own properties still round-trip onto the correctly-typed Error.
+    expect(confused.injected).toBe(true);
+    expect(confused.httpStatus).toBe(200);
+
+    // Any Object.prototype member name used as the error type must fall back to Error and must
+    // never throw.
+    for (let name of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__",
+                      "isPrototypeOf", "propertyIsEnumerable"]) {
+      let err = deserialize(`["error",${JSON.stringify(name)},"msg"]`) as Error;
+      expect(err).toBeInstanceOf(Error);
+      expect(err.name).toBe("Error");
+      expect(err.message).toBe("msg");
+    }
+
+    // Legitimate built-in error types still resolve correctly.
+    expect(deserialize('["error","TypeError","t"]')).toBeInstanceOf(TypeError);
+    expect(deserialize('["error","RangeError","r"]')).toBeInstanceOf(RangeError);
+  });
+
+  it("delivers the unwrapped abort reason to onRpcBroken (not the payload wrapper)", async () => {
+    // Intentionally not using `using` here: the session is deliberately aborted below, so the
+    // end-of-test "everything disposed" check would not apply.
+    let harness = new TestHarness(new TestTarget());
+    let captured: any[] = [];
+    harness.stub.onRpcBroken(error => { captured.push(error); });
+
+    // Feed the server a malformed message so its read loop throws. The server responds by
+    // sending an ["abort", reason] message back to the client, exercising the client's "abort"
+    // handler. That handler must forward the unwrapped reason value, not the payload wrapper.
+    await harness.clientTransport.send('["not a valid message"]');
+    await pumpMicrotasks();
+
+    expect(captured.length).toBe(1);
+    let error = captured[0];
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error.message)).toContain("bad RPC message");
+  });
+
+  it("handles a duplicate resolve message for an import without leaking or double-releasing", async () => {
+    // A recording transport pair so we can observe outgoing messages and re-inject one.
+    class RecTransport implements RpcTransport {
+      sent: string[] = [];
+      private incoming: string[] = [];
+      partner!: RecTransport;
+      private waiter?: () => void;
+
+      async send(message: string): Promise<void> {
+        message = message.replaceAll("$remove$", "");
+        this.sent.push(message);
+        this.partner.deliver(message);
+      }
+
+      deliver(message: string) {
+        this.incoming.push(message);
+        this.waiter?.();
+        this.waiter = undefined;
+      }
+
+      async receive(): Promise<string> {
+        while (this.incoming.length === 0) {
+          await new Promise<void>(resolve => { this.waiter = resolve; });
+        }
+        return this.incoming.shift()!;
+      }
+    }
+
+    let clientT = new RecTransport();
+    let serverT = new RecTransport();
+    clientT.partner = serverT;
+    serverT.partner = clientT;
+
+    let client = new RpcSession<any>(clientT);
+    // Keep a reference so the session is not collected; the server's main is a Counter.
+    let _server = new RpcSession(serverT, new Counter(5));
+
+    // A normal call creates and then resolves+releases a client import.
+    let value = await client.getRemoteMain().increment(1);
+    expect(value).toBe(6);
+
+    let resolveMsg = serverT.sent.find(m => m.startsWith('["resolve"'));
+    expect(resolveMsg).toBeDefined();
+
+    let releasesBefore = clientT.sent.filter(m => m.startsWith('["release"')).length;
+    let statsBefore = client.getStats();
+
+    // Re-inject the resolve for the (now already-resolved-and-released) import. This must be
+    // handled cleanly: no duplicate release is emitted, the resolution hook is disposed rather
+    // than leaked, and the session is not aborted. The guard added in ImportTableEntry.resolve()
+    // is the defensive backstop for this scenario; via the public protocol the duplicate lands
+    // on the "import not found" path because the table entry is removed after the first
+    // resolution.
+    clientT.deliver(resolveMsg!);
+    await pumpMicrotasks();
+
+    expect(clientT.sent.filter(m => m.startsWith('["release"')).length).toBe(releasesBefore);
+    expect(client.getStats()).toStrictEqual(statsBefore);
+  });
+
+  it("truncates an over-long WebSocket close reason to 123 UTF-8 bytes", async () => {
+    let closeArgs: { code: number, reason: string }[] = [];
+    let closeThrew = false;
+    let listeners: Record<string, ((ev: any) => void)[]> = {};
+
+    let fakeWs: any = {
+      readyState: (globalThis as any).WebSocket.OPEN,
+      addEventListener(type: string, cb: (ev: any) => void) {
+        (listeners[type] ||= []).push(cb);
+      },
+      send(_message: string) { return Promise.resolve(); },
+      close(code: number, reason: string) {
+        // Mimic the real WebSocket contract: a reason longer than 123 UTF-8 bytes throws.
+        if (new TextEncoder().encode(reason).length > 123) {
+          closeThrew = true;
+          throw new Error("close reason too long");
+        }
+        closeArgs.push({ code, reason });
+      },
+    };
+
+    newWebSocketRpcSession(fakeWs);
+
+    // A malformed message whose resulting "bad RPC message: ..." error far exceeds 123 UTF-8
+    // bytes and contains multibyte characters, so truncation must land on a character boundary.
+    let huge = "ABC" + "\u{1F4A5}".repeat(80);
+    let badMessage = JSON.stringify([huge]);
+    for (let cb of listeners["message"] || []) {
+      cb({ data: badMessage });
+    }
+    await pumpMicrotasks();
+
+    expect(closeThrew).toBe(false);
+    expect(closeArgs.length).toBe(1);
+    expect(closeArgs[0].code).toBe(3000);
+
+    let reason = closeArgs[0].reason;
+    expect(new TextEncoder().encode(reason).length).toBeLessThanOrEqual(123);
+    // The truncated reason is still valid (no replacement char from a split multibyte char).
+    expect(reason).not.toContain("\uFFFD");
+    expect(reason).toBe(new TextDecoder().decode(new TextEncoder().encode(reason)));
+  });
+});
