@@ -1,5 +1,6 @@
 name: Release
 permissions:
+  actions: write # to dispatch CLA on the changesets release branch
   contents: write # to create release (changesets/action)
   issues: write # to post issue comments (changesets/action)
   pull-requests: write # to create pull request (changesets/action)
@@ -42,6 +43,27 @@ jobs:
           publish: npx changeset publish
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "Dispatch CLA for changesets release PR"
+        if: ${{ steps.changesets.outputs.pullRequestNumber != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.changesets.outputs.pullRequestNumber }}
+        run: |
+          set -euo pipefail
+
+          pr="repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}"
+          state=$(gh api "$pr" --jq '.state')
+          head_ref=$(gh api "$pr" --jq '.head.ref')
+          head_repo=$(gh api "$pr" --jq '.head.repo.full_name')
+          author=$(gh api "$pr" --jq '.user.login')
+
+          if [[ "$state" != "open" || "$author" != "github-actions[bot]" || "$head_ref" != "changeset-release/main" || "$head_repo" != "$GITHUB_REPOSITORY" ]]; then
+            echo "Refusing to dispatch CLA for unexpected PR: state=$state author=$author head=$head_repo:$head_ref"
+            exit 1
+          fi
+
+          gh workflow run cla.yml --ref "$head_ref" -f "pull_request=${PR_NUMBER}"
 
   prerelease:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.repository_owner == 'cloudflare' }}
