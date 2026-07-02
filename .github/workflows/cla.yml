@@ -39,8 +39,13 @@ jobs:
           commit_author=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_sha}" --jq '.author.login // ""')
           commit_committer=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_sha}" --jq '.committer.login // ""')
 
-          if [[ "$state" != "open" || "$author" != "github-actions[bot]" || "$head_ref" != "changeset-release/main" || "$head_repo" != "$GITHUB_REPOSITORY" || "$head_sha" != "$GITHUB_SHA" || "$commit_author" != "github-actions[bot]" || "$commit_committer" != "github-actions[bot]" ]]; then
-            echo "Refusing dispatched CLA check for unexpected PR: state=$state author=$author head=$head_repo:$head_ref sha=$head_sha workflow_sha=$GITHUB_SHA commit_author=$commit_author commit_committer=$commit_committer"
+          if [[ "$head_sha" != "$GITHUB_SHA" ]]; then
+            echo "Release PR head changed after dispatch: pr_sha=$head_sha workflow_sha=$GITHUB_SHA"
+            exit 1
+          fi
+
+          if [[ "$state" != "open" || "$author" != "github-actions[bot]" || "$head_ref" != "changeset-release/main" || "$head_repo" != "$GITHUB_REPOSITORY" || "$commit_author" != "github-actions[bot]" || "$commit_committer" != "github-actions[bot]" ]]; then
+            echo "Refusing dispatched CLA check for unexpected PR: state=$state author=$author head=$head_repo:$head_ref commit_author=$commit_author commit_committer=$commit_committer"
             exit 1
           fi
 
