@@ -1,10 +1,17 @@
 # capnweb
 
+## 0.9.1
+
+### Patch Changes
+
+- [#195](https://github.com/cloudflare/capnweb/pull/195) [`78744ca`](https://github.com/cloudflare/capnweb/commit/78744ca99df8c93443556351b5849329765a930c) Thanks [@aleister1102](https://github.com/aleister1102)! - Fix nodeHttpBatchRpcResponse leaving the connection open and crashing with
+  ERR_HTTP_HEADERS_SENT on non-POST requests. It now returns 405 immediately.
+
 ## 0.9.0
 
 ### Minor Changes
 
-- [#186](https://github.com/cloudflare/capnweb/pull/186) [`c70bbb7`](https://github.com/cloudflare/capnweb/commit/c70bbb77ee5b25672f77d7befef7e711f4a98836) Thanks [@teamchong](https://github.com/teamchong)! - Add transport encoding levels so custom RPC transports can work with `jsonCompatible` values, `jsonCompatibleWithBytes` values, or `structuredClonable` messages instead of always receiving JSON strings.
+- [#186](https://github.com/cloudflare/capnweb/pull/186) [`c70bbb7`](https://github.com/cloudflare/capnweb/commit/c70bbb77ee5b25672f77d7befef7e711f4a98836) Thanks [@ashkalor](https://github.com/ashkalor)! - Add transport encoding levels so custom RPC transports can work with `jsonCompatible` values, `jsonCompatibleWithBytes` values, or `structuredClonable` messages instead of always receiving JSON strings.
 
   Note: `MessagePort` sessions now post structured-clonable objects over the port instead of JSON strings. This changes the wire format between the two ends of the port, so both ends of a `MessagePort` session must upgrade to this version together.
 
