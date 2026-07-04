@@ -1,5 +1,12 @@
 # capnweb
 
+## 0.9.1
+
+### Patch Changes
+
+- [#195](https://github.com/cloudflare/capnweb/pull/195) [`78744ca`](https://github.com/cloudflare/capnweb/commit/78744ca99df8c93443556351b5849329765a930c) Thanks [@aleister1102](https://github.com/aleister1102)! - Fix nodeHttpBatchRpcResponse leaving the connection open and crashing with
+  ERR_HTTP_HEADERS_SENT on non-POST requests. It now returns 405 immediately.
+
 ## 0.9.0
 
 ### Minor Changes
