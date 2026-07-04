@@ -178,7 +178,9 @@ export async function nodeHttpBatchRpcResponse(
       headers?: OutgoingHttpHeaders | OutgoingHttpHeader[],
     }): Promise<void> {
   if (request.method !== "POST") {
-    response.writeHead(405, "This endpoint only accepts POST requests.");
+    response.writeHead(405, "This endpoint only accepts POST requests.", options?.headers);
+    response.end();
+    return;
   }
 
   let body = await new Promise<string>((resolve, reject) => {
