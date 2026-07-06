@@ -3,7 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
-import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize, EncodingLevel } from "./serialize.js";
+import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize, EncodingLevel, RpcLimits, DEFAULT_LIMITS } from "./serialize.js";
 
 /**
  * Interface for a string-based RPC transport. This is the default transport type — no
@@ -443,6 +443,17 @@ export type RpcSessionOptions = {
    * to serialize the error with the stack omitted.
    */
   onSendError?: (error: Error) => Error | void;
+
+  /**
+   * Overrides for the resource limits enforced while deserializing messages from the peer. Any
+   * field left unset falls back to `DEFAULT_LIMITS`. These guard against resource-exhaustion
+   * attacks from untrusted peers; see `RpcLimits` for the meaning and defaults of each field.
+   *
+   * Limits are a purely local, receiver-side decision -- the protocol has no negotiation step, so
+   * the peer never learns these values. A message that exceeds a limit is rejected, aborting the
+   * session.
+   */
+  limits?: Partial<RpcLimits>;
 };
 
 class RpcSessionImpl implements Importer, Exporter {
@@ -470,6 +481,10 @@ class RpcSessionImpl implements Importer, Exporter {
   // Encoding level from the transport (defaults to "string")
   private encodingLevel: EncodingLevel;
 
+  // Resource limits enforced on incoming messages, resolved once from the defaults plus any
+  // per-session overrides.
+  private limits: RpcLimits;
+
   constructor(private transport: AnyRpcTransport, mainHook: StubHook,
       private options: RpcSessionOptions) {
     // `RpcTransport` has no `encodingLevel` field, so its presence is what marks a custom-encoding
@@ -489,6 +504,9 @@ class RpcSessionImpl implements Importer, Exporter {
       }
     }
     this.encodingLevel = level;
+
+    this.limits = { ...DEFAULT_LIMITS, ...options.limits };
+
     // Export zero is automatically the bootstrap object.
     this.exports.push({hook: mainHook, refcount: 1});
 
@@ -679,6 +697,10 @@ class RpcSessionImpl implements Importer, Exporter {
     let readable = entry.pipeReadable;
     entry.pipeReadable = undefined;
     return readable;
+  }
+
+  getLimits(): RpcLimits {
+    return this.limits;
   }
 
   createPipe(readable: ReadableStream, readableHook: StubHook): ImportId {
@@ -941,6 +963,20 @@ class RpcSessionImpl implements Importer, Exporter {
           this.cancelReadLoop = undefined;
         }
       }
+
+      // Bound a single string message before parsing it. At this point the transport has already
+      // buffered the complete message; true byte-level / pre-read enforcement belongs in the
+      // transport/socket. This backstop still prevents oversized messages from reaching JSON.parse
+      // and downstream deserialization work, and a throw here propagates out of readLoop and aborts
+      // the session. Only "string"-level transports hand us a measurable wire string; richer
+      // encoding levels deliver an already-decoded value, so the size cap does not apply.
+      if (this.encodingLevel === "string" &&
+          (raw as string).length > this.limits.maxMessageSize) {
+        throw new TypeError(
+            `Incoming message exceeds maximum size of ${this.limits.maxMessageSize} UTF-16 code ` +
+            `units.`);
+      }
+
       if (this.abortReason) break;  // check again before processing
 
       // Only parse JSON at "string" level; otherwise message is already an object
