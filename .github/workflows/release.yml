@@ -26,7 +26,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 24 # includes npm 11.5.1 or later, needed for trusted publishing
+          node-version: "24" # includes npm 11.5.1 or later, needed for trusted publishing
           cache: "npm"
 
       - run: npm ci
@@ -78,7 +78,7 @@ jobs:
 
       - uses: actions/setup-node@v5
         with:
-          node-version: 24 # includes npm 11.5.1 or later, needed for trusted publishing
+          node-version: "24" # includes npm 11.5.1 or later, needed for trusted publishing
           cache: "npm"
 
       - run: npm ci

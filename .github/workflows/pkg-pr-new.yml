@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 1
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: "24"
           cache: "npm"
 
       - name: Install dependencies
