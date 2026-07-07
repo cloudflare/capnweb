@@ -44,6 +44,10 @@ export class TestDo extends DurableObject {
     await this.subscriber(value);
     this.subscriber[Symbol.dispose]();
   }
+
+  callCounter(callback) {
+    return callback.increment();
+  }
 }
 
 export class TestTarget extends RpcTarget {

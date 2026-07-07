@@ -9,6 +9,7 @@ import {
   type RpcTransport,
 } from "../src/index.js"
 import { expectAssignable, expectType, type Equal, type Expect } from "./helpers.js"
+import type { WebSocketTransport } from "../src/websocket.js"
 
 type Formatter = (value: number) => Promise<string>
 
@@ -106,6 +107,11 @@ const wsApi = newWebSocketRpcSession<PublicApi>("wss://example.com/rpc")
 const batchApi = newHttpBatchRpcSession<PublicApi>("https://example.com/rpc")
 expectType<RpcStub<PublicApi>>(wsApi)
 expectType<RpcStub<PublicApi>>(batchApi)
+
+// `WebSocketTransport` is generic, so it can't `implements RpcTransport` directly (the ArrayBuffer
+// instantiation intentionally doesn't conform). Assert that the default string instantiation still
+// satisfies the interface.
+expectAssignable<RpcTransport>(null! as WebSocketTransport<string>)
 
 // Positive coverage for direct calls, pipelining, and accepted promise-like arguments.
 const ping = api.ping()

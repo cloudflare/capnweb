@@ -24,15 +24,15 @@ export type Stubable = RpcTargetBranded | ((...args: never[]) => unknown);
 type IsUnknown<T> = unknown extends T ? ([T] extends [unknown] ? true : false) : false;
 
 // Types that can be passed over RPC
-// The reason for using a generic type here is to build a serializable subset of structured
-//   cloneable composite types. This allows types defined with the "interface" keyword to pass the
+// The reason for using a generic type here is to build the serializable subset of RPC-compatible
+//   composite types. This allows types defined with the "interface" keyword to pass the
 //   serializable check as well. Otherwise, only types defined with the "type" keyword would pass.
 export type RpcCompatible<T> =
   // Allow `unknown` as a leaf so records/interfaces with `unknown` fields remain compatible.
   | (IsUnknown<T> extends true ? unknown : never)
-  // Structured cloneables
+  // RPC-compatible base values
   | BaseType
-  // Structured cloneable composites
+  // RPC-compatible composites
   | Map<
       T extends Map<infer U, unknown> ? RpcCompatible<U> : never,
       T extends Map<unknown, infer U> ? RpcCompatible<U> : never

@@ -5,6 +5,12 @@ on:
   pull_request_target:
     types: [opened,synchronize]
   merge_group:
+  workflow_dispatch:
+    inputs:
+      pull_request:
+        description: 'Changesets release PR number'
+        required: true
+        type: string
 
 permissions:
   actions: write
@@ -16,6 +22,46 @@ jobs:
   CLAssistant:
     runs-on: ubuntu-latest
     steps:
+      - name: "Validate changesets release PR"
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pull_request }}
+        run: |
+          set -euo pipefail
+
+          pr="repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}"
+          state=$(gh api "$pr" --jq '.state')
+          head_sha=$(gh api "$pr" --jq '.head.sha')
+          head_ref=$(gh api "$pr" --jq '.head.ref')
+          head_repo=$(gh api "$pr" --jq '.head.repo.full_name')
+          author=$(gh api "$pr" --jq '.user.login')
+          commit_author=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_sha}" --jq '.author.login // ""')
+          commit_committer=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head_sha}" --jq '.committer.login // ""')
+
+          if [[ "$head_sha" != "$GITHUB_SHA" ]]; then
+            echo "Release PR head changed after dispatch: pr_sha=$head_sha workflow_sha=$GITHUB_SHA"
+            exit 1
+          fi
+
+          if [[ "$state" != "open" || "$author" != "github-actions[bot]" || "$head_ref" != "changeset-release/main" || "$head_repo" != "$GITHUB_REPOSITORY" || "$commit_author" != "github-actions[bot]" || "$commit_committer" != "github-actions[bot]" ]]; then
+            echo "Refusing dispatched CLA check for unexpected PR: state=$state author=$author head=$head_repo:$head_ref commit_author=$commit_author commit_committer=$commit_committer"
+            exit 1
+          fi
+
+      # dispatched runs are not associated with the PR, so report via commit status
+      - name: "Pass CLA via commit status"
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api -X POST "repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            -f state=success \
+            -f context=CLAssistant \
+            -f description="Changesets release PR: github-actions[bot] is CLA-allowlisted" \
+            -f target_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+
       - name: "CLA Assistant"
         if: (github.event.issue.pull_request && (github.event.comment.body == 'recheck' || github.event.comment.body == 'I have read the CLA Document and I hereby sign the CLA')) || github.event_name == 'pull_request_target'
         uses: contributor-assistant/github-action@v2.6.1
@@ -26,5 +72,5 @@ jobs:
           path-to-document: 'https://www.cloudflare.com/cla/'
           # branch should not be protected
           branch: 'cla-signatures'
-          allowlist: dependabot[bot],workers-devprod
+          allowlist: dependabot[bot],workers-devprod,github-actions[bot]
           lock-pullrequest-aftermerge: false

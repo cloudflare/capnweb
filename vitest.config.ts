@@ -16,8 +16,11 @@ export default defineConfig({
         test: {
           name: 'node',
           // We throw flow-control test under Node only because it's testing straightforward
-          // JavaScript -- no need to run it on every runtime.
-          include: ['__tests__/index.test.ts', '__tests__/flow-control.test.ts'],
+          // JavaScript -- no need to run it on every runtime. The limits tests are likewise
+          // plain JavaScript receive-side guards, so Node coverage is sufficient.
+          include: ['__tests__/index.test.ts', '__tests__/flow-control.test.ts',
+                    '__tests__/limits.test.ts',
+                    'packages/capnweb-validate/__tests__/**/*.test.ts'],
           environment: 'node',
         },
       },

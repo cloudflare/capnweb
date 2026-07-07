@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react'
 import { newHttpBatchRpcSession } from 'capnweb'
-import type { Api } from '../../../src/worker'
+import { validateStub } from 'capnweb-validate'
+import type { Api } from '../../../server/worker'
 import './App.css'
 
 type Result = {
@@ -16,12 +17,17 @@ type CallEvent = { label: string, start: number, end: number }
 type NetEvent = { label: string, start: number, end: number }
 type Trace = { total: number, calls: CallEvent[], network: NetEvent[] }
 
+function connectApi() {
+  return validateStub<Api>(newHttpBatchRpcSession<Api>('/api'))
+}
+
 export function App() {
   const [pipelined, setPipelined] = useState<Result | null>(null)
   const [sequential, setSequential] = useState<Result | null>(null)
   const [running, setRunning] = useState(false)
+  const [validationError, setValidationError] = useState<string | null>(null)
 
-  // Network RTT is now simulated on the server (Worker). See wrangler.toml vars.
+  // Network RTT is now simulated on the server (Worker). See wrangler.jsonc vars.
 
   /** Count RPC POSTs and capture network timing by wrapping fetch while this component is mounted. */
   const wrapFetch = useMemo(() => {
@@ -57,7 +63,7 @@ export function App() {
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
     const calls: CallEvent[] = []
-    const api = newHttpBatchRpcSession<Api>('/api')
+    const api = connectApi()
     const userStart = 0; calls.push({ label: 'authenticate', start: userStart, end: NaN })
     const user = api.authenticate('cookie-123')
     user.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
@@ -85,19 +91,19 @@ export function App() {
     const t0 = performance.now()
     wrapFetch.setOrigin(t0)
     const calls: CallEvent[] = []
-    const api1 = newHttpBatchRpcSession<Api>('/api')
+    const api1 = connectApi()
     const aStart = 0; calls.push({ label: 'authenticate', start: aStart, end: NaN })
     const uPromise = api1.authenticate('cookie-123')
     uPromise.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
     const u = await uPromise
 
-    const api2 = newHttpBatchRpcSession<Api>('/api')
+    const api2 = connectApi()
     const pStart = performance.now() - t0; calls.push({ label: 'getUserProfile', start: pStart, end: NaN })
     const pPromise = api2.getUserProfile(u.id)
     pPromise.then(() => { calls.find(c => c.label==='getUserProfile')!.end = performance.now() - t0 })
     const p = await pPromise
 
-    const api3 = newHttpBatchRpcSession<Api>('/api')
+    const api3 = connectApi()
     const nStart = performance.now() - t0; calls.push({ label: 'getNotifications', start: nStart, end: NaN })
     const nPromise = api3.getNotifications(u.id)
     nPromise.then(() => { calls.find(c => c.label==='getNotifications')!.end = performance.now() - t0 })
@@ -110,6 +116,17 @@ export function App() {
     return { posts: wrapFetch.get(), ms: total, user: u, profile: p, notifications: n,
       trace: { total, calls, network: net } }
   }, [wrapFetch])
+
+  const runValidationFailure = useCallback(async () => {
+    setValidationError(null)
+    const api = connectApi() as any
+    try {
+      await api.authenticate(12345)
+      setValidationError('(no error — unexpected)')
+    } catch (err) {
+      setValidationError(err instanceof Error ? err.message : String(err))
+    }
+  }, [])
 
   const runDemo = useCallback(async () => {
     if (running) return
@@ -129,7 +146,7 @@ export function App() {
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, lineHeight: 1.5 }}>
       <h1>Cap'n Web: Cloudflare Workers + React</h1>
-      <div style={{ opacity: 0.8 }}>Network RTT (round-trip-time) is simulated on the server (configurable via <code>SIMULATED_RTT_MS</code>/<code>SIMULATED_RTT_JITTER_MS</code> in <code>wrangler.toml</code>).</div>
+      <div style={{ opacity: 0.8 }}>Network RTT (round-trip-time) is simulated on the server (configurable via <code>SIMULATED_RTT_MS</code>/<code>SIMULATED_RTT_JITTER_MS</code> in <code>wrangler.jsonc</code>).</div>
       <p>This demo calls the Worker API in two ways:</p>
       <ul>
         <li><b>Pipelined (batched)</b>: dependent calls in one round trip</li>
@@ -138,6 +155,15 @@ export function App() {
       <button onClick={runDemo} disabled={running}>
         {running ? 'Running…' : 'Run demo'}
       </button>
+
+      <section style={{ marginTop: 24 }}>
+        <h2>Validation</h2>
+        <p>Calls <code>authenticate(12345)</code> instead of a string — the server rejects the wrong-typed argument.</p>
+        <button onClick={runValidationFailure}>Test validation failure</button>
+        {validationError && (
+          <pre style={{ color: '#ef4444', marginTop: 8, whiteSpace: 'pre-wrap' }}>{validationError}</pre>
+        )}
+      </section>
 
       {(pipelined && sequential) ? (<>
         <section style={{ marginTop: 24 }}>

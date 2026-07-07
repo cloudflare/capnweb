@@ -7,6 +7,70 @@ import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, 
 export type ImportId = number;
 export type ExportId = number;
 
+/**
+ * Encoding levels determine what representation the RPC system hands to the transport.
+ * Each level names what the transport can assume about message values.
+ *
+ * - `"string"`: JSON string. Default, used by HTTP batch and WebSocket transports.
+ * - `"jsonCompatible"`: JSON-compatible JS value tree. For custom encoders.
+ * - `"jsonCompatibleWithBytes"`: Like `"jsonCompatible"` but Uint8Array stays raw.
+ * - `"structuredClonable"`: Structured-clonable native values pass through where possible.
+ *
+ * @example
+ * ```ts
+ * // What happens to Uint8Array([1, 2, 3]) at each level:
+ * "string"          → '["bytes","AQID"]'           // JSON string with base64
+ * "jsonCompatible"          → ["bytes", "AQID"]      // JS array with base64
+ * "jsonCompatibleWithBytes" → ["bytes", Uint8Array]  // JS array with raw bytes
+ * "structuredClonable"      → ["bytes", Uint8Array]  // + Date, BigInt stay native
+ * ```
+ */
+export type EncodingLevel = "string" | "jsonCompatible" | "jsonCompatibleWithBytes" |
+    "structuredClonable";
+
+// =======================================================================================
+// Resource limits applied while deserializing messages from a peer.
+//
+// These guard against resource-exhaustion attacks from untrusted peers (see issue #184). They are
+// purely *local, receiver-side* decisions: the protocol has no negotiation step, so a peer cannot
+// learn or agree on these values. Consequently the defaults are chosen to be far larger than any
+// legitimate message, so that no honest sender is ever rejected. A peer that exceeds a limit has
+// its message rejected (a TypeError is thrown), which tears down the session via abort().
+
+export interface RpcLimits {
+  // Maximum number of magnitude digits permitted in a ["bigint", "..."] wire value, excluding a
+  // leading "-" sign.
+  //
+  // Bigints are serialized as decimal strings. Decimal parsing via BigInt() is synchronous and
+  // superlinear in the number of digits, so this cap bounds the worst-case parse cost.
+  //
+  // The default is far larger than practical big-integer or cryptographic values, but far below
+  // the millions of decimal digits needed to cause meaningful blocking.
+  maxBigIntDigits: number;
+
+  // Maximum nesting depth of a single deserialized message. Guards against stack overflow from a
+  // deeply-nested payload (e.g. [[[[...]]]]). This is enforced uniformly across the whole message,
+  // including nested call arguments that are delivered as separate RpcPayloads.
+  maxDepth: number;
+
+  // Maximum size of a single incoming message string, measured in UTF-16 code units (JavaScript
+  // String.length), before it is JSON-parsed. This is not a byte count: a string of N code units
+  // may occupy more than N bytes when encoded as UTF-8. Enforced in the session read loop, after
+  // the transport has already returned a complete string, to bound JSON.parse and downstream
+  // deserialization work. True byte-level enforcement belongs in the transport/socket, so apps
+  // exposed to untrusted peers should also configure transport/socket-native payload limits where
+  // available.
+  maxMessageSize: number;
+}
+
+export const DEFAULT_MAX_DEPTH = 256;
+
+export const DEFAULT_LIMITS: RpcLimits = {
+  maxBigIntDigits: 16384,
+  maxDepth: DEFAULT_MAX_DEPTH,
+  maxMessageSize: 32 * 1024 * 1024,
+};
+
 // =======================================================================================
 
 export interface Exporter {
@@ -76,7 +140,11 @@ const ERROR_TYPES: Record<string, any> = Object.assign(Object.create(null), {
 // actually converting to a string. (The name is meant to be the opposite of "Evaluator", which
 // implements the opposite direction.)
 export class Devaluator {
-  private constructor(private exporter: Exporter, private source: RpcPayload | undefined) {}
+  private constructor(
+    private exporter: Exporter,
+    private source: RpcPayload | undefined,
+    private encodingLevel: EncodingLevel
+  ) {}
 
   // Devaluate the given value.
   // * value: The value to devaluate.
@@ -84,12 +152,15 @@ export class Devaluator {
   //     as a function.
   // * exporter: Callbacks to the RPC session for exporting capabilities found in this message.
   // * source: The RpcPayload which contains the value, and therefore owns stubs within.
+  // * encodingLevel: How much encoding to apply (default "string").
   //
-  // Returns: The devaluated value, ready to be JSON-serialized.
+  // Returns: The devaluated value, ready to be JSON-serialized (or passed to transport directly
+  // for non-string levels).
   public static devaluate(
-      value: unknown, parent?: object, exporter: Exporter = NULL_EXPORTER, source?: RpcPayload)
+      value: unknown, parent?: object, exporter: Exporter = NULL_EXPORTER, source?: RpcPayload,
+      encodingLevel: EncodingLevel = "string")
       : unknown {
-    let devaluator = new Devaluator(exporter, source);
+    let devaluator = new Devaluator(exporter, source, encodingLevel);
     try {
       return devaluator.devaluateImpl(value, parent, 0);
     } catch (err) {
@@ -110,7 +181,7 @@ export class Devaluator {
   private exports?: Array<ExportId>;
 
   private devaluateImpl(value: unknown, parent: object | undefined, depth: number): unknown {
-    if (depth >= 64) {
+    if (depth >= DEFAULT_MAX_DEPTH) {
       throw new Error(
           "Serialization exceeded maximum allowed depth. (Does the message contain cycles?)");
     }
@@ -129,6 +200,10 @@ export class Devaluator {
 
       case "primitive":
         if (typeof value === "number" && !isFinite(value)) {
+          // At structuredClonable level, keep Infinity/NaN as native values
+          if (this.encodingLevel === "structuredClonable") {
+            return value;
+          }
           if (value === Infinity) {
             return ["inf"];
           } else if (value === -Infinity) {
@@ -162,15 +237,29 @@ export class Devaluator {
       }
 
       case "bigint":
+        // At structuredClonable level, keep BigInt as native value
+        if (this.encodingLevel === "structuredClonable") {
+          return value;
+        }
         return ["bigint", (<bigint>value).toString()];
 
       case "date": {
+        // At structuredClonable level, keep Date as native value
+        if (this.encodingLevel === "structuredClonable") {
+          return value;
+        }
         const time = (<Date>value).getTime();
         return ["date", Number.isNaN(time) ? null : time];
       }
 
       case "bytes": {
         let bytes = value as Uint8Array;
+        // At structuredClonable or jsonCompatibleWithBytes level, keep Uint8Array raw
+        if (this.encodingLevel === "structuredClonable" ||
+            this.encodingLevel === "jsonCompatibleWithBytes") {
+          return ["bytes", bytes];
+        }
+        // Otherwise encode as base64
         if (bytes.toBase64) {
           return ["bytes", bytes.toBase64({omitPadding: true})];
         }
@@ -403,6 +492,10 @@ export class Devaluator {
       }
 
       case "undefined":
+        // At structuredClonable level, keep undefined as native value
+        if (this.encodingLevel === "structuredClonable") {
+          return undefined;
+        }
         return ["undefined"];
 
       case "stub":
@@ -511,6 +604,11 @@ export interface Importer {
   // The exportId must refer to an export that was created as a pipe.
   // This can only be called once per pipe.
   getPipeReadable(exportId: ExportId): ReadableStream;
+
+  // The resource limits the Evaluator should enforce while deserializing. Surfaced through the
+  // Importer (rather than the Evaluator constructor) so that the per-session options reach the
+  // Evaluator without changing how Evaluators are constructed throughout the codebase.
+  getLimits(): RpcLimits;
 }
 
 class NullImporter implements Importer {
@@ -525,6 +623,11 @@ class NullImporter implements Importer {
   }
   getPipeReadable(exportId: ExportId): never {
     throw new Error("Cannot retrieve pipe readable without an RPC session.");
+  }
+  getLimits(): RpcLimits {
+    // The standalone deserialize() entry point has no session and therefore no per-session
+    // overrides, but it must still be protected -- so it enforces the bare defaults.
+    return DEFAULT_LIMITS;
   }
 }
 
@@ -563,15 +666,23 @@ function streamToBlobPromise(stream: ReadableStream, type: string): RpcPromise {
 // delivery to the app. This is used to implement deserialization, except that it doesn't actually
 // start from a raw string.
 export class Evaluator {
-  constructor(private importer: Importer) {}
+  private limits: RpcLimits;
+
+  constructor(private importer: Importer, private encodingLevel: EncodingLevel = "string") {
+    this.limits = importer.getLimits();
+  }
 
   private hooks: StubHook[] = [];
   private promises: LocatedPromise[] = [];
 
   public evaluate(value: unknown): RpcPayload {
+    return this.evaluateWithDepth(value, 0);
+  }
+
+  private evaluateWithDepth(value: unknown, depth: number): RpcPayload {
     let payload = RpcPayload.forEvaluate(this.hooks, this.promises);
     try {
-      payload.value = this.evaluateImpl(value, payload, "value");
+      payload.value = this.evaluateImpl(value, payload, "value", depth);
       return payload;
     } catch (err) {
       payload.dispose();
@@ -584,19 +695,43 @@ export class Evaluator {
     return this.evaluate(structuredClone(value));
   }
 
-  private evaluateImpl(value: unknown, parent: object, property: string | number): unknown {
+  private evaluateImpl(
+      value: unknown, parent: object, property: string | number, depth: number): unknown {
+    let maxDepth = this.limits.maxDepth;
+    if (depth >= maxDepth) {
+      throw new TypeError(
+          `Deserialization exceeded maximum allowed message depth of ${maxDepth}.`);
+    }
+
+    // At structuredClonable level, some native types pass through devaluation unencoded: Date and
+    // BigInt (as well as undefined and non-finite numbers, which the generic paths below already
+    // handle). Note that bytes and errors are tuple-encoded at every level, so raw `Uint8Array`
+    // and `Error` values are intentionally *not* accepted here.
+    if (this.encodingLevel === "structuredClonable") {
+      if (value instanceof Date || typeof value === "bigint") {
+        return value;
+      }
+    }
+
     if (value instanceof Array) {
       if (value.length == 1 && value[0] instanceof Array) {
         // Escaped array. Evaluate the contents.
         let result = value[0];
         for (let i = 0; i < result.length; i++) {
-          result[i] = this.evaluateImpl(result[i], result, i);
+          result[i] = this.evaluateImpl(result[i], result, i, depth + 1);
         }
         return result;
       } else switch (value[0]) {
         case "bigint":
           if (typeof value[1] == "string") {
-            return BigInt(value[1]);
+            let digits = value[1];
+            let maxBigIntDigits = this.limits.maxBigIntDigits;
+            // Cap the length before the superlinear BigInt() parse (DoS guard).
+            if (digits.length > maxBigIntDigits) {
+              throw new TypeError(
+                  `Deserialized bigint exceeds maximum length of ${maxBigIntDigits} digits.`);
+            }
+            return BigInt(digits);
           }
           break;
         case "date":
@@ -608,6 +743,11 @@ export class Evaluator {
           }
           break;
         case "bytes": {
+          // At jsonCompatibleWithBytes/structuredClonable level, bytes may already be a Uint8Array
+          if (value[1] instanceof Uint8Array) {
+            return value[1];
+          }
+          // Otherwise decode from base64
           if (typeof value[1] == "string") {
             if (typeof Buffer !== "undefined") {
               return Buffer.from(value[1], "base64");
@@ -652,7 +792,7 @@ export class Evaluator {
                   this.evaluateImpl(propsObj[key], result, key);
                   continue;
                 }
-                anyResult[key] = this.evaluateImpl(propsObj[key], result, key);
+                anyResult[key] = this.evaluateImpl(propsObj[key], result, key, depth + 1);
               }
             }
             return result;
@@ -687,7 +827,7 @@ export class Evaluator {
 
           // Evaluate specific properties which are expected to contain non-trivial types.
           if (init.body) {
-            init.body = this.evaluateImpl(init.body, init, "body");
+            init.body = this.evaluateImpl(init.body, init, "body", depth + 1);
             if (init.body === null ||
                 typeof init.body === "string" ||
                 init.body instanceof Uint8Array ||
@@ -698,7 +838,7 @@ export class Evaluator {
             }
           }
           if (init.signal) {
-            init.signal = this.evaluateImpl(init.signal, init, "signal");
+            init.signal = this.evaluateImpl(init.signal, init, "signal", depth + 1);
             if (!(init.signal instanceof AbortSignal)) {
               throw new TypeError("Request siganl must be of type AbortSignal.");
             }
@@ -727,7 +867,7 @@ export class Evaluator {
         case "response": {
           if (value.length !== 3) break;
 
-          let body = this.evaluateImpl(value[1], parent, property);
+          let body = this.evaluateImpl(value[1], parent, property, depth + 1);
           if (body === null ||
               typeof body === "string" ||
               body instanceof Uint8Array ||
@@ -761,7 +901,7 @@ export class Evaluator {
           // bytes through a pipe, so the content expression must evaluate to a ReadableStream.
           if (value.length !== 3 || typeof value[1] !== "string") break;
           let contentType = value[1] as string;
-          let content = this.evaluateImpl(value[2], parent, property);
+          let content = this.evaluateImpl(value[2], parent, property, depth + 1);
           if (!(content instanceof ReadableStream)) {
             throw new TypeError("Blob content must be serialized as a ReadableStream.");
           }
@@ -847,7 +987,7 @@ export class Evaluator {
 
           // We need a new evaluator for the args, to build a separate payload.
           let subEval = new Evaluator(this.importer);
-          args = subEval.evaluate([args]);
+          args = subEval.evaluateWithDepth([args], depth);
 
           return addStub(hook.call(path, args));
         }
@@ -964,10 +1104,10 @@ export class Evaluator {
           // snooping on JSON calls.
           //
           // We do still evaluate the inner value so that we can properly release any stubs.
-          this.evaluateImpl(result[key], result, key);
+          this.evaluateImpl(result[key], result, key, depth + 1);
           delete result[key];
         } else {
-          result[key] = this.evaluateImpl(result[key], result, key);
+          result[key] = this.evaluateImpl(result[key], result, key, depth + 1);
         }
       }
       return result;
