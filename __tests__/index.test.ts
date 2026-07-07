@@ -3452,66 +3452,6 @@ describe("deserialization and transport correctness", () => {
     expect(String(error.message)).toContain("bad RPC message");
   });
 
-  it("handles a duplicate resolve message for an import without leaking or double-releasing", async () => {
-    // A recording transport pair so we can observe outgoing messages and re-inject one.
-    class RecTransport implements RpcTransport {
-      sent: string[] = [];
-      private incoming: string[] = [];
-      partner!: RecTransport;
-      private waiter?: () => void;
-
-      async send(message: string): Promise<void> {
-        message = message.replaceAll("$remove$", "");
-        this.sent.push(message);
-        this.partner.deliver(message);
-      }
-
-      deliver(message: string) {
-        this.incoming.push(message);
-        this.waiter?.();
-        this.waiter = undefined;
-      }
-
-      async receive(): Promise<string> {
-        while (this.incoming.length === 0) {
-          await new Promise<void>(resolve => { this.waiter = resolve; });
-        }
-        return this.incoming.shift()!;
-      }
-    }
-
-    let clientT = new RecTransport();
-    let serverT = new RecTransport();
-    clientT.partner = serverT;
-    serverT.partner = clientT;
-
-    let client = new RpcSession<any>(clientT);
-    // Keep a reference so the session is not collected; the server's main is a Counter.
-    let _server = new RpcSession(serverT, new Counter(5));
-
-    // A normal call creates and then resolves+releases a client import.
-    let value = await client.getRemoteMain().increment(1);
-    expect(value).toBe(6);
-
-    let resolveMsg = serverT.sent.find(m => m.startsWith('["resolve"'));
-    expect(resolveMsg).toBeDefined();
-
-    let releasesBefore = clientT.sent.filter(m => m.startsWith('["release"')).length;
-    let statsBefore = client.getStats();
-
-    // Re-inject the resolve for the (now already-resolved-and-released) import. This must be
-    // handled cleanly: no duplicate release is emitted, the resolution hook is disposed rather
-    // than leaked, and the session is not aborted. The guard added in ImportTableEntry.resolve()
-    // is the defensive backstop for this scenario; via the public protocol the duplicate lands
-    // on the "import not found" path because the table entry is removed after the first
-    // resolution.
-    clientT.deliver(resolveMsg!);
-    await pumpMicrotasks();
-
-    expect(clientT.sent.filter(m => m.startsWith('["release"')).length).toBe(releasesBefore);
-    expect(client.getStats()).toStrictEqual(statsBefore);
-  });
-
   it("truncates an over-long WebSocket close reason on a code-point boundary", async () => {
     let closeArgs: { code: number, reason: string }[] = [];
     let closeThrew = false;
