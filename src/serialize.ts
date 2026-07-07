@@ -789,7 +789,7 @@ export class Evaluator {
                   // Consistent with the plain-object deserializer below: don't allow error
                   // properties to override Object.prototype members (e.g. __proto__, toString,
                   // valueOf) or toJSON. Still evaluate the inner value so any stubs are released.
-                  this.evaluateImpl(propsObj[key], result, key);
+                  this.evaluateImpl(propsObj[key], result, key, depth + 1);
                   continue;
                 }
                 anyResult[key] = this.evaluateImpl(propsObj[key], result, key, depth + 1);
