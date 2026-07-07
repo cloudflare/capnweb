@@ -124,6 +124,14 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
     } else {
       message = `${reason}`;
     }
+    // WebSocket close reasons are limited to 123 UTF-8 bytes; a longer string makes
+    // close() throw. Truncate on a character boundary to stay within the limit.
+    let reasonBytes = new TextEncoder().encode(message);
+    if (reasonBytes.length > 123) {
+      // Decoding with { stream: true } drops any trailing partial code unit, so the
+      // result is guaranteed to be valid and ≤ 123 bytes.
+      message = new TextDecoder().decode(reasonBytes.subarray(0, 123), { stream: true });
+    }
     this.#webSocket.close(3000, message);
 
     if (!this.#error) {

@@ -205,6 +205,13 @@ class ImportTableEntry {
     //   a forwarded call. The caller is responsible for ensuring the last of these is handed off
     //   before direct calls can be delivered.
 
+    if (this.resolution) {
+      // Already resolved. A duplicate resolution would overwrite (and leak) the
+      // existing one, so dispose the incoming hook and ignore it.
+      resolution.dispose();
+      return;
+    }
+
     if (this.localRefcount == 0) {
       // Already disposed (canceled), so ignore the resolution and don't send a redundant release.
       resolution.dispose();
@@ -1081,7 +1088,7 @@ class RpcSessionImpl implements Importer, Exporter {
           case "abort": {
             let payload = new Evaluator(this, this.encodingLevel).evaluate(msg[1]);
             payload.dispose();  // just in case -- should be no-op
-            this.abort(payload, false);
+            this.abort(payload.value, false);
             break;
           }
         }
