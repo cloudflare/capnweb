@@ -7,6 +7,7 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, newWebSocketRpcSession,
          newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
+import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
@@ -3511,7 +3512,7 @@ describe("deserialization and transport correctness", () => {
     expect(client.getStats()).toStrictEqual(statsBefore);
   });
 
-  it("truncates an over-long WebSocket close reason to 123 UTF-8 bytes", async () => {
+  it("truncates an over-long WebSocket close reason on a code-point boundary", async () => {
     let closeArgs: { code: number, reason: string }[] = [];
     let closeThrew = false;
     let listeners: Record<string, ((ev: any) => void)[]> = {};
@@ -3523,8 +3524,8 @@ describe("deserialization and transport correctness", () => {
       },
       send(_message: string) { return Promise.resolve(); },
       close(code: number, reason: string) {
-        // Mimic the real WebSocket contract: a reason longer than 123 UTF-8 bytes throws.
-        if (new TextEncoder().encode(reason).length > 123) {
+        // Mimic the real contract: an over-long reason throws.
+        if (new TextEncoder().encode(reason).length > MAX_CLOSE_REASON_BYTES) {
           closeThrew = true;
           throw new Error("close reason too long");
         }
@@ -3534,23 +3535,19 @@ describe("deserialization and transport correctness", () => {
 
     newWebSocketRpcSession(fakeWs);
 
-    // A malformed message whose resulting "bad RPC message: ..." error far exceeds 123 UTF-8
-    // bytes and contains multibyte characters, so truncation must land on a character boundary.
-    let huge = "ABC" + "\u{1F4A5}".repeat(80);
-    let badMessage = JSON.stringify([huge]);
-    for (let cb of listeners["message"] || []) {
-      cb({ data: badMessage });
-    }
+    // Peer-supplied abort reason that straddles the limit with a multi-byte character: the 2-byte
+    // "é" begins at the last allowed byte, so truncation must drop the partial "é" rather than emit
+    // a replacement character (itself 3 bytes, which would re-exceed the limit).
+    let reason = "a".repeat(MAX_CLOSE_REASON_BYTES - 1) + "\u00e9";
+    for (let cb of listeners["message"] || []) cb({ data: JSON.stringify(["abort", reason]) });
     await pumpMicrotasks();
 
     expect(closeThrew).toBe(false);
     expect(closeArgs.length).toBe(1);
     expect(closeArgs[0].code).toBe(3000);
-
-    let reason = closeArgs[0].reason;
-    expect(new TextEncoder().encode(reason).length).toBeLessThanOrEqual(123);
-    // The truncated reason is still valid (no replacement char from a split multibyte char).
-    expect(reason).not.toContain("\uFFFD");
-    expect(reason).toBe(new TextDecoder().decode(new TextEncoder().encode(reason)));
+    let sentReason = closeArgs[0].reason;
+    expect(new TextEncoder().encode(sentReason).length).toBeLessThanOrEqual(MAX_CLOSE_REASON_BYTES);
+    expect(sentReason).not.toContain("\uFFFD");
+    expect(sentReason).toBe("a".repeat(MAX_CLOSE_REASON_BYTES - 1));
   });
 });
