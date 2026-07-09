@@ -7,6 +7,9 @@
 import { RpcStub } from "./core.js";
 import { RpcSession, RpcSessionOptions } from "./rpc.js";
 
+/** Close-frame reason max UTF-8 bytes: 125 payload − 2-byte status (RFC 6455 §5.5). */
+export const MAX_CLOSE_REASON_BYTES = 125 - 2;
+
 export function newWebSocketRpcSession(
     webSocket: WebSocket | string, localMain?: any, options?: RpcSessionOptions): RpcStub {
   if (typeof webSocket === "string") {
@@ -124,13 +127,10 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
     } else {
       message = `${reason}`;
     }
-    // WebSocket close reasons are limited to 123 UTF-8 bytes; a longer string makes
-    // close() throw. Truncate on a character boundary to stay within the limit.
+    // `stream: true` drops a trailing partial code point rather than emitting a replacement char.
     let reasonBytes = new TextEncoder().encode(message);
-    if (reasonBytes.length > 123) {
-      // Decoding with { stream: true } drops any trailing partial code unit, so the
-      // result is guaranteed to be valid and ≤ 123 bytes.
-      message = new TextDecoder().decode(reasonBytes.subarray(0, 123), { stream: true });
+    if (reasonBytes.length > MAX_CLOSE_REASON_BYTES) {
+      message = new TextDecoder().decode(reasonBytes.subarray(0, MAX_CLOSE_REASON_BYTES), { stream: true });
     }
     this.#webSocket.close(3000, message);
 
