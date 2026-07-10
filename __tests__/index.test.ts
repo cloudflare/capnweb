@@ -3005,6 +3005,119 @@ describe("ReadableStream over RPC", () => {
 
     expect(cancelCalled).toBe(true);
   });
+
+  it("can send an RpcTarget as a stream chunk and call methods on it", async () => {
+    // The sender enqueues a pass-by-reference RpcTarget into a ReadableStream. The receiver
+    // reads it back as a stub and can call methods on it, which route back to the sender.
+    class ChunkTarget extends RpcTarget {
+      square(i: number) { return i * i; }
+      get label() { return "chunk-target"; }
+    }
+
+    let stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new ChunkTarget());
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream) {
+        let reader = stream.getReader();
+        let { value } = await reader.read();
+        using chunk = value as any;
+        let result = {
+          squared: await chunk.square(5),
+          label: await chunk.label,
+        };
+        // Drain the closing `done` chunk so the underlying pipe is released.
+        await reader.read();
+        return result;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result: any = await harness.stub.receiveStream(stream);
+
+    expect(result.squared).toBe(25);
+    expect(result.label).toBe("chunk-target");
+  });
+
+  it("can return a ReadableStream containing RpcTargets and call methods on chunks", async () => {
+    // The server returns a ReadableStream whose chunks are RpcTargets. The client reads them
+    // as stubs and can call methods that route back to the server.
+    class ChunkTarget extends RpcTarget {
+      square(i: number) { return i * i; }
+      get label() { return "server-chunk"; }
+    }
+
+    class StreamProvider extends RpcTarget {
+      getStream(): ReadableStream {
+        return new ReadableStream({
+          start(controller) {
+            controller.enqueue(new ChunkTarget());
+            controller.close();
+          }
+        });
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProvider());
+    let stream: any = await harness.stub.getStream();
+
+    let reader = stream.getReader();
+    let { value } = await reader.read();
+    using chunk = value as any;
+
+    expect(await chunk.square(6)).toBe(36);
+    expect(await chunk.label).toBe("server-chunk");
+
+    // Drain the closing `done` chunk so the underlying pipe is released.
+    let { done } = await reader.read();
+    expect(done).toBe(true);
+  });
+
+  it("can send multiple RpcTargets as stream chunks", async () => {
+    class ChunkTarget extends RpcTarget {
+      constructor(private id: number) { super(); }
+      getId() { return this.id; }
+    }
+
+    let stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new ChunkTarget(1));
+        controller.enqueue(new ChunkTarget(2));
+        controller.enqueue(new ChunkTarget(3));
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream) {
+        let reader = stream.getReader();
+        let ids: number[] = [];
+        let chunks: any[] = [];
+        try {
+          while (true) {
+            let { done, value } = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            ids.push(await value.getId());
+          }
+          return ids;
+        } finally {
+          for (let chunk of chunks) {
+            chunk[Symbol.dispose]();
+          }
+        }
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let result: any = await harness.stub.receiveStream(stream);
+
+    expect(result).toEqual([1, 2, 3]);
+  });
 });
 
 // =======================================================================================
