@@ -1200,6 +1200,58 @@ export class RpcPayload {
     }
   }
 
+  // Deliver this payload as the argument list to `WritableStreamDefaultWriter.write(chunk)`.
+  //
+  // Unlike deliverCall(), stream chunks are enqueued and read asynchronously. Disposing the
+  // payload when write() returns would free any stubs nested in the chunk before the reader
+  // dequeues them. For object chunks we therefore keep the payload alive and attach disposal
+  // to the chunk (same pattern as deliverResolve). Bare RpcStubs already implement
+  // Symbol.dispose, so their own disposer owns the capability. Primitive chunks cannot hold
+  // stubs, so the payload is disposed after write settles.
+  //
+  // Expects `this.value` to be a one-element argument array `[chunk]`. Returns a payload
+  // wrapping the (void) write result.
+  public async deliverStreamWrite(
+      writer: { write(chunk: unknown): Promise<void> }): Promise<RpcPayload> {
+    try {
+      let promises: Promise<void>[] = [];
+      this.deliverTo(this, "value", promises);
+
+      // Same e-order constraint as deliverCall: if there are no nested promises, call write
+      // synchronously so concurrent writes stay ordered.
+      if (promises.length > 0) {
+        await Promise.all(promises);
+      }
+
+      let chunk = (this.value as unknown[])[0];
+
+      if (chunk instanceof Object) {
+        // Object (including RpcStub): do not dispose the payload when write() returns — the
+        // reader still needs any nested capabilities. Attach a payload disposer when the
+        // chunk doesn't already have one (RpcStub already disposes its own hook).
+        if (!(Symbol.dispose in chunk)) {
+          Object.defineProperty(chunk, Symbol.dispose, {
+            value: () => this.dispose(),
+            writable: true,
+            enumerable: false,
+            configurable: true,
+          });
+        }
+        await writer.write(chunk);
+        return RpcPayload.fromAppReturn(undefined);
+      }
+
+      // Primitive chunk: nothing to keep alive beyond the write.
+      await writer.write(chunk);
+      this.dispose();
+      return RpcPayload.fromAppReturn(undefined);
+    } catch (err) {
+      // deliverTo / write failed: free any capabilities we still own.
+      this.dispose();
+      throw err;
+    }
+  }
+
   // Produce a promise for this payload for return to the application. Any RpcPromises in the
   // payload are awaited and substituted with their results first.
   //
