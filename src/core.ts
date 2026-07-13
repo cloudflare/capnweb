@@ -1204,10 +1204,11 @@ export class RpcPayload {
   //
   // Unlike deliverCall(), stream chunks are enqueued and read asynchronously. Disposing the
   // payload when write() returns would free any stubs nested in the chunk before the reader
-  // dequeues them. For object chunks we therefore keep the payload alive and attach disposal
-  // to the chunk (same pattern as deliverResolve). Bare RpcStubs already implement
-  // Symbol.dispose, so their own disposer owns the capability. Primitive chunks cannot hold
-  // stubs, so the payload is disposed after write settles.
+  // dequeues them. A chunk only needs its disposal deferred if it owns capabilities the
+  // reader will use after write() resolves. Pure data (primitives, bytes, Date, plain
+  // objects) carries no capabilities, so dispose it immediately and leave the chunk
+  // untouched. Bare RpcStubs already implement Symbol.dispose, so their own disposer owns
+  // the capability; only attach a payload disposer otherwise.
   //
   // Expects `this.value` to be a one-element argument array `[chunk]`. Returns a payload
   // wrapping the (void) write result.
@@ -1225,10 +1226,12 @@ export class RpcPayload {
 
       let chunk = (this.value as unknown[])[0];
 
-      if (chunk instanceof Object) {
-        // Object (including RpcStub): do not dispose the payload when write() returns — the
-        // reader still needs any nested capabilities. Attach a payload disposer when the
-        // chunk doesn't already have one (RpcStub already disposes its own hook).
+      // deliverTo → ensureDeepCopied, so hooks/promises are populated.
+      const ownsCapabilities = this.hooks!.length > 0 || this.promises!.length > 0;
+
+      if (ownsCapabilities && chunk instanceof Object) {
+        // Keep the payload alive until the reader disposes the chunk. A bare RpcStub already
+        // implements Symbol.dispose (its own disposer owns the hook); only attach otherwise.
         if (!(Symbol.dispose in chunk)) {
           Object.defineProperty(chunk, Symbol.dispose, {
             value: () => this.dispose(),
@@ -1241,7 +1244,7 @@ export class RpcPayload {
         return RpcPayload.fromAppReturn(undefined);
       }
 
-      // Primitive chunk: nothing to keep alive beyond the write.
+      // No capabilities (or non-object chunk): nothing to keep alive beyond the write.
       await writer.write(chunk);
       this.dispose();
       return RpcPayload.fromAppReturn(undefined);
