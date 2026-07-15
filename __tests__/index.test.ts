@@ -6,6 +6,7 @@ import { expect, it, describe, inject } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport, RpcTarget,
          RpcStub, newWebSocketRpcSession, newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
+import { swapByteOrder } from "../src/serialize.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 let SERIALIZE_TEST_CASES: Record<string, unknown> = {
@@ -237,6 +238,40 @@ describe("simple serialization", () => {
       expect(Object.getPrototypeOf(deserialized)).toBe(Object.getPrototypeOf(view));
       expect(new Uint8Array(
           deserialized.buffer, deserialized.byteOffset, deserialized.byteLength)).toStrictEqual(bytes);
+    }
+  })
+
+  it("serializes multi-byte numbers in little-endian wire order", () => {
+    let serialized = serialize(new Uint32Array([0x01020304]));
+    let parsed = JSON.parse(serialized) as [string, string, string];
+    expect(parsed[2]).toBe("Uint32Array");
+    let wireBytes = Uint8Array.from(atob(parsed[1]), c => c.charCodeAt(0));
+    expect([...wireBytes]).toStrictEqual([0x04, 0x03, 0x02, 0x01]);
+  })
+
+  it("can swap each multi-byte element's byte order", () => {
+    for (let elementSize of [2, 4, 8]) {
+      let bytes = Uint8Array.from(
+          { length: elementSize * 3 }, (_, index) => (index * 37 + 1) & 0xff);
+      let expected = bytes.slice();
+      for (let offset = 0; offset < expected.length; offset += elementSize) {
+        expected.subarray(offset, offset + elementSize).reverse();
+      }
+
+      swapByteOrder(bytes, elementSize);
+      expect(bytes).toStrictEqual(expected);
+    }
+  })
+
+  it("rejects byte lengths that are misaligned for typed arrays", () => {
+    for (let [type, byteLength, elementSize] of [
+      ["Int16Array", 1, 2],
+      ["Float32Array", 3, 4],
+      ["BigUint64Array", 7, 8],
+    ] as const) {
+      let base64 = btoa("\0".repeat(byteLength));
+      expect(() => deserialize(`["bytes","${base64}","${type}"]`)).toThrowError(
+          `Invalid byte length ${byteLength} for ${type}; expected a multiple of ${elementSize}`);
     }
   })
 

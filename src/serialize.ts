@@ -9,6 +9,39 @@ export type ExportId = number;
 
 // =======================================================================================
 
+const NATIVE_LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
+const TYPED_ARRAY_ELEMENT_SIZE: Record<string, number> = {
+  Int16Array: 2,
+  Uint16Array: 2,
+  Int32Array: 4,
+  Uint32Array: 4,
+  Float32Array: 4,
+  BigInt64Array: 8,
+  BigUint64Array: 8,
+  Float64Array: 8,
+};
+
+// Reverse each element's bytes in place. Production callers only need this on
+// big-endian hosts; it is exported solely so the behavior can be tested on
+// little-endian hosts.
+export function swapByteOrder(bytes: Uint8Array, elementSize: number): void {
+  let view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  for (let offset = 0; offset < bytes.byteLength; offset += elementSize) {
+    switch (elementSize) {
+      case 2:
+        view.setUint16(offset, view.getUint16(offset, false), true);
+        break;
+      case 4:
+        view.setUint32(offset, view.getUint32(offset, false), true);
+        break;
+      case 8:
+        view.setBigUint64(offset, view.getBigUint64(offset, false), true);
+        break;
+    }
+  }
+}
+
 export interface Exporter {
   exportStub(hook: StubHook): ExportId;
   exportPromise(hook: StubHook): ExportId;
@@ -209,6 +242,11 @@ export class Devaluator {
         if (bytes === undefined) {
           let view = value as ArrayBufferView;
           bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+          let elementSize = alternateTypeName && TYPED_ARRAY_ELEMENT_SIZE[alternateTypeName];
+          if (!NATIVE_LITTLE_ENDIAN && elementSize) {
+            bytes = bytes.slice();
+            swapByteOrder(bytes, elementSize);
+          }
         }
 
         let b64: string;
@@ -669,7 +707,17 @@ export class Evaluator {
               throw new TypeError(`Unknown bytes type marker type: ${typeof value[2]}`);
             }
 
+            let elementSize = TYPED_ARRAY_ELEMENT_SIZE[value[2]];
+            if (elementSize !== undefined && bytes.byteLength % elementSize !== 0) {
+              throw new TypeError(
+                  `Invalid byte length ${bytes.byteLength} for ${value[2]}; ` +
+                  `expected a multiple of ${elementSize}`);
+            }
+
             let buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+            if (!NATIVE_LITTLE_ENDIAN && elementSize !== undefined) {
+              swapByteOrder(new Uint8Array(buffer), elementSize);
+            }
             switch (value[2]) {
               case "ArrayBuffer": return buffer;
               case "DataView": return new DataView(buffer);

@@ -175,7 +175,8 @@ should deserialize bytes as its default `Uint8Array` for backwards compatibility
 `type` preserves the byte container type across the wire. The supported `type` values are
 `ArrayBuffer`, `DataView`, `Int8Array`, `Uint8ClampedArray`,
 `Int16Array`, `Uint16Array`, `Int32Array`, `Uint32Array`, `BigInt64Array`, `BigUint64Array`,
-`Float32Array`, and `Float64Array`.
+`Float32Array`, and `Float64Array`. Multi-byte typed array elements are encoded in little-endian
+byte order.
 
 `["blob", type, readableExpression]`
 
