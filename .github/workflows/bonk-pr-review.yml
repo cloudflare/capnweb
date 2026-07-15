@@ -53,5 +53,6 @@ jobs:
           variant: "high"
           forks: "false"
           permissions: write
+          token_permissions: NO_PUSH
           opencode_version: 1.15.13 # pin to this version as certain ones cause ProviderInitError issues
           prompt: ${{ steps.prompt.outputs.value }}
