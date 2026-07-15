@@ -3,11 +3,15 @@
 //     https://opensource.org/license/mit
 
 import { expect, it, describe, inject } from "vitest"
-import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport, RpcTarget,
-         RpcStub, newWebSocketRpcSession, newMessagePortRpcSession,
+import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
+         type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, newWebSocketRpcSession,
+         newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
+import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
 import { Counter, TestTarget } from "./test-util.js";
+
+type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
 
 let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '123': 123,
@@ -543,7 +547,7 @@ class TestTransport implements RpcTransport {
   public log = false;
   private fenced = false;
 
-  async send(message: string): Promise<void> {
+  send(message: string): void {
     // HACK: If the string "$remove$" appears in the message, remove it. This is used in some
     //   tests to hack the RPC protocol.
     message = message.replaceAll("$remove$", "");
@@ -591,6 +595,62 @@ class TestTransport implements RpcTransport {
 
   forceReceiveError(error: any) {
     this.aborter!(error);
+  }
+}
+
+class ObjectTestTransport implements RpcTransportWithCustomEncoding {
+  constructor(
+      private partner?: ObjectTestTransport,
+      readonly encodingLevel: CustomEncodingLevel = "jsonCompatible") {
+    if (partner) {
+      partner.partner = this;
+    }
+  }
+
+  private queue: unknown[] = [];
+  private waiter?: () => void;
+  private aborter?: (err: any) => void;
+  private fenced = false;
+
+  send(message: unknown): void {
+    let cloned = this.encodingLevel === "jsonCompatible" ? JSON.parse(JSON.stringify(message))
+                                                         : structuredClone(message);
+    this.partner!.queue.push(cloned);
+    if (this.partner!.waiter && !this.partner!.fenced) {
+      this.partner!.waiter();
+      this.partner!.waiter = undefined;
+      this.partner!.aborter = undefined;
+    }
+  }
+
+  async receive(): Promise<unknown> {
+    while (this.queue.length == 0 || this.fenced) {
+      await new Promise<void>((resolve, reject) => {
+        this.waiter = resolve;
+        this.aborter = reject;
+      });
+    }
+
+    return this.queue.shift()!;
+  }
+
+  fence() {
+    this.fenced = true;
+  }
+
+  releaseFence() {
+    this.fenced = false;
+    if (this.queue.length > 0 && this.waiter) {
+      this.waiter();
+      this.waiter = undefined;
+      this.aborter = undefined;
+    }
+  }
+
+  abort(reason: any): void {
+    this.aborter?.(reason);
+    this.waiter = undefined;
+    this.aborter = undefined;
   }
 }
 
@@ -656,6 +716,62 @@ class TestHarness<T extends RpcTarget> {
     }
   }
 }
+
+it("propagates async send failures from string transports", async () => {
+  let sendError = new Error("send failed");
+  let transport: RpcTransport = {
+    send(_message: string): Promise<void> {
+      return Promise.reject(sendError);
+    },
+    receive(): Promise<string> {
+      return new Promise(() => {});
+    },
+  };
+
+  let session = new RpcSession<TestTarget>(transport);
+  using stub = session.getRemoteMain();
+
+  await expect(() => stub.square(1)).rejects.toThrow(sendError);
+});
+
+it("propagates synchronous send failures from string transports", async () => {
+  // A transport whose send() throws synchronously (rather than rejecting a promise) must still
+  // abort the session. The abort is deliberately deferred to a microtask so the caller finishes
+  // its own bookkeeping first, matching the timing of a rejected promise from an async transport.
+  let sendError = new Error("sync send failed");
+  let transport: RpcTransport = {
+    send(_message: string): void {
+      throw sendError;
+    },
+    receive(): Promise<string> {
+      return new Promise(() => {});
+    },
+  };
+
+  let session = new RpcSession<TestTarget>(transport);
+  using stub = session.getRemoteMain();
+
+  await expect(() => stub.square(1)).rejects.toThrow(sendError);
+});
+
+it("propagates synchronous send failures from custom-encoding transports", async () => {
+  // Same as above, but exercising the custom-encoding (non-string) send path.
+  let sendError = new Error("sync custom send failed");
+  let transport: RpcTransportWithCustomEncoding = {
+    encodingLevel: "structuredClonable",
+    send(_message: unknown): void {
+      throw sendError;
+    },
+    receive(): Promise<unknown> {
+      return new Promise(() => {});
+    },
+  };
+
+  let session = new RpcSession<TestTarget>(transport);
+  using stub = session.getRemoteMain();
+
+  await expect(() => stub.square(1)).rejects.toThrow(sendError);
+});
 
 describe("local stub", () => {
   it("supports wrapping an RpcTarget", async () => {
@@ -1869,6 +1985,25 @@ describe("error serialization", () => {
     expect(result).toBe("caught");
   });
 
+  it("hides the stack by default with structured clone transports", async () => {
+    let clientTransport = new ObjectTestTransport(undefined, "structuredClonable");
+    let serverTransport = new ObjectTestTransport(clientTransport, "structuredClonable");
+    let client = new RpcSession<TestTarget>(clientTransport);
+    new RpcSession(serverTransport, new TestTarget());
+    using stub = client.getRemoteMain();
+
+    let result = await stub.throwError()
+      .catch(err => {
+        expect(err).toBeInstanceOf(RangeError);
+        expect((err as Error).message).toBe("test error");
+        expect((err as Error).stack).not.toContain("throwErrorImpl");
+        expect((err as Error).stack).not.toContain("test-util.ts");
+
+        return "caught";
+      });
+    expect(result).toBe("caught");
+  });
+
   it("reveals the stack if the callback returns the error", async () => {
     await using harness = new TestHarness(new TestTarget(), {
       onSendError: (error) => {
@@ -2055,6 +2190,12 @@ describe("HTTP requests", () => {
 
     expect(await Promise.all([promise1, promise2, promise3]))
         .toStrictEqual([36, 5, 9]);
+  });
+
+  it("rejects non-POST requests with 405", async () => {
+    let response = await fetch(`http://${inject("testServerHost")}`, { method: "GET" });
+    expect(response.status).toBe(405);
+    await response.text();
   });
 });
 
@@ -2404,6 +2545,119 @@ describe("WritableStream over RPC", () => {
     await rpcPromise;
   });
 
+  it("applies backpressure when custom transport omits stream message size", async () => {
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    let clientTransport = new ObjectTestTransport();
+    let serverTransport = new ObjectTestTransport(clientTransport);
+    let client = new RpcSession<StreamReceiver>(clientTransport);
+    new RpcSession(serverTransport, new StreamReceiver());
+    using clientStub = client.getRemoteMain();
+
+    clientTransport.fence();
+
+    clientStub.receiveStream(stream).catch(() => {});
+
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (writesSent == oldWritesSent) break;
+    }
+
+    expect(writesSent).toBeGreaterThan(1);
+    expect(writesSent).toBeLessThan(20);
+    expect(writesReceived).toBe(0);
+    expect(closeReceived).toBe(false);
+
+    clientTransport.releaseFence();
+  });
+
+  it("uses the size reported by a custom transport's send() for flow control", async () => {
+    // Mirror image of the previous test: the sending side's transport reports a tiny encoded
+    // size from send(), so even though the chunks are large (and their *estimated* size would
+    // fill the flow control window after a few writes, as proven above), all 20 writes proceed
+    // without blocking. This proves the number returned by send() is what feeds flow control.
+    let writesReceived = 0;
+    let closeReceived = false;
+
+    let stream = new WritableStream<string>({
+      write(chunk) { writesReceived++; },
+      close() { closeReceived = true; }
+    });
+
+    let writesSent = 0;
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        let chunk = "x".repeat(40000);
+        for (let i = 0; i < 20; i++) {
+          writesSent++;
+          await writer.write(chunk);
+        }
+        await writer.close();
+      }
+    }
+
+    class SizeReportingTestTransport extends ObjectTestTransport {
+      sendCount = 0;
+      send(message: unknown): number {
+        super.send(message);
+        ++this.sendCount;
+        return 10;  // report a tiny encoded size, regardless of the actual message
+      }
+    }
+
+    let clientTransport = new ObjectTestTransport();
+    let serverTransport = new SizeReportingTestTransport(clientTransport);
+    let client = new RpcSession<StreamReceiver>(clientTransport);
+    new RpcSession(serverTransport, new StreamReceiver());
+    using clientStub = client.getRemoteMain();
+
+    // Fence the client so it never processes incoming messages, and thus never sends acks.
+    clientTransport.fence();
+
+    let promise = clientStub.receiveStream(stream);
+
+    for (;;) {
+      let oldWritesSent = writesSent;
+      await new Promise(resolve => setTimeout(resolve, 0));
+      if (writesSent == oldWritesSent) break;
+    }
+
+    // All writes completed despite no acks, because the reported sizes never filled the window.
+    expect(writesSent).toBe(20);
+    expect(serverTransport.sendCount).toBeGreaterThan(0);
+    expect(writesReceived).toBe(0);
+    expect(closeReceived).toBe(false);
+
+    // Let the messages through and verify everything arrives.
+    clientTransport.releaseFence();
+    await promise;
+    expect(writesReceived).toBe(20);
+    expect(closeReceived).toBe(true);
+  });
+
   it("uses stream messages instead of push+pull+release", async () => {
     // Verify that WritableStream writes use the optimized "stream" message type,
     // which avoids sending separate "pull" and "release" messages.
@@ -2427,7 +2681,7 @@ describe("WritableStream over RPC", () => {
     // Collect all messages sent by the server (which appear in the client's queue).
     let serverMessages: any[] = [];
     let origServerSend = harness.serverTransport.send;
-    harness.serverTransport.send = async function(message: string) {
+    harness.serverTransport.send = function(message: string) {
       serverMessages.push(JSON.parse(message));
       return origServerSend.call(this, message);
     };
@@ -2435,7 +2689,7 @@ describe("WritableStream over RPC", () => {
     // Collect all messages sent by the client (which appear in the server's queue).
     let clientMessages: any[] = [];
     let origClientSend = harness.clientTransport.send;
-    harness.clientTransport.send = async function(message: string) {
+    harness.clientTransport.send = function(message: string) {
       clientMessages.push(JSON.parse(message));
       return origClientSend.call(this, message);
     };
@@ -2538,6 +2792,47 @@ describe("WritableStream over RPC", () => {
     expect(rpcDone).toBe(true);
     expect(rpcError).not.toBeNull();
     expect(rpcError.message).toContain("Simulated write failure");
+  });
+});
+
+describe("transport encoding levels", () => {
+  class EchoService extends RpcTarget {
+    echo(value: unknown): unknown {
+      return value;
+    }
+  }
+
+  // Native values should survive a round trip through a custom-encoding transport at every
+  // non-string level: base64 bytes at "jsonCompatible", raw Uint8Array at
+  // "jsonCompatibleWithBytes", and native structured-clone types at "structuredClonable".
+  for (let level of ["jsonCompatible", "jsonCompatibleWithBytes", "structuredClonable"] as const) {
+    it(`round-trips native types over a ${level} transport`, async () => {
+      let clientTransport = new ObjectTestTransport(undefined, level);
+      let serverTransport = new ObjectTestTransport(clientTransport, level);
+      let client = new RpcSession<EchoService>(clientTransport);
+      new RpcSession(serverTransport, new EchoService());
+      using stub = client.getRemoteMain();
+
+      let bytes = await stub.echo(new Uint8Array([1, 2, 3])) as Uint8Array;
+      expect(new Uint8Array(bytes)).toStrictEqual(new Uint8Array([1, 2, 3]));
+
+      let typedArray = await stub.echo(new Uint32Array([0x01020304, 0xa0b0c0d0])) as Uint32Array;
+      expect(Object.getPrototypeOf(typedArray)).toBe(Uint32Array.prototype);
+      expect(typedArray).toStrictEqual(new Uint32Array([0x01020304, 0xa0b0c0d0]));
+
+      let date = await stub.echo(new Date(1234567890)) as Date;
+      expect(date).toBeInstanceOf(Date);
+      expect(date.getTime()).toBe(1234567890);
+
+      expect(await stub.echo(123n)).toBe(123n);
+    });
+  }
+
+  it("aborts the receive loop when the transport is aborted", async () => {
+    let transport = new ObjectTestTransport();
+    let pending = transport.receive();
+    transport.abort(new Error("boom"));
+    await expect(pending).rejects.toThrow("boom");
   });
 });
 
@@ -3193,5 +3488,131 @@ describe("Blob over RPC", () => {
 
     stub[Symbol.dispose]();
     await pumpMicrotasks();
+  });
+});
+
+describe("deserialization and transport correctness", () => {
+  it("does not let serialized error properties override Object.prototype members", () => {
+    // Wire format for an error is ["error", name, message, stack, propsBag]. The props bag
+    // carries own properties the sender attached to the error. These must be filtered the same
+    // way the plain-object deserializer filters them, so that keys like `__proto__`, `toString`,
+    // `valueOf`, `hasOwnProperty` and `toJSON` cannot be assigned onto the resulting error.
+    let wire = '["error","Error","boom","at test (x:1:1)",' +
+      '{"code":"E_TEST","toString":"nope","valueOf":"nope","hasOwnProperty":"nope",' +
+      '"toJSON":"nope","__proto__":{"polluted":true}}]';
+    let err = deserialize(wire) as Error & Record<string, unknown>;
+
+    expect(err).toBeInstanceOf(Error);
+    expect(err.message).toBe("boom");
+
+    // The legitimate own property is still copied across.
+    expect(Object.prototype.hasOwnProperty.call(err, "code")).toBe(true);
+    expect(err.code).toBe("E_TEST");
+
+    // Object.prototype members and toJSON must not become own properties of the error.
+    for (let key of ["toString", "valueOf", "hasOwnProperty", "toJSON", "__proto__"]) {
+      expect(Object.prototype.hasOwnProperty.call(err, key)).toBe(false);
+    }
+
+    // The error's prototype and behavior are unchanged.
+    expect(Object.getPrototypeOf(err)).toBe(Error.prototype);
+    expect(typeof err.toString).toBe("function");
+    expect(err.toString()).toBe("Error: boom");
+    expect((err as any).polluted).toBeUndefined();
+    expect(({} as any).polluted).toBeUndefined();
+  });
+
+  it("does not let an error type name resolve to an Object.prototype member (type confusion)", () => {
+    // The error type name (value[1]) is attacker-controlled and is used to look up the error
+    // class in ERROR_TYPES. ERROR_TYPES must not resolve names to inherited Object.prototype
+    // members. Before it was given a null prototype, ERROR_TYPES["constructor"] resolved to
+    // `Object` (truthy, so the `|| Error` fallback was skipped), so `new Object(message)`
+    // produced a `String` wrapper rather than an `Error` -- an `instanceof Error` bypass that
+    // still carried the attacker's own-property bag. A name like "toString" resolved to a
+    // non-constructor and threw, aborting the RPC session.
+    let confused = deserialize(
+      '["error","constructor","attacker-payload",null,{"injected":true,"httpStatus":200}]'
+    ) as Error & Record<string, unknown>;
+
+    // Must be a real Error, not a type-confused String wrapper.
+    expect(confused).toBeInstanceOf(Error);
+    expect(confused).not.toBeInstanceOf(String);
+    expect(confused.name).toBe("Error");
+    expect(confused.message).toBe("attacker-payload");
+    // Legitimate (non-prototype) own properties still round-trip onto the correctly-typed Error.
+    expect(confused.injected).toBe(true);
+    expect(confused.httpStatus).toBe(200);
+
+    // Any Object.prototype member name used as the error type must fall back to Error and must
+    // never throw.
+    for (let name of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__",
+                      "isPrototypeOf", "propertyIsEnumerable"]) {
+      let err = deserialize(`["error",${JSON.stringify(name)},"msg"]`) as Error;
+      expect(err).toBeInstanceOf(Error);
+      expect(err.name).toBe("Error");
+      expect(err.message).toBe("msg");
+    }
+
+    // Legitimate built-in error types still resolve correctly.
+    expect(deserialize('["error","TypeError","t"]')).toBeInstanceOf(TypeError);
+    expect(deserialize('["error","RangeError","r"]')).toBeInstanceOf(RangeError);
+  });
+
+  it("delivers the unwrapped abort reason to onRpcBroken (not the payload wrapper)", async () => {
+    // Intentionally not using `using` here: the session is deliberately aborted below, so the
+    // end-of-test "everything disposed" check would not apply.
+    let harness = new TestHarness(new TestTarget());
+    let captured: any[] = [];
+    harness.stub.onRpcBroken(error => { captured.push(error); });
+
+    // Feed the server a malformed message so its read loop throws. The server responds by
+    // sending an ["abort", reason] message back to the client, exercising the client's "abort"
+    // handler. That handler must forward the unwrapped reason value, not the payload wrapper.
+    await harness.clientTransport.send('["not a valid message"]');
+    await pumpMicrotasks();
+
+    expect(captured.length).toBe(1);
+    let error = captured[0];
+    expect(error).toBeInstanceOf(Error);
+    expect(String(error.message)).toContain("bad RPC message");
+  });
+
+  it("truncates an over-long WebSocket close reason on a code-point boundary", async () => {
+    let closeArgs: { code: number, reason: string }[] = [];
+    let closeThrew = false;
+    let listeners: Record<string, ((ev: any) => void)[]> = {};
+
+    let fakeWs: any = {
+      readyState: (globalThis as any).WebSocket.OPEN,
+      addEventListener(type: string, cb: (ev: any) => void) {
+        (listeners[type] ||= []).push(cb);
+      },
+      send(_message: string) { return Promise.resolve(); },
+      close(code: number, reason: string) {
+        // Mimic the real contract: an over-long reason throws.
+        if (new TextEncoder().encode(reason).length > MAX_CLOSE_REASON_BYTES) {
+          closeThrew = true;
+          throw new Error("close reason too long");
+        }
+        closeArgs.push({ code, reason });
+      },
+    };
+
+    newWebSocketRpcSession(fakeWs);
+
+    // Peer-supplied abort reason that straddles the limit with a multi-byte character: the 2-byte
+    // "é" begins at the last allowed byte, so truncation must drop the partial "é" rather than emit
+    // a replacement character (itself 3 bytes, which would re-exceed the limit).
+    let reason = "a".repeat(MAX_CLOSE_REASON_BYTES - 1) + "\u00e9";
+    for (let cb of listeners["message"] || []) cb({ data: JSON.stringify(["abort", reason]) });
+    await pumpMicrotasks();
+
+    expect(closeThrew).toBe(false);
+    expect(closeArgs.length).toBe(1);
+    expect(closeArgs[0].code).toBe(3000);
+    let sentReason = closeArgs[0].reason;
+    expect(new TextEncoder().encode(sentReason).length).toBeLessThanOrEqual(MAX_CLOSE_REASON_BYTES);
+    expect(sentReason).not.toContain("\uFFFD");
+    expect(sentReason).toBe("a".repeat(MAX_CLOSE_REASON_BYTES - 1));
   });
 });

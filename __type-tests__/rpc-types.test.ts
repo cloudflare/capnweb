@@ -9,6 +9,7 @@ import {
   type RpcTransport,
 } from "../src/index.js"
 import { expectAssignable, expectType, type Equal, type Expect } from "./helpers.js"
+import type { WebSocketTransport } from "../src/websocket.js"
 
 type Formatter = (value: number) => Promise<string>
 
@@ -55,7 +56,7 @@ interface PublicApi {
   getMaybeUser(userId: number): Promise<User | null>
   listUsers(): Promise<User[]>
   sum(values: readonly number[]): Promise<number>
-  acceptStreams(readable: ReadableStream<Uint8Array>, writable: WritableStream<any>): Promise<void>
+  acceptStreams(readable: ReadableStream<any>, writable: WritableStream<any>): Promise<void>
 
   getPair(): readonly [Counter, Counter]
   getNested(): Promise<{
@@ -106,6 +107,11 @@ const wsApi = newWebSocketRpcSession<PublicApi>("wss://example.com/rpc")
 const batchApi = newHttpBatchRpcSession<PublicApi>("https://example.com/rpc")
 expectType<RpcStub<PublicApi>>(wsApi)
 expectType<RpcStub<PublicApi>>(batchApi)
+
+// `WebSocketTransport` is generic, so it can't `implements RpcTransport` directly (the ArrayBuffer
+// instantiation intentionally doesn't conform). Assert that the default string instantiation still
+// satisfies the interface.
+expectAssignable<RpcTransport>(null! as WebSocketTransport<string>)
 
 // Positive coverage for direct calls, pipelining, and accepted promise-like arguments.
 const ping = api.ping()
@@ -256,7 +262,6 @@ api.mergeCounters(new Map([[1, localCounter]]))
 // @ts-expect-error sum values must be numbers
 api.sum(["1", "2"])
 
-// @ts-expect-error readable stream chunk type must be Uint8Array
 api.acceptStreams(textReadable, genericWritable)
 
 // @ts-expect-error writable argument must be a WritableStream

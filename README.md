@@ -404,6 +404,8 @@ If anything happens to the stub that would cause all further method calls and pr
 
 * Cap'n Web's pipelining can make it easy for a malicious client to enqueue a large amount of work to occur on a server. To mitigate this, we recommend implementing rate limits on expensive operations. If using Cloudflare Workers, you may also consider configuring [per-request CPU limits](https://developers.cloudflare.com/workers/wrangler/configuration/#limits) to be lower than the default 30s. Note that in stateless Workers (i.e. not Durable Objects), the system considers an entire WebSocket session to be one "request" for CPU limits purposes.
 
+* Cap'n Web applies receiver-side resource limits before expensive message processing, including a maximum incoming message size before `JSON.parse`. If your app is exposed to untrusted peers, also configure native transport or socket payload limits where available, such as `ws`'s `maxPayload`, Bun's `maxPayloadLength`, or the runtime's built-in WebSocket cap. Cap'n Web's own check runs after `RpcTransport.receive()` has returned a complete message string, so transport-level limits are still the first line of defense against buffering very large frames.
+
 * Cap'n Web currently does not provide any runtime type checking. When using TypeScript, keep in mind that types are checked only at compile time. A malicious client can send types you did not expect, and this could cause you application to behave in unexpected ways. For example, MongoDB uses special property names to express queries; placing attacker-provided values directly into queries can result in query injection vulnerabilities (similar to SQL injection). Of course, JSON has always had the same problem, and there exists tooling to solve it. You might consider using a runtime type-checking framework like Zod to check your inputs. In the future, we hope to explore auto-generating type-checking code based on TypeScript types.
 
 ## Setting up a session
@@ -775,3 +777,10 @@ let stub: RemoteMainInterface = session.getRemoteMain();
 ```
 
 Note that sessions are entirely symmetric: neither side is defined as the "client" nor the "server". Each side can optionally expose a "main interface" to the other. In typical scenarios with a logical client and server, the server exposes a main interface but the client does not.
+
+By default, `send()` accepts a string, and `receive()` returns a string, with Cap'n Web handling the encoding all the way to and from strings. However, transports that want more control over the serialization can declare the property `encodingLevel` to control how much encoding Cap'n Web does before passing off the message:
+
+* `"string"` (default): Full JSON round-trip. The transport deals in strings only. Cap'n Web handles all encoding/decoding. This is what HTTP batch and WebSocket transports use.
+* `"jsonCompatible"`: The transport works with JavaScript value trees, but they must be JSON-compatible. Cap'n Web still encodes special types, but skips the final `JSON.stringify`. The transport is responsible for serialization (e.g. to CBOR, MessagePack).
+* `"jsonCompatibleWithBytes"`: Like `"jsonCompatible"` except that byte arrays are left as `Uint8Array` instead of base64-encoded, avoiding the ~33% base64 size overhead and the encode/decode CPU cost. Handy for use with serializations like CBOR or MessagePack that support this efficiently.
+* `"structuredClonable"`: Messages are structured-clonable values. Cap'n Web passes through native structured-clone types where possible, while still handling RPC-specific values such as stubs. This is useful when the transport is a `MessagePort` or similar.

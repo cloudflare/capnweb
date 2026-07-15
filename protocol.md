@@ -184,7 +184,8 @@ A `Blob` value. `type` is the MIME type string (`blob.type`), which may be an em
 
 `["bigint", decimal]`
 
-A bigint value, represented as a decimal string.
+A bigint value, represented as a decimal string. Receivers cap the maximum length of this string to
+bound parsing cost.
 
 `["date", number]`
 
