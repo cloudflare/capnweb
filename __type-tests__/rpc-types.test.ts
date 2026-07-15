@@ -56,7 +56,7 @@ interface PublicApi {
   getMaybeUser(userId: number): Promise<User | null>
   listUsers(): Promise<User[]>
   sum(values: readonly number[]): Promise<number>
-  acceptStreams(readable: ReadableStream<Uint8Array>, writable: WritableStream<any>): Promise<void>
+  acceptStreams(readable: ReadableStream<any>, writable: WritableStream<any>): Promise<void>
 
   getPair(): readonly [Counter, Counter]
   getNested(): Promise<{
@@ -262,7 +262,6 @@ api.mergeCounters(new Map([[1, localCounter]]))
 // @ts-expect-error sum values must be numbers
 api.sum(["1", "2"])
 
-// @ts-expect-error readable stream chunk type must be Uint8Array
 api.acceptStreams(textReadable, genericWritable)
 
 // @ts-expect-error writable argument must be a WritableStream

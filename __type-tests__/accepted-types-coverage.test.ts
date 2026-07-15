@@ -1,5 +1,5 @@
 import { RpcStub, type RpcCompatible } from "../src/index.js"
-import { expectAssignable, expectType, type Expect } from "./helpers.js"
+import { expectAssignable, expectType, type Equal, type Expect } from "./helpers.js"
 
 type LabelState = { label: string; ok: boolean }
 
@@ -59,6 +59,8 @@ interface AcceptedTypesApi {
   roundTripBytes(value: Uint8Array): Uint8Array
   roundTripError(value: Error): Error
   roundTripReadable(value: ReadableStream<Uint8Array>): ReadableStream<Uint8Array>
+  roundTripReadableText(value: ReadableStream<string>): ReadableStream<string>
+  roundTripReadableObjects(value: ReadableStream<LabelState>): ReadableStream<LabelState>
   roundTripWritable(value: WritableStream<any>): WritableStream<any>
   roundTripHeaders(value: Headers): Headers
   roundTripRequest(value: Request): Request
@@ -90,6 +92,10 @@ type _RpcCompatibleAcceptedTypes = [
   Expect<
     ReadableStream<Uint8Array> extends RpcCompatible<ReadableStream<Uint8Array>> ? true : false
   >,
+  Expect<ReadableStream<string> extends RpcCompatible<ReadableStream<string>> ? true : false>,
+  Expect<
+    ReadableStream<LabelState> extends RpcCompatible<ReadableStream<LabelState>> ? true : false
+  >,
   Expect<WritableStream<any> extends RpcCompatible<WritableStream<any>> ? true : false>,
   Expect<Headers extends RpcCompatible<Headers> ? true : false>,
   Expect<Request extends RpcCompatible<Request> ? true : false>,
@@ -98,6 +104,11 @@ type _RpcCompatibleAcceptedTypes = [
 ]
 
 declare const api: RpcStub<AcceptedTypesApi>
+
+type ReadableChunkOf<T> = T extends ReadableStream<infer C> ? C : never
+type _ReadablePreservesChunk = Expect<
+  Equal<ReadableChunkOf<Awaited<ReturnType<typeof api.roundTripReadableText>>>, string>
+>
 
 const plainObject: PlainObject = {
   id: "obj-1",
@@ -121,6 +132,7 @@ const response = new Response("ok", {
 const readableBytes = new ReadableStream<Uint8Array>()
 const writableAny = new WritableStream<any>()
 const readableText = new ReadableStream<string>()
+const readableObjects = new ReadableStream<LabelState>()
 const bundle: AcceptedBundle = {
   text: "bundle",
   count: 1,
@@ -155,6 +167,8 @@ expectAssignable<Promise<Date>>(api.roundTripDate(new Date(0)))
 expectAssignable<Promise<Uint8Array>>(api.roundTripBytes(new Uint8Array([9, 8])))
 expectAssignable<Promise<Error>>(api.roundTripError(new Error("boom")))
 expectAssignable<Promise<ReadableStream<Uint8Array>>>(api.roundTripReadable(readableBytes))
+expectAssignable<Promise<ReadableStream<string>>>(api.roundTripReadableText(readableText))
+expectAssignable<Promise<ReadableStream<LabelState>>>(api.roundTripReadableObjects(readableObjects))
 expectAssignable<Promise<WritableStream<any>>>(api.roundTripWritable(writableAny))
 expectAssignable<Promise<Headers>>(api.roundTripHeaders(new Headers({ "x-id": "1" })))
 expectAssignable<Promise<Request>>(api.roundTripRequest(request))
@@ -190,6 +204,8 @@ async function assertAcceptedAwaitedShapes() {
   const bytes = await api.roundTripBytes(new Uint8Array([1]))
   const err = await api.roundTripError(new TypeError("typed"))
   const rs = await api.roundTripReadable(readableBytes)
+  const rsText = await api.roundTripReadableText(readableText)
+  const rsObjects = await api.roundTripReadableObjects(readableObjects)
   const ws = await api.roundTripWritable(writableAny)
   const h = await api.roundTripHeaders(new Headers())
   const req = await api.roundTripRequest(request)
@@ -209,6 +225,8 @@ async function assertAcceptedAwaitedShapes() {
   expectType<Uint8Array>(bytes)
   expectType<Error>(err)
   expectType<ReadableStream<Uint8Array>>(rs)
+  expectType<ReadableStream<string>>(rsText)
+  expectType<ReadableStream<LabelState>>(rsObjects)
   expectType<WritableStream<any>>(ws)
   expectType<Headers>(h)
   expectType<Request>(req)
@@ -238,8 +256,10 @@ api.roundTripPlainObject({
   nested: [],
 })
 
-// @ts-expect-error byte stream must be ReadableStream<Uint8Array>
-api.roundTripReadable(readableText)
+api.roundTripReadableText(readableText)
+
+// @ts-expect-error a byte-chunk stream is not assignable to a string-chunk readable parameter
+api.roundTripReadableText(readableBytes)
 
 // @ts-expect-error Request required
 api.roundTripRequest("https://example.com")
