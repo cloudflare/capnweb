@@ -11,21 +11,76 @@ export type ExportId = number;
 
 const NATIVE_LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
 
-const TYPED_ARRAY_ELEMENT_SIZE: Record<string, number> = {
+const BYTE_CONTAINER_TYPE_NAMES = [
+  "ArrayBuffer",
+  "DataView",
+  "Int8Array",
+  "Uint8Array",
+  "Uint8ClampedArray",
+  "Int16Array",
+  "Uint16Array",
+  "Int32Array",
+  "Uint32Array",
+  "BigInt64Array",
+  "BigUint64Array",
+  "Float32Array",
+  "Float64Array",
+] as const;
+
+type ByteContainerTypeName = typeof BYTE_CONTAINER_TYPE_NAMES[number];
+type MarkedByteContainerTypeName = Exclude<ByteContainerTypeName, "Uint8Array">;
+
+function isValidByteContainerName(value: string): value is ByteContainerTypeName {
+  return (BYTE_CONTAINER_TYPE_NAMES as readonly string[]).includes(value);
+}
+
+// Listing every type, including those without multi-byte elements, makes adding
+// a new ByteContainerTypeName a compile error until its element size is considered.
+const TYPED_ARRAY_ELEMENT_SIZE: Record<ByteContainerTypeName, number | undefined> = {
+  ArrayBuffer: undefined,
+  DataView: undefined,
+  Int8Array: undefined,
+  Uint8Array: undefined,
+  Uint8ClampedArray: undefined,
   Int16Array: 2,
   Uint16Array: 2,
   Int32Array: 4,
   Uint32Array: 4,
-  Float32Array: 4,
   BigInt64Array: 8,
   BigUint64Array: 8,
+  Float32Array: 4,
   Float64Array: 8,
 };
+
+// Uint8Array intentionally isn't included because it uses the markerless legacy form.
+const BYTE_CONTAINER_PROTOTYPES: Record<MarkedByteContainerTypeName, object> = {
+  ArrayBuffer: ArrayBuffer.prototype,
+  DataView: DataView.prototype,
+  Int8Array: Int8Array.prototype,
+  Uint8ClampedArray: Uint8ClampedArray.prototype,
+  Int16Array: Int16Array.prototype,
+  Uint16Array: Uint16Array.prototype,
+  Int32Array: Int32Array.prototype,
+  Uint32Array: Uint32Array.prototype,
+  BigInt64Array: BigInt64Array.prototype,
+  BigUint64Array: BigUint64Array.prototype,
+  Float32Array: Float32Array.prototype,
+  Float64Array: Float64Array.prototype,
+};
+
+const BYTE_CONTAINER_TYPE_BY_PROTOTYPE = new Map<object, MarkedByteContainerTypeName>();
+for (let type of Object.keys(BYTE_CONTAINER_PROTOTYPES) as MarkedByteContainerTypeName[]) {
+  BYTE_CONTAINER_TYPE_BY_PROTOTYPE.set(BYTE_CONTAINER_PROTOTYPES[type], type);
+}
 
 // Reverse each element's bytes in place. Production callers only need this on
 // big-endian hosts; it is exported solely so the behavior can be tested on
 // little-endian hosts.
 export function swapByteOrder(bytes: Uint8Array, elementSize: number): void {
+  if (elementSize !== 2 && elementSize !== 4 && elementSize !== 8) {
+    throw new RangeError(`Unsupported element size: ${elementSize}`);
+  }
+
   let view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   for (let offset = 0; offset < bytes.byteLength; offset += elementSize) {
     switch (elementSize) {
@@ -195,54 +250,16 @@ export class Devaluator {
       }
 
       case "bytes": {
-        let alternateTypeName: string | undefined;
-        let bytes: Uint8Array | undefined;
-        switch (Object.getPrototypeOf(value)) {
-          case ArrayBuffer.prototype:
-            alternateTypeName = "ArrayBuffer";
-            bytes = new Uint8Array(value as ArrayBuffer);
-            break;
-          case DataView.prototype:
-            alternateTypeName = "DataView";
-            break;
-          case Int8Array.prototype:
-            alternateTypeName = "Int8Array";
-            break;
-          case Uint8ClampedArray.prototype:
-            alternateTypeName = "Uint8ClampedArray";
-            break;
-          case Int16Array.prototype:
-            alternateTypeName = "Int16Array";
-            break;
-          case Uint16Array.prototype:
-            alternateTypeName = "Uint16Array";
-            break;
-          case Int32Array.prototype:
-            alternateTypeName = "Int32Array";
-            break;
-          case Uint32Array.prototype:
-            alternateTypeName = "Uint32Array";
-            break;
-          case BigInt64Array.prototype:
-            alternateTypeName = "BigInt64Array";
-            break;
-          case BigUint64Array.prototype:
-            alternateTypeName = "BigUint64Array";
-            break;
-          case Float32Array.prototype:
-            alternateTypeName = "Float32Array";
-            break;
-          case Float64Array.prototype:
-            alternateTypeName = "Float64Array";
-            break;
-          default:
-            bytes = value as Uint8Array;
-            break;
-        }
-        if (bytes === undefined) {
+        let alternateTypeName = BYTE_CONTAINER_TYPE_BY_PROTOTYPE.get(Object.getPrototypeOf(value));
+        let bytes: Uint8Array;
+        if (alternateTypeName === "ArrayBuffer") {
+          bytes = new Uint8Array(value as ArrayBuffer);
+        } else if (alternateTypeName === undefined) {
+          bytes = value as Uint8Array;
+        } else {
           let view = value as ArrayBufferView;
           bytes = new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
-          let elementSize = alternateTypeName && TYPED_ARRAY_ELEMENT_SIZE[alternateTypeName];
+          let elementSize = TYPED_ARRAY_ELEMENT_SIZE[alternateTypeName];
           if (!NATIVE_LITTLE_ENDIAN && elementSize) {
             bytes = bytes.slice();
             swapByteOrder(bytes, elementSize);
@@ -707,21 +724,29 @@ export class Evaluator {
               throw new TypeError(`Unknown bytes type marker type: ${typeof value[2]}`);
             }
 
-            let elementSize = TYPED_ARRAY_ELEMENT_SIZE[value[2]];
+            if (!isValidByteContainerName(value[2])) {
+              let marker = value[2].slice(0, 64);
+              throw new TypeError(`Unknown bytes type marker: ${marker}`);
+            }
+
+            let marker = value[2];
+            let elementSize = TYPED_ARRAY_ELEMENT_SIZE[marker];
             if (elementSize !== undefined && bytes.byteLength % elementSize !== 0) {
               throw new TypeError(
-                  `Invalid byte length ${bytes.byteLength} for ${value[2]}; ` +
+                  `Invalid byte length ${bytes.byteLength} for ${marker}; ` +
                   `expected a multiple of ${elementSize}`);
             }
 
+            // Copy exactly the decoded range rather than exposing or aliasing a pooled Buffer.
             let buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
             if (!NATIVE_LITTLE_ENDIAN && elementSize !== undefined) {
               swapByteOrder(new Uint8Array(buffer), elementSize);
             }
-            switch (value[2]) {
+            switch (marker) {
               case "ArrayBuffer": return buffer;
               case "DataView": return new DataView(buffer);
               case "Int8Array": return new Int8Array(buffer);
+              case "Uint8Array": return new Uint8Array(buffer);
               case "Uint8ClampedArray": return new Uint8ClampedArray(buffer);
               case "Int16Array": return new Int16Array(buffer);
               case "Uint16Array": return new Uint16Array(buffer);
@@ -731,10 +756,7 @@ export class Evaluator {
               case "BigUint64Array": return new BigUint64Array(buffer);
               case "Float32Array": return new Float32Array(buffer);
               case "Float64Array": return new Float64Array(buffer);
-              default: {
-                let marker = value[2].slice(0, 64);
-                throw new TypeError(`Unknown bytes type marker: ${marker}`);
-              }
+              default: marker satisfies never;
             }
           }
           break;

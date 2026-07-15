@@ -169,6 +169,12 @@ describe("simple serialization", () => {
     let deserialized = deserialize(serialized) as Uint8Array;
     expect(deserialized).toBeInstanceOf(Uint8Array);
     expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
+
+    // Accept the explicit marker from other implementations, while continuing
+    // to emit the markerless form for backwards compatibility.
+    let explicitlyTyped = deserialize('["bytes","SGVsbG8","Uint8Array"]');
+    expect(Object.getPrototypeOf(explicitlyTyped)).toBe(Uint8Array.prototype);
+    expect(explicitlyTyped).toStrictEqual(bytes);
   })
 
   it("can serialize Node.js Buffer as bytes", () => {
@@ -261,6 +267,9 @@ describe("simple serialization", () => {
       swapByteOrder(bytes, elementSize);
       expect(bytes).toStrictEqual(expected);
     }
+
+    expect(() => swapByteOrder(new Uint8Array(), 3)).toThrowError(
+        "Unsupported element size: 3");
   })
 
   it("rejects byte lengths that are misaligned for typed arrays", () => {
