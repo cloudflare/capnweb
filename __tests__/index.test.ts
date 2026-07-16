@@ -7,6 +7,7 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, newWebSocketRpcSession,
          newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
+import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
 import { Counter, TestTarget } from "./test-util.js";
 
@@ -164,6 +165,22 @@ describe("simple serialization", () => {
     expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
   })
 
+  it("can serialize Uint8Array as legacy bytes without a type marker", () => {
+    let bytes = new Uint8Array([72, 101, 108, 108, 111]);
+    let serialized = serialize(bytes);
+    expect(serialized).toBe('["bytes","SGVsbG8"]');
+
+    let deserialized = deserialize(serialized) as Uint8Array;
+    expect(deserialized).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(deserialized)).toStrictEqual(bytes);
+
+    // Accept the explicit marker from other implementations, while continuing
+    // to emit the markerless form for backwards compatibility.
+    let explicitlyTyped = deserialize('["bytes","SGVsbG8","Uint8Array"]');
+    expect(Object.getPrototypeOf(explicitlyTyped)).toBe(Uint8Array.prototype);
+    expect(explicitlyTyped).toStrictEqual(bytes);
+  })
+
   it("can serialize Node.js Buffer as bytes", () => {
     if (typeof Buffer === "undefined") return; // skip in browsers
     let buf = Buffer.from("hello!");
@@ -172,6 +189,110 @@ describe("simple serialization", () => {
     let deserialized = deserialize(serialized) as Uint8Array;
     expect(deserialized).toBeInstanceOf(Uint8Array);
     expect(new Uint8Array(deserialized)).toStrictEqual(new Uint8Array(buf));
+  })
+
+  it("can serialize ArrayBuffer as bytes with an ArrayBuffer marker", () => {
+    let bytes = new Uint8Array([72, 101, 108, 108, 111]);
+    let serialized = serialize(bytes.buffer);
+    expect(serialized).toBe('["bytes","SGVsbG8","ArrayBuffer"]');
+
+    let deserialized = deserialize(serialized);
+    expect(deserialized).toBeInstanceOf(ArrayBuffer);
+    expect(new Uint8Array(deserialized as ArrayBuffer)).toStrictEqual(bytes);
+  })
+
+  it("can serialize typed array views as bytes with type markers", () => {
+    let cases = [
+      {
+        name: "DataView",
+        elementSize: 1,
+        makeView: (buffer: ArrayBuffer, offset: number, byteLength: number) =>
+            new DataView(buffer, offset, byteLength),
+      },
+      ...[
+        Int8Array,
+        Uint8ClampedArray,
+        Int16Array,
+        Uint16Array,
+        Int32Array,
+        Uint32Array,
+        BigInt64Array,
+        BigUint64Array,
+        Float32Array,
+        Float64Array,
+      ].map(Type => ({
+        name: Type.name,
+        elementSize: Type.BYTES_PER_ELEMENT,
+        makeView: (buffer: ArrayBuffer, offset: number, byteLength: number) =>
+            new Type(buffer, offset, byteLength / Type.BYTES_PER_ELEMENT),
+      })),
+    ];
+
+    for (let {name, elementSize, makeView} of cases) {
+      // Use a non-zero offset and extra trailing byte to verify only the view's visible byte range
+      // is serialized, not the whole backing buffer.
+      let byteLength = elementSize * 2;
+      let offset = elementSize;
+      let backing = new ArrayBuffer(offset + byteLength + 1);
+      let bytes = new Uint8Array(byteLength);
+      for (let i = 0; i < bytes.length; i++) bytes[i] = i + 1;
+      new Uint8Array(backing, offset, byteLength).set(bytes);
+
+      let view = makeView(backing, offset, byteLength);
+      let serialized = serialize(view);
+      let parsed = JSON.parse(serialized) as [string, string, string];
+      expect(parsed[0]).toBe("bytes");
+      expect(parsed[2]).toBe(name);
+
+      let deserialized = deserialize(serialized) as ArrayBufferView;
+      expect(Object.getPrototypeOf(deserialized)).toBe(Object.getPrototypeOf(view));
+      expect(new Uint8Array(
+          deserialized.buffer, deserialized.byteOffset, deserialized.byteLength)).toStrictEqual(bytes);
+    }
+  })
+
+  it("serializes multi-byte numbers in little-endian wire order", () => {
+    let serialized = serialize(new Uint32Array([0x01020304]));
+    let parsed = JSON.parse(serialized) as [string, string, string];
+    expect(parsed[2]).toBe("Uint32Array");
+    let wireBytes = Uint8Array.from(atob(parsed[1]), c => c.charCodeAt(0));
+    expect([...wireBytes]).toStrictEqual([0x04, 0x03, 0x02, 0x01]);
+  })
+
+  it("can swap each multi-byte element's byte order", () => {
+    for (let elementSize of [2, 4, 8]) {
+      let bytes = Uint8Array.from(
+          { length: elementSize * 3 }, (_, index) => (index * 37 + 1) & 0xff);
+      let expected = bytes.slice();
+      for (let offset = 0; offset < expected.length; offset += elementSize) {
+        expected.subarray(offset, offset + elementSize).reverse();
+      }
+
+      swapByteOrder(bytes, elementSize);
+      expect(bytes).toStrictEqual(expected);
+    }
+
+    expect(() => swapByteOrder(new Uint8Array(), 3)).toThrowError(
+        "Unsupported element size: 3");
+  })
+
+  it("rejects byte lengths that are misaligned for typed arrays", () => {
+    for (let [type, byteLength, elementSize] of [
+      ["Int16Array", 1, 2],
+      ["Float32Array", 3, 4],
+      ["BigUint64Array", 7, 8],
+    ] as const) {
+      let base64 = btoa("\0".repeat(byteLength));
+      expect(() => deserialize(`["bytes","${base64}","${type}"]`)).toThrowError(
+          `Invalid byte length ${byteLength} for ${type}; expected a multiple of ${elementSize}`);
+    }
+  })
+
+  it("throws for unknown bytes type markers", () => {
+    expect(() => deserialize('["bytes","SGVsbG8","invalidUint8Array"]')).toThrowError(
+        "Unknown bytes type marker: invalidUint8Array");
+    expect(() => deserialize('["bytes","SGVsbG8",123]')).toThrowError(
+        "Unknown bytes type marker type: number");
   })
 
   it("preserves Invalid Date values through serialization", () => {
@@ -2694,6 +2815,10 @@ describe("transport encoding levels", () => {
 
       let bytes = await stub.echo(new Uint8Array([1, 2, 3])) as Uint8Array;
       expect(new Uint8Array(bytes)).toStrictEqual(new Uint8Array([1, 2, 3]));
+
+      let typedArray = await stub.echo(new Uint32Array([0x01020304, 0xa0b0c0d0])) as Uint32Array;
+      expect(Object.getPrototypeOf(typedArray)).toBe(Uint32Array.prototype);
+      expect(typedArray).toStrictEqual(new Uint32Array([0x01020304, 0xa0b0c0d0]));
 
       let date = await stub.echo(new Date(1234567890)) as Date;
       expect(date).toBeInstanceOf(Date);
