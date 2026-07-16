@@ -62,8 +62,11 @@ class WritableStreamStubHook extends StubHook {
         state.closed = true;
       }
 
-      let func = state.writer[method] as Function;
-      let promise = args.deliverCall(func, state.writer);
+      // write(chunk) delivers asynchronously: stubs nested in the chunk must outlive
+      // writer.write() returning. See RpcPayload.deliverStreamWrite().
+      let promise = method === "write"
+          ? args.deliverStreamWrite(state.writer)
+          : args.deliverCall(state.writer[method] as Function, state.writer);
       return new PromiseStubHook(promise.then(payload => new PayloadStubHook(payload)));
     } catch (err) {
       return new ErrorStubHook(err);
