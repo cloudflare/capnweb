@@ -51,14 +51,14 @@
     "@cloudflare/workers-types": "^4.20260205.0",
     "@types/bun": "^1.2.0",
     "@types/ws": "^8.18.1",
-    "@vitest/browser": "^3.2.4",
+    "@vitest/browser": "^3.2.7",
     "pkg-pr-new": "^0.0.60",
     "playwright": "^1.56.1",
     "tsdown": "^0.22.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
-    "vitest": "^3.2.4",
-    "ws": "^8.19.0"
+    "vitest": "^3.2.7",
+    "ws": "^8.21.1"
   },
   "repository": {
     "type": "git",
