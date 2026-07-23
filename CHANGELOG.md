@@ -1,5 +1,19 @@
 # capnweb
 
+## 0.11.0
+
+### Minor Changes
+
+- [#212](https://github.com/cloudflare/capnweb/pull/212) [`1cca1a2`](https://github.com/cloudflare/capnweb/commit/1cca1a212da1e8bc4f807725d96702f0b78207e1) Thanks [@codehz](https://github.com/codehz)! - Support RpcTargets (and other RPC stubs) as ReadableStream/WritableStream chunks without disposing their capabilities when `write()` returns. Stream chunk payloads now keep lifecycle tied to the chunk (via `Symbol.dispose` when needed) so methods on streamed stubs remain usable after the write resolves.
+
+- [#201](https://github.com/cloudflare/capnweb/pull/201) [`7325f9d`](https://github.com/cloudflare/capnweb/commit/7325f9d5c80dd57fea896bb4696d22a102cf10a8) Thanks [@ttmx](https://github.com/ttmx)! - Support exact ArrayBuffer, DataView, and typed array serialization over RPC.
+
+### Patch Changes
+
+- [#220](https://github.com/cloudflare/capnweb/pull/220) [`43aa384`](https://github.com/cloudflare/capnweb/commit/43aa384b211f180c6b91ec7d2aa9acf4b57b3fcd) Thanks [@ndisidore](https://github.com/ndisidore)! - Remove the ~1ms per-batch latency floor in the HTTP batch client on Node and Bun by flushing via `setImmediate` instead of the clamped `setTimeout(0)`.
+
+- [#214](https://github.com/cloudflare/capnweb/pull/214) [`2a02db9`](https://github.com/cloudflare/capnweb/commit/2a02db961460c222b0643a92483255613c7f78d5) Thanks [@ndisidore](https://github.com/ndisidore)! - The RPC `ReadableStream` type accepts any RPC-compatible chunk type, matching `WritableStream`.
+
 ## 0.10.0
 
 ### Minor Changes
