@@ -8,6 +8,12 @@ import type { IncomingMessage, ServerResponse, OutgoingHttpHeader, OutgoingHttpH
 
 type SendBatchFunc = (batch: string[]) => Promise<string[]>;
 
+// Yield a full macrotask; prefer setImmediate because Node/Bun clamp setTimeout(0) to 1ms.
+const yieldToMacrotask: () => Promise<void> =
+  typeof setImmediate === "function"
+    ? () => new Promise(resolve => setImmediate(resolve))
+    : () => new Promise(resolve => setTimeout(resolve, 0));
+
 class BatchClientTransport implements RpcTransport {
   constructor(sendBatch: SendBatchFunc) {
     this.#promise = this.#scheduleBatch(sendBatch);
@@ -55,7 +61,7 @@ class BatchClientTransport implements RpcTransport {
     // promise in order to explicitly indicate they want the results. Unfortunately, `await`ing
     // a thenable does not call `.then()` immediately -- for some reason it waits for a turn of
     // the microtask queue first, *then* calls `.then()`.
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await yieldToMacrotask();
 
     if (this.#aborted !== undefined) {
       throw this.#aborted;
