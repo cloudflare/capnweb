@@ -378,6 +378,27 @@ Sometimes you need to pass a stub somewhere where it will be disposed, but also 
 
 Hint: You can call `.dup()` on a property of a stub or promise, in order to create a stub backed by that property. This is particularly useful when you know in advance that the property is going to resolve to a stub: calling `.dup()` on it gives you a stub you can start using immediately, that otherwise behaves exactly the same as the eventual stub would if you awaited it.
 
+#### Holding on to a callback past the call that delivered it
+
+A common bidirectional-calling pattern is for the client to pass a callback to the server, which the server then invokes later (for example from a timer, an event handler, or a subsequent RPC). Because the callback parameter is a stub, and stubs in params are implicitly disposed when the call returns, the server must duplicate the stub with `.dup()` if it wants to invoke the callback after the call completes:
+
+```ts
+class Api extends RpcTarget {
+  async setCallback(cbfunc) {
+    // Without .dup(), `cbfunc` is disposed when setCallback() returns.
+    this.cbfunc = cbfunc.dup();
+    this.timer = setInterval(() => this.cbfunc("tick"), 1000);
+  }
+
+  [Symbol.dispose]() {
+    clearInterval(this.timer);
+    this.cbfunc[Symbol.dispose]();
+  }
+}
+```
+
+The same rule applies in the other direction: if the server returns a stub to the client and the client wants to keep using it after disposing the result, the client should `.dup()` the stub before the result is disposed.
+
 ### Listening for disposal
 
 An `RpcTarget` may declare a `Symbol.dispose` method. If it does, the RPC system will automatically invoke it when a stub pointing at it (and all its duplicates) has been disposed.
