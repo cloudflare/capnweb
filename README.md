@@ -383,16 +383,37 @@ Hint: You can call `.dup()` on a property of a stub or promise, in order to crea
 A common bidirectional-calling pattern is for the client to pass a callback to the server, which the server then invokes later (for example from a timer, an event handler, or a subsequent RPC). Because the callback parameter is a stub, and stubs in params are implicitly disposed when the call returns, the server must duplicate the stub with `.dup()` if it wants to invoke the callback after the call completes:
 
 ```ts
+import { type RpcStub, RpcTarget } from 'capnweb';
+
+// The callback the client passes in: a stub wrapping a function.
+type CallbackFunc = RpcStub<(msg: string) => void>;
+
 class Api extends RpcTarget {
-  async setCallback(cbfunc) {
-    // Without .dup(), `cbfunc` is disposed when setCallback() returns.
-    this.cbfunc = cbfunc.dup();
-    this.timer = setInterval(() => this.cbfunc("tick"), 1000);
+  #callbackFunc?: CallbackFunc;
+  #timer?: NodeJS.Timeout;
+
+  async setCallback(callbackFunc: CallbackFunc) {
+    // release any previously-registered callback so repeated calls don't leak.
+    this.#stop();
+
+    // stubs passed as params are implicitly disposed when the call returns.
+    // but `.dup()` gives us our own reference that outlives `setCallback()`.
+    this.#callbackFunc = callbackFunc.dup();
+    this.#timer = setInterval(() => this.#callbackFunc?.("tick"), 1000);
+  }
+
+  #stop() {
+    if (this.#timer !== undefined) {
+      clearInterval(this.#timer);
+      this.#timer = undefined;
+    }
+    // Dispose our duplicate so the client-side stub can be freed.
+    this.#callbackFunc?.[Symbol.dispose]();
+    this.#callbackFunc = undefined; // maintain idempotency
   }
 
   [Symbol.dispose]() {
-    clearInterval(this.timer);
-    this.cbfunc[Symbol.dispose]();
+    this.#stop();
   }
 }
 ```
