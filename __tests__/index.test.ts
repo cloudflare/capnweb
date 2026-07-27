@@ -39,6 +39,9 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '["-inf"]': -Infinity,
   '["nan"]': NaN,
 
+  '["regexp","foo\\\\d+","gi"]': /foo\d+/gi,
+  '["regexp","^bar$",""]': /^bar$/,
+
   '["headers",[]]': new Headers(),
   '["headers",[["content-type","text/plain"],["x-custom","hello"]]]':
       new Headers({"Content-Type": "text/plain", "X-Custom": "hello"}),
