@@ -4,6 +4,7 @@
 
 // Long-lived state shared across per-module transforms in one build. One instance per plugin.
 
+import { realpathSync } from "node:fs";
 import { basename, isAbsolute, relative, resolve } from "node:path";
 import ts from "typescript";
 
@@ -24,6 +25,15 @@ export type TransformContextOptions = {
 
 function normalizePath(path: string): string {
   return path.replace(/\\/g, "/");
+}
+
+/** Symlink-resolved spelling of `path`, or the path itself if it can't be read. */
+function toRealPath(path: string): string {
+  try {
+    return normalizePath(realpathSync.native(path));
+  } catch {
+    return normalizePath(path);
+  }
 }
 
 function hasGlob(pattern: string): boolean {
@@ -126,6 +136,7 @@ export function createTransformContext(
   let publicOptions: TransformContextOptions = { ...options, cwd };
   let program: ts.Program | null = null;
   let checker: ts.TypeChecker | null = null;
+  let realPathIndex: Map<string, ts.SourceFile> | null = null;
 
   function ensureProgram(): ts.Program {
     if (program) return program;
@@ -179,6 +190,7 @@ export function createTransformContext(
     // Program lazily on the next access.
     program = null;
     checker = null;
+    realPathIndex = null;
   }
 
   return {
@@ -208,7 +220,21 @@ export function createTransformContext(
     },
 
     getSourceFile(id: string): ts.SourceFile | undefined {
-      return ensureProgram().getSourceFile(id);
+      let prog = ensureProgram();
+      let direct = prog.getSourceFile(id);
+      if (direct) return direct;
+      // Bundlers resolve symlinks before handing us an id: for a project under
+      // /tmp, Vite reports /private/tmp/src/worker.ts while the program's file
+      // names keep the tsconfig spelling /tmp/src/worker.ts. Without this the
+      // lookup misses, the module is left untransformed, and the marker throws
+      // "called before it was transformed" at runtime.
+      if (!realPathIndex) {
+        realPathIndex = new Map();
+        for (let sf of prog.getSourceFiles()) {
+          realPathIndex.set(toRealPath(sf.fileName), sf);
+        }
+      }
+      return realPathIndex.get(toRealPath(id));
     },
 
     invalidateFile(_id: string): void {
@@ -220,6 +246,7 @@ export function createTransformContext(
     dispose(): void {
       program = null;
       checker = null;
+      realPathIndex = null;
     },
   };
 }
