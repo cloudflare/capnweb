@@ -378,11 +378,8 @@ export class Devaluator {
       }
 
       case "url":
-        // At structuredClonable level, keep URL as native value.
-        if (this.encodingLevel === "structuredClonable") {
-          return value;
-        }
-        return ["url", (<URL>value).href];
+        // Always tuple-encode URLs; structured-clone support for URL isn't universal.
+        return ["url", (value as URL).href];
 
       case "headers":
         // The `Headers` TS type apparently doesn't declare itself as being
