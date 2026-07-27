@@ -79,10 +79,12 @@
     "typescript": ">=5.7.0"
   },
   "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.47.0",
     "@typescript/vfs": "^1.6.4",
     "capnweb": "^0.10.0",
     "tsdown": "^0.22.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite8": "npm:vite@^8.1.5"
   },
   "publishConfig": {
     "access": "public"
