@@ -39,7 +39,7 @@ export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
-    "error" | "undefined" | "writable" | "readable" | "headers" | "request" | "response";
+    "error" | "undefined" | "writable" | "readable" | "url" | "headers" | "request" | "response";
 
 const AsyncFunction = (async function () {}).constructor;
 
@@ -114,6 +114,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case ReadableStream.prototype:
       return "readable";
+
+    case URL.prototype:
+      return "url";
 
     case Headers.prototype:
       return "headers";
@@ -963,6 +966,7 @@ export class RpcPayload {
       case "date":
       case "bytes":
       case "blob":
+      case "url":
       case "error":
       case "undefined":
         // immutable, no need to copy
@@ -1344,6 +1348,7 @@ export class RpcPayload {
       case "bytes":
       case "blob":
       case "date":
+      case "url":
       case "error":
       case "undefined":
         return;
@@ -1489,6 +1494,7 @@ export class RpcPayload {
       case "rpc-target":
       case "writable":
       case "readable":
+      case "url":
       case "headers":
       case "request":
       case "response":
@@ -1642,6 +1648,7 @@ function followPath(value: unknown, parent: object | undefined,
       case "blob":
       case "date":
       case "error":
+      case "url":
       case "headers":
       case "request":
       case "response":

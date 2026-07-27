@@ -377,6 +377,13 @@ export class Devaluator {
         return alternateTypeName === undefined ? ["bytes", b64] : ["bytes", b64, alternateTypeName];
       }
 
+      case "url":
+        // At structuredClonable level, keep URL as native value.
+        if (this.encodingLevel === "structuredClonable") {
+          return value;
+        }
+        return ["url", (<URL>value).href];
+
       case "headers":
         // The `Headers` TS type apparently doesn't declare itself as being
         // Iterable<[string, string]>, but it is.
@@ -949,6 +956,12 @@ export class Evaluator {
           return -Infinity;
         case "nan":
           return NaN;
+
+        case "url":
+          if (value.length === 2 && typeof value[1] === "string") {
+            return new URL(value[1]);
+          }
+          break;
 
         case "headers":
           // We only need to validate that the parameter is an array, so as not to invoke an
