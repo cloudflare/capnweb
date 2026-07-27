@@ -199,6 +199,10 @@ A JavaScript `Error` value. `type` is the name of the specific well-known `Error
 
 When `props` is present, `stack` is normalised to `null` if absent so that positional indexing for `props` is unambiguous. When there are no extras, the legacy 3- or 4-element form is emitted unchanged.
 
+`["url", href]`
+
+A `URL` object. `href` is the fully-serialized (and normalized) URL string, i.e. the value of the URL's `href` property. The receiver reconstructs the `URL` via `new URL(href)`. For example: `["url", "https://example.com/path?q=1"]`.
+
 `["headers", pairs]`
 
 A `Headers` object from the Fetch API. `pairs` is an array of `[name, value]` pairs, where both `name` and `value` are strings. For example: `["headers", [["content-type", "text/plain"], ["x-custom", "hello"]]]`.
