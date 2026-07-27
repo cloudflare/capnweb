@@ -385,35 +385,27 @@ A common bidirectional-calling pattern is for the client to pass a callback to t
 ```ts
 import { type RpcStub, RpcTarget } from 'capnweb';
 
-// The callback the client passes in: a stub wrapping a function.
-type CallbackFunc = RpcStub<(msg: string) => void>;
+// A callback the client passes in: a stub wrapping a function.
+type Listener = RpcStub<(msg: string) => void>;
 
 class Api extends RpcTarget {
-  #callbackFunc?: CallbackFunc;
-  #timer?: NodeJS.Timeout;
+  #listener?: Listener;
 
-  async setCallback(callbackFunc: CallbackFunc) {
-    // release any previously-registered callback so repeated calls don't leak.
-    this.#stop();
-
-    // stubs passed as params are implicitly disposed when the call returns.
-    // but `.dup()` gives us our own reference that outlives `setCallback()`.
-    this.#callbackFunc = callbackFunc.dup();
-    this.#timer = setInterval(() => this.#callbackFunc?.("tick"), 1000);
+  // Stubs passed as params are disposed when the call returns, so `.dup()`
+  // to keep a reference that outlives registerListener().
+  registerListener(listener: Listener) {
+    this.#listener?.[Symbol.dispose]();   // release any previous listener
+    this.#listener = listener.dup();
   }
 
-  #stop() {
-    if (this.#timer !== undefined) {
-      clearInterval(this.#timer);
-      this.#timer = undefined;
-    }
-    // Dispose our duplicate so the client-side stub can be freed.
-    this.#callbackFunc?.[Symbol.dispose]();
-    this.#callbackFunc = undefined; // maintain idempotency
+  // A *later* call can invoke the retained callback -- still valid thanks to .dup().
+  notify(msg: string) {
+    this.#listener?.(msg);
   }
 
+  // Dispose our duplicate when done so the client-side stub can be freed.
   [Symbol.dispose]() {
-    this.#stop();
+    this.#listener?.[Symbol.dispose]();
   }
 }
 ```
