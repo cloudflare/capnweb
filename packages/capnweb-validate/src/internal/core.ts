@@ -93,6 +93,7 @@ type BaseType =
   | Float64Array
   | ReadableStream<Uint8Array>
   | WritableStream<unknown>
+  | URL
   | Request
   | Response
   | Headers;
@@ -423,6 +424,7 @@ export const v = {
   blob: exactBrand("Blob"),
   readableStream: exactBrand("ReadableStream"),
   writableStream: exactBrand("WritableStream"),
+  url: exactBrand("URL"),
   headers: exactBrand("Headers"),
   request: exactBrand("Request"),
   response: exactBrand("Response"),

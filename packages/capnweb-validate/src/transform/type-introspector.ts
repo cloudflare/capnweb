@@ -79,6 +79,7 @@ export type TypeShape =
   | { kind: "blob" } // Blob
   | { kind: "readableStream" }
   | { kind: "writableStream" }
+  | { kind: "url" }
   | { kind: "headers" }
   | { kind: "request" }
   | { kind: "response" }
@@ -519,6 +520,7 @@ const BUILTIN_VALUE_TYPES: Record<string, TypeShape> = {
   Blob: { kind: "blob" },
   ReadableStream: { kind: "readableStream" },
   WritableStream: { kind: "writableStream" },
+  URL: { kind: "url" },
   Headers: { kind: "headers" },
   Request: { kind: "request" },
   Response: { kind: "response" },
