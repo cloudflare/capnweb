@@ -543,7 +543,7 @@ export function validateArgs(
   }
   // Extra args beyond the declared parameter list are ignored, not refused: a
   // newer caller passing a parameter that this build's signature doesn't know
-  // about is normal schema evolution, and JS drops unused args anyway.
+  // about is normal schema evolution. wrapArgs drops them before the call.
 }
 
 const SERVER_PASSTHROUGH_METHODS = new Set([
