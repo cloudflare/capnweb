@@ -540,13 +540,10 @@ export function validateArgs(
     for (let i = specArgs.length; i < args.length; i++) {
       methodSpec.rest(args[i], [serviceName, prop, i]);
     }
-  } else if (args.length > specArgs.length) {
-    fail(
-      [serviceName, prop, specArgs.length],
-      "no extra argument",
-      args[specArgs.length]
-    );
   }
+  // Extra args beyond the declared parameter list are ignored, not refused: a
+  // newer caller passing a parameter that this build's signature doesn't know
+  // about is normal schema evolution. wrapArgs drops them before the call.
 }
 
 const SERVER_PASSTHROUGH_METHODS = new Set([
@@ -669,6 +666,14 @@ function wrapArgs(
     for (let i = specArgs.length; i < args.length; i++) {
       wrapOne(i, methodSpec.rest);
     }
+    return next ?? args;
+  }
+  // Undeclared trailing args are validated by nothing, so drop them rather
+  // than hand them to the implementation: `greet(name, ...rest)` or
+  // `arguments` would otherwise see values no validator ever looked at. Only
+  // safe when the spec declares its params; a client-side spec omits `args`.
+  if (methodSpec.args && args.length > specArgs.length) {
+    return (next ?? args).slice(0, specArgs.length);
   }
   return next ?? args;
 }
