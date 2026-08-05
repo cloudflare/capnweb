@@ -37,7 +37,7 @@ export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 
 export type PropertyPath = (string | number)[];
 
-type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
+type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" | "set" |
     "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
     "error" | "undefined" | "writable" | "readable" | "headers" | "request" | "response";
 
@@ -92,6 +92,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case Date.prototype:
       return "date";
+
+    case Set.prototype:
+      return "set";
 
     case Uint8Array.prototype:
     case BUFFER_PROTOTYPE:
@@ -626,6 +629,28 @@ export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise
   return stub[RAW_STUB];
 }
 
+// RpcPromise elements are set using property access on the parent. 
+// 
+// To make this work for `Set`, this function defines a one-time use setter that inserts the 
+// resolved value in the correct order and rebuilds the set.
+//
+// The `property` must be unique for each element.
+export function defineSetPromiseSlot(set: Set<unknown>, property: string, placeholder: unknown) {
+  if (!(placeholder instanceof RpcPromise)) return;
+  Object.defineProperty(set, property, {
+    configurable: true, enumerable: false,
+    set(resolved: unknown) {
+      let elms = [...set];
+      let ri = elms.indexOf(placeholder);
+      delete (set as any)[property]
+      set.clear()
+      for (let i = 0; i < elms.length; i++) {
+        set.add(i === ri ? resolved : elms[i]);
+      }
+    }
+  });
+}
+
 // Given a promise stub (still wrapped in a Proxy), pull the remote promise and deliver the
 // payload. This is a helper used to implement the then/catch/finally methods of RpcPromise.
 async function pullPromise(promise: RpcPromise): Promise<unknown> {
@@ -974,9 +999,24 @@ export class RpcPayload {
         // parent.
         let array = <Array<unknown>>value;
         let len = array.length;
-        let result = new Array(len);
+        let result = new Array(len);        
         for (let i = 0; i < len; i++) {
           result[i] = this.deepCopy(array[i], array, i, result, dupStubs, owner);
+        }
+        return result;
+      }
+
+      case "set": {
+        // We have to construct the new set first, then fill it in, so we can pass it as the
+        // parent.
+        let set = <Set<unknown>>value;
+        let result = new Set();
+        let counter = 0;
+        for (let val of set) {
+          let key = `${counter++}`;
+          let copy = this.deepCopy(val, set, key, result, dupStubs, owner);
+          defineSetPromiseSlot(result, key, copy);            
+          result.add(copy)
         }
         return result;
       }
@@ -1357,6 +1397,14 @@ export class RpcPayload {
         return;
       }
 
+      case "set": {
+        let set = <Set<unknown>>value;
+        for (let element of <Set<unknown>>value) {
+          this.disposeImpl(element, set)
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1503,6 +1551,14 @@ export class RpcPayload {
         return;
       }
 
+      case "set": {
+        let set = <Set<unknown>>value;
+        for (let element of set) {
+          this.ignoreUnhandledRejectionsImpl(element);
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1641,6 +1697,7 @@ function followPath(value: unknown, parent: object | undefined,
       case "bytes":
       case "blob":
       case "date":
+      case "set":
       case "error":
       case "headers":
       case "request":

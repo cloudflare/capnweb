@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook, defineSetPromiseSlot } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -317,6 +317,15 @@ export class Devaluator {
         }
         // Wrap literal arrays in an outer one-element array, to "escape" them.
         return [result];
+      }
+
+      case "set": {
+        let set = <Set<unknown>>value;        
+        let elements: unknown[] = [];
+        for (let element of set) {          
+          elements.push(this.devaluateImpl(element, set, depth + 1))
+        }
+        return ["set", elements];
       }
 
       case "bigint":
@@ -839,6 +848,19 @@ export class Evaluator {
           }
           if (typeof value[1] == "number") {
             return new Date(value[1]);
+          }
+          break;
+        case "set":
+          if (value.length === 2 && value[1] instanceof Array) {
+            let set = new Set();
+            let counter = 0;
+            for (let element of value[1]) {
+              let key = `${counter++}`
+              let copy = this.evaluateImpl(element, set, key, depth + 1)
+              defineSetPromiseSlot(set, key, copy)
+              set.add(copy);
+            }
+            return set;
           }
           break;
         case "bytes": {

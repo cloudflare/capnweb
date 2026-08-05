@@ -27,6 +27,8 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '{"foo":[[123]]}': {foo: [123]},
   '{"foo":[[123]],"bar":[[456,789]]}': {foo: [123], bar: [456, 789]},
 
+  '["set",[1,2,"abc",[[123]]]]': new Set([1, 2, "abc", [123]]),
+
   '["bigint","123"]': 123n,
   '["date",1234]': new Date(1234),
   '["bytes","aGVsbG8h"]': new TextEncoder().encode("hello!"),
@@ -1570,6 +1572,117 @@ describe("promise pipelining", () => {
 
     await expect(() => promise).rejects.toThrow("test error");
     await expect(() => promise2).rejects.toThrow("test error");
+  });
+});
+
+describe("promises inside a Set", () => {
+  // A Set has no addressable positions, but delivery resolves a located promise by assigning
+  // `parent[property] = value`. These tests pin the behavior of the temporary setter that makes
+  // that work, on both the wire path (Evaluator) and the local path (RpcPayload.deepCopy).
+  class SetTarget extends RpcTarget {
+    square(i: number) {
+      return i * i;
+    }
+
+    // Reports what actually arrived. Deliberately does not await the elements: an unresolved
+    // promise is still thenable, so awaiting would hide a failure to substitute it.
+    inspect(container: Set<unknown>) {
+      return {
+        isSet: container instanceof Set,
+        elements: [...container].map(element => {
+          // RPC stubs and promises are callable, so typeof reports "function", not "object".
+          let objectLike = element !== null &&
+              (typeof element === "object" || typeof element === "function");
+          return objectLike && typeof (<any>element).then === "function"
+              ? "<unresolved>" : element;
+        }),
+        // Anything here is a resolved value that was written onto the Set as a property instead
+        // of replacing the element it belongs to.
+        strayProps: Object.getOwnPropertyNames(container),
+      };
+    }
+
+    // Blobs are always delivered through the promise machinery, so this exercises the same path
+    // in the returning direction without any pipelining on the caller's part.
+    makeBlobSet() {
+      return new Set([new Blob(["first"]), new Blob(["second"])]);
+    }
+  }
+
+  it("substitutes a promise sent inside a Set", async () => {
+    await using harness = new TestHarness(new SetTarget());
+    let stub = harness.stub;
+    using promise = stub.square(3);
+
+    let result = await stub.inspect(new Set<unknown>(["alpha", promise, "omega"]));
+
+    expect(result.isSet).toBe(true);
+    expect(result.elements).toStrictEqual(["alpha", 9, "omega"]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes multiple promises at their own positions", async () => {
+    await using harness = new TestHarness(new SetTarget());
+    let stub = harness.stub;
+    using first = stub.square(3);
+    using second = stub.square(4);
+
+    // Every element must get a distinct property. Sharing one would make both writes target the
+    // same slot, losing all but the last.
+    let result = await stub.inspect(new Set<unknown>(["a", first, "b", second, "c"]));
+
+    expect(result.elements).toStrictEqual(["a", 9, "b", 16, "c"]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("leaves no residue when a promise is nested inside a Set element", async () => {
+    await using harness = new TestHarness(new SetTarget());
+    let stub = harness.stub;
+    using promise = stub.square(4);
+
+    // Here the promise's parent is the inner object, not the Set, so the Set needs no setter.
+    let result = await stub.inspect(new Set<unknown>([{value: promise}]));
+
+    expect(result.elements).toStrictEqual([{value: 16}]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("collapses a resolution that equals an existing element", async () => {
+    await using harness = new TestHarness(new SetTarget());
+    let stub = harness.stub;
+    using promise = stub.square(3);
+
+    // Rebuilding the Set re-applies Set semantics, so the duplicate 9 drops out.
+    let result = await stub.inspect(new Set<unknown>([9, promise, "tail"]));
+
+    expect(result.elements).toStrictEqual([9, "tail"]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes Blobs in a Set returned to the caller", async () => {
+    await using harness = new TestHarness(new SetTarget());
+
+    let received = await harness.stub.makeBlobSet();
+
+    expect(received).toBeInstanceOf(Set);
+    expect(Object.getOwnPropertyNames(received)).toStrictEqual([]);
+    expect(await Promise.all([...received].map(blob => blob.text())))
+        .toStrictEqual(["first", "second"]);
+  });
+
+  it("substitutes a promise in a Set passed to a local stub", async () => {
+    using stub = new RpcStub(new SetTarget());
+    using promise = stub.square(3);
+    let source = new Set<unknown>(["alpha", promise, "omega"]);
+
+    let result = await stub.inspect(source);
+
+    expect(result.elements).toStrictEqual(["alpha", 9, "omega"]);
+    expect(result.strayProps).toStrictEqual([]);
+
+    // deepCopy() must fix up its copy, not the caller's Set.
+    expect([...source][1]).toBe(promise);
+    expect(Object.getOwnPropertyNames(source)).toStrictEqual([]);
   });
 });
 

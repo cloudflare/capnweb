@@ -199,6 +199,7 @@ The following types can be passed over RPC (in arguments or return values), and 
 * Arrays
 * `bigint`
 * `Date`
+* `Set`
 * `ArrayBuffer`, `DataView`, and typed arrays
 * `Error` and its well-known subclasses
 * `Blob`
@@ -206,7 +207,7 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Headers`, `Request`, and `Response` from the Fetch API.
 
 The following types are not supported as of this writing, but may be added in the future:
-* `Map` and `Set`
+* `Map`
 * `RegExp`
 
 The following are intentionally NOT supported:
