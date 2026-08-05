@@ -605,10 +605,10 @@ function resolveWrapperClass(
   if (ts.isIdentifier(arg)) {
     let sym = checker.getSymbolAtLocation(arg);
     if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
-    let decl = sym?.valueDeclaration ?? sym?.declarations?.[0];
-    if (decl && ts.isClassDeclaration(decl) && decl.getSourceFile() === sf) {
-      return decl;
-    }
+    // A name can have several declarations (e.g. an interface merged with the
+    // class), so look for the class rather than trusting declaration order.
+    let decl = sym?.declarations?.find(ts.isClassDeclaration);
+    if (decl && decl.getSourceFile() === sf) return decl;
   }
   throw buildError(
     sf,
@@ -636,20 +636,22 @@ function parseWrapperSkipOption(
         `method names at build time.`
     );
   };
-  if (!ts.isObjectLiteralExpression(arg)) bad(arg);
-  for (let prop of (arg as ts.ObjectLiteralExpression).properties) {
+  if (!ts.isObjectLiteralExpression(arg)) return bad(arg);
+  // `{}` carries no method names, so it is a typo rather than a no-op.
+  if (arg.properties.length === 0) return bad(arg);
+  for (let prop of arg.properties) {
     if (
       !ts.isPropertyAssignment(prop) ||
       !ts.isIdentifier(prop.name) ||
       prop.name.text !== "skip"
     ) {
-      bad(prop);
+      return bad(prop);
     }
-    let value = (prop as ts.PropertyAssignment).initializer;
-    if (!ts.isArrayLiteralExpression(value)) bad(value);
-    for (let element of (value as ts.ArrayLiteralExpression).elements) {
-      if (!ts.isStringLiteral(element)) bad(element);
-      out.set((element as ts.StringLiteral).text, element);
+    let value = prop.initializer;
+    if (!ts.isArrayLiteralExpression(value)) return bad(value);
+    for (let element of value.elements) {
+      if (!ts.isStringLiteral(element)) return bad(element);
+      out.set(element.text, element);
     }
   }
   return out;

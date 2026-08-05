@@ -117,6 +117,21 @@ export default validateRpc(Api, { skip: ["raw"] });`
     ).toContain("Api.nope");
   });
 
+  it("accepts an empty skip list", () => {
+    const { code } = compile(
+      `${API}export default validateRpc(Api, { skip: [] });`
+    );
+
+    const validator = loadValidator(code);
+    expect(checkedMethod(validator, "authenticate").args).toHaveLength(1);
+  });
+
+  it("rejects an options object with no skip list", () => {
+    expect(
+      compileError(`${API}export default validateRpc(Api, {});`)
+    ).toContain("must be written inline");
+  });
+
   it("rejects skip names the transform cannot read at build time", () => {
     expect(
       compileError(
@@ -124,6 +139,16 @@ export default validateRpc(Api, { skip: ["raw"] });`
 export default validateRpc(Api, opts);`
       )
     ).toContain("must be written inline");
+  });
+
+  it("finds the class when the name is merged with an interface", () => {
+    const { code } = compile(
+      `interface Api {}
+${API}export default validateRpc(Api);`
+    );
+
+    const validator = loadValidator(code);
+    expect(Object.keys(validator.methods)).toEqual(["authenticate"]);
   });
 
   it("dedups identical shapes across wrapper sites", () => {
