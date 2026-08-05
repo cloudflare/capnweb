@@ -629,9 +629,9 @@ export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise
   return stub[RAW_STUB];
 }
 
-// RpcPromise elements are set using property access on the parent. 
-// 
-// To make this work for `Set`, this function defines a one-time use setter that inserts the 
+// RpcPromise elements are set using property access on the parent.
+//
+// To make this work for `Set`, this function defines a one-time-use setter that inserts the
 // resolved value in the correct order and rebuilds the set.
 //
 // The `property` must be unique for each element.
@@ -999,7 +999,7 @@ export class RpcPayload {
         // parent.
         let array = <Array<unknown>>value;
         let len = array.length;
-        let result = new Array(len);        
+        let result = new Array(len);
         for (let i = 0; i < len; i++) {
           result[i] = this.deepCopy(array[i], array, i, result, dupStubs, owner);
         }
@@ -1015,7 +1015,8 @@ export class RpcPayload {
         for (let val of set) {
           let key = `${counter++}`;
           let copy = this.deepCopy(val, set, key, result, dupStubs, owner);
-          defineSetPromiseSlot(result, key, copy);            
+          defineSetPromiseSlot(result, key, copy);
+          result.add(copy);
           result.add(copy)
         }
         return result;
@@ -1400,7 +1401,8 @@ export class RpcPayload {
       case "set": {
         let set = <Set<unknown>>value;
         for (let element of <Set<unknown>>value) {
-          this.disposeImpl(element, set)
+        for (let element of set) {
+          this.disposeImpl(element, set);
         }
         return;
       }
