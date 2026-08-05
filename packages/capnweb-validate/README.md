@@ -54,6 +54,29 @@ symbol-named.
 An explicit `@validateRpc<SomeInterface>()` makes `SomeInterface` the RPC
 surface. Public class methods outside that interface are rejected over RPC.
 
+## Higher-order function form
+
+`validateRpc` is also a higher-order function that takes a class and returns it,
+for builds that can't enable decorators (no `experimentalDecorators`, a toolchain
+that strips them, or a downstream consumer that rejects them):
+
+```ts
+validateRpc(Api)                    // same as @validateRpc()
+validateRpc<Surface>()(Api)         // same as @validateRpc<Surface>()
+validateRpc(Api, { skip: ["raw"] }) // same as @skipRpcValidation() on raw()
+```
+
+Each form emits the same validator as the decorator it replaces.
+
+Constraints, all reported as build errors:
+
+| Rule | Why |
+|---|---|
+| Surface goes through the factory form, not `validateRpc<Surface>(Api)` | TypeScript has no partial type-argument inference, so the class type would be discarded |
+| The argument must name a class declared in the same module, not an import or inline `class { ... }` | The transform reads the declaration for `@skipRpcValidation()` members and platform method filtering |
+| `skip` must be an inline object literal with an array of string literals | The names are read at build time |
+| A `skip` name must exist in the resolved surface | Same as a stray `@skipRpcValidation()` |
+
 ## Generic service classes
 
 A decorator emits one validator at the class declaration. If the class itself
