@@ -335,6 +335,15 @@ export class Devaluator {
         return ["date", Number.isNaN(time) ? null : time];
       }
 
+      case "regexp": {
+        // At structuredClonable level, keep RegExp as native value.
+        if (this.encodingLevel === "structuredClonable") {
+          return value;
+        }
+        let re = <RegExp>value;
+        return ["regexp", re.source, re.flags];
+      }
+
       case "bytes": {
         let alternateTypeName = BYTE_CONTAINER_TYPE_BY_PROTOTYPE.get(Object.getPrototypeOf(value));
         let bytes: Uint8Array;
@@ -839,6 +848,12 @@ export class Evaluator {
           }
           if (typeof value[1] == "number") {
             return new Date(value[1]);
+          }
+          break;
+        case "regexp":
+          if (value.length === 3 && typeof value[1] === "string" &&
+              typeof value[2] === "string") {
+            return new RegExp(value[1], value[2]);
           }
           break;
         case "bytes": {

@@ -203,11 +203,11 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Error` and its well-known subclasses
 * `Blob`
 * `ReadableStream` and `WritableStream`, with automatic flow control.
+* `RegExp`
 * `Headers`, `Request`, and `Response` from the Fetch API.
 
 The following types are not supported as of this writing, but may be added in the future:
 * `Map` and `Set`
-* `RegExp`
 
 The following are intentionally NOT supported:
 * Application-defined classes that do not extend `RpcTarget`.
