@@ -101,15 +101,16 @@ Passed as the last argument to the session and response helpers. Commonly used f
 
 ## Value types on the wire
 
-**By value:** primitives, plain objects, arrays, `Set`, `bigint`, `Date`, `ArrayBuffer`, `DataView`,
-typed arrays, `Error` and well-known subclasses, `Blob`, `ReadableStream`, `WritableStream`, `URL`,
-`RegExp`, `Headers`, `Request`, `Response`.
+**By value:** primitives, plain objects, arrays, `Set`, `Map`, `bigint`, `Date`, `ArrayBuffer`,
+`DataView`, typed arrays, `Error` and well-known subclasses, `Blob`, `ReadableStream`,
+`WritableStream`, `URL`, `RegExp`, `Headers`, `Request`, `Response`.
 
 **By reference:** `RpcTarget` subclasses, functions, existing stubs and promises.
 
-**`Set` elements:** stubs are supported. Promises and `Blob`s cannot be direct elements when sent
-over a connection, but may be nested inside another value.
+**`Set` elements and `Map` keys:** stubs are supported. Promises and `Blob`s cannot be direct
+elements or keys when sent over a connection, but may be nested inside another value. `Map` values
+may be promises, `Blob`s, or stubs.
 
-**Not supported:** `Map` (not yet); non-`RpcTarget` classes and cyclic values (intentionally).
+**Not supported:** non-`RpcTarget` classes and cyclic values (intentionally).
 
 [Docs](/concepts/values/)

@@ -345,6 +345,37 @@ export class Devaluator {
         return ["set", elements];
       }
 
+      case "map": {
+        let map = <Map<unknown, unknown>>value;
+        let mapEntries = [...map];
+        let entries: unknown[] = [];
+
+        // Keys follow the same rules as `Set` elements: a promise or Blob would have to be
+        // substituted into the key position after delivery, which a `Map` cannot do without
+        // rebuilding itself. Values may be promises or Blobs. As with `Set`, validate all keys
+        // before encoding anything, since encoded streams and Blobs (including in values) create
+        // pipes that cannot be rolled back.
+        for (let [key] of mapEntries) {
+          switch (typeForRpc(key)) {
+            case "blob":
+              throw new TypeError("Cannot serialize a Blob as a key of a Map.");
+            case "rpc-promise":
+            case "rpc-thenable":
+              throw new TypeError(
+                  "Cannot serialize a promise as a key of a Map. Await the value before using it " +
+                  "as a key.");
+          }
+        }
+
+        for (let [key, val] of mapEntries) {
+          entries.push([
+            this.devaluateImpl(key, map, depth + 1),
+            this.devaluateImpl(val, map, depth + 1),
+          ]);
+        }
+        return ["map", entries];
+      }
+
       case "bigint":
         // At structuredClonable level, keep BigInt as native value
         if (this.encodingLevel === "structuredClonable") {
@@ -835,7 +866,7 @@ export class Evaluator {
   }
 
   private evaluateImpl(
-      value: unknown, parent: object, property: string | number, depth: number): unknown {
+      value: unknown, parent: object, property: unknown, depth: number): unknown {
     let maxDepth = this.limits.maxDepth;
     if (depth >= maxDepth) {
       throw new TypeError(
@@ -900,6 +931,24 @@ export class Evaluator {
               set.add(copy);
             }
             return set;
+          }
+          break;
+        case "map":
+          if (value.length === 2 && value[1] instanceof Array) {
+            let entries = value[1];
+            let map = new Map();
+            for (let i = 0; i < entries.length; i++) {
+              let entry = entries[i];
+              if (!(entry instanceof Array) || entry.length !== 2) {
+                throw new TypeError("Map entries must be serialized as key/value pairs.");
+              }
+              let key = this.evaluateImpl(entry[0], map, undefined, depth + 1);
+              if (key instanceof RpcPromise) {
+                throw new TypeError("Cannot deserialize a promise as a key of a Map.");
+              }
+              map.set(key, this.evaluateImpl(entry[1], map, key, depth + 1));
+            }
+            return map;
           }
           break;
         case "bytes": {
