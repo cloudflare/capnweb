@@ -54,28 +54,28 @@ symbol-named.
 An explicit `@validateRpc<SomeInterface>()` makes `SomeInterface` the RPC
 surface. Public class methods outside that interface are rejected over RPC.
 
-## Higher-order function form
+## Wrapper form
 
-`validateRpc` is also a higher-order function that takes a class and returns it,
+`validateRpc` can also be called directly on a class instead of decorating it,
 for builds that can't enable decorators (no `experimentalDecorators`, a toolchain
 that strips them, or a downstream consumer that rejects them):
 
 ```ts
-validateRpc(Api)                    // same as @validateRpc()
-validateRpc<Surface>()(Api)         // same as @validateRpc<Surface>()
-validateRpc(Api, { skip: ["raw"] }) // same as @skipRpcValidation() on raw()
+validateRpc(Api); // same as @validateRpc()
+validateRpc<Surface>()(Api); // same as @validateRpc<Surface>()
+validateRpc(Api, { skip: ["raw"] }); // same as @skipRpcValidation() on raw()
 ```
 
 Each form emits the same validator as the decorator it replaces.
 
 Constraints, all reported as build errors:
 
-| Rule | Why |
-|---|---|
-| Surface goes through the factory form, not `validateRpc<Surface>(Api)` | TypeScript has no partial type-argument inference, so the class type would be discarded |
+| Rule                                                                                                | Why                                                                                                  |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Surface goes through the factory form, not `validateRpc<Surface>(Api)`                              | TypeScript has no partial type-argument inference, so the class type would be discarded              |
 | The argument must name a class declared in the same module, not an import or inline `class { ... }` | The transform reads the declaration for `@skipRpcValidation()` members and platform method filtering |
-| `skip` must be an inline object literal with an array of string literals | The names are read at build time |
-| A `skip` name must exist in the resolved surface | Same as a stray `@skipRpcValidation()` |
+| `skip` must be an inline object literal with an array of string literals                            | The names are read at build time                                                                     |
+| A `skip` name must exist in the resolved surface                                                    | Same as a stray `@skipRpcValidation()`                                                               |
 
 ## Generic service classes
 
@@ -149,11 +149,11 @@ Cap'n Web client constructors are not rewritten automatically.
 Use the adapter that matches your bundler:
 
 ```ts
-import capnwebValidate from "capnweb-validate/vite";     // or
-import capnwebValidate from "capnweb-validate/rollup";    // or
-import capnwebValidate from "capnweb-validate/webpack";   // or
-import capnwebValidate from "capnweb-validate/rspack";    // or
-import capnwebValidate from "capnweb-validate/esbuild";   // or
+import capnwebValidate from "capnweb-validate/vite"; // or
+import capnwebValidate from "capnweb-validate/rollup"; // or
+import capnwebValidate from "capnweb-validate/webpack"; // or
+import capnwebValidate from "capnweb-validate/rspack"; // or
+import capnwebValidate from "capnweb-validate/esbuild"; // or
 import capnwebValidate from "capnweb-validate/farm";
 
 export default {
@@ -220,9 +220,9 @@ try {
 
 Where errors surface depends on which boundary failed:
 
-| Boundary | Failure | How it surfaces |
-| -------- | ------- | --------------- |
-| Client stub | Bad resolved return | The returned promise rejects. |
+| Boundary      | Failure               | How it surfaces                                             |
+| ------------- | --------------------- | ----------------------------------------------------------- |
+| Client stub   | Bad resolved return   | The returned promise rejects.                               |
 | Server target | Bad incoming argument | The server throws and the caller observes an RPC rejection. |
 
 ## Current Type Coverage
@@ -266,12 +266,12 @@ not match the supported `Blob` validator.
 transform refuses to compile a service that uses them so the user finds out at
 build time, not at the first RPC call:
 
-| Type               | Build error hint                                           |
-| ------------------ | ---------------------------------------------------------- |
-| `WeakMap`          | `WeakMap` is not a supported RPC validation type.          |
-| `WeakSet`          | `WeakSet` is not a supported RPC validation type.          |
-| `SharedArrayBuffer`| `SharedArrayBuffer` is not a supported RPC validation type.|
-| `File`             | Use a `Blob` or `Uint8Array`; `File` is not supported.     |
+| Type                | Build error hint                                            |
+| ------------------- | ----------------------------------------------------------- |
+| `WeakMap`           | `WeakMap` is not a supported RPC validation type.           |
+| `WeakSet`           | `WeakSet` is not a supported RPC validation type.           |
+| `SharedArrayBuffer` | `SharedArrayBuffer` is not a supported RPC validation type. |
+| `File`              | Use a `Blob` or `Uint8Array`; `File` is not supported.      |
 
 If a method signature contains a leaf the resolver cannot lower, such as a generic
 type parameter with no inference source, an unsupported recursive corner, or a rejected

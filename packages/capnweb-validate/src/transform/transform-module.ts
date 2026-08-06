@@ -7,7 +7,10 @@
 
 import ts from "typescript";
 
-import { fileMatchesTransformFilters, type TransformContext } from "./context.js";
+import {
+  fileMatchesTransformFilters,
+  type TransformContext,
+} from "./context.js";
 import { emitValidator } from "./emit.js";
 import {
   collectPlatformMethodNames,
@@ -177,7 +180,9 @@ export function transformModule(
   let serverMode = context.options.serverValidation ?? "throw";
 
   let edits: TextEdit[] = [];
-  let capnwebCallSites = callSites.filter((site) => site.marker.side === "server");
+  let capnwebCallSites = callSites.filter(
+    (site) => site.marker.side === "server"
+  );
   let coreCallSites = callSites.filter((site) => site.marker.side === "client");
   let needsCapnwebRuntime = capnwebCallSites.length > 0;
   let needsCoreExtraRuntime = needsCapnwebRuntime && coreCallSites.length > 0;
@@ -194,11 +199,12 @@ export function transformModule(
 
   for (let cs of callSites) {
     let callee = cs.call.expression;
-    let runtimeNamespace = cs.marker.side === "client"
-      ? needsCapnwebRuntime
-        ? CORE_RUNTIME_NAMESPACE
-        : RUNTIME_NAMESPACE
-      : RUNTIME_NAMESPACE;
+    let runtimeNamespace =
+      cs.marker.side === "client"
+        ? needsCapnwebRuntime
+          ? CORE_RUNTIME_NAMESPACE
+          : RUNTIME_NAMESPACE
+        : RUNTIME_NAMESPACE;
     let headStart =
       cs.marker.form === "new"
         ? cs.call.getStart(sourceFile)
@@ -322,7 +328,7 @@ type DecoratorSite = {
 };
 
 /**
- * The higher-order function form: `validateRpc(Api)` or
+ * The wrapper form: `validateRpc(Api)` or
  * `validateRpc<Surface>()(Api)`, for builds that can't enable decorators.
  */
 type WrapperSite = {
@@ -359,7 +365,14 @@ function collectMarkerCallSites(
         checker
       );
       if (resolved)
-        pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker);
+        pushCallSite(
+          out,
+          sf,
+          node,
+          resolved.marker,
+          resolved.localName,
+          checker
+        );
     }
     ts.forEachChild(node, visit);
   }
@@ -373,14 +386,20 @@ function resolveMarkerCallee(
   bindings: Map<string, MarkerBinding>,
   namespaces: Set<string>,
   checker: ts.TypeChecker
-): { marker: (typeof MARKERS)[keyof typeof MARKERS]; localName: string } | null {
+): {
+  marker: (typeof MARKERS)[keyof typeof MARKERS];
+  localName: string;
+} | null {
   if (ts.isIdentifier(callee)) {
     let binding = bindings.get(callee.text);
     // Confirm the name resolves to the imported marker, not a local that shadows it.
     if (!binding || !resolvesToMarker(checker, callee, binding.markerName)) {
       return null;
     }
-    return { marker: MARKERS[binding.markerName], localName: binding.localName };
+    return {
+      marker: MARKERS[binding.markerName],
+      localName: binding.localName,
+    };
   }
   if (
     ts.isPropertyAccessExpression(callee) &&
@@ -406,7 +425,8 @@ function resolvesToMarker(
   markerName: string
 ): boolean {
   let sym = checker.getSymbolAtLocation(node);
-  if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
+  if (sym && sym.flags & ts.SymbolFlags.Alias)
+    sym = checker.getAliasedSymbol(sym);
   return sym?.getName() === markerName && isCapnwebValidateSymbol(sym);
 }
 
@@ -551,6 +571,7 @@ function collectWrapperSites(
           parseWrapperSkipOption(sf, node.arguments[1])
         );
         rejectUnsupported(sf, node, "validateRpc", shape);
+        rejectMisplacedWrapperCall(sf, node, cls);
         out.push({ call: node, cls, shape });
       }
     }
@@ -604,7 +625,8 @@ function resolveWrapperClass(
 ): ts.ClassDeclaration {
   if (ts.isIdentifier(arg)) {
     let sym = checker.getSymbolAtLocation(arg);
-    if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
+    if (sym && sym.flags & ts.SymbolFlags.Alias)
+      sym = checker.getAliasedSymbol(sym);
     // A name can have several declarations (e.g. an interface merged with the
     // class), so look for the class rather than trusting declaration order.
     let decl = sym?.declarations?.find(ts.isClassDeclaration);
@@ -617,6 +639,43 @@ function resolveWrapperClass(
       `declared in this module, e.g. \`class MyClass { ... } ` +
       `export default validateRpc(MyClass);\`.`
   );
+}
+
+// The wrapper mutates the class in place when the call runs, so a call that
+// runs before the class is initialized, or that only runs when some function is
+// called, leaves the class unvalidated. A decorator could not be detached from
+// its class this way. `tsc` reports the ordering case, but type-stripping
+// builders don't typecheck, so reject both here.
+function rejectMisplacedWrapperCall(
+  sf: ts.SourceFile,
+  call: ts.CallExpression,
+  cls: ts.ClassDeclaration
+): void {
+  if (call.getStart() < cls.getStart()) {
+    throw buildError(
+      sf,
+      call,
+      `capnweb-validate: validateRpc() must appear after the declaration of ` +
+        `\`${
+          cls.name?.text ?? "the class"
+        }\`, which is not initialized until ` +
+        `its declaration is evaluated.`
+    );
+  }
+  // Only the statement form can be misplaced: every other form uses the result,
+  // so the class can only be reached through the wrapper.
+  if (
+    ts.isExpressionStatement(call.parent) &&
+    !ts.isSourceFile(call.parent.parent)
+  ) {
+    throw buildError(
+      sf,
+      call,
+      `capnweb-validate: \`validateRpc(${cls.name?.text ?? ""});\` must be a ` +
+        `top-level statement. Nested here, it only validates the class if this ` +
+        `code runs.`
+    );
+  }
 }
 
 // `validateRpc(Api, { skip: ["foo"] })`. Read statically, so the option must be
@@ -651,6 +710,14 @@ function parseWrapperSkipOption(
     if (!ts.isArrayLiteralExpression(value)) return bad(value);
     for (let element of value.elements) {
       if (!ts.isStringLiteral(element)) return bad(element);
+      if (out.has(element.text)) {
+        throw buildError(
+          sf,
+          element,
+          `capnweb-validate: \`${element.text}\` is listed twice in the ` +
+            `validateRpc() skip list.`
+        );
+      }
       out.set(element.text, element);
     }
   }
@@ -684,9 +751,10 @@ function resolveClassShape(
   // so we can warn those positions are not validated. Constrained params still
   // resolve against their constraint.
   let generic: GenericFallback = {
-    mode: !decoratorTypeArg && (cls.typeParameters?.length ?? 0) > 0
-      ? "any"
-      : "error",
+    mode:
+      !decoratorTypeArg && (cls.typeParameters?.length ?? 0) > 0
+        ? "any"
+        : "error",
     used: false,
   };
   let resolved = resolveServiceShape(
@@ -974,7 +1042,9 @@ function applyPlatformPassthrough(
   let platformMethods = new Set(platform);
   return {
     ...shape,
-    methods: shape.methods.filter((method) => !platformMethods.has(method.name)),
+    methods: shape.methods.filter(
+      (method) => !platformMethods.has(method.name)
+    ),
     passthrough: platform,
   };
 }

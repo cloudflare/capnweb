@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// The higher-order function form: `validateRpc(Api)` and
+// The wrapper form: `validateRpc(Api)` and
 // `validateRpc<Surface>()(Api)` must emit the same validator and the same
 // applied decorator as `@validateRpc()`.
 import { describe, expect, it } from "vitest";
@@ -117,6 +117,14 @@ export default validateRpc(Api, { skip: ["raw"] });`
     ).toContain("Api.nope");
   });
 
+  it("rejects a skipped name that is listed twice", () => {
+    expect(
+      compileError(
+        `${API}export default validateRpc(Api, { skip: ["raw", "raw"] });`
+      )
+    ).toContain("`raw` is listed twice");
+  });
+
   it("accepts an empty skip list", () => {
     const { code } = compile(
       `${API}export default validateRpc(Api, { skip: [] });`
@@ -159,7 +167,9 @@ export const B = validateRpc(Api);`
 
     expect(code.match(/const __capnweb_validate_\w+ =/g)).toHaveLength(1);
     expect(
-      code.match(/__cw\.__validateRpcClass\(__capnweb_validate_Api_server\)\(Api\)/g)
+      code.match(
+        /__cw\.__validateRpcClass\(__capnweb_validate_Api_server\)\(Api\)/g
+      )
     ).toHaveLength(2);
   });
 
@@ -189,9 +199,9 @@ import { RpcTarget } from "capnweb";
 
     expect(code.match(/__cw\.__validateRpcClass\(/g)).toHaveLength(2);
     expect(code).not.toContain("cv.validateRpc");
-    expect(checkedMethod(loadValidator(code), "authenticate").args).toHaveLength(
-      1
-    );
+    expect(
+      checkedMethod(loadValidator(code), "authenticate").args
+    ).toHaveLength(1);
   });
 
   it("rejects a type argument on the direct call, pointing at the factory form", () => {
@@ -212,6 +222,22 @@ export default validateRpc(Alias);`
     );
 
     expect(message).toContain("name of a class declared in this module");
+  });
+
+  it("rejects a call placed before the class declaration", () => {
+    const message = compileError(`validateRpc(Api);\n${API}`);
+
+    expect(message).toContain("must appear after the declaration of `Api`");
+  });
+
+  it("rejects a statement that is not at the top level", () => {
+    const message = compileError(
+      `${API}export function setup() {
+  validateRpc(Api);
+}`
+    );
+
+    expect(message).toContain("must be a top-level statement");
   });
 
   it("rejects an inline class expression", () => {
