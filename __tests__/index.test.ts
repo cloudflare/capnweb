@@ -27,6 +27,10 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '{"foo":[[123]]}': {foo: [123]},
   '{"foo":[[123]],"bar":[[456,789]]}': {foo: [123], bar: [456, 789]},
 
+  '["map",[]]': new Map(),
+  '["map",[[1,"one"],["two",[[2]]],[["date",1234],{"nested":true}]]]':
+      new Map<unknown, unknown>([[1, "one"], ["two", [2]], [new Date(1234), {nested: true}]]),
+
   '["bigint","123"]': 123n,
   '["date",1234]': new Date(1234),
   '["bytes","aGVsbG8h"]': new TextEncoder().encode("hello!"),
@@ -132,6 +136,8 @@ describe("simple serialization", () => {
     expect(() => deserialize('["unknown_type", "param"]')).toThrowError();
     expect(() => deserialize('["date"]')).toThrowError(); // missing timestamp
     expect(() => deserialize('["error"]')).toThrowError(); // missing type and message
+    expect(() => deserialize('["map",[[1]]]')).toThrowError(); // entry isn't a key/value pair
+    expect(() => deserialize('["map",[1]]')).toThrowError(); // entry isn't an array
   })
 
   it("can serialize large Uint8Array without stack overflow", () => {
@@ -1570,6 +1576,153 @@ describe("promise pipelining", () => {
 
     await expect(() => promise).rejects.toThrow("test error");
     await expect(() => promise2).rejects.toThrow("test error");
+  });
+});
+
+describe("promises inside a Map", () => {
+  // Like a Set, a Map has no addressable positions, but delivery resolves a located promise by
+  // assigning `parent[property] = value`. Both keys and values may be promises, so each entry
+  // needs two distinct slots. These tests pin the behavior of those temporary setters on both the
+  // wire path (Evaluator) and the local path (RpcPayload.deepCopy).
+  class MapTarget extends RpcTarget {
+    square(i: number) {
+      return i * i;
+    }
+
+    // Reports what actually arrived. Deliberately does not await the entries: an unresolved
+    // promise is still thenable, so awaiting would hide a failure to substitute it.
+    inspect(container: Map<unknown, unknown>) {
+      let render = (value: unknown) => {
+        // RPC stubs and promises are callable, so typeof reports "function", not "object".
+        let objectLike = value !== null &&
+            (typeof value === "object" || typeof value === "function");
+        return objectLike && typeof (<any>value).then === "function" ? "<unresolved>" : value;
+      };
+      return {
+        isMap: container instanceof Map,
+        entries: [...container].map(([key, value]) => [render(key), render(value)]),
+        // Anything here is a resolved value that was written onto the Map as a property instead
+        // of replacing the key or value it belongs to.
+        strayProps: Object.getOwnPropertyNames(container),
+      };
+    }
+
+    // Blobs are always delivered through the promise machinery, so this exercises the same path
+    // in the returning direction without any pipelining on the caller's part.
+    makeBlobMap() {
+      return new Map([[new Blob(["key"]), new Blob(["value"])]]);
+    }
+  }
+
+  it("substitutes a promise sent as a Map value", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using promise = stub.square(3);
+
+    let result = await stub.inspect(new Map<unknown, unknown>([
+      ["alpha", 1], ["beta", promise], ["omega", 3],
+    ]));
+
+    expect(result.isMap).toBe(true);
+    expect(result.entries).toStrictEqual([["alpha", 1], ["beta", 9], ["omega", 3]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes a promise sent as a Map key, preserving insertion order", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using promise = stub.square(3);
+
+    let result = await stub.inspect(new Map<unknown, unknown>([
+      ["alpha", 1], [promise, 2], ["omega", 3],
+    ]));
+
+    // Rebuilding the Map must not move the resolved key to the end.
+    expect(result.entries).toStrictEqual([["alpha", 1], [9, 2], ["omega", 3]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes a promise key and a promise value in the same entry", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using key = stub.square(3);
+    using value = stub.square(4);
+
+    // The key and the value each need their own slot, and either may land first.
+    let result = await stub.inspect(new Map<unknown, unknown>([[key, value]]));
+
+    expect(result.entries).toStrictEqual([[9, 16]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes multiple promises at their own positions", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using first = stub.square(3);
+    using second = stub.square(4);
+    using third = stub.square(5);
+
+    let result = await stub.inspect(new Map<unknown, unknown>([
+      ["a", first], [second, "b"], ["c", 0], [third, third],
+    ]));
+
+    expect(result.entries).toStrictEqual([["a", 9], [16, "b"], ["c", 0], [25, 25]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("leaves no residue when a promise is nested inside a Map entry", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using promise = stub.square(4);
+
+    // Here the promise's parent is the inner object, not the Map, so the Map needs no setter.
+    let result = await stub.inspect(new Map<unknown, unknown>([["k", {value: promise}]]));
+
+    expect(result.entries).toStrictEqual([["k", {value: 16}]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("collapses a key that resolves to an existing key", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using promise = stub.square(3);
+
+    // Rebuilding the Map re-applies Map semantics: the later entry wins on value, but keeps the
+    // earlier entry's position.
+    let result = await stub.inspect(new Map<unknown, unknown>([
+      [9, "first"], [promise, "second"], ["tail", "third"],
+    ]));
+
+    expect(result.entries).toStrictEqual([[9, "second"], ["tail", "third"]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes Blobs in a Map returned to the caller", async () => {
+    await using harness = new TestHarness(new MapTarget());
+
+    let received = await harness.stub.makeBlobMap();
+
+    expect(received).toBeInstanceOf(Map);
+    expect(Object.getOwnPropertyNames(received)).toStrictEqual([]);
+    let [[key, value]] = [...received];
+    expect(await key.text()).toBe("key");
+    expect(await value.text()).toBe("value");
+  });
+
+  it("substitutes promises in a Map passed to a local stub", async () => {
+    using stub = new RpcStub(new MapTarget());
+    using key = stub.square(3);
+    using value = stub.square(4);
+    let source = new Map<unknown, unknown>([["alpha", value], [key, "omega"]]);
+
+    let result = await stub.inspect(source);
+
+    expect(result.entries).toStrictEqual([["alpha", 16], [9, "omega"]]);
+    expect(result.strayProps).toStrictEqual([]);
+
+    // deepCopy() must fix up its copy, not the caller's Map.
+    expect([...source]).toStrictEqual([["alpha", value], [key, "omega"]]);
+    expect(Object.getOwnPropertyNames(source)).toStrictEqual([]);
   });
 });
 
