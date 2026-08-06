@@ -19,6 +19,8 @@ import type { ServiceValidator } from "../src/internal/core.js";
 // returns the decorator.
 const WRAPPER_SHIM = `${SHIM}
 declare module "capnweb-validate" {
+  export function validateRpc(options: { skip: readonly string[] }): void;
+  export function validateRpc<S>(options: { skip: readonly (keyof S & string)[] }): void;
   export function validateRpc<T>(value: T, context?: unknown): T;
   export function validateRpc<T>(value: T, options: { skip: readonly string[] }): T;
   export function validateRpc<S = unknown>(): <T>(value: T, context?: unknown) => T;
@@ -224,20 +226,149 @@ export default validateRpc(Alias);`
     expect(message).toContain("name of a class declared in this module");
   });
 
+  it("rewrites a static block call, leaving the class exported under its own name", () => {
+    const { code } = compile(
+      `export class Api extends RpcTarget {
+  static { validateRpc(); }
+
+  async authenticate(token: string): Promise<number> {
+    return token.length;
+  }
+}`
+    );
+
+    expect(code).toContain(
+      "static { __cw.__validateRpcClass(__capnweb_validate_Api_server)(Api); }"
+    );
+    const validator: ServiceValidator = loadValidator(code);
+    expect(validator.serviceName).toBe("Api");
+    expect(checkedMethod(validator, "authenticate").args).toHaveLength(1);
+  });
+
   it("rejects a call placed before the class declaration", () => {
-    const message = compileError(`validateRpc(Api);\n${API}`);
+    const message = compileError(`export const A = validateRpc(Api);\n${API}`);
 
     expect(message).toContain("must appear after the declaration of `Api`");
   });
 
-  it("rejects a statement that is not at the top level", () => {
-    const message = compileError(
-      `${API}export function setup() {
-  validateRpc(Api);
+  it("rejects a discarded call outside the class body", () => {
+    const message = compileError(`${API}validateRpc(Api);`);
+
+    expect(message).toContain("static { validateRpc(); }");
+  });
+
+  it("rewrites a static block call that skips a method", () => {
+    const { code } = compile(
+      `export class Api extends RpcTarget {
+  static { validateRpc({ skip: ["raw"] }); }
+
+  async authenticate(token: string): Promise<number> {
+    return token.length;
+  }
+
+  async raw(body: unknown): Promise<void> {}
 }`
     );
 
-    expect(message).toContain("must be a top-level statement");
+    const validator: ServiceValidator = loadValidator(code);
+    expect(validator.methods.raw).toEqual({ unchecked: true });
+    expect(checkedMethod(validator, "authenticate").args).toHaveLength(1);
+  });
+
+  it("takes the surface from a static block type argument", () => {
+    const { code } = compile(
+      `interface Surface {
+  authenticate(token: string): Promise<number>;
+}
+export class Api extends RpcTarget {
+  static { validateRpc<Surface>(); }
+
+  async authenticate(token: string): Promise<number> {
+    return token.length;
+  }
+
+  async internal(): Promise<void> {}
+}`
+    );
+
+    const validator: ServiceValidator = loadValidator(code);
+    expect(validator.methods.internal).toBeUndefined();
+    expect(checkedMethod(validator, "authenticate").args).toHaveLength(1);
+  });
+
+  it("takes both the surface and the skip list from a static block", () => {
+    const { code } = compile(
+      `interface Surface {
+  authenticate(token: string): Promise<number>;
+  raw(body: unknown): Promise<void>;
+}
+export class Api extends RpcTarget {
+  static { validateRpc<Surface>({ skip: ["raw"] }); }
+
+  async authenticate(token: string): Promise<number> {
+    return token.length;
+  }
+
+  async raw(body: unknown): Promise<void> {}
+
+  async internal(): Promise<void> {}
+}`
+    );
+
+    const validator: ServiceValidator = loadValidator(code);
+    expect(validator.methods.internal).toBeUndefined();
+    expect(validator.methods.raw).toEqual({ unchecked: true });
+    expect(checkedMethod(validator, "authenticate").args).toHaveLength(1);
+  });
+
+  it("rejects a call with no class outside a static block", () => {
+    const message = compileError(`${API}validateRpc();`);
+
+    expect(message).toContain("static block in a named class declaration");
+  });
+
+  it("rejects a call with no class in a class expression's static block", () => {
+    const message = compileError(
+      `export const Api = class extends RpcTarget {
+  static { validateRpc(); }
+};`
+    );
+
+    expect(message).toContain("static block in a named class declaration");
+  });
+
+  it("rejects a static block in some other class", () => {
+    const message = compileError(
+      `${API}export class Other extends RpcTarget {
+  static { validateRpc(Api); }
+}`
+    );
+
+    expect(message).toContain("static block in the body of `Api`");
+  });
+
+  it("rewrites a static block call that shares the block with other code", () => {
+    const { code } = compile(
+      `export class Api extends RpcTarget {
+  static ready = false;
+
+  static {
+    validateRpc();
+    Api.ready = true;
+  }
+
+  async authenticate(token: string): Promise<number> {
+    return token.length;
+  }
+}`
+    );
+
+    expect(code).toContain(
+      "__cw.__validateRpcClass(__capnweb_validate_Api_server)(Api);"
+    );
+    expect(
+      checkedMethod(loadValidator(code), "authenticate").args
+    ).toHaveLength(1);
   });
 
   it("rejects an inline class expression", () => {

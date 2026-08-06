@@ -241,12 +241,24 @@ export function transformModule(
   // Replace only the callee, leaving the class argument as written:
   //   validateRpc(Api)        ->  __cw.__validateRpcClass(__v0)(Api)
   //   validateRpc<S>()(Api)   ->  __cw.__validateRpcClass(__v0)(Api)
+  // The static-block form has no class argument, so it names the class:
+  //   validateRpc()           ->  __cw.__validateRpcClass(__v0)(Api)
   for (let site of wrapperSites) {
-    edits.push({
-      start: site.call.expression.getStart(sourceFile),
-      end: site.call.expression.getEnd(),
-      text: `${RUNTIME_NAMESPACE}.__validateRpcClass(${site.bindingName!})`,
-    });
+    edits.push(
+      site.selfForm
+        ? {
+            start: site.call.getStart(sourceFile),
+            end: site.call.getEnd(),
+            text: `${RUNTIME_NAMESPACE}.__validateRpcClass(${site.bindingName!})(${
+              site.cls.name!.text
+            })`,
+          }
+        : {
+            start: site.call.expression.getStart(sourceFile),
+            end: site.call.expression.getEnd(),
+            text: `${RUNTIME_NAMESPACE}.__validateRpcClass(${site.bindingName!})`,
+          }
+    );
   }
 
   return { code: applyTextEdits(code, edits) };
@@ -335,6 +347,8 @@ type WrapperSite = {
   call: ts.CallExpression;
   cls: ts.ClassDeclaration;
   shape: ServiceShape;
+  /** `static { validateRpc(); }`: the whole call is replaced, class included. */
+  selfForm?: boolean;
   bindingName?: string;
 };
 
@@ -529,13 +543,14 @@ function isValidateRpcReference(
 
 // The wrapper form, for downstream builds that can't enable decorators:
 //
-//   class Api { ... }
-//   export default validateRpc(Api);              // class surface
-//   export default validateRpc<Surface>()(Api);   // exact surface
+//   class Api { static { validateRpc(); } ... }     // keeps the class's name
+//   export default validateRpc(Api);                // class surface
+//   export default validateRpc<Surface>()(Api);     // exact surface
 //
-// The surface can only come from the factory's type argument: TypeScript has no
-// partial type-argument inference, so `validateRpc<Surface>(Api)` would drop the
-// inferred class type.
+// A static block already names its class, so that form takes no argument. The
+// surface can otherwise only come from the factory's type argument: TypeScript
+// has no partial type-argument inference, so `validateRpc<Surface>(Api)` would
+// drop the inferred class type.
 function collectWrapperSites(
   sf: ts.SourceFile,
   decoratorBindings: Set<string>,
@@ -546,6 +561,36 @@ function collectWrapperSites(
   if (decoratorBindings.size === 0 && namespaces.size === 0) return out;
 
   function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      (node.arguments.length === 0 ||
+        (node.arguments.length === 1 &&
+          ts.isObjectLiteralExpression(node.arguments[0]!))) &&
+      !ts.isDecorator(node.parent) &&
+      ts.isExpressionStatement(node.parent) &&
+      isValidateRpcReference(
+        node.expression,
+        decoratorBindings,
+        namespaces,
+        checker
+      )
+    ) {
+      // `static { validateRpc(); }`: the block names the class, so the call
+      // takes the surface and the skip list and nothing else.
+      let cls = resolveStaticBlockClass(sf, node);
+      let shape = resolveClassShape(
+        sf,
+        cls,
+        node.typeArguments?.[0] ?? null,
+        node,
+        "validateRpc()",
+        checker,
+        parseWrapperSkipOption(sf, node.arguments[0])
+      );
+      rejectUnsupported(sf, node, "validateRpc", shape);
+      out.push({ call: node, cls, shape, selfForm: true });
+      return;
+    }
     if (
       ts.isCallExpression(node) &&
       node.arguments.length >= 1 &&
@@ -571,7 +616,7 @@ function collectWrapperSites(
           parseWrapperSkipOption(sf, node.arguments[1])
         );
         rejectUnsupported(sf, node, "validateRpc", shape);
-        rejectMisplacedWrapperCall(sf, node, cls);
+        rejectDetachedWrapperCall(sf, node, cls);
         out.push({ call: node, cls, shape });
       }
     }
@@ -616,6 +661,33 @@ function resolveWrapperCallee(
   return undefined;
 }
 
+// `validateRpc()` with no class names the class it is written in, which is only
+// unambiguous in a static block: anywhere else the call is detached from the
+// class, and a class expression has no name to emit.
+function resolveStaticBlockClass(
+  sf: ts.SourceFile,
+  call: ts.CallExpression
+): ts.ClassDeclaration {
+  let block = call.parent.parent;
+  let staticBlock = block.parent;
+  if (
+    ts.isBlock(block) &&
+    ts.isClassStaticBlockDeclaration(staticBlock) &&
+    ts.isClassDeclaration(staticBlock.parent) &&
+    staticBlock.parent.name
+  ) {
+    return staticBlock.parent;
+  }
+  throw buildError(
+    sf,
+    call,
+    `capnweb-validate: \`validateRpc()\` with no class validates the class it ` +
+      `is written in, so it has to be a static block in a named class ` +
+      `declaration: \`class MyClass { static { validateRpc(); } ... }\`. ` +
+      `Elsewhere, pass the class: \`export default validateRpc(MyClass);\`.`
+  );
+}
+
 // The class declaration is needed for `@skipRpcValidation` members and platform
 // method filtering, so the argument must name a class declared in this module.
 function resolveWrapperClass(
@@ -644,13 +716,37 @@ function resolveWrapperClass(
 // The wrapper mutates the class in place when the call runs, so a call that
 // runs before the class is initialized, or that only runs when some function is
 // called, leaves the class unvalidated. A decorator could not be detached from
-// its class this way. `tsc` reports the ordering case, but type-stripping
+// its class this way, so the discarded-result form has to be written where it
+// cannot detach: a static block in the class it names, which runs exactly when
+// the class is created. `tsc` reports the ordering case, but type-stripping
 // builders don't typecheck, so reject both here.
-function rejectMisplacedWrapperCall(
+function rejectDetachedWrapperCall(
   sf: ts.SourceFile,
   call: ts.CallExpression,
   cls: ts.ClassDeclaration
 ): void {
+  // Only the statement form can detach: every other form uses the result, so
+  // the class can only be reached through the wrapper.
+  if (ts.isExpressionStatement(call.parent)) {
+    let block = call.parent.parent;
+    let staticBlock = block.parent;
+    if (
+      !ts.isBlock(block) ||
+      !ts.isClassStaticBlockDeclaration(staticBlock) ||
+      staticBlock.parent !== cls
+    ) {
+      throw buildError(
+        sf,
+        call,
+        `capnweb-validate: write the call as a static block in the body of ` +
+          `\`${
+            cls.name?.text ?? "the class"
+          }\`, \`static { validateRpc(); }\`. Anywhere else the call is ` +
+          `detached from the class, and only validates it if that code runs.`
+      );
+    }
+    return;
+  }
   if (call.getStart() < cls.getStart()) {
     throw buildError(
       sf,
@@ -660,20 +756,6 @@ function rejectMisplacedWrapperCall(
           cls.name?.text ?? "the class"
         }\`, which is not initialized until ` +
         `its declaration is evaluated.`
-    );
-  }
-  // Only the statement form can be misplaced: every other form uses the result,
-  // so the class can only be reached through the wrapper.
-  if (
-    ts.isExpressionStatement(call.parent) &&
-    !ts.isSourceFile(call.parent.parent)
-  ) {
-    throw buildError(
-      sf,
-      call,
-      `capnweb-validate: \`validateRpc(${cls.name?.text ?? ""});\` must be a ` +
-        `top-level statement. Nested here, it only validates the class if this ` +
-        `code runs.`
     );
   }
 }

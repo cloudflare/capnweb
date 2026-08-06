@@ -33,6 +33,15 @@ type LegacyMethodDecoratorMarker = (
   descriptor: PropertyDescriptor
 ) => void;
 
+// `static { validateRpc({ skip: ["raw"] }); }`: the static block names the
+// class, so the skip names are only checked by the transform.
+export function validateRpc(options: { skip: readonly string[] }): void;
+// `static { validateRpc<TSurface>({ skip: ["raw"] }); }`: an explicit surface
+// gives the skip names a type to check against, which the no-argument form has
+// no way to name.
+export function validateRpc<TSurface>(options: {
+  skip: readonly (keyof TSurface & string)[];
+}): void;
 // Serves `@validateRpc` and the wrapper form `validateRpc(MyApi)`: the class is
 // argument 0 either way, and returning it is legal for a class decorator.
 export function validateRpc<TClass extends AnyClass = AnyClass>(
@@ -46,10 +55,12 @@ export function validateRpc<TClass extends AnyClass>(
   value: TClass,
   options: { skip: readonly (keyof InstanceType<TClass> & string)[] }
 ): TClass;
-export function validateRpc<TSurface = unknown>(): ClassDecoratorMarker<TSurface>;
-export function validateRpc(
-  ...args: unknown[]
-): void | ClassDecoratorMarker {
+// The factory form `validateRpc<TSurface>()(MyApi)`, and the static-block form
+// `static { validateRpc(); }`, which names its class and discards the result.
+export function validateRpc<
+  TSurface = unknown
+>(): ClassDecoratorMarker<TSurface>;
+export function validateRpc(...args: unknown[]): void | ClassDecoratorMarker {
   return uncompiledDecoratorMarker(args);
 }
 
@@ -77,8 +88,8 @@ export function skipRpcValidation(
 ): void | (MethodDecoratorMarker & LegacyMethodDecoratorMarker) {
   // Decorator marker read by the transform. Runtime behavior is intentionally
   // a no-op so decorated methods behave normally after TypeScript lowers them.
-  if (args.length === 0) return (() => {}) as MethodDecoratorMarker &
-    LegacyMethodDecoratorMarker;
+  if (args.length === 0)
+    return (() => {}) as MethodDecoratorMarker & LegacyMethodDecoratorMarker;
 }
 
 function uncompiledDecoratorMarker(
