@@ -642,8 +642,8 @@ export function defineSetPromiseSlot(set: Set<unknown>, property: string, placeh
     set(resolved: unknown) {
       let elms = [...set];
       let ri = elms.indexOf(placeholder);
-      delete (set as any)[property]
-      set.clear()
+      delete (set as any)[property];
+      set.clear();
       for (let i = 0; i < elms.length; i++) {
         set.add(i === ri ? resolved : elms[i]);
       }
