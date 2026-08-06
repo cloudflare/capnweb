@@ -218,6 +218,7 @@ function emitValidator_(shape: TypeShape, ctx: EmitContext): string {
     case "blob":
     case "readableStream":
     case "writableStream":
+    case "url":
     case "headers":
     case "request":
     case "response":

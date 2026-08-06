@@ -39,6 +39,8 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
   '["-inf"]': -Infinity,
   '["nan"]': NaN,
 
+  '["url","https://example.com/path?q=1"]': new URL("https://example.com/path?q=1"),
+
   '["headers",[]]': new Headers(),
   '["headers",[["content-type","text/plain"],["x-custom","hello"]]]':
       new Headers({"Content-Type": "text/plain", "X-Custom": "hello"}),
@@ -80,7 +82,7 @@ describe("simple serialization", () => {
   it("can deserialize", () => {
     for (let key in SERIALIZE_TEST_CASES) {
       let value = deserialize(key);
-      if (value instanceof Uint8Array ||
+      if (value instanceof Uint8Array || value instanceof URL ||
           value instanceof Headers || value instanceof Request || value instanceof Response) {
         // toStrictEqual() won't work for these (e.g. in Node.js, Uint8Array may deserialize as
         // Buffer), so test by serializing again and making sure they round-trip.
