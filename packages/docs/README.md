@@ -260,3 +260,15 @@ generation:
 ```sh
 DOCS_SITE_URL=https://example.com npm run build
 ```
+
+`wrangler.jsonc` deploys that output to a Cloudflare Worker. There is no `main`, so no Worker script
+runs: every request is served from the asset store, which is all a static site with in-browser
+playgrounds needs.
+
+```sh
+npm run deploy   # rebuilds first, via predeploy
+```
+
+Pick the account with `CLOUDFLARE_ACCOUNT_ID` if your token can see more than one. Note that an
+account may put Cloudflare Access in front of its whole `*.workers.dev` subdomain, in which case the
+deployed URL prompts for SSO until a bypass policy is added for the hostname.

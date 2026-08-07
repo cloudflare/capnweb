@@ -20,6 +20,7 @@ The following types can be passed over RPC, in arguments or return values:
 - `Blob`
 - `ReadableStream` and `WritableStream`, with automatic flow control — see
   [Streaming](/concepts/streaming/)
+- `URL`
 - `Headers`, `Request`, and `Response` from the Fetch API
 
 ## Passed by reference

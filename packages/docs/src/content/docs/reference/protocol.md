@@ -361,6 +361,19 @@ When `props` is present, `stack` is normalised to `null` if absent, so that posi
 `props` is unambiguous. When there are no extras, the legacy 3- or 4-element form is emitted
 unchanged.
 
+### url
+
+```json
+["url", href]
+```
+
+A `URL` object. `href` is the fully-serialized, normalized URL string — the value of the URL's
+`href` property. The receiver reconstructs it with `new URL(href)`. For example:
+
+```json
+["url", "https://example.com/path?q=1"]
+```
+
 ### headers
 
 ```json

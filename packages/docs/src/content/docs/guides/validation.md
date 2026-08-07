@@ -145,7 +145,7 @@ The supported set matches Cap'n Web's published wire format: every type Cap'n We
 travel over RPC also has a precise build-time validator. That includes primitives and literal types,
 arrays, tuples, `Map`/`Set`, plain object shapes, unions, `Record`/index signatures, `Promise<T>`
 returns, and the RPC-compatible built-ins (`Date`, `ArrayBuffer`, typed arrays, `Error` subclasses,
-`Blob`, streams, `Headers`, `Request`, `Response`). Pass-by-reference values — functions,
+`Blob`, streams, `URL`, `Headers`, `Request`, `Response`). Pass-by-reference values — functions,
 `RpcStub<T>`, `RpcPromise<T>`, `RpcTarget` subclasses, and Workers `Fetcher<T>` — are validated as
 stubs.
 
@@ -166,6 +166,49 @@ For generics, the transform emits one validator at the class declaration, so it 
 per-`new`-expression. Use an explicit surface such as `@validateRpc<Cursor<string>>()` when the type
 arguments are known at the decorator site. An unconstrained type parameter defaults to `any` with a
 warning; a constrained one validates against its constraint.
+
+## Schema evolution
+
+A validator built from one version of your types will eventually meet a peer built from another.
+Additive changes go through; changes that would let an unchecked value reach your code do not:
+
+| Change                                | Result  |
+| ------------------------------------- | ------- |
+| Extra argument                        | Allowed |
+| Extra object property                 | Allowed |
+| Extra index-signature key             | Allowed |
+| New optional parameter or property    | Allowed |
+| Missing required parameter or property | Refused |
+| Renamed or retyped member             | Refused |
+| Changed tuple length, no rest element | Refused |
+| New union member                      | Refused |
+| New method                            | Refused |
+
+To remove a required member, make it optional in one release and delete it in a later one, so no
+build ever requires something a peer has already stopped sending.
+
+"Allowed" is not the same as "visible". Extra arguments are **dropped before the method runs**, so an
+implementation cannot read an argument no validator checked:
+
+```ts
+// spec generated from: greet(name: string)
+greet(name: string, ...rest: unknown[]) {
+  // rest is always empty
+}
+
+// spec generated from: sum(label: string, ...values: number[])
+sum(label: string, ...values: number[]) {
+  // gets every argument, each one validated
+}
+```
+
+Truncation only applies where the spec declares its parameters. A client-side spec omits `args`
+entirely, so nothing is dropped there. Extra *object properties*, by contrast, are forwarded to the
+implementation unvalidated — an index signature is the exception, since it validates every property
+outside the declared ones.
+
+Keep `strictNullChecks` on. Without it TypeScript erases `null` from your types, and the generated
+validator will refuse a `null` that a peer built with the flag on considers perfectly valid.
 
 Full details are in the
 [`capnweb-validate` README](https://github.com/cloudflare/capnweb/tree/main/packages/capnweb-validate).

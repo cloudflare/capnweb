@@ -99,8 +99,8 @@ Passed as the last argument to the session and response helpers. Commonly used f
 ## Value types on the wire
 
 **By value:** primitives, plain objects, arrays, `bigint`, `Date`, `ArrayBuffer`, `DataView`, typed
-arrays, `Error` and well-known subclasses, `Blob`, `ReadableStream`, `WritableStream`, `Headers`,
-`Request`, `Response`.
+arrays, `Error` and well-known subclasses, `Blob`, `ReadableStream`, `WritableStream`, `URL`,
+`Headers`, `Request`, `Response`.
 
 **By reference:** `RpcTarget` subclasses, functions, existing stubs and promises.
 

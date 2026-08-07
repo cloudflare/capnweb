@@ -682,8 +682,18 @@ main:has(.hero)::after {
  * tree: it carries the "Terminal window" text for screen readers.
  */
 .expressive-code .frame.is-terminal .header {
+	/* The figcaption is kept in the DOM for its sr-only "Terminal window" label,
+	   but its box is collapsed: the empty .title span and the caption's own
+	   borders would otherwise leave an empty 25px band above the prompt. */
 	padding: 0;
 	background: none;
+	border: none;
+	height: 0;
+	min-height: 0;
+}
+
+.expressive-code .frame.is-terminal .header .title {
+	display: none;
 }
 
 .expressive-code .frame.is-terminal .header::before,
