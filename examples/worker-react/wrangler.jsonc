@@ -19,12 +19,6 @@
   "assets": {
     "directory": "client/dist"
   },
-  "routes": [
-    {
-      "pattern": "worker-react.capnweb.com",
-      "custom_domain": true
-    }
-  ],
   "observability": {
     "enabled": true
   },

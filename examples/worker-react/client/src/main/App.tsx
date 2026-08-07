@@ -58,6 +58,7 @@ export function App() {
     return { install, uninstall, get, reset, setOrigin, getEvents }
   }, [])
 
+  // #region runs
   const runPipelined = useCallback(async () => {
     wrapFetch.reset()
     const t0 = performance.now()
@@ -116,6 +117,7 @@ export function App() {
     return { posts: wrapFetch.get(), ms: total, user: u, profile: p, notifications: n,
       trace: { total, calls, network: net } }
   }, [wrapFetch])
+  // #endregion
 
   const runValidationFailure = useCallback(async () => {
     setValidationError(null)

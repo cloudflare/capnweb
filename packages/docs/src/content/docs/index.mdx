@@ -1,6 +1,11 @@
 ---
 title: Cap'n Web
 description: A JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, under 10 kB.
+# Otherwise the landing page reads "Cap'n Web | Cap'n Web", since Starlight
+# appends the site title to the page title. Only this page has the collision.
+head:
+  - tag: title
+    content: Cap'n Web
 template: splash
 editUrl: false
 lastUpdated: false
@@ -18,7 +23,7 @@ hero:
             font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
             <text x="120" y="97">ONE</text>
             <text x="120" y="130">ROUND</text>
-            <text x="120" y="163">TRIP</text>
+            <text x="120" y="163">TRIP!</text>
           </g>
         </g>
       </svg>
@@ -129,8 +134,9 @@ let [me, myFriends] = await Promise.all([profile, friends]);
 
 ## See it running
 
-Both examples are live, and both are in the repo. They make the same point from opposite ends of the
-stack: the pipelined version issues one HTTP request where the ordinary version issues three.
+Both examples run right here in the docs, with the source alongside them. They make the same point
+from opposite ends of the stack: the pipelined version issues one HTTP request where the ordinary
+version issues three.
 
 <CardGrid>
 	{/* Astro's JSX is not React -- a `key` prop would be emitted as a literal
@@ -139,9 +145,7 @@ stack: the pipelined version issues one HTTP request where the ordinary version 
 		<LinkCard
 			title={example.title}
 			description={example.description}
-			href={example.href}
-			target="_blank"
-			rel="noopener"
+			href={example.docsPath}
 		/>
 	))}
 </CardGrid>

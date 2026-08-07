@@ -94,6 +94,13 @@ export default defineConfig({
 					],
 				},
 				{
+					label: 'Examples',
+					items: [
+						{ label: 'Batch + Pipelining', slug: 'examples/batch-pipelining' },
+						{ label: 'Workers + React', slug: 'examples/worker-react' },
+					],
+				},
+				{
 					label: 'Reference',
 					items: [
 						{ label: 'Wire Protocol', slug: 'reference/protocol' },

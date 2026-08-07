@@ -1,51 +1,61 @@
 # Examples
 
 Both examples make the same point from opposite ends of the stack: a chain of dependent RPC calls
-costs one HTTP round trip when pipelined, and three when it isn't. Both are deployed, and both run
-locally.
+costs one HTTP round trip when pipelined, and three when it isn't.
 
-| Example                                    | Live                                                          | What it is                                              |
-| ------------------------------------------ | ------------------------------------------------------------- | ------------------------------------------------------- |
-| [`batch-pipelining`](./batch-pipelining)   | [batch-pipelining.capnweb.com](https://batch-pipelining.capnweb.com) | Worker + zero-build browser page, plus a Node server and CLI client |
-| [`worker-react`](./worker-react)           | [worker-react.capnweb.com](https://worker-react.capnweb.com)  | Worker + React/Vite app, with runtime validation        |
+| Example                                  | What it is                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| [`batch-pipelining`](./batch-pipelining) | Worker + zero-build browser page, plus a Node server and CLI client |
+| [`worker-react`](./worker-react)         | Worker + React/Vite app, with runtime validation                    |
 
-## Running everything locally
+Both also run as playgrounds in the docs, under **Examples** — see [In the docs](#in-the-docs).
+
+## Running them locally
 
 From the repo root:
 
 ```sh
-npm run setup   # first time only: installs the docs and React client, which are
-                # outside the npm workspace and so have their own lockfiles
-npm run dev
+npm run setup              # first time only: installs the docs and the React
+                           # client, which sit outside the npm workspace
+npm run build              # the examples resolve `capnweb` to dist/
+
+# then either of these, one per shell -- each is a long-running server
+npx wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788
+npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
 ```
 
-That builds the library and starts three servers at once:
+This is the version worth reaching for when you are changing an example: it is a real Worker
+answering real requests over a real network, which the in-page playground deliberately is not.
 
-| URL                     | What                                |
-| ----------------------- | ----------------------------------- |
-| `http://localhost:4321` | the docs site                       |
-| `http://127.0.0.1:8787` | the `worker-react` example          |
-| `http://127.0.0.1:8788` | the `batch-pipelining` example      |
+> **Editing the React client while its `wrangler dev` is running?** Restart it. Wrangler builds its
+> asset manifest from `worker-react/client/dist` at startup, so a fresh `vite build` mid-session
+> leaves it serving a stale manifest and the new bundle 404s to a blank page. For a hot-reloading
+> workflow, run the Vite dev server alongside it instead — see
+> [`worker-react/README.md`](./worker-react/README.md). The `batch-pipelining` page has no build
+> step, so a refresh is enough.
 
-The docs landing page links to the two local ports while running under `npm run dev`, and to the
-deployed subdomains in a production build. See `packages/docs/.env.development`.
+## In the docs
 
-To run just one, use `npm run dev:docs`, `npm run dev:worker-react` or `npm run dev:batch`.
+Each example has a page under **Examples** in the docs, showing its source next to the demo running
+live. There is no server behind those: `packages/docs/scripts/build-playgrounds.mjs` bundles the
+example's own Worker into the page next to its own client and routes the client's `fetch` of the RPC
+path straight into the Worker's `fetch` handler. The protocol, the batching and the round-trip
+counts are all genuine — only the network hop is missing, which is what lets the docs deploy as
+static assets.
 
-> **If `npm run dev` dies with `EMFILE: too many open files`**, you are out of inotify instances —
-> three file watchers is more than the default budget on some Linux systems once an IDE and a
-> browser are running. Raise it with
-> `sudo sysctl -w fs.inotify.max_user_instances=512` (add it to `/etc/sysctl.conf` to persist), or
-> set `CHOKIDAR_USEPOLLING=1` to avoid inotify entirely.
+Two consequences worth knowing when editing an example:
+
+- The docs read these files at build time. Move or rename one that is listed in
+  `packages/docs/src/examples.ts` and the docs build fails until it is updated. Same for a named
+  `#region` that disappears.
+- The playground bundles `dist/`, so a library change needs `npm run build` at the repo root before
+  it shows up in the docs.
 
 ## Deploying
 
-```sh
-npm run deploy:examples
-```
-
-Each example owns its subdomain through a `custom_domain` route in its `wrangler.jsonc`, so the
-hostname is claimed on first deploy.
+These examples are not deployed anywhere. They exist to be read and to be run locally. Each still
+has a working `wrangler.jsonc`, so `wrangler deploy --cwd examples/<name>` will put one on your own
+`workers.dev` subdomain if you want it.
 
 ## Notes
 

@@ -1,0 +1,416 @@
+---
+/**
+ * A live example, laid out like a code playground: the real source on the left,
+ * the running demo on the right, filling most of the viewport.
+ *
+ * Two things keep it honest. The source is read out of the repo at build time
+ * by `readRepoFile`, so it cannot drift from the code that ships -- a renamed
+ * file fails the build rather than rendering an empty tab. And the demo in the
+ * frame is the example's own Worker and client, bundled by
+ * `scripts/build-playgrounds.mjs` and running in the page; the request counts
+ * it reports are real.
+ *
+ * The chrome here deliberately does not use the site's palette. It is meant to
+ * read as an editor, so it borrows the code theme's own colours instead.
+ */
+import { Code } from '@astrojs/starlight/components';
+import { readRepoFile, readRepoRegion } from '../lib/source';
+import type { Example } from '../examples';
+
+interface Props {
+	example: Example;
+}
+
+const { example } = Astro.props;
+
+const files = example.files.map((file) => ({
+	...file,
+	code: file.region ? readRepoRegion(file.path, file.region) : readRepoFile(file.path),
+}));
+
+const id = `pg-${example.slug}`;
+// Same-origin, so the frame can read the docs theme itself and `src` can be
+// server-rendered -- no flash, and the code still shows with JS disabled.
+const demoSrc = `${example.demoPath}?embed=1`;
+---
+
+{/*
+	`not-content` opts the whole stage out of Starlight's prose spacing. That
+	rule puts `margin-top: var(--sl-content-gap-y)` on any block following a
+	sibling block, which lands on every tab after the first and on the preview
+	pane, knocking both out of alignment. The rule itself has to stay -- it is
+	what spaces the prose on every page -- and `:where(.not-content *)` is the
+	exemption Starlight ships for exactly this.
+*/}
+<div class="capn-stage not-content" data-capn-stage>
+	<section class="capn-pane capn-code" aria-label={`${example.title} source`}>
+		<div class="capn-tabs" role="tablist" aria-label="Files">
+			{
+				files.map((file, i) => (
+					<button
+						type="button"
+						role="tab"
+						class="capn-tab"
+						id={`${id}-tab-${i}`}
+						aria-controls={`${id}-panel-${i}`}
+						aria-selected={i === 0 ? 'true' : 'false'}
+						tabindex={i === 0 ? 0 : -1}
+						title={file.note}
+					>
+						{file.label}
+					</button>
+				))
+			}
+		</div>
+
+		<div class="capn-panels">
+			{
+				files.map((file, i) => (
+					<div
+						role="tabpanel"
+						class="capn-panel"
+						id={`${id}-panel-${i}`}
+						aria-labelledby={`${id}-tab-${i}`}
+						tabindex={0}
+						hidden={i !== 0}
+					>
+						<Code code={file.code} lang={file.lang} />
+					</div>
+				))
+			}
+		</div>
+	</section>
+
+	<section class="capn-pane capn-preview" aria-label={`${example.title} demo`}>
+		<div class="capn-chrome">
+			<span class="capn-url">{example.demoPath}</span>
+			<a class="capn-open" href={example.demoPath} target="_blank" rel="noopener">
+				Open
+				<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M7 17 17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round"></path>
+				</svg>
+			</a>
+		</div>
+		<iframe src={demoSrc} title={`${example.title} \u2014 live demo`}></iframe>
+	</section>
+</div>
+
+<script>
+	// Tabs. Roving tabindex with arrow keys, per the APG tabs pattern.
+	for (const stage of document.querySelectorAll<HTMLElement>('[data-capn-stage]')) {
+		const tabs = [...stage.querySelectorAll<HTMLButtonElement>('.capn-tab')];
+		const panels = [...stage.querySelectorAll<HTMLElement>('.capn-panel')];
+
+		const select = (next: number, focus = true) => {
+			tabs.forEach((tab, i) => {
+				const on = i === next;
+				tab.setAttribute('aria-selected', String(on));
+				tab.tabIndex = on ? 0 : -1;
+				panels[i].hidden = !on;
+			});
+			// The strip scrolls once the files outgrow the pane, so a tab picked
+			// by keyboard has to be brought into view.
+			tabs[next].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+			if (focus) tabs[next].focus();
+		};
+
+		// There is no CSS test for "this element overflows", so the edge fades
+		// that hint at more tabs are driven from here.
+		const strip = stage.querySelector<HTMLElement>('.capn-tabs');
+		if (strip) {
+			const sync = () => {
+				const max = strip.scrollWidth - strip.clientWidth;
+				strip.dataset.scrollStart = String(strip.scrollLeft > 1);
+				strip.dataset.scrollEnd = String(strip.scrollLeft < max - 1);
+			};
+			strip.addEventListener('scroll', sync, { passive: true });
+			new ResizeObserver(sync).observe(strip);
+			sync();
+		}
+
+		tabs.forEach((tab, i) => {
+			tab.addEventListener('click', () => select(i, false));
+			tab.addEventListener('keydown', (event) => {
+				const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+				if (delta) {
+					event.preventDefault();
+					select((i + delta + tabs.length) % tabs.length);
+				} else if (event.key === 'Home') {
+					event.preventDefault();
+					select(0);
+				} else if (event.key === 'End') {
+					event.preventDefault();
+					select(tabs.length - 1);
+				}
+			});
+		});
+	}
+
+	// Keep the demo on the docs theme. The frame reads the initial value itself
+	// on the way up; this only has to push later toggles, which avoids a reload.
+	const frames = document.querySelectorAll<HTMLIFrameElement>('.capn-preview iframe');
+	if (frames.length) {
+		new MutationObserver(() => {
+			const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+			for (const frame of frames) {
+				frame.contentWindow?.postMessage({ type: 'capn-theme', theme }, location.origin);
+			}
+		}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+	}
+</script>
+
+<style is:global>
+	/* The stage wants the whole main column, but prose does not. Widen the
+	   container and cap the prose instead of trying to break the stage out of a
+	   centred column, which would mean guessing at the sidebar width. Left
+	   edges stay aligned with the page title. */
+	:root:has(.capn-stage) {
+		--sl-content-width: 100%;
+	}
+
+	.sl-markdown-content > *:not(.capn-stage) {
+		max-width: 47rem;
+	}
+</style>
+
+<style>
+	/* Editor colours, kept separate from the site palette on purpose: the panes
+	   should read as a tool, not as part of the page. These match the code
+	   theme (github-dark / github-light) so the tab strip sits flush against
+	   the code block. Starlight always writes an explicit `data-theme`, so a
+	   dark default plus one light override covers every case. */
+	.capn-stage {
+		--pg-bg: #0d1117;
+		--pg-bar: #010409;
+		--pg-border: #30363d;
+		--pg-fg-muted: #7d8590;
+		--pg-fg: #e6edf3;
+		--pg-accent: #f78166;
+	}
+
+	:root[data-theme='light'] .capn-stage {
+		--pg-bg: #ffffff;
+		--pg-bar: #f6f8fa;
+		--pg-border: #e1e4e8;
+		--pg-fg-muted: #57606a;
+		--pg-fg: #24292f;
+		--pg-accent: #f9826c;
+	}
+
+	.capn-stage {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+		/* Sized to sit under the page title without pushing its own bottom edge
+		   past the fold on a laptop, so the whole thing reads as one panel. */
+		height: min(74vh, 54rem);
+		min-height: 30rem;
+		margin-block: 1.25rem 2.5rem;
+		border: 1px solid var(--pg-border);
+		border-radius: 6px;
+		overflow: hidden;
+		background: var(--pg-bg);
+	}
+
+	.capn-pane {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
+	}
+
+	.capn-code {
+		border-inline-end: 1px solid var(--pg-border);
+	}
+
+	/* --- file tabs, VS Code style: flat, dense, active tab merges into the
+	   editor body and takes a top accent --- */
+
+	.capn-tabs {
+		display: flex;
+		flex: none;
+		height: 2.25rem;
+		/* Files outgrow the pane well before the layout stacks, so the strip
+		   scrolls rather than letting the tabs squeeze. The native scrollbar is
+		   hidden because it would eat into a 36px bar and break alignment with
+		   the preview toolbar; the edge fades below replace the affordance. */
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+		scroll-behavior: smooth;
+		background: var(--pg-bar);
+		border-bottom: 1px solid var(--pg-border);
+		mask-image: linear-gradient(
+			to right,
+			transparent 0,
+			#000 var(--pg-fade-start, 0px),
+			#000 calc(100% - var(--pg-fade-end, 0px)),
+			transparent 100%
+		);
+	}
+
+	.capn-tabs[data-scroll-start='true'] {
+		--pg-fade-start: 1.5rem;
+	}
+
+	.capn-tabs[data-scroll-end='true'] {
+		--pg-fade-end: 1.5rem;
+	}
+
+	.capn-tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.capn-tabs {
+			scroll-behavior: auto;
+		}
+	}
+
+	.capn-tab {
+		flex: none;
+		display: flex;
+		align-items: center;
+		padding: 0 0.85rem;
+		border: 0;
+		border-right: 1px solid var(--pg-border);
+		background: none;
+		color: var(--pg-fg-muted);
+		font-family: var(--sl-font);
+		font-size: 0.78rem;
+		line-height: 1;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.capn-tab:hover {
+		color: var(--pg-fg);
+	}
+
+	.capn-tab[aria-selected='true'] {
+		background: var(--pg-bg);
+		color: var(--pg-fg);
+		box-shadow: inset 0 2px 0 var(--pg-accent);
+	}
+
+	.capn-tab:focus-visible {
+		outline: 1px solid var(--pg-accent);
+		outline-offset: -2px;
+	}
+
+	/* --- code --- */
+
+	.capn-panels {
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.capn-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	.capn-panel[hidden] {
+		display: none;
+	}
+
+	/* Strip the code block's own frame. It is already inside one, and the
+	   doubled border and radius is what made this look like a widget rather
+	   than an editor. */
+	.capn-panel :global(.expressive-code) {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+	}
+
+	.capn-panel :global(.expressive-code figure) {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		width: 100%;
+		box-shadow: none;
+	}
+
+	.capn-panel :global(.expressive-code figcaption) {
+		display: none;
+	}
+
+	.capn-panel :global(.expressive-code pre) {
+		flex: 1;
+		min-height: 0;
+		overflow: auto;
+		border: 0;
+		border-radius: 0;
+	}
+
+	/* --- preview --- */
+
+	.capn-chrome {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 0.75rem;
+		/* Same height as the tab strip, so the two panes line up. */
+		height: 2.25rem;
+		padding: 0 0.75rem;
+		background: var(--pg-bar);
+		border-bottom: 1px solid var(--pg-border);
+	}
+
+	.capn-url {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--pg-fg-muted);
+		font-family: var(--sl-font-mono);
+		font-size: 0.72rem;
+	}
+
+	.capn-open {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: var(--pg-fg-muted);
+		font-family: var(--sl-font);
+		font-size: 0.72rem;
+		text-decoration: none;
+	}
+
+	.capn-open:hover {
+		color: var(--pg-fg);
+	}
+
+	.capn-preview iframe {
+		flex: 1;
+		width: 100%;
+		min-height: 0;
+		border: 0;
+		background: var(--pg-bg);
+		color-scheme: normal;
+	}
+
+	/* Stacked below the split, with the demo first: it is the point of the
+	   page, and a half-height pane each would leave neither usable. */
+	@media (max-width: 60rem) {
+		.capn-stage {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: 26rem 30rem;
+			height: auto;
+		}
+
+		.capn-code {
+			order: 2;
+			border-inline-end: 0;
+			border-top: 1px solid var(--pg-border);
+		}
+
+		.capn-preview {
+			order: 1;
+		}
+	}
+</style>

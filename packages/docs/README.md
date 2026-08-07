@@ -20,8 +20,12 @@ npm run preview  # serve ./dist
 npm run check    # astro check (types + content collections)
 ```
 
-To run the docs alongside the live examples, use `npm run dev` at the **repo root** instead — that
-starts this site plus both example Workers together. See `examples/README.md`.
+`dev` and `build` are both preceded by `npm run playgrounds`, which bundles the examples into
+`public/playground/`. That step reads the library's **build output**, so run `npm run build` at the
+repo root first — or just use `npm run dev:docs` there, which does both.
+
+The examples no longer need to be running for the docs to work: their demos are bundled into the
+pages. To run one as a real Worker over a real network, see `examples/README.md`.
 
 `sharp` is a dev dependency because the logo (`src/assets/captain-web.jpg`) is a raster image, and
 Astro's image service needs `sharp` to hash and optimise it. If the site ever becomes all-SVG again,
@@ -125,16 +129,127 @@ load. Unset still means "follow the OS". Keep an eye on this file when upgrading
 
 No web fonts are loaded — the site uses the system UI stack.
 
-## Linking to the examples
+## The example playgrounds
 
-`src/examples.ts` is the single list of live examples used by the landing page. Each entry's URL
-falls back to its `capnweb.com` subdomain, and is overridden in dev by `.env.development` so the
-links point at the local Wrangler ports under a root `npm run dev`. Vite only loads
-`.env.development` in dev mode, so a production build always emits the real subdomains — there is a
-check for that in the verification steps below.
+The `/examples/*` pages are laid out like a code playground: the real source on the left, the demo
+running on the right, filling most of the viewport. `src/examples.ts` is the single list of
+examples, read by both the pages and the bundler.
 
-Adding an example means adding an entry to `src/examples.ts`, a matching
-`PUBLIC_EXAMPLE_*_URL` in `.env.development`, and a `dev:*` script at the repo root.
+### Nothing is running on a server
+
+There is no backend. `scripts/build-playgrounds.mjs` bundles each example's **own Worker** into the
+page beside its **own client**, and installs a `fetch` shim that hands requests for the RPC path
+straight to the Worker's `fetch` handler:
+
+```js
+globalThis.fetch = async (input, init) => {
+  const request = new Request(input, init);
+  if (new URL(request.url).pathname === RPC_PATH) {
+    return await worker.fetch(request, ENV, ctx);
+  }
+  return upstream(input, init);
+};
+```
+
+Everything above that line is the genuine code path — the same session setup, the same batch
+encoding, the same `newWorkersRpcResponse` answering. So the round-trip counts the demos print are
+real, and the whole site still deploys as static assets. `newWorkersRpcResponse` is safe to run in a
+browser because its POST branch is just the HTTP batch path; only the WebSocket-upgrade branch
+touches `WebSocketPair`, and the shim never routes an upgrade to it.
+
+Output lands in `public/playground/<slug>/` and is gitignored. `predev` and `prebuild` regenerate
+it, so it cannot go stale — but note it bundles the library's **build output**, so a change to
+`src/` needs `npm run build` at the repo root before it reaches a playground.
+
+The iframe points at `/playground/<slug>/index.html`, spelled out in full. Astro's dev server does
+not resolve a directory request under `public/` to its index, so the tidier-looking
+`/playground/<slug>/` is a 404 in dev even though most static hosts — including Cloudflare's asset
+handling — would serve it. The path is derived from the slug in `examples.ts` so it cannot drift
+from where the bundler writes.
+
+Worth knowing when verifying this: **a production build served by any ordinary static file server
+will hide that class of bug**, because directory-index resolution is a property of the host. Check
+`astro dev` too.
+
+Details worth keeping:
+
+- **The Worker's `env` is read from the example's `wrangler.jsonc` `vars`**, so the playground runs
+  with the same delays as a real deployment rather than a second copy of those numbers drifting
+  over here. That is the only reason there is a JSONC parser in the script.
+- **`capnweb-validate` codegen runs during bundling.** `@validateRpc()` is a build-time transform;
+  bundle without the plugin and the example silently loses the validation it is demonstrating. The
+  React playground's "Test validation failure" button is the check that it did run.
+- **Specifiers are resolved by an `onResolve` hook, not the examples' tsconfig `paths`**, which
+  point at `.d.ts` files that esbuild would try to bundle.
+- **One copy of the library per page.** `capnweb` is marked external and rewritten to a sibling
+  `vendor/capnweb.js` that the client and the Worker share.
+
+### The source panes
+
+**The code is read from the real files at build time.** `src/lib/source.ts` reads each path from the
+repo, so the source on the site cannot drift from the code that ships. A moved or renamed file is a
+build error, not a silently empty tab — that is the whole point, so please keep it that way rather
+than catching the error.
+
+Some files are mostly boilerplate, so an entry can name a `#region` to show only the interesting
+part:
+
+```js
+// #region demo
+...
+// #endregion
+```
+
+Those markers live in the example source, move with the code, and are the same ones editors fold on.
+A named region that has gone missing also fails the build. Line numbers were deliberately not used
+here — they drift silently the moment anything above them changes.
+
+Finding the repo root is done by walking up to sentinel files rather than counting `..` segments,
+because for a production build this code is bundled into `dist/.prerender/chunks/` and any fixed
+offset silently breaks.
+
+### Layout and theme
+
+The stage needs the full width of the main column but prose does not, so the component widens
+`--sl-content-width` to `100%` and caps everything that is *not* the stage at `47rem`. That keeps
+left edges aligned with the page title, and avoids trying to break a centred column out past a
+sidebar whose width would have to be guessed at. Below `60rem` the two panes stack, demo first.
+
+Because the demo is served from this same site it is **same-origin**, which buys two things: the
+iframe `src` is server-rendered (so the code is still readable with JavaScript off) and the embedded
+page reads the docs theme straight off `parent.document` before first paint, so there is no flash
+and no theme in the URL. Later toggles are pushed over `postMessage`, so the frame never reloads.
+Each demo applies the result with `color-scheme`, which is why they use `light-dark()` rather than a
+`prefers-color-scheme` media query, and each hides its own header when embedded.
+
+The stage's own chrome deliberately does **not** use the site palette. It is meant to read as an
+editor, so `Playground.astro` defines a small local palette matching the code theme
+(github-dark / github-light) — the active tab's background is the same colour as the code block it
+sits on, which is what makes the tab strip look attached rather than stuck on top. Expressive Code
+publishes those colours as `--ec-frm-*`, but they are scoped to `.expressive-code .frame` and so do
+not inherit out to the toolbar; the values are mirrored locally instead. If the code theme changes,
+change them too.
+
+For the same reason the code block's own frame is stripped inside the stage (`border`,
+`border-radius`, `box-shadow`, and the empty `figcaption`) — nested frames were what made it look
+like a widget. The tab strip and the preview toolbar are both `2.25rem` so the two panes line up.
+
+The demos keep their own visual identity — the React one is Cloudflare orange — on purpose. The
+toolbar above the frame is the boundary; making them look like docs widgets would undercut the point
+that these are real apps. What they should *not* keep is their own page chrome: the React app's 5px
+brand stripe is `display: none` under `[data-embedded]`, alongside its `h1`, because framed it just
+reads as a stray line under the toolbar.
+
+Per-file explanations are `title` tooltips on the tabs rather than a visible strip of prose, which
+keeps the pane looking like an editor. The text still lives in `examples.ts`.
+
+`public/playground` is excluded in `tsconfig.json`; without that, `astro check` type-checks the
+bundled vendor output and reports ~200 hints from it.
+
+### Adding an example
+
+An entry in `src/examples.ts` (both the `files` list and the `build` block), a page under
+`src/content/docs/examples/`, and a sidebar entry in `astro.config.mjs`.
 
 ## Deployment
 

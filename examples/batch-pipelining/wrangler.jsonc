@@ -23,12 +23,6 @@
 		"directory": "public"
 	},
 
-	"routes": [
-		{
-			"pattern": "batch-pipelining.capnweb.com",
-			"custom_domain": true
-		}
-	],
 
 	"observability": {
 		"enabled": true

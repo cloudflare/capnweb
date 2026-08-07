@@ -151,6 +151,14 @@
 	--sl-color-bg-sidebar: var(--capn-navy-800);
 	--sl-color-bg-inline-code: #ece4d3;
 	--sl-color-hairline-shade: rgba(23, 42, 54, 0.22);
+
+	/* Starlight derives these from gray-5/gray-6, which on parchment come out
+	   at 1.71:1 and 1.29:1 -- the second is effectively invisible. Set them
+	   directly rather than darkening the greys, which are also backgrounds.
+	   Now 2.38:1 and 1.71:1, keeping `-light` the more visible of the pair as
+	   Starlight intends. */
+	--sl-color-hairline-light: #aca290;
+	--sl-color-hairline: #c6c0b2;
 }
 
 /* ------------------------------------------------------------ page shell */
@@ -663,4 +671,30 @@ main:has(.hero)::after {
 	.main-pane > main {
 		border: 0;
 	}
+}
+
+/* ------------------------------------------------- terminal code blocks */
+
+/*
+ * Expressive Code gives `sh` blocks a macOS-style title bar with three dots.
+ * It is decoration, and it makes a two-line install snippet look like a
+ * screenshot of an application. Drop the bar but keep the figcaption in the
+ * tree: it carries the "Terminal window" text for screen readers.
+ */
+.expressive-code .frame.is-terminal .header {
+	padding: 0;
+	background: none;
+}
+
+.expressive-code .frame.is-terminal .header::before,
+.expressive-code .frame.is-terminal .header::after {
+	display: none;
+}
+
+/* Restore the edges Expressive Code removes on the assumption that a title
+   bar is sitting on top of them. */
+.expressive-code .frame.is-terminal pre {
+	border-top: var(--ec-brdWd) solid var(--ec-brdCol);
+	border-start-start-radius: var(--ec-brdRad);
+	border-start-end-radius: var(--ec-brdRad);
 }

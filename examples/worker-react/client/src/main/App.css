@@ -1,32 +1,47 @@
 
+/* Both schemes live in one place via `light-dark()`, so forcing a theme is a
+   single `color-scheme` switch rather than a second copy of the palette. The
+   docs playground forces it when this app is embedded; standalone it still
+   follows the OS. */
 :root {
+  color-scheme: light dark;
+
   --theme-orange: #f6821f;
   --theme-orange-hover: #f69a4aff;
   --theme-orange-foreground: #000000;
 
-  --bg-primary: #ffffff;
-  --bg-secondary: #fafafa;
-  --bg-pre: #f5f5f5;
-  --text-primary: #1f2937;
-  --text-secondary: #4b5563;
-  --border-color: #e5e7eb;
+  --bg-primary: light-dark(#ffffff, #181818);
+  --bg-secondary: light-dark(#fafafa, #272727);
+  --bg-pre: light-dark(#f5f5f5, #313131);
+  --text-primary: light-dark(#1f2937, #f9fafb);
+  --text-secondary: light-dark(#4b5563, #d1d5db);
+  --border-color: light-dark(#e5e7eb, #717171);
   --button-bg: var(--theme-orange);
   --button-hover: var(--theme-orange-hover);
   --button-foreground: var(--theme-orange-foreground);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-primary: #181818;
-    --bg-secondary: #272727;
-    --bg-pre: #313131;
-    --text-primary: #f9fafb;
-    --text-secondary: #d1d5db;
-    --border-color: #717171;
-    --button-bg: var(--theme-orange);
-    --button-hover: var(--theme-orange-hover);
-    --button-foreground: var(--theme-orange-foreground);
-  }
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+/* Embedded in the docs playground, which already supplies a title and frame. */
+:root[data-embedded] h1 {
+  display: none;
+}
+
+:root[data-embedded] body {
+  padding-top: 0.5rem;
+}
+
+/* The brand stripe is part of this app's own chrome. Embedded, it lands
+   directly under the playground's toolbar and just reads as a stray line. */
+:root[data-embedded] body::before {
+  display: none;
 }
 
 body {

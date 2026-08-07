@@ -4,6 +4,41 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Cap'n Web Cloudflare Workers + React Example</title>
+    <script>
+      // The docs playground embeds this app in an iframe and passes its own
+      // theme on the URL. Applied before first paint so there is no flash of
+      // the wrong scheme. Standalone, this is a no-op and the OS preference
+      // still wins via `color-scheme: light dark`.
+      (() => {
+        const root = document.documentElement;
+        const params = new URLSearchParams(location.search);
+        if (params.get('embed') || window.self !== window.top) root.dataset.embedded = 'true';
+
+        // Embedded in the docs, the page above is same-origin, so its theme can
+        // be read directly here rather than passed in. Done before first paint,
+        // so there is no flash of the wrong scheme. The try/catch is for a
+        // cross-origin embedder; standalone there is no parent to read, and
+        // either way it falls through to the OS preference.
+        const fromUrl = params.get('theme');
+        const theme =
+          fromUrl ??
+          (() => {
+            try {
+              return parent.document.documentElement.dataset.theme ?? null;
+            } catch {
+              return null;
+            }
+          })();
+        if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+
+        // Later toggles arrive by postMessage so the frame need not reload.
+        // Only ever sets an attribute, so an unexpected sender can do nothing.
+        addEventListener('message', (event) => {
+          const next = event.data?.type === 'capn-theme' ? event.data.theme : null;
+          if (next === 'light' || next === 'dark') root.dataset.theme = next;
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

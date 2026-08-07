@@ -3,7 +3,7 @@
 A sequence of dependent RPC calls that all execute on the server in **one** HTTP round trip, using
 batching and promise pipelining — measured against the same calls made the ordinary way.
 
-Live at **[batch-pipelining.capnweb.com](https://batch-pipelining.capnweb.com)**.
+Runs as a playground in the docs under **Examples**, and locally as a real Worker.
 
 ## What it does
 
@@ -36,7 +36,7 @@ npm run build
 ### In a browser
 
 ```sh
-npm run dev:batch          # from the repo root
+npx wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788   # from the repo root
 ```
 
 Then open `http://127.0.0.1:8788`. The page has a latency slider; the gap between the two columns
@@ -49,11 +49,11 @@ node examples/batch-pipelining/server-node.mjs      # terminal 1
 node examples/batch-pipelining/client.mjs           # terminal 2
 ```
 
-The client works against any of the servers — point it at the Worker, local or deployed:
+The client works against any of the servers — point it wherever one is running:
 
 ```sh
-RPC_URL=http://127.0.0.1:8788/rpc node examples/batch-pipelining/client.mjs
-RPC_URL=https://batch-pipelining.capnweb.com/rpc node examples/batch-pipelining/client.mjs
+RPC_URL=http://127.0.0.1:8788/rpc node examples/batch-pipelining/client.mjs   # the Worker
+RPC_URL=http://127.0.0.1:3000/rpc node examples/batch-pipelining/client.mjs   # the Node server
 ```
 
 ## Where the latency comes from

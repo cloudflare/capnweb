@@ -6,8 +6,11 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "playgrounds": "node scripts/build-playgrounds.mjs",
+    "predev": "npm run playgrounds",
     "dev": "astro dev",
     "start": "astro dev",
+    "prebuild": "npm run playgrounds",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
