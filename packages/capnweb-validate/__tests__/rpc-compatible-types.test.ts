@@ -134,6 +134,9 @@ class Api extends RpcTarget {
     expect(accepts(v.regexp, /abc/u)).toBe(true);
     expect(accepts(v.regexp, "abc")).toBe(false);
 
+    expect(accepts(v.url, new URL("https://example.com/"))).toBe(true);
+    expect(accepts(v.url, "https://example.com/")).toBe(false);
+
     const int16 = v.typedArray("Int16Array");
     expect(accepts(int16, new Int16Array(2))).toBe(true);
     expect(accepts(int16, new Uint8Array(2))).toBe(false);

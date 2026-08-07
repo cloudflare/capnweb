@@ -90,6 +90,7 @@ type BaseType =
   | Blob
   | ReadableStream<any>  // Chunk type can be any RPC-compatible type
   | WritableStream<any>  // Chunk type can be any RPC-compatible type
+  | URL
   | Request
   | Response
   | Headers;

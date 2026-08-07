@@ -203,6 +203,7 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Error` and its well-known subclasses
 * `Blob`
 * `ReadableStream` and `WritableStream`, with automatic flow control.
+* `URL`
 * `Headers`, `Request`, and `Response` from the Fetch API.
 
 The following types are not supported as of this writing, but may be added in the future:
