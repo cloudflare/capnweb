@@ -1,0 +1,156 @@
+---
+title: Cap'n Web
+description: A JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, under 10 kB.
+template: splash
+editUrl: false
+lastUpdated: false
+hero:
+  title: A JavaScript-native RPC system
+  tagline: Object-capability RPC with promise pipelining. No schemas. No boilerplate. Under 10 kB, with zero dependencies.
+  image:
+    html: |
+      <svg class="capn-burst" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="One round trip, no matter how deep the chain">
+        <title>One round trip, no matter how deep the chain</title>
+        <g transform="rotate(-8 120 120)">
+          <polygon points="120.0,20.0 131.7,38.8 148.2,24.1 154.1,45.4 174.1,35.9 173.7,58.0 195.6,54.5 189.0,75.7 211.0,78.5 198.7,96.9 219.0,105.8 202.0,120.0 219.0,134.2 198.7,143.1 211.0,161.5 189.0,164.3 195.6,185.5 173.7,182.0 174.1,204.1 154.1,194.6 148.2,215.9 131.7,201.2 120.0,220.0 108.3,201.2 91.8,215.9 85.9,194.6 65.9,204.1 66.3,182.0 44.4,185.5 51.0,164.3 29.0,161.5 41.3,143.1 21.0,134.2 38.0,120.0 21.0,105.8 41.3,96.9 29.0,78.5 51.0,75.7 44.4,54.5 66.3,58.0 65.9,35.9 85.9,45.4 91.8,24.1 108.3,38.8"
+            fill="#e8c88d" stroke="#172a36" stroke-width="3" stroke-linejoin="round" />
+          <g fill="#172a36" font-size="31" font-weight="800" letter-spacing="-1" text-anchor="middle"
+            font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+            <text x="120" y="97">ONE</text>
+            <text x="120" y="130">ROUND</text>
+            <text x="120" y="163">TRIP</text>
+          </g>
+        </g>
+      </svg>
+  actions:
+    - text: Get started
+      link: /start/quickstart/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/cloudflare/capnweb
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { examples } from '../../examples.ts';
+
+Cap'n Web is a spiritual sibling to [Cap'n Proto](https://capnproto.org), created by the same
+author, but designed to play nice in the web stack. Like Cap'n Proto it is an **object-capability**
+protocol — "Cap'n" is short for "capabilities and". Unlike Cap'n Proto, it has no schemas, almost no
+boilerplate, and its serialization is just JSON with a little pre- and post-processing.
+
+## Call the server. Let the server call you back.
+
+<CardGrid>
+<Card title="The client">
+```js
+import { newWebSocketRpcSession } from "capnweb";
+
+// One-line setup.
+let api = newWebSocketRpcSession("wss://example.com/api");
+
+// Call a method on the server!
+let result = await api.hello("World");
+
+console.log(result);
+```
+</Card>
+
+<Card title="The server">
+```js
+import { RpcTarget, newWorkersRpcResponse } from "capnweb";
+
+class MyApiServer extends RpcTarget {
+  hello(name) {
+    return `Hello, ${name}!`
+  }
+}
+
+export default {
+  fetch(request, env, ctx) {
+    return newWorkersRpcResponse(request, new MyApiServer());
+  }
+}
+```
+</Card>
+</CardGrid>
+
+## Why it's different
+
+<CardGrid>
+	<Card title="Promise pipelining" icon="rocket">
+		Don't await a result before using it. Chain dependent calls together and the whole chain
+		resolves in a **single network round trip** — even over plain HTTP.
+	</Card>
+	<Card title="Bidirectional by default" icon="random">
+		Sessions are symmetric. The client can call the server, and the server can call the client.
+		Pass a function over RPC and the recipient gets a stub that calls back to you.
+	</Card>
+	<Card title="Pass by reference" icon="puzzle">
+		Classes extending `RpcTarget` travel as references, not copies. Method calls on the reference
+		run where the object actually lives.
+	</Card>
+	<Card title="No schemas, no codegen" icon="approve-check">
+		No `.proto` files, no build step, no generated clients. Write TypeScript interfaces if you
+		want types — they are erased at runtime and cost nothing.
+	</Card>
+	<Card title="Runs everywhere" icon="laptop">
+		Every major browser, Cloudflare Workers, Node.js, Deno, and Bun. Over HTTP, WebSocket,
+		`MessagePort`, or a transport you write yourself.
+	</Card>
+	<Card title="Under 10 kB" icon="seti:javascript">
+		Minified and gzipped, with zero dependencies. The whole protocol is human-readable JSON,
+		so you can debug it in your browser's network tab.
+	</Card>
+</CardGrid>
+
+## The magic trick
+
+Every call returns an `RpcPromise`. You can use that promise — or a property of it — as the input to
+another call *before it has resolved*. The server substitutes the real value on arrival, so a chain
+of dependent calls costs exactly one round trip:
+
+```ts
+// Authenticate, get the user's ID, fetch their profile, fetch every friend's
+// profile too. One request. One response.
+let authed = api.authenticate(apiToken);
+let profile = api.getUserProfile(authed.getUserId());
+let friends = authed.getFriendIds().map(id => api.getUserProfile(id));
+
+let [me, myFriends] = await Promise.all([profile, friends]);
+```
+
+<LinkCard
+	title="See how pipelining works"
+	description="A step-by-step tour of promise pipelining, and the record-replay trick behind .map()."
+	href="/start/pipelining-tour/"
+/>
+
+## See it running
+
+Both examples are live, and both are in the repo. They make the same point from opposite ends of the
+stack: the pipelined version issues one HTTP request where the ordinary version issues three.
+
+<CardGrid>
+	{/* Astro's JSX is not React -- a `key` prop would be emitted as a literal
+	    DOM attribute, so it is deliberately absent here. */}
+	{examples.map((example) => (
+		<LinkCard
+			title={example.title}
+			description={example.description}
+			href={example.href}
+			target="_blank"
+			rel="noopener"
+		/>
+	))}
+</CardGrid>
+
+## Get going
+
+<CardGrid>
+	<LinkCard title="Installation" description="npm i capnweb" href="/start/installation/" />
+	<LinkCard title="Quickstart" description="A working client and server in a few minutes." href="/start/quickstart/" />
+	<LinkCard title="Core concepts" description="Stubs, targets, promises, and disposal." href="/concepts/values/" />
+	<LinkCard title="Wire protocol" description="What actually goes over the socket." href="/reference/protocol/" />
+</CardGrid>

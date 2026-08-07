@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Cap'n Web">
+  <title>Cap'n Web</title>
+  <!-- Navy field, matching the patch background (#1a2f3b). -->
+  <circle cx="32" cy="32" r="32" fill="#1a2f3b" />
+  <!-- Gold rope ring: solid band plus a dashed overlay to read as twist. -->
+  <circle cx="32" cy="32" r="28" fill="none" stroke="#c9a86a" stroke-width="4" />
+  <circle cx="32" cy="32" r="28" fill="none" stroke="#8f7442" stroke-width="4"
+    stroke-dasharray="3.2 3.2" stroke-linecap="butt" opacity="0.85" />
+  <!-- Chest emblem: red disc behind a cream star. -->
+  <circle cx="32" cy="32" r="17" fill="#9c4234" />
+  <circle cx="32" cy="32" r="17" fill="none" stroke="#f3ecdc" stroke-width="1.6" opacity="0.7" />
+  <polygon
+    points="32.00,20.50 34.82,28.12 42.94,28.45 36.57,33.48 38.76,41.30 32.00,36.80 25.24,41.30 27.43,33.48 21.06,28.45 29.18,28.12"
+    fill="#f3ecdc" />
+</svg>

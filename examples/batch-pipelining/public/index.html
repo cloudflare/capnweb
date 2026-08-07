@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#1a2f3b" />
+		<link
+			rel="icon"
+			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%231a2f3b'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='none' stroke='%23b99a66' stroke-width='2'/%3E%3Ccircle cx='16' cy='16' r='6' fill='%238c3d31'/%3E%3C/svg%3E"
+		/>
+		<title>Batch + pipelining &mdash; Cap'n Web</title>
+		<meta
+			name="description"
+			content="Dependent Cap'n Web RPC calls in a single HTTP round trip, compared against the same calls made sequentially."
+		/>
+		<style>
+			:root {
+				--navy: #1a2f3b;
+				--navy-deep: #10222c;
+				--navy-800: #0a161d;
+				--cream: #f3ecdd;
+				--cream-dim: #b9b2a3;
+				--gold: #b99a66;
+				--gold-bright: #e8c88d;
+				--accent: #7bc0e0;
+				--red: #8c3d31;
+				--panel: #16283340;
+				font-family:
+					ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+					sans-serif;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				background: var(--navy-800);
+				color: var(--cream);
+				line-height: 1.6;
+			}
+
+			/* Navy leather bar with the gold rope band, matching capnweb.com. */
+			header {
+				background-color: var(--navy);
+				background-image: linear-gradient(
+					180deg,
+					rgba(255, 250, 235, 0.07) 0%,
+					rgba(0, 0, 0, 0) 45%,
+					rgba(0, 0, 0, 0.22) 100%
+				);
+				box-shadow: 0 2px 16px rgba(0, 0, 0, 0.38);
+				position: relative;
+				padding: 0.9rem 1.5rem;
+			}
+
+			header::after {
+				content: '';
+				position: absolute;
+				inset: auto 0 0 0;
+				height: 3px;
+				background: repeating-linear-gradient(
+					114deg,
+					#8a6d3a 0 2px,
+					var(--gold) 2px 4px,
+					#f0d69f 4px 5px,
+					#a7863f 5px 7px
+				);
+			}
+
+			header a {
+				color: var(--cream);
+				font-weight: 700;
+				font-size: 1.15rem;
+				text-decoration: none;
+				letter-spacing: -0.01em;
+			}
+
+			main {
+				max-width: 60rem;
+				margin: 0 auto;
+				padding: 2.5rem 1.5rem 4rem;
+			}
+
+			h1 {
+				font-size: clamp(1.9rem, 4vw, 2.6rem);
+				line-height: 1.15;
+				letter-spacing: -0.02em;
+				margin: 0 0 0.6rem;
+			}
+
+			.lede {
+				color: var(--cream-dim);
+				font-size: 1.1rem;
+				max-width: 46rem;
+				margin: 0 0 2rem;
+			}
+
+			code {
+				font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+				font-size: 0.9em;
+				color: var(--gold-bright);
+			}
+
+			.controls {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 1.25rem;
+				align-items: center;
+				padding: 1.1rem 1.25rem;
+				border: 1px solid rgba(233, 221, 196, 0.14);
+				border-radius: 0.75rem;
+				background: var(--navy-deep);
+				margin-bottom: 2rem;
+			}
+
+			.controls label {
+				display: flex;
+				align-items: center;
+				gap: 0.6rem;
+				font-size: 0.92rem;
+				color: var(--cream-dim);
+			}
+
+			input[type='range'] {
+				accent-color: var(--accent);
+				width: 11rem;
+			}
+
+			button {
+				font: inherit;
+				font-weight: 600;
+				cursor: pointer;
+				border: 0;
+				border-radius: 999px;
+				padding: 0.55rem 1.4rem;
+				background: var(--accent);
+				color: #0b1f2a;
+				box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+			}
+
+			button:hover:not(:disabled) {
+				filter: brightness(1.08);
+			}
+
+			button:disabled {
+				opacity: 0.55;
+				cursor: progress;
+			}
+
+			button.secondary {
+				background: transparent;
+				color: var(--cream);
+				box-shadow: none;
+				border: 1px solid rgba(233, 221, 196, 0.28);
+			}
+
+			.results {
+				display: grid;
+				gap: 1.25rem;
+				grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+			}
+
+			.panel {
+				border: 1px solid rgba(233, 221, 196, 0.14);
+				border-radius: 0.75rem;
+				background: var(--navy-deep);
+				padding: 1.25rem;
+			}
+
+			.panel h2 {
+				margin: 0 0 0.15rem;
+				font-size: 1.15rem;
+			}
+
+			.panel .sub {
+				margin: 0 0 1rem;
+				color: var(--cream-dim);
+				font-size: 0.88rem;
+			}
+
+			.stat {
+				display: flex;
+				justify-content: space-between;
+				align-items: baseline;
+				gap: 1rem;
+				padding: 0.4rem 0;
+				border-bottom: 1px dashed rgba(233, 221, 196, 0.12);
+			}
+
+			.stat:last-of-type {
+				border-bottom: 0;
+			}
+
+			.stat .k {
+				color: var(--cream-dim);
+				font-size: 0.88rem;
+			}
+
+			.stat .v {
+				font-variant-numeric: tabular-nums;
+				font-weight: 700;
+				font-size: 1.35rem;
+			}
+
+			.bar {
+				height: 10px;
+				border-radius: 999px;
+				background: rgba(233, 221, 196, 0.12);
+				overflow: hidden;
+				margin-top: 0.9rem;
+			}
+
+			.bar > span {
+				display: block;
+				height: 100%;
+				border-radius: 999px;
+				transition: width 0.35s ease;
+			}
+
+			.fast > span {
+				background: linear-gradient(90deg, var(--gold), var(--gold-bright));
+			}
+
+			.slow > span {
+				background: linear-gradient(90deg, #6d1104, var(--red));
+			}
+
+			pre {
+				margin: 1rem 0 0;
+				padding: 0.85rem;
+				border-radius: 0.5rem;
+				background: var(--navy-800);
+				color: var(--cream-dim);
+				font-size: 0.8rem;
+				line-height: 1.5;
+				overflow-x: auto;
+				max-height: 15rem;
+			}
+
+			.verdict {
+				margin-top: 1.75rem;
+				padding: 1rem 1.25rem;
+				border-left: 3px solid var(--gold);
+				background: var(--navy-deep);
+				border-radius: 0 0.5rem 0.5rem 0;
+			}
+
+			.verdict strong {
+				color: var(--gold-bright);
+			}
+
+			.error {
+				border-left-color: var(--red);
+				color: #f0b9ae;
+			}
+
+			footer {
+				border-top: 1px solid rgba(233, 221, 196, 0.12);
+				margin-top: 3rem;
+				padding-top: 1.25rem;
+				color: var(--cream-dim);
+				font-size: 0.9rem;
+			}
+
+			footer a,
+			.lede a {
+				color: var(--accent);
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				.bar > span {
+					transition: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header><a href="/">Cap'n Web &mdash; batch + pipelining</a></header>
+
+		<main>
+			<h1>One round trip, three dependent calls</h1>
+			<p class="lede">
+				This page authenticates a user, then fetches that user's profile and notifications
+				&mdash; both of which need the user ID from the first call. Pipelined, all three
+				travel in a <strong>single</strong> HTTP request. Done the ordinary way, they take
+				three. Only the round trips differ; the server does identical work either way.
+			</p>
+
+			<div class="controls">
+				<label>
+					Simulated latency
+					<input id="rtt" type="range" min="0" max="300" step="10" value="120" />
+					<span id="rttValue" style="font-variant-numeric: tabular-nums">120 ms</span>
+				</label>
+				<button id="run">Run both</button>
+				<button id="reset" class="secondary">Reset</button>
+			</div>
+
+			<div class="results">
+				<section class="panel">
+					<h2>Pipelined</h2>
+					<p class="sub">One session, calls chained on unresolved promises.</p>
+					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="pPosts">&mdash;</span></div>
+					<div class="stat"><span class="k">Elapsed</span><span class="v" id="pTime">&mdash;</span></div>
+					<div class="bar fast"><span id="pBar" style="width: 0"></span></div>
+					<pre id="pOut">Not run yet.</pre>
+				</section>
+
+				<section class="panel">
+					<h2>Sequential</h2>
+					<p class="sub">A fresh session per call, each awaited in turn.</p>
+					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="sPosts">&mdash;</span></div>
+					<div class="stat"><span class="k">Elapsed</span><span class="v" id="sTime">&mdash;</span></div>
+					<div class="bar slow"><span id="sBar" style="width: 0"></span></div>
+					<pre id="sOut">Not run yet.</pre>
+				</section>
+			</div>
+
+			<div class="verdict" id="verdict" hidden></div>
+
+			<footer>
+				Source:
+				<a href="https://github.com/cloudflare/capnweb/tree/main/examples/batch-pipelining"
+					>examples/batch-pipelining</a
+				>. The same comparison runs in a terminal via <code>client.mjs</code>. Latency is
+				simulated in the browser, so the server is doing the same work in both columns
+				&mdash; see <a href="https://capnweb.com/concepts/promises/">promise pipelining</a>.
+			</footer>
+		</main>
+
+		<script type="module">
+			import { newHttpBatchRpcSession } from './vendor/capnweb.js';
+
+			const RPC_URL = new URL('/rpc', location.href).href;
+			const JITTER_MS = 40;
+
+			const $ = (id) => document.getElementById(id);
+			const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+			const latency = () => Number($('rtt').value) + Math.random() * JITTER_MS;
+
+			/**
+			 * Run `fn` with `fetch` wrapped so each RPC POST is counted and padded with
+			 * simulated uplink and downlink latency. Restores the real fetch afterwards
+			 * so a failed run cannot leave the page in a patched state.
+			 */
+			async function withSimulatedNetwork(fn) {
+				const realFetch = globalThis.fetch.bind(globalThis);
+				let posts = 0;
+				globalThis.fetch = async (input, init) => {
+					const url = input instanceof Request ? input.url : String(input);
+					const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+					if (url.startsWith(RPC_URL) && method === 'POST') {
+						posts++;
+						await sleep(latency());
+						const response = await realFetch(input, init);
+						await sleep(latency());
+						return response;
+					}
+					return realFetch(input, init);
+				};
+				const started = performance.now();
+				try {
+					const value = await fn();
+					return { value, posts, ms: performance.now() - started };
+				} finally {
+					globalThis.fetch = realFetch;
+				}
+			}
+
+			// One session. `user` is never awaited before being used, so `user.id`
+			// is sent as a pipelined reference rather than a resolved value.
+			const pipelined = () =>
+				withSimulatedNetwork(async () => {
+					const api = newHttpBatchRpcSession(RPC_URL);
+					const user = api.authenticate('cookie-123');
+					const profile = api.getUserProfile(user.id);
+					const notifications = api.getNotifications(user.id);
+					const [u, p, n] = await Promise.all([user, profile, notifications]);
+					return { user: u, profile: p, notifications: n };
+				});
+
+			// Three sessions, each awaited before the next can be built.
+			const sequential = () =>
+				withSimulatedNetwork(async () => {
+					const user = await newHttpBatchRpcSession(RPC_URL).authenticate('cookie-123');
+					const profile = await newHttpBatchRpcSession(RPC_URL).getUserProfile(user.id);
+					const notifications = await newHttpBatchRpcSession(RPC_URL).getNotifications(
+						user.id,
+					);
+					return { user, profile, notifications };
+				});
+
+			function reset() {
+				for (const id of ['pPosts', 'pTime', 'sPosts', 'sTime']) $(id).textContent = '\u2014';
+				$('pOut').textContent = $('sOut').textContent = 'Not run yet.';
+				$('pBar').style.width = $('sBar').style.width = '0';
+				$('verdict').hidden = true;
+				$('verdict').classList.remove('error');
+			}
+
+			async function run() {
+				$('run').disabled = true;
+				$('run').textContent = 'Running\u2026';
+				reset();
+				try {
+					const p = await pipelined();
+					$('pPosts').textContent = p.posts;
+					$('pTime').textContent = `${Math.round(p.ms)} ms`;
+					$('pOut').textContent = JSON.stringify(p.value, null, 2);
+
+					const s = await sequential();
+					$('sPosts').textContent = s.posts;
+					$('sTime').textContent = `${Math.round(s.ms)} ms`;
+					$('sOut').textContent = JSON.stringify(s.value, null, 2);
+
+					const worst = Math.max(p.ms, s.ms) || 1;
+					$('pBar').style.width = `${(p.ms / worst) * 100}%`;
+					$('sBar').style.width = `${(s.ms / worst) * 100}%`;
+
+					const saved = Math.round(s.ms - p.ms);
+					const times = (s.ms / p.ms).toFixed(2);
+					$('verdict').innerHTML =
+						`<strong>${p.posts} round trip vs ${s.posts}.</strong> Pipelining finished ` +
+						`${saved} ms sooner &mdash; ${times}&times; faster &mdash; returning identical data.`;
+					$('verdict').hidden = false;
+				} catch (err) {
+					$('verdict').classList.add('error');
+					$('verdict').textContent = `Failed: ${err?.message ?? err}`;
+					$('verdict').hidden = false;
+				} finally {
+					$('run').disabled = false;
+					$('run').textContent = 'Run both';
+				}
+			}
+
+			$('rtt').addEventListener('input', () => {
+				$('rttValue').textContent = `${$('rtt').value} ms`;
+			});
+			$('run').addEventListener('click', run);
+			$('reset').addEventListener('click', reset);
+			run();
+		</script>
+	</body>
+</html>

@@ -1,0 +1,666 @@
+/*
+ * Cap'n Web documentation theme.
+ *
+ * Built around the Cap'n Web patch (src/assets/captain-web.jpg): a vintage
+ * naval badge in navy, gold rope, and cream, with an oxblood-red accent.
+ * Every brand colour below was sampled from that artwork rather than guessed
+ * -- see the comments on each token for where it came from.
+ *
+ * The retro feel comes from three things:
+ *   1. a leather grain (an inline SVG feTurbulence, blended over navy)
+ *   2. a twisted gold rope band, echoing the border of the patch
+ *   3. warm parchment paper instead of white in light mode
+ *
+ * There are no raster textures and no web fonts -- the grain is a ~300 byte
+ * data URI and the type is the system UI stack, tracked tighter for headings.
+ */
+
+/* ---------------------------------------------------------------- tokens */
+
+:root {
+	/*
+	 * Sampled from public artwork via hue clustering:
+	 *   navy  avg #21343f   (33% of pixels)
+	 *   gold  avg #b99a66, brightest #f9ca82
+	 *   red   avg #8c3d31
+	 *   cream avg #eee7d6, brightest #fff9e9
+	 */
+	--capn-navy-900: #0a161d;
+	--capn-navy-800: #10222c;
+	--capn-navy-700: #172a36;
+	--capn-navy-600: #1a2f3b;
+	--capn-navy-500: #21343f;
+	--capn-navy-400: #2d414c;
+	--capn-navy-300: #3d5563;
+
+	--capn-gold-300: #f0d69f;
+	--capn-gold-400: #e8c88d;
+	--capn-gold-500: #c9a86a;
+	--capn-gold-600: #a8873f;
+	--capn-gold-700: #7d6330;
+
+	--capn-red: #9c4234;
+	--capn-red-deep: #6d1104;
+
+	--capn-cream: #f3ecdc;
+	--capn-cream-dim: #e6ddc8;
+	--capn-parchment: #ebe5d5;
+
+	/*
+	 * Leather grain. Monochrome fractal noise, blended over the navy with
+	 * `overlay` so it darkens and lightens the hide without tinting it.
+	 */
+	--capn-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23g)' opacity='0.55'/%3E%3C/svg%3E");
+
+
+	/* A portolan compass rose, used as a watermark behind the splash badge.
+	 * Generated, not hand-written; the internal opacities are baked in so the
+	 * whole mark can be dimmed with a single `opacity` on the pseudo-element. */
+	--capn-compass: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400' width='400' height='400'%3E%3Cpath d='M200 200L200 4M200 200L238.2 7.8M200 200L275 18.9M200 200L308.9 37M200 200L338.6 61.4M200 200L363 91.1M200 200L381.1 125M200 200L392.2 161.8M200 200L396 200M200 200L392.2 238.2M200 200L381.1 275M200 200L363 308.9M200 200L338.6 338.6M200 200L308.9 363M200 200L275 381.1M200 200L238.2 392.2M200 200L200 396M200 200L161.8 392.2M200 200L125 381.1M200 200L91.1 363M200 200L61.4 338.6M200 200L37 308.9M200 200L18.9 275M200 200L7.8 238.2M200 200L4 200M200 200L7.8 161.8M200 200L18.9 125M200 200L37 91.1M200 200L61.4 61.4M200 200L91.1 37M200 200L125 18.9M200 200L161.8 7.8' stroke='%23b99a66' stroke-width='1' fill='none' opacity='.35'/%3E%3Ccircle cx='200' cy='200' r='196' fill='none' stroke='%23b99a66' stroke-width='1.5' opacity='0.55'/%3E%3Ccircle cx='200' cy='200' r='178' fill='none' stroke='%23b99a66' stroke-width='1' opacity='0.35'/%3E%3Ccircle cx='200' cy='200' r='150' fill='none' stroke='%23b99a66' stroke-width='1' opacity='0.3'/%3E%3Ccircle cx='200' cy='200' r='46' fill='none' stroke='%23b99a66' stroke-width='1' opacity='0.45'/%3E%3Cpolygon points='170,200 200,50 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='230,200 200,50 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='200,170 350,200 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='200,230 350,200 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='230,200 200,350 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='170,200 200,350 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='200,230 50,200 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='200,170 50,200 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='184.4,184.4 275,125 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='215.6,215.6 275,125 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='215.6,184.4 275,275 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='184.4,215.6 275,275 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='215.6,215.6 125,275 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='184.4,184.4 125,275 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='184.4,215.6 125,125 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='215.6,184.4 125,125 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='186.1,194.3 228.3,131.6 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='213.9,205.7 228.3,131.6 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='194.3,186.1 268.4,171.7 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='205.7,213.9 268.4,171.7 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='205.7,186.1 268.4,228.3 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='194.3,213.9 268.4,228.3 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='213.9,194.3 228.3,268.4 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='186.1,205.7 228.3,268.4 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='213.9,205.7 171.7,268.4 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='186.1,194.3 171.7,268.4 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='205.7,213.9 131.6,228.3 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='194.3,186.1 131.6,228.3 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='194.3,213.9 131.6,171.7 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='205.7,186.1 131.6,171.7 200,200' fill='%23b99a66' opacity='.22'/%3E%3Cpolygon points='186.1,205.7 171.7,131.6 200,200' fill='%23b99a66' opacity='.5'/%3E%3Cpolygon points='213.9,194.3 171.7,131.6 200,200' fill='%23b99a66' opacity='.22'/%3E%3Ccircle cx='200' cy='200' r='28' fill='%23b99a66' opacity='.6'/%3E%3Ccircle cx='200' cy='200' r='28' fill='none' stroke='%23b99a66' stroke-width='1.5' opacity='.8'/%3E%3Ccircle cx='200' cy='200' r='11' fill='%23b99a66' opacity='.85'/%3E%3Ctext x='200' y='34' fill='%23b99a66' opacity='.7' font-size='21' font-weight='700' text-anchor='middle' font-family='Georgia,serif'%3EN%3C/text%3E%3Ctext x='372' y='206' fill='%23b99a66' opacity='.7' font-size='21' font-weight='700' text-anchor='middle' font-family='Georgia,serif'%3EE%3C/text%3E%3Ctext x='200' y='378' fill='%23b99a66' opacity='.7' font-size='21' font-weight='700' text-anchor='middle' font-family='Georgia,serif'%3ES%3C/text%3E%3Ctext x='28' y='206' fill='%23b99a66' opacity='.7' font-size='21' font-weight='700' text-anchor='middle' font-family='Georgia,serif'%3EW%3C/text%3E%3C/svg%3E");
+	/* Twisted rope, as a repeating diagonal gradient. */
+	--capn-rope: repeating-linear-gradient(
+		114deg,
+		var(--capn-gold-700) 0 2px,
+		var(--capn-gold-500) 2px 4px,
+		var(--capn-gold-300) 4px 5px,
+		var(--capn-gold-600) 5px 7px
+	);
+
+	--capn-panel-radius: 0.75rem;
+
+	/* Shared by the badge and the compass rose centred behind it, so the two
+	 * cannot drift apart. The badge is left-aligned in a wider grid cell, so
+	 * the rose is positioned from the badge's own width, not the cell's. */
+	--capn-burst-size: 15rem;
+
+	--sl-nav-height: 3.9rem;
+	--sl-line-height-headings: 1.25;
+}
+
+/* Dark mode (Starlight's default :root). Deep hold below decks. */
+:root {
+	--capn-ground: var(--capn-navy-900);
+	--capn-surface: var(--capn-navy-800);
+	--capn-surface-raised: #162b36;
+	--capn-leather: var(--capn-navy-600);
+	--capn-leather-deep: #0d1d26;
+	--capn-rule: rgba(233, 221, 196, 0.16);
+	--capn-burst-shadow: rgba(0, 0, 0, 0.55);
+
+	/* Nautical chart backdrop for the splash hero. */
+	--capn-compass-opacity: 0.16;
+	--capn-chart-opacity: 1;
+	--capn-chart-glow: rgba(232, 200, 141, 0.09);
+	--capn-chart-major: rgba(185, 154, 102, 0.13);
+	--capn-chart-minor: rgba(185, 154, 102, 0.06);
+
+	/* Accent: the patch navy, lifted in saturation and lightness to read as a link. */
+	--sl-color-accent-low: #0d2f42;
+	--sl-color-accent: #2d87ad;
+	--sl-color-accent-high: #7bc0e0;
+
+	--sl-color-white: #f4efe4;
+	--sl-color-gray-1: #ded8cc;
+	--sl-color-gray-2: #bdb9b0;
+	--sl-color-gray-3: #8b8d8c;
+	--sl-color-gray-4: #59626a;
+	--sl-color-gray-5: #33454f;
+	--sl-color-gray-6: #1d3441;
+	--sl-color-black: #0c1a22;
+
+	--sl-color-bg: var(--capn-surface);
+	--sl-color-bg-nav: var(--capn-leather);
+	--sl-color-bg-sidebar: var(--capn-leather-deep);
+	--sl-color-bg-inline-code: #1b3240;
+	--sl-color-hairline-shade: rgba(0, 0, 0, 0.55);
+}
+
+/* Light mode. Parchment and ink, not white and black. */
+:root[data-theme='light'] {
+	--capn-ground: #e0d8c6;
+	--capn-surface: #fbf8f0;
+	--capn-surface-raised: #f4eee1;
+	--capn-leather: var(--capn-navy-600);
+	--capn-leather-deep: var(--capn-navy-800);
+	--capn-rule: rgba(23, 42, 54, 0.24);
+	--capn-burst-shadow: rgba(23, 42, 54, 0.3);
+
+	/* Parchment takes the chart a little stronger than navy does. */
+	--capn-compass-opacity: 0.2;
+	--capn-chart-opacity: 1;
+	--capn-chart-glow: rgba(185, 154, 102, 0.14);
+	--capn-chart-major: rgba(120, 92, 46, 0.15);
+	--capn-chart-minor: rgba(120, 92, 46, 0.07);
+
+	--sl-color-accent-low: #cfe4ee;
+	--sl-color-accent: #22688a;
+	--sl-color-accent-high: #123a4f;
+
+	--sl-color-white: #14252f;
+	--sl-color-gray-1: #1e3340;
+	--sl-color-gray-2: #33454f;
+	--sl-color-gray-3: #5c6b74;
+	--sl-color-gray-4: #8b9199;
+	--sl-color-gray-5: #c6c0b2;
+	--sl-color-gray-6: #e4dccb;
+	--sl-color-gray-7: #f0eade;
+	--sl-color-black: #fbf8f0;
+
+	--sl-color-bg: var(--capn-surface);
+	--sl-color-bg-nav: var(--capn-leather);
+	--sl-color-bg-sidebar: var(--capn-navy-800);
+	--sl-color-bg-inline-code: #ece4d3;
+	--sl-color-hairline-shade: rgba(23, 42, 54, 0.22);
+}
+
+/* ------------------------------------------------------------ page shell */
+
+body {
+	background-color: var(--capn-ground);
+}
+
+.main-pane > main {
+	background-color: var(--sl-color-bg);
+}
+
+/* The rounded corner only makes sense where there is a nav column to meet. */
+@media (min-width: 50rem) {
+	[data-has-sidebar] .main-pane > main {
+		border-start-start-radius: var(--capn-panel-radius);
+		border-top: 1px solid var(--sl-color-hairline-light);
+		border-inline-start: 1px solid var(--sl-color-hairline-light);
+		min-height: calc(100vh - var(--sl-nav-height));
+	}
+}
+
+/* ------------------------------------------------------------- masthead */
+
+/*
+ * Navy leather. No borders anywhere on the bar -- the separation comes from
+ * the rope band and the drop shadow, which is why hairlines looked wrong
+ * fighting against them.
+ */
+/* Starlight nests a `div.header` inside `header.header`, so a bare `.header`
+ * selector matches twice and paints the leather, sheen and rope band a second
+ * time inset by the bar's 12px padding -- a visible seam. Always qualify the
+ * surface rules with the element name so only the outer bar is painted. */
+header.header {
+	border: 0;
+	background-color: var(--capn-leather);
+	background-image: var(--capn-grain),
+		linear-gradient(180deg, rgba(255, 250, 235, 0.07) 0%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.22) 100%);
+	background-size:
+		180px 180px,
+		auto;
+	/* The bar is padded, so the default padding-box origin would size the
+	 * sheen gradient to the 38px content strip and then tile it across the
+	 * full 62px bar, leaving a hard seam at the padding edge. Anchor both
+	 * layers to the border box and let the gradient paint exactly once. */
+	background-origin: border-box;
+	background-repeat: repeat, no-repeat;
+	background-blend-mode: overlay, normal;
+	box-shadow: 0 2px 16px rgba(0, 0, 0, 0.38);
+	gap: var(--sl-nav-gap);
+}
+
+/* The rope, straight off the edge of the patch. */
+header.header::before {
+	content: '';
+	position: absolute;
+	inset-inline: 0;
+	bottom: 0;
+	height: 3px;
+	background-image: var(--capn-rope);
+	opacity: 0.95;
+}
+
+.header .site-title,
+.header .social-icons a,
+.header starlight-theme-toggle button {
+	color: var(--capn-cream);
+}
+
+.header .site-title {
+	font-weight: 700;
+	letter-spacing: -0.015em;
+	gap: 0.7rem;
+	/* Letterpress: the wordmark looks stamped into the hide. */
+	text-shadow: 0 1px 0 rgba(0, 0, 0, 0.55);
+}
+
+/* The patch itself: cropped to its rope border and ringed in gold. */
+.header .site-title img {
+	width: 2.35rem;
+	height: 2.35rem;
+	border-radius: 50%;
+	/* The artwork has a cream margin around the badge -- scale past it. */
+	object-fit: cover;
+	transform: scale(1.06);
+	box-shadow:
+		0 0 0 1px var(--capn-gold-600),
+		0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+.header .social-icons a:hover {
+	color: var(--capn-gold-400);
+}
+
+/* Starlight draws a 1px divider between the social icons and the theme
+   control. It fought with the rope band and the drop shadow, so it goes. */
+.header .social-icons::after {
+	display: none;
+}
+
+/*
+ * Search: pressed into the leather. Flat translucent fill, no outline --
+ * the previous 1px rgba borders were the things clashing with the shadow.
+ */
+.header button[data-open-modal] {
+	border: 0;
+	color: var(--capn-cream-dim);
+}
+
+@media (min-width: 50rem) {
+	.header button[data-open-modal] {
+		border: 0;
+		border-radius: 0.45rem;
+		background-color: rgba(6, 16, 22, 0.42);
+		color: var(--capn-cream-dim);
+		transition:
+			background-color 0.2s ease,
+			color 0.2s ease;
+	}
+
+	.header button[data-open-modal]:hover {
+		background-color: rgba(6, 16, 22, 0.6);
+		color: var(--capn-cream);
+	}
+}
+
+.header button[data-open-modal] > kbd {
+	background-color: rgba(0, 0, 0, 0.3);
+	color: var(--capn-gold-400);
+	border: 0;
+}
+
+/* The search modal is a child of the header -- restore document colours. */
+.header dialog,
+.header dialog button {
+	color: var(--sl-color-text);
+}
+
+/* Mobile menu toggle, brass on navy. */
+starlight-menu-button button,
+:root[data-theme='light'] starlight-menu-button button {
+	background-color: rgba(6, 16, 22, 0.45);
+	color: var(--capn-gold-400);
+	box-shadow: none;
+}
+
+starlight-menu-button [aria-expanded='true'] button,
+:root[data-theme='light'] starlight-menu-button [aria-expanded='true'] button {
+	background-color: rgba(6, 16, 22, 0.7);
+	color: var(--capn-cream);
+}
+
+/* -------------------------------------------------------- theme toggle */
+
+starlight-theme-toggle button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.1rem;
+	height: 2.1rem;
+	padding: 0;
+	border: 0;
+	border-radius: 0.45rem;
+	background-color: rgba(6, 16, 22, 0.42);
+	color: var(--capn-cream-dim);
+	cursor: pointer;
+	transition:
+		background-color 0.2s ease,
+		color 0.2s ease;
+}
+
+starlight-theme-toggle button:hover {
+	background-color: rgba(6, 16, 22, 0.62);
+	color: var(--capn-gold-400);
+}
+
+/*
+ * Icon choice is pure CSS off `data-theme`, which Starlight's inlined
+ * ThemeProvider sets in <head> -- so the right icon is correct on first
+ * paint with no JavaScript and no flash.
+ */
+:root[data-theme='light'] starlight-theme-toggle .capn-icon-sun,
+:root:not([data-theme='light']) starlight-theme-toggle .capn-icon-moon {
+	display: none;
+}
+
+/* In the mobile menu the toggle sits on the sidebar, not the masthead. */
+.sidebar-pane starlight-theme-toggle button {
+	background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-pane starlight-theme-toggle button:hover {
+	background-color: rgba(255, 255, 255, 0.16);
+}
+
+/* ------------------------------------------------------------- side nav */
+
+/*
+ * capnproto.org kept a dark menu column whatever the page around it was
+ * doing. Here it is the same leather as the masthead, in both schemes, so
+ * the chrome reads as one piece of material.
+ */
+.sidebar-pane {
+	border-inline-end: 0;
+	background-color: var(--sl-color-bg-sidebar);
+	background-image: var(--capn-grain);
+	background-size: 180px 180px;
+	background-blend-mode: overlay;
+	box-shadow: inset -12px 0 18px -14px rgba(0, 0, 0, 0.75);
+}
+
+/* Re-declare the dark palette inside the light-mode nav so that every
+   Starlight component in there recolours itself without individual rules. */
+:root[data-theme='light'] .sidebar-pane {
+	--sl-color-white: #f4efe4;
+	--sl-color-gray-1: #ded8cc;
+	--sl-color-gray-2: #bdb9b0;
+	--sl-color-gray-3: #8b8d8c;
+	--sl-color-gray-4: #59626a;
+	--sl-color-gray-5: #354b58;
+	--sl-color-gray-6: #1f3644;
+	--sl-color-gray-7: #1a2f3b;
+	--sl-color-black: #12242e;
+
+	--sl-color-text: var(--sl-color-gray-2);
+	--sl-color-text-accent: var(--capn-gold-400);
+	--sl-color-accent: #2d87ad;
+	--sl-color-accent-low: #0d2f42;
+	--sl-color-accent-high: #7bc0e0;
+
+	--sl-color-bg: var(--sl-color-black);
+	--sl-color-bg-nav: var(--sl-color-black);
+	--sl-color-bg-inline-code: var(--sl-color-gray-6);
+	--sl-color-hairline-light: var(--sl-color-gray-5);
+	--sl-color-hairline: var(--sl-color-gray-6);
+	--sl-color-hairline-shade: rgba(0, 0, 0, 0.6);
+
+	color: var(--sl-color-text);
+}
+
+.sidebar-content {
+	padding-top: 1.25rem;
+}
+
+/* Group headings as small brass labels. */
+.sidebar-content .group-label .large {
+	font-size: var(--sl-text-xs);
+	font-weight: 700;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--capn-gold-500);
+}
+
+/* Current page: a gold keyline, echoing the rope. */
+.sidebar-content a[aria-current='page'],
+.sidebar-content a[aria-current='page']:hover,
+.sidebar-content a[aria-current='page']:focus {
+	background-color: rgba(201, 168, 106, 0.14);
+	color: var(--capn-cream);
+	border-inline-start: 2px solid var(--capn-gold-500);
+	font-weight: 600;
+}
+
+/* ------------------------------------------------------------ typography */
+
+.sl-markdown-content :is(h1, h2, h3, h4, h5, h6) {
+	letter-spacing: -0.02em;
+}
+
+.sl-markdown-content h1,
+.hero h1 {
+	letter-spacing: -0.03em;
+}
+
+/* capnproto.org set a bg_hr.png under every h2 that faded to the right. */
+.sl-markdown-content h2 {
+	padding-bottom: 0.3em;
+	background-image: linear-gradient(
+		to right,
+		var(--capn-rule) 0%,
+		var(--capn-rule) 45%,
+		transparent 100%
+	);
+	background-repeat: no-repeat;
+	background-position: left bottom;
+	background-size: 100% 1px;
+}
+
+.sl-markdown-content a {
+	text-underline-offset: 0.2em;
+}
+
+.sl-markdown-content table {
+	border-collapse: collapse;
+	font-size: var(--sl-text-sm);
+}
+
+/* Navy header row with cream type, like the patch lettering. */
+.sl-markdown-content th {
+	background-color: var(--capn-navy-600);
+	color: var(--capn-cream);
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.sl-markdown-content :is(th, td) {
+	border: 1px solid var(--sl-color-hairline-light);
+	padding: 0.5rem 0.75rem;
+}
+
+.sl-markdown-content tbody tr:nth-child(even) {
+	background-color: var(--capn-surface-raised);
+}
+
+.sl-markdown-content blockquote {
+	border-inline-start: 3px solid var(--capn-gold-500);
+}
+
+/* --------------------------------------------------------------- splash */
+
+/* The splash hero is otherwise a large flat field, so dress it as a nautical
+ * chart: a compass rose watermarked behind the badge, a chart graticule, and a
+ * warm glow. Two pseudo-elements rather than one stack of layers, so the rose
+ * and the grid can be dimmed independently. Both are masked so the chart
+ * dissolves into the plain surface before the prose starts.
+ *
+ * `main` is the full-bleed surface on the splash template, so the chart runs
+ * edge to edge rather than being boxed into the 1080px content container. */
+main:has(.hero) {
+	position: relative;
+	isolation: isolate;
+}
+
+/* Normal-flow children paint below a positioned pseudo-element, so lift the
+ * real content back above the decoration. */
+main:has(.hero) > * {
+	position: relative;
+	z-index: 1;
+}
+
+/* Graticule and glow. Major lines every 200px, minor every 40px. */
+main:has(.hero)::after {
+	content: '';
+	position: absolute;
+	inset: 0 0 auto 0;
+	height: min(40rem, 100%);
+	z-index: 0;
+	pointer-events: none;
+	mask-image: linear-gradient(180deg, #000 0%, #000 46%, transparent 100%);
+	-webkit-mask-image: linear-gradient(180deg, #000 0%, #000 46%, transparent 100%);
+	background-image: radial-gradient(
+			42rem 26rem at 74% 40%,
+			var(--capn-chart-glow),
+			transparent 70%
+		),
+		repeating-linear-gradient(90deg, var(--capn-chart-major) 0 1px, transparent 1px 200px),
+		repeating-linear-gradient(0deg, var(--capn-chart-major) 0 1px, transparent 1px 200px),
+		repeating-linear-gradient(90deg, var(--capn-chart-minor) 0 1px, transparent 1px 40px),
+		repeating-linear-gradient(0deg, var(--capn-chart-minor) 0 1px, transparent 1px 40px);
+	opacity: var(--capn-chart-opacity);
+}
+
+.hero {
+	padding-block: 1rem 2rem;
+}
+
+.hero .tagline {
+	max-width: 34ch;
+	font-size: var(--sl-text-lg);
+}
+
+@media (min-width: 50rem) {
+	.hero .tagline {
+		font-size: var(--sl-text-xl);
+	}
+}
+
+/* The compass rose is centred on the badge, so the badge reads as pinned
+ * through the middle of it. Anchoring to the badge's own box rather than
+ * positioning it against `main` keeps the two aligned at every viewport
+ * width, which a percentage background-position cannot do. The radial mask
+ * dissolves the outer rings so the mark has no hard edge. */
+.hero .hero-html {
+	position: relative;
+}
+
+.hero .hero-html::before {
+	content: '';
+	position: absolute;
+	left: calc(var(--capn-burst-size) / 2);
+	top: 50%;
+	translate: -50% -50%;
+	z-index: -1;
+	width: calc(var(--capn-burst-size) * 2.15);
+	aspect-ratio: 1;
+	pointer-events: none;
+	background: var(--capn-compass) center / contain no-repeat;
+	opacity: var(--capn-compass-opacity);
+	mask-image: radial-gradient(closest-side, #000 62%, transparent 100%);
+	-webkit-mask-image: radial-gradient(closest-side, #000 62%, transparent 100%);
+}
+
+/* The "one round trip" badge -- successor to "INFINITY TIMES FASTER". */
+.capn-burst {
+	width: 100%;
+	max-width: var(--capn-burst-size);
+	height: auto;
+	filter: drop-shadow(0 6px 14px var(--capn-burst-shadow));
+	transition: transform 0.4s ease;
+}
+
+.capn-burst:hover {
+	transform: rotate(4deg) scale(1.03);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.capn-burst,
+	.capn-burst:hover {
+		transition: none;
+		transform: none;
+	}
+}
+
+/* capnproto.org hid its badge on narrow screens; so do we. */
+@media (max-width: 50rem) {
+	.hero .hero-html {
+		display: none;
+	}
+}
+
+.hero .sl-link-button.primary {
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* ---------------------------------------------------------- components */
+
+.card {
+	background-color: var(--capn-surface-raised);
+	border: 1px solid var(--sl-color-hairline-light);
+	border-radius: 0.6rem;
+	padding: 1.25rem;
+	transition: border-color 0.2s ease;
+}
+
+.card:hover {
+	border-color: var(--capn-gold-600);
+}
+
+.card .icon {
+	color: var(--capn-gold-600);
+}
+
+:root[data-theme='light'] .card .icon {
+	color: var(--capn-red);
+}
+
+.sl-link-card {
+	border-radius: 0.6rem;
+	transition:
+		border-color 0.2s ease,
+		box-shadow 0.2s ease;
+}
+
+.sl-link-card:hover {
+	border-color: var(--capn-gold-600);
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+.starlight-aside {
+	border-radius: 0 0.5rem 0.5rem 0;
+	border-inline-start-width: 3px;
+}
+
+.expressive-code .frame pre {
+	border-radius: 0.5rem;
+}
+
+/* ---------------------------------------------------------------- misc */
+
+.right-sidebar-panel h2 {
+	font-size: var(--sl-text-xs);
+	font-weight: 700;
+	letter-spacing: 0.09em;
+	text-transform: uppercase;
+	color: var(--sl-color-gray-3);
+}
+
+:focus-visible {
+	outline: 2px solid var(--capn-gold-500);
+	outline-offset: 2px;
+}
+
+/* Printing: drop the leather, it wastes toner and adds nothing. */
+@media print {
+	header.header {
+		background: none;
+		box-shadow: none;
+	}
+
+	header.header::before {
+		display: none;
+	}
+
+	/* The nautical chart is decoration; it only wastes toner too. */
+	main:has(.hero)::after,
+	.hero .hero-html::before {
+		display: none;
+	}
+
+	.main-pane > main {
+		border: 0;
+	}
+}

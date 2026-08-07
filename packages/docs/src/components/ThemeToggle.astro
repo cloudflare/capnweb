@@ -1,0 +1,92 @@
+---
+/**
+ * Override of Starlight's `ThemeSelect`, which is a three-option <select>
+ * (dark / light / auto). This replaces it with a single button.
+ *
+ * First visit still follows the OS preference, because Starlight's inlined
+ * `ThemeProvider` sets `data-theme` from `prefers-color-scheme` when nothing
+ * is stored. Pressing the button commits an explicit choice from then on,
+ * written to the same `localStorage` key Starlight reads on the next load.
+ *
+ * Which icon shows is decided purely by CSS from `:root[data-theme]`, which
+ * `ThemeProvider` sets in <head> before first paint -- so there is no flash of
+ * the wrong icon and no work to do before hydration.
+ */
+---
+
+<starlight-theme-toggle>
+	<button type="button" title="Toggle dark mode">
+		{/* Sun: shown in dark mode, because pressing it takes you to light. */}
+		<svg class="capn-icon-sun" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+			<path
+				d="M12 17a5 5 0 1 1 0-10 5 5 0 0 1 0 10Zm0-2a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-1-13h2v3h-2V2Zm0 17h2v3h-2v-3ZM2 11h3v2H2v-2Zm17 0h3v2h-3v-2ZM4.22 5.64l1.42-1.42 2.12 2.13-1.41 1.41-2.13-2.12Zm11.02 11.02 1.41-1.41 2.13 2.12-1.42 1.42-2.12-2.13Zm2.12-12.44 1.42 1.42-2.13 2.12-1.41-1.41 2.12-2.13ZM6.34 15.25l1.41 1.41-2.12 2.13-1.42-1.42 2.13-2.12Z"
+			></path>
+		</svg>
+		{/* Moon: shown in light mode. */}
+		<svg class="capn-icon-moon" aria-hidden="true" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+			<path
+				d="M12.1 22c-2.8 0-5.2-1-7.1-2.9C3 17.2 2 14.8 2 12c0-2.5.8-4.7 2.4-6.5C6 3.7 8.1 2.6 10.6 2.2c.3 0 .5.1.7.3.2.2.2.5.1.8-.3.7-.4 1.5-.4 2.3 0 1.9.7 3.6 2 4.9 1.4 1.4 3 2 4.9 2 .7 0 1.4-.1 2.1-.4.3-.1.5 0 .8.1.2.2.3.4.3.7-.3 2.4-1.4 4.5-3.2 6.1-1.8 1.6-4 2.4-6.5 2.4Z"
+			></path>
+		</svg>
+		<span class="sr-only capn-toggle-label">Toggle dark mode</span>
+	</button>
+</starlight-theme-toggle>
+
+<script>
+	/** Same key Starlight's ThemeProvider reads, so the choice survives reloads. */
+	const storageKey = 'starlight-theme';
+
+	type Theme = 'dark' | 'light';
+
+	const systemTheme = (): Theme =>
+		matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+
+	const currentTheme = (): Theme =>
+		document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+
+	function apply(theme: Theme, persist: boolean) {
+		document.documentElement.dataset.theme = theme;
+		if (persist) {
+			try {
+				localStorage.setItem(storageKey, theme);
+			} catch {
+				/* storage can be unavailable (private mode, blocked cookies) -- not fatal */
+			}
+		}
+		// Keep every toggle on the page (header + mobile menu) describing the same next action.
+		for (const el of document.querySelectorAll('starlight-theme-toggle')) {
+			el.querySelector('button')?.setAttribute(
+				'aria-label',
+				theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'
+			);
+		}
+	}
+
+	function stored(): Theme | null {
+		try {
+			const v = localStorage.getItem(storageKey);
+			return v === 'dark' || v === 'light' ? v : null;
+		} catch {
+			return null;
+		}
+	}
+
+	// Follow the OS until the reader makes an explicit choice.
+	matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+		if (!stored()) apply(systemTheme(), false);
+	});
+
+	class StarlightThemeToggle extends HTMLElement {
+		constructor() {
+			super();
+			apply(currentTheme(), false);
+			this.querySelector('button')?.addEventListener('click', () => {
+				apply(currentTheme() === 'dark' ? 'light' : 'dark', true);
+			});
+		}
+	}
+
+	if (!customElements.get('starlight-theme-toggle')) {
+		customElements.define('starlight-theme-toggle', StarlightThemeToggle);
+	}
+</script>

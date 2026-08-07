@@ -32,7 +32,8 @@
   },
   "workspaces": [
     ".",
-    "packages/*"
+    "packages/*",
+    "!packages/docs"
   ],
   "scripts": {
     "build": "tsdown --config-loader native && npm run -w capnweb-validate build",
@@ -42,7 +43,14 @@
     "test:ci": "vitest run && bun test __tests__/bun.test.ts",
     "test:watch": "vitest",
     "test:types": "tsc -p __type-tests__/tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "dev": "npm run dev:prepare && concurrently -k -n docs,worker-react,batch -c cyan,magenta,yellow \"npm:dev:docs\" \"npm:dev:worker-react\" \"npm:dev:batch\"",
+    "dev:prepare": "npm run build && npm --prefix examples/worker-react/client run build",
+    "dev:docs": "npm --prefix packages/docs run dev -- --port 4321",
+    "dev:worker-react": "wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787",
+    "dev:batch": "wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788",
+    "setup": "npm install && npm --prefix packages/docs install && npm --prefix examples/worker-react/client install",
+    "deploy:examples": "wrangler deploy --cwd examples/batch-pipelining && wrangler deploy --cwd examples/worker-react"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
@@ -52,12 +60,14 @@
     "@types/bun": "^1.2.0",
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.7",
+    "concurrently": "^9.2.4",
     "pkg-pr-new": "^0.0.60",
     "playwright": "^1.56.1",
     "tsdown": "^0.22.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7",
+    "wrangler": "4.63.0",
     "ws": "^8.21.1"
   },
   "repository": {

@@ -2,6 +2,14 @@
 
 This example exposes a Cap'n Web API from a Worker and calls it from a React app. It demonstrates batched promise pipelining versus sequential requests, with server-boundary runtime validation through `@validateRpc()` and explicit client stub validation through `validateStub()`.
 
+Live at **[worker-react.capnweb.com](https://worker-react.capnweb.com)**.
+
+## Quick start
+
+From the repo root, `npm run dev` builds everything and serves this example on
+`http://127.0.0.1:8787` alongside the docs and the other example. `npm run dev:worker-react` runs
+just this one. The rest of this file covers running the pieces individually.
+
 ## Layout
 
 - `server/worker.ts`: Worker RPC endpoint at `/api`.

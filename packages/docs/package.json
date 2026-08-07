@@ -1,0 +1,30 @@
+{
+  "name": "capnweb-docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Documentation website for Cap'n Web.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.41.6",
+    "astro": "^7.1.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudflare/capnweb",
+    "directory": "packages/docs"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "sharp": "^0.35.3",
+    "typescript": "^6.0.3"
+  }
+}

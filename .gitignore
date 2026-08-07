@@ -1,6 +1,8 @@
 node_modules
 .wrangler/
 examples/worker-react/client/dist/
+# Copied from dist/ by the example's wrangler build step.
+examples/batch-pipelining/public/vendor/
 notes.txt
 /dist/
 packages/*/dist/
