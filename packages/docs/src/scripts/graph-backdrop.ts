@@ -549,6 +549,8 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		lit: Map<number, number>,
 		glow: boolean
 	) {
+		// One hairline for every edge, lit or not. A line that thickens when a message
+		// crosses it makes the graph appear to breathe; only the colour should move.
 		target.lineWidth = 1;
 		for (const [j, e] of edges.entries()) {
 			if (e.midZ < minZ || e.midZ >= maxZ) continue;
@@ -556,13 +558,10 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 			const q = points[e.b]!;
 			const depth = (p.fade + q.fade) / 2;
 			const brightness = lit.get(j) ?? 0;
-			if (brightness > 0) {
-				target.strokeStyle = withAlpha(palette.pulse, 0.9 * brightness * depth);
-				target.lineWidth = 1 + brightness;
-			} else {
-				target.strokeStyle = withAlpha(palette.edge, palette.edgeAlpha * e.strength * depth);
-				target.lineWidth = 1;
-			}
+			target.strokeStyle =
+				brightness > 0
+					? withAlpha(palette.pulse, 0.9 * brightness * depth)
+					: withAlpha(palette.edge, palette.edgeAlpha * e.strength * depth);
 			target.beginPath();
 			target.moveTo(p.x, p.y);
 			target.lineTo(q.x, q.y);

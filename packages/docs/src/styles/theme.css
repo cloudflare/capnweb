@@ -129,7 +129,9 @@
 	--sl-color-bg: var(--cw-surface);
 	--sl-color-bg-nav: var(--cw-chrome);
 	--sl-color-bg-sidebar: var(--cw-chrome);
-	--sl-color-bg-inline-code: rgba(56, 165, 245, 0.11);
+	--sl-color-bg-inline-code: rgba(56, 165, 245, 0.17);
+	/* Reads as a raised chip on the dark field: light catches its edge. */
+	--cw-inline-code-shadow: 0px 0px 2px 0px rgb(255 255 255 / 50%);
 	--sl-color-text-invert: var(--cw-black);
 	--sl-color-hairline-light: var(--cw-border);
 	--sl-color-hairline: var(--cw-border);
@@ -198,7 +200,9 @@
 	--sl-color-bg: var(--cw-surface);
 	--sl-color-bg-nav: var(--cw-chrome);
 	--sl-color-bg-sidebar: var(--cw-chrome);
-	--sl-color-bg-inline-code: rgba(10, 82, 146, 0.09);
+	--sl-color-bg-inline-code: rgba(10, 82, 146, 0.17);
+	/* Same chip on paper, where the edge is a shadow rather than a highlight. */
+	--cw-inline-code-shadow: 0px 0px 2px 0px rgb(0 0 0 / 50%);
 	--sl-color-text-invert: #ffffff;
 	--sl-color-hairline-light: var(--cw-border);
 	--sl-color-hairline: rgba(12, 48, 90, 0.1);
@@ -507,9 +511,18 @@ starlight-theme-toggle button:hover {
    tinted box. The chip's fill is deliberately faint, so the contrast has to
    come from the text: give it the strongest foreground the theme has instead of
    the prose grey it would otherwise inherit. Code inside a link keeps the link
-   colour, since the link is the more important signal. */
+   colour, since the link is the more important signal.
+
+   Starlight pads inline code 0.125rem 0.375rem and leaves the corners to the
+   browser. The chip is tightened horizontally and given a small radius and an
+   edge, so it reads as one object at any size: the padding is in rem, so it does
+   not grow with the type in a heading. `:not(pre) >` keeps all of this off code
+   blocks, which Starlight resets with `all: unset` anyway. */
 .sl-markdown-content :not(pre) > code {
 	color: var(--sl-color-white);
+	padding: 0.125rem 0.2rem;
+	border-radius: 2px;
+	box-shadow: var(--cw-inline-code-shadow);
 }
 
 .sl-markdown-content a :not(pre) > code,
