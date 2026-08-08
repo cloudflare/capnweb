@@ -490,6 +490,20 @@ starlight-theme-toggle button:hover {
 	text-decoration-color: currentColor;
 }
 
+/* Inline code should read as a token, not as prose that happens to sit in a
+   tinted box. The chip's fill is deliberately faint, so the contrast has to
+   come from the text: give it the strongest foreground the theme has instead of
+   the prose grey it would otherwise inherit. Code inside a link keeps the link
+   colour, since the link is the more important signal. */
+.sl-markdown-content :not(pre) > code {
+	color: var(--sl-color-white);
+}
+
+.sl-markdown-content a :not(pre) > code,
+.sl-markdown-content a > code {
+	color: inherit;
+}
+
 .sl-markdown-content table {
 	border-collapse: collapse;
 	font-size: var(--sl-text-sm);
