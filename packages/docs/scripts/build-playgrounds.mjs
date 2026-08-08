@@ -98,6 +98,15 @@ function aliasPlugin(alias) {
 				if (args.path === 'capnweb') return { path: VENDOR, external: true };
 				return { path: fromRoot(alias[args.path]) };
 			});
+
+			// A zero-build example imports the library by relative path, from the
+			// copy Wrangler stages next to the page. That file only exists after
+			// the example's build step, so point it at the copy this script
+			// writes instead -- the same one the Worker side is using.
+			build.onResolve({ filter: /(^|\/)vendor\/capnweb\.js$/ }, () => ({
+				path: VENDOR,
+				external: true,
+			}));
 		},
 	};
 }
@@ -137,6 +146,101 @@ async function bundle({ entry, outfile, alias, validate, extra = {} }) {
 	});
 }
 
+/**
+ * The generated entry for a WebSocket example.
+ *
+ * `fetch` cannot carry a WebSocket upgrade inside a page, so instead of
+ * intercepting requests this replaces the `WebSocket` constructor for one
+ * path. The two ends of the returned pair are wired to each other, and the
+ * server end is handed to a real `newWebSocketRpcSession`.
+ *
+ * What that gives up compared to the fetch shim: the Worker's `fetch` handler
+ * is not involved, so the upgrade handling is not exercised. What it keeps:
+ * the API implementation, the session, the wire protocol, the callbacks in
+ * both directions, and -- the part this example is about -- a connection that
+ * can really be severed, taking every stub on it down.
+ */
+function socketShimSource({ server, mainExport, wsPath, env }) {
+	return `
+import { newWebSocketRpcSession } from 'capnweb';
+import { ${mainExport} } from ${JSON.stringify(server)};
+
+const WS_PATH = ${JSON.stringify(wsPath)};
+const ENV = ${JSON.stringify(env)};
+
+const NativeWebSocket = globalThis.WebSocket;
+
+/** One end of an in-page pair. Implements just enough of the WebSocket API. */
+class PairedSocket extends EventTarget {
+  peer = null;
+  binaryType = 'blob';
+  readyState = 0; // CONNECTING
+
+  constructor(url) {
+    super();
+    this.url = url;
+  }
+
+  send(data) {
+    if (this.readyState !== 1) throw new DOMException('Socket is not open', 'InvalidStateError');
+    const peer = this.peer;
+    // Asynchronous, so a send can never re-enter the sender synchronously --
+    // which is what a real socket guarantees and what the RPC layer expects.
+    queueMicrotask(() => {
+      if (peer.readyState === 1) peer.dispatchEvent(new MessageEvent('message', { data }));
+    });
+  }
+
+  close(code = 1000, reason = '') {
+    if (this.readyState > 1) return;
+    const both = [this, this.peer];
+    for (const side of both) side.readyState = 2; // CLOSING
+    queueMicrotask(() => {
+      for (const side of both) {
+        side.readyState = 3; // CLOSED
+        side.dispatchEvent(new CloseEvent('close', { code, reason, wasClean: code === 1000 }));
+      }
+    });
+  }
+}
+
+function connectedPair(url) {
+  const client = new PairedSocket(url);
+  const server = new PairedSocket(url);
+  client.peer = server;
+  server.peer = client;
+
+  // Open on a task boundary, mirroring a real connection: the caller gets the
+  // socket back in CONNECTING and the transport queues sends until 'open'.
+  setTimeout(() => {
+    for (const side of [client, server]) {
+      side.readyState = 1; // OPEN
+      side.dispatchEvent(new Event('open'));
+    }
+  }, 0);
+
+  return { client, server };
+}
+
+function Shim(url, protocols) {
+  if (new URL(url, location.href).pathname !== WS_PATH) {
+    return new NativeWebSocket(url, protocols);
+  }
+  const { client, server } = connectedPair(String(url));
+  newWebSocketRpcSession(server, ${mainExport}(ENV));
+  return client;
+}
+
+// The transport reads WebSocket.CONNECTING off the constructor, so the
+// readyState constants have to survive the swap.
+for (const [name, value] of [['CONNECTING', 0], ['OPEN', 1], ['CLOSING', 2], ['CLOSED', 3]]) {
+  Shim[name] = value;
+}
+
+globalThis.WebSocket = Shim;
+`;
+}
+
 /** The generated entry that stands in for the network. */
 function shimSource({ server, rpcPath, env }) {
 	return `
@@ -166,7 +270,7 @@ globalThis.fetch = async (input, init) => {
 `;
 }
 
-function rewriteHtml(html, { clientScript, hasClient }) {
+function rewriteHtml(html, { clientScript, hasClientCss }) {
 	let out = html;
 
 	if (clientScript) {
@@ -187,7 +291,7 @@ function rewriteHtml(html, { clientScript, hasClient }) {
 	const head = '<script type="module" src="./runtime.js"></script>\n\t\t';
 	out = out.slice(0, first) + head + out.slice(first);
 
-	if (hasClient) {
+	if (hasClientCss) {
 		out = out.replace('</head>', '\t<link rel="stylesheet" href="./client.css" />\n\t</head>');
 	}
 	return out;
@@ -208,9 +312,17 @@ async function buildExample(example) {
 	// be resolved from; the example's own directory keeps its relative imports
 	// and its node_modules working.
 	const shimPath = fromRoot(path.dirname(config.server), `.playground-entry-${slug}.mjs`);
+	const serverSpecifier = './' + path.basename(config.server);
 	await writeFile(
 		shimPath,
-		shimSource({ server: './' + path.basename(config.server), rpcPath: config.rpcPath, env }),
+		config.wsPath
+			? socketShimSource({
+					server: serverSpecifier,
+					mainExport: config.mainExport ?? 'createMain',
+					wsPath: config.wsPath,
+					env,
+				})
+			: shimSource({ server: serverSpecifier, rpcPath: config.rpcPath, env }),
 	);
 
 	try {
@@ -233,10 +345,23 @@ async function buildExample(example) {
 		});
 	}
 
+	// Static files the page references directly. A zero-build example keeps its
+	// stylesheet as a plain file rather than importing it from JavaScript, so
+	// there is nothing for esbuild to emit and it has to be copied.
+	for (const asset of config.assets ?? []) {
+		const name = path.basename(asset);
+		await writeFile(path.join(outDir, name), await readFile(fromRoot(asset)));
+	}
+
 	const html = await readFile(fromRoot(config.html), 'utf8');
 	await writeFile(
 		path.join(outDir, 'index.html'),
-		rewriteHtml(html, { clientScript: config.clientScript, hasClient: Boolean(config.client) }),
+		rewriteHtml(html, {
+			clientScript: config.clientScript,
+			// Only when esbuild actually emitted one -- it does that for a client
+			// that imports CSS, and not otherwise.
+			hasClientCss: existsSync(path.join(outDir, 'client.css')),
+		}),
 	);
 
 	return `${slug} -> public/playground/${slug}/`;

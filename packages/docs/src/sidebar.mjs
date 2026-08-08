@@ -70,6 +70,7 @@ export const sidebar = [
 				items: [
 					{ label: 'Batch + Pipelining', slug: 'examples/batch-pipelining' },
 					{ label: 'Workers + React', slug: 'examples/worker-react' },
+			{ label: 'Session Recovery', slug: 'examples/session-recovery' },
 				],
 			},
 			{

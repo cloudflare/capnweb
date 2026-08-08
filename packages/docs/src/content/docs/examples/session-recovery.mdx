@@ -1,0 +1,156 @@
+---
+title: Session recovery
+description: A WebSocket session with a button that kills it, showing what a disconnect destroys and what it takes to resume without a gap.
+tableOfContents: false
+---
+
+import Playground from '../../../components/Playground.astro';
+import { exampleBySlug } from '../../../examples.ts';
+
+<Playground example={exampleBySlug('session-recovery')} />
+
+Connect, watch the events arrive, then sever the connection and reconnect. Everything comes back —
+including the events that happened while you were gone — because the client held on to one number.
+
+Untick **Resume from cursor** and do it again. Same disconnect, same reconnect, but now the feed
+shows a gap, because nothing told the server where to start.
+
+:::note[There is no server behind this page.]
+Both ends of the session run in this page, wired together by a shim that replaces `WebSocket` for
+one path. The session, the protocol, the callbacks and the disconnect are all genuine — see
+[how this page runs](#how-this-page-runs).
+:::
+
+## What a disconnect actually destroys
+
+Everything the session owned, and nothing else.
+
+| Survives                            | Does not survive                                  |
+| ----------------------------------- | -------------------------------------------------- |
+| The event log on the server          | The `AuthedApi` stub                               |
+| The cursor, in client-side state     | The `Subscription` stub                            |
+| The token, in client-side state      | The authenticated user held on the server object   |
+|                                      | Any call in flight                                 |
+
+The **Call a stub from the old session** button makes the second column concrete. It holds on to
+the `AuthedApi` from before the drop and calls `whoami()` on it. That call does not hang and does
+not quietly reconnect — it rejects:
+
+```js
+const stub = this.#authed ?? this.#staleAuthed;
+try {
+  const user = await stub.whoami();
+  return `stub still works: ${user.name}`;
+} catch (error) {
+  return `stub is broken: ${error.message}`;
+}
+```
+
+There is no automatic reconnection in Cap'n Web, and this is why: the library cannot know whether
+the object a stub pointed at still exists, still means the same thing, or should still be reachable
+by you. Recovery is a decision only the application can make.
+
+## Why the log lives outside the session
+
+The server's API object is created fresh for every connection, and the authenticated user lives on
+the object that `authenticate()` returns. That is the object-capability pattern doing its job: the
+token crosses the wire once, and after that, holding the stub *is* the authorization.
+
+But it means all of that state dies with the socket. Anything that has to outlive a disconnect has
+to be somewhere else, which is why `createEventLog()` is called at module scope and passed in:
+
+```js
+const log = createEventLog();
+
+export function createMain() {
+  return new PublicApi(log);
+}
+```
+
+:::caution
+Module scope is the right shape and the wrong storage. It lives as long as the isolate, and two
+clients can easily land on two different isolates. In a real deployment the log belongs somewhere
+addressable — a [Durable Object](/servers/workers/), a database, a queue. The demo's point is only
+that it must not live *in the session*.
+:::
+
+## Resuming without a gap
+
+The subscription takes the id of the last event the client actually processed:
+
+```js
+subscribe(sinceId, sink) {
+  const from = sinceId ?? this.#log.latestId();
+
+  // Stubs received as parameters are disposed when the call returns, so a
+  // callback that will be used later has to be duplicated first.
+  return new Subscription(this.#log, sink.dup(), from);
+}
+```
+
+Three things worth noticing in that handful of lines.
+
+**The cursor is the client's, not the server's.** It is a plain number in client-side state, which
+is exactly why it survives — a stub could not. Design the API so the caller can say where it left
+off, and reconnection becomes a normal operation rather than a recovery procedure.
+
+**`sink` is a callback going the other way.** The client passes an `RpcTarget`, the server receives
+a stub for it, and calling a method on that stub is an RPC back into the browser. That is all
+server-initiated messaging is here; there is no separate subscription mechanism.
+
+**The `.dup()` is mandatory.** Stubs arriving in parameters are disposed when the call returns, so
+holding one past that requires duplicating it. The `Subscription` disposes its copy in
+`[Symbol.dispose]()`, which also runs when the session dies — which is what stops the timer on an
+abrupt disconnect.
+
+## Replay has to be bounded
+
+A resume token from a client that has been gone for a week is a request to replay a week. The
+server caps it and tells the client when it has fallen too far behind:
+
+```js
+const from = Math.max(sinceId, latest - MAX_REPLAY);
+return { events, truncated: from > sinceId };
+```
+
+The client surfaces that as a gap rather than pretending it received everything. An unbounded
+replay is a denial-of-service vector wearing a helpful hat — see
+[Security considerations](/guides/security/).
+
+## How this page runs
+
+The other two playgrounds shim `fetch`. A WebSocket upgrade cannot be expressed that way inside a
+page, so this one replaces the `WebSocket` constructor for `/ws` and returns one end of a pair
+whose other end is handed to a real session:
+
+```js
+function Shim(url, protocols) {
+  if (new URL(url, location.href).pathname !== WS_PATH) {
+    return new NativeWebSocket(url, protocols);
+  }
+  const { client, server } = connectedPair(String(url));
+  newWebSocketRpcSession(server, createMain(ENV));
+  return client;
+}
+```
+
+What that gives up: the Worker's `fetch` handler is not involved, so the upgrade handling is the one
+part of the example the page does not exercise. What it keeps: the API implementation, the session,
+the wire protocol, calls in both directions, and a connection that can genuinely be severed — which
+is the only thing this example is really about.
+
+## Run it yourself
+
+```sh
+npm run build   # the examples resolve capnweb to dist/
+npx wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
+```
+
+That version is a real WebSocket against a real Worker, so you can also disconnect it the honest
+way, by turning off your network.
+
+## Next
+
+- [Sessions & reconnection](/guides/sessions/) — the patterns here, written out in full.
+- [Disposal](/concepts/disposal/) — why `.dup()` is needed and when disposers run.
+- [WebSocket transport](/transports/websocket/) — what this example is running on.

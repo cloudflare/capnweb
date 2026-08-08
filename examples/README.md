@@ -1,14 +1,17 @@
 # Examples
 
-Both examples make the same point from opposite ends of the stack: a chain of dependent RPC calls
-costs one HTTP round trip when pipelined, and three when it isn't.
+The first two make the same point from opposite ends of the stack: a chain of dependent RPC calls
+costs one HTTP round trip when pipelined, and three when it isn't. The third is about the other
+half of the story — what a session is, and what breaks when it ends.
 
-| Example                                  | What it is                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------- |
-| [`batch-pipelining`](./batch-pipelining) | Worker + zero-build browser page, plus a Node server and CLI client |
-| [`worker-react`](./worker-react)         | Worker + React/Vite app, with runtime validation                    |
+| Example                                      | What it is                                                          |
+| -------------------------------------------- | --------------------------------------------------------------------- |
+| [`batch-pipelining`](./batch-pipelining)     | Worker + zero-build browser page, plus a Node server and CLI client |
+| [`worker-react`](./worker-react)             | Worker + React/Vite app, with runtime validation                    |
+| [`session-recovery`](./session-recovery)     | Worker + WebSocket page: broken stubs, server push, gapless resume  |
 
-Both also run as playgrounds in the docs, under **Examples** — see [In the docs](#in-the-docs).
+All three also run as playgrounds in the docs, under **Examples** — see
+[In the docs](#in-the-docs).
 
 ## Running them locally
 
@@ -19,9 +22,10 @@ npm run setup              # first time only: installs the docs and the React
                            # client, which sit outside the npm workspace
 npm run build              # the examples resolve `capnweb` to dist/
 
-# then either of these, one per shell -- each is a long-running server
+# then any of these, one per shell -- each is a long-running server
 npx wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788
 npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
+npx wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
 ```
 
 This is the version worth reaching for when you are changing an example: it is a real Worker
@@ -38,10 +42,12 @@ answering real requests over a real network, which the in-page playground delibe
 
 Each example has a page under **Examples** in the docs, showing its source next to the demo running
 live. There is no server behind those: `packages/docs/scripts/build-playgrounds.mjs` bundles the
-example's own Worker into the page next to its own client and routes the client's `fetch` of the RPC
-path straight into the Worker's `fetch` handler. The protocol, the batching and the round-trip
-counts are all genuine — only the network hop is missing, which is what lets the docs deploy as
-static assets.
+example's own Worker into the page next to its own client, then connects the two in-page. For the
+HTTP examples it routes the client's `fetch` of the RPC path straight into the Worker's `fetch`
+handler; for `session-recovery` it replaces the `WebSocket` constructor for that one path with a
+linked pair of sockets and hands the far end to a real `newWebSocketRpcSession`. The protocol, the
+batching, the round-trip counts and the disconnects are all genuine — only the network hop is
+missing, which is what lets the docs deploy as static assets.
 
 Two consequences worth knowing when editing an example:
 

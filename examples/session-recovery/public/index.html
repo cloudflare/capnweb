@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#070b16" media="(prefers-color-scheme: dark)" />
+		<link
+			rel="icon"
+			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2304070e'/%3E%3Cline x1='7' y1='23' x2='16' y2='9' stroke='%234db4ff' stroke-width='2'/%3E%3Cline x1='16' y1='9' x2='25' y2='20' stroke='%234db4ff' stroke-width='2'/%3E%3Ccircle cx='7' cy='23' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='25' cy='20' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='16' cy='9' r='3.8' fill='%23f6821f'/%3E%3C/svg%3E"
+		/>
+		<title>Session recovery &mdash; Cap'n Web</title>
+		<script>
+			// The docs playground embeds this page in an iframe and passes its own
+			// state on the URL. Applied before first paint so there is no flash of
+			// the standalone layout or the wrong theme.
+			(() => {
+				const root = document.documentElement;
+				const params = new URLSearchParams(location.search);
+				if (params.get('embed') || window.self !== window.top) root.dataset.embedded = 'true';
+
+				const fromUrl = params.get('theme');
+				const theme =
+					fromUrl ??
+					(() => {
+						try {
+							return parent.document.documentElement.dataset.theme ?? null;
+						} catch {
+							return null;
+						}
+					})();
+				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+
+				addEventListener('message', (event) => {
+					const next = event.data?.capnwebTheme;
+					if (next === 'light' || next === 'dark') root.dataset.theme = next;
+				});
+			})();
+		</script>
+		<link rel="stylesheet" href="./style.css" />
+	</head>
+	<body>
+		<main class="page">
+			<header class="head">
+				<h1>What a disconnect destroys</h1>
+				<p class="sub">
+					A Cap&rsquo;n Web session over a WebSocket, with a button that kills it. The event
+					stream resumes without a gap only because the client keeps a cursor of its own.
+				</p>
+			</header>
+
+			<section class="panel status">
+				<div class="stat">
+					<span class="stat__label">Session</span>
+					<span class="stat__value" id="state" data-state="offline">offline</span>
+				</div>
+				<div class="stat">
+					<span class="stat__label">Cursor</span>
+					<span class="stat__value" id="cursor">--</span>
+				</div>
+				<label class="toggle">
+					<input type="checkbox" id="resume" checked />
+					<span>Resume from cursor on reconnect</span>
+				</label>
+			</section>
+
+			<section class="controls">
+				<button id="connect" class="btn btn--primary" type="button">Connect</button>
+				<button id="sever" class="btn" type="button" disabled>Sever the connection</button>
+				<button id="probe" class="btn" type="button">Call a stub from the old session</button>
+				<button id="disconnect" class="btn btn--quiet" type="button" disabled>Disconnect</button>
+			</section>
+
+			<div class="columns">
+				<section class="panel">
+					<h2>Event stream</h2>
+					<ol class="feed" id="feed"></ol>
+				</section>
+
+				<section class="panel">
+					<h2>Session log</h2>
+					<ol class="log" id="log"></ol>
+				</section>
+			</div>
+
+			<section class="notes">
+				<h2>What to try</h2>
+				<ol>
+					<li>
+						<strong>Connect</strong>, and watch the event ids climb. Authentication and
+						subscription happen in a single round trip, by pipelining.
+					</li>
+					<li>
+						<strong>Sever the connection</strong>, wait a few seconds, then reconnect. The
+						replay fills in exactly what you missed, because the client sent the id of the
+						last event it actually processed.
+					</li>
+					<li>
+						Untick <strong>Resume from cursor</strong> and do it again. Same disconnect, but
+						now the feed shows a gap marker: the events happened and nobody asked for them.
+					</li>
+					<li>
+						<strong>Call a stub from the old session</strong> after severing. It rejects. No
+						stub survives its session, and nothing is silently re-established.
+					</li>
+				</ol>
+			</section>
+		</main>
+
+		<script type="module" src="./main.js"></script>
+	</body>
+</html>

@@ -1,0 +1,256 @@
+/*
+ * Palette matches the docs site: near-black with a blue undertone, azure for
+ * anything live, Cloudflare orange used sparingly enough to still mean
+ * something. `light-dark()` keeps both schemes in one declaration.
+ */
+:root {
+	color-scheme: light dark;
+
+	--ground: light-dark(#ffffff, #070b16);
+	--surface: light-dark(#f7fafd, #0c1524);
+	--sunken: light-dark(#f2f6fb, #0e1a2c);
+	--ink: light-dark(#0d1a2b, #dbe7f5);
+	--ink-dim: light-dark(#56687f, #8299b6);
+	--rule: light-dark(#dbe4ee, #1e3350);
+	--accent: light-dark(#0a5292, #4db4ff);
+	--good: light-dark(#0d6d5b, #34d399);
+	--warn: light-dark(#b26a12, #f6821f);
+	--bad: light-dark(#b3261e, #ff6b6b);
+
+	--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+:root[data-theme='dark'] {
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--ink);
+	font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+.page {
+	max-width: 60rem;
+	margin: 0 auto;
+	padding: 2.5rem 1.5rem 4rem;
+}
+
+:root[data-embedded='true'] .page {
+	padding: 1.25rem 1rem 2rem;
+}
+
+.head h1 {
+	margin: 0 0 0.35rem;
+	font-size: 1.6rem;
+	letter-spacing: -0.02em;
+}
+
+.sub {
+	margin: 0 0 1.5rem;
+	max-width: 46rem;
+	color: var(--ink-dim);
+}
+
+.panel {
+	background: var(--surface);
+	border: 1px solid var(--rule);
+	border-radius: 0.6rem;
+	padding: 1rem 1.1rem;
+}
+
+.panel h2 {
+	margin: 0 0 0.6rem;
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	color: var(--ink-dim);
+}
+
+.status {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 1.5rem;
+	margin-bottom: 0.85rem;
+}
+
+.stat {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+
+.stat__label {
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	color: var(--ink-dim);
+}
+
+.stat__value {
+	font-family: var(--mono);
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.stat__value[data-state='online'] {
+	color: var(--good);
+}
+.stat__value[data-state='connecting'] {
+	color: var(--warn);
+}
+.stat__value[data-state='offline'] {
+	color: var(--ink-dim);
+}
+
+.toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-left: auto;
+	color: var(--ink-dim);
+	cursor: pointer;
+	user-select: none;
+}
+
+.controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-bottom: 1rem;
+}
+
+.btn {
+	padding: 0.5rem 0.9rem;
+	border: 1px solid var(--rule);
+	border-radius: 0.4rem;
+	background: var(--surface);
+	color: var(--ink);
+	font: inherit;
+	font-size: 0.9rem;
+	cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+.btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.btn--primary {
+	background: var(--warn);
+	border-color: var(--warn);
+	color: #180a02;
+	font-weight: 600;
+}
+
+.btn--quiet {
+	color: var(--ink-dim);
+}
+
+.columns {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.85rem;
+}
+
+@media (max-width: 48rem) {
+	.columns {
+		grid-template-columns: 1fr;
+	}
+	.toggle {
+		margin-left: 0;
+	}
+}
+
+.feed,
+.log {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	height: 15rem;
+	overflow-y: auto;
+	background: var(--sunken);
+	border-radius: 0.4rem;
+	padding: 0.5rem 0.6rem;
+	font-family: var(--mono);
+	font-size: 0.8125rem;
+}
+
+.event,
+.line {
+	display: flex;
+	gap: 0.6rem;
+	padding: 0.16rem 0;
+}
+
+.event__id {
+	color: var(--accent);
+	min-width: 3.6rem;
+}
+
+.event--gap {
+	color: var(--warn);
+	border-top: 1px dashed currentColor;
+	border-bottom: 1px dashed currentColor;
+	margin: 0.25rem 0;
+	padding: 0.25rem 0;
+}
+
+.event--gap .event__id {
+	color: inherit;
+	font-weight: 600;
+}
+
+.line__time {
+	color: var(--ink-dim);
+	min-width: 4.6rem;
+}
+
+.line--good .line__text {
+	color: var(--good);
+}
+.line--warn .line__text {
+	color: var(--warn);
+}
+.line--bad .line__text {
+	color: var(--bad);
+}
+
+.notes {
+	margin-top: 1.5rem;
+	color: var(--ink-dim);
+}
+
+.notes h2 {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	margin-bottom: 0.5rem;
+}
+
+.notes ol {
+	margin: 0;
+	padding-left: 1.2rem;
+	max-width: 52rem;
+}
+
+.notes li {
+	margin-bottom: 0.4rem;
+}
+
+.notes strong {
+	color: var(--ink);
+}

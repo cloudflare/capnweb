@@ -36,8 +36,16 @@ export interface PlaygroundBuild {
 	html: string;
 	/** Worker module whose default export has the `fetch` handler. */
 	server: string;
-	/** Requests to this path are served by `server`, in-page. */
-	rpcPath: string;
+	/** Requests to this path are served by `server`, in-page. Omit for `wsPath`. */
+	rpcPath?: string;
+	/**
+	 * For WebSocket examples: `new WebSocket()` on this path is answered by an
+	 * in-page pair rather than a real socket, with `mainExport` on the other
+	 * end. Mutually exclusive with `rpcPath`.
+	 */
+	wsPath?: string;
+	/** Named export of `server` returning the session's main interface. */
+	mainExport?: string;
 	/**
 	 * The example's Wrangler config. Its `vars` become the Worker's `env`, so
 	 * the playground runs with the same delays as a real deployment instead of
@@ -53,6 +61,12 @@ export interface PlaygroundBuild {
 	clientScript?: string;
 	/** Bare specifier -> repo-relative file, for esbuild. */
 	alias?: Record<string, string>;
+	/**
+	 * Static files the page references by name, copied next to it. Needed for a
+	 * zero-build example, whose stylesheet is a plain `<link>` rather than
+	 * something imported from JavaScript for a bundler to find.
+	 */
+	assets?: string[];
 	/**
 	 * Directories to run the `capnweb-validate` codegen plugin in. Its
 	 * `@validateRpc()` decorator is a build-time transform, so a bundle built
@@ -189,11 +203,50 @@ const entries: Omit<Example, 'demoPath'>[] = [
 				lang: 'ts',
 				note: 'Vite config, including the validation plugin and the /api dev proxy.',
 			},
+		],
+	},
+	{
+		slug: 'session-recovery',
+		title: 'Session recovery',
+		tagline: 'What a disconnect destroys',
+		description:
+			'A WebSocket session with a button that kills it. Watch every stub break, then watch the event stream resume without a gap because the client kept a cursor of its own.',
+		source: `${REPO}/session-recovery`,
+		docsPath: '/examples/session-recovery/',
+		build: {
+			html: 'examples/session-recovery/public/index.html',
+			server: 'examples/session-recovery/worker.js',
+			client: 'examples/session-recovery/public/main.js',
+			clientScript: './main.js',
+			wsPath: '/ws',
+			mainExport: 'createMain',
+			assets: ['examples/session-recovery/public/style.css'],
+			wrangler: 'examples/session-recovery/wrangler.jsonc',
+		},
+		files: [
 			{
-				path: 'examples/worker-react/wrangler.jsonc',
-				label: 'wrangler.jsonc',
-				lang: 'jsonc',
-				note: 'Worker config: the generated validation entry point, static assets, and the simulated latency.',
+				path: 'examples/session-recovery/public/session.js',
+				label: 'session.js',
+				lang: 'js',
+				note: 'The client. Connecting, authenticating, subscribing, and recovering from a drop -- with no DOM in it.',
+			},
+			{
+				path: 'examples/session-recovery/api.mjs',
+				label: 'api.mjs',
+				lang: 'js',
+				note: 'The RPC API. The event log is created outside the session on purpose: that is what lets a resume work.',
+			},
+			{
+				path: 'examples/session-recovery/worker.js',
+				label: 'worker.js',
+				lang: 'js',
+				note: 'The Worker. One endpoint, upgrading to a WebSocket and handing over a fresh main interface.',
+			},
+			{
+				path: 'examples/session-recovery/public/main.js',
+				label: 'main.js',
+				lang: 'js',
+				note: 'DOM wiring. Kept separate so the file above stays about RPC.',
 			},
 		],
 	},
