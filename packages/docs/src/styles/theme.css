@@ -762,6 +762,26 @@ main:has(.hero) {
 	border-radius: 2px;
 }
 
+/* --------------------------------------------------- instant theme change */
+
+/*
+ * Colour transitions all through this file are what give hover affordances their
+ * ease: buttons at 0.18s, sidebar links at 0.15s, cards at 0.2s, plus Starlight's
+ * own on anchor links. A theme change alters those same colours, so every one of
+ * them would otherwise animate and the flip would arrive as a ragged 200ms
+ * shuffle instead of a change of scheme.
+ *
+ * ThemeToggle sets this attribute, changes `data-theme`, and clears it on the
+ * next frame. Nothing can transition across the one style recalculation that
+ * matters, and hovering still eases either side of it.
+ */
+:root[data-theme-instant],
+:root[data-theme-instant] *,
+:root[data-theme-instant] *::before,
+:root[data-theme-instant] *::after {
+	transition: none !important;
+}
+
 @media print {
 	header.header,
 	header.header::after {

@@ -45,7 +45,19 @@
 		document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
 
 	function apply(theme: Theme, persist: boolean) {
-		document.documentElement.dataset.theme = theme;
+		const root = document.documentElement;
+
+		// Colours change here, and a good deal of the page eases its colours for
+		// hover. Suppress that for the one recalculation the scheme changes in, or
+		// the flip animates. See the instant-theme-change block in theme.css.
+		root.dataset.themeInstant = '';
+		root.dataset.theme = theme;
+		// Reading a layout property forces the new colours to be computed now, while
+		// transitions are still off. Without it the attribute would be set and
+		// cleared within a single style pass and the transitions would run anyway.
+		void root.offsetHeight;
+		requestAnimationFrame(() => delete root.dataset.themeInstant);
+
 		if (persist) {
 			try {
 				localStorage.setItem(storageKey, theme);
