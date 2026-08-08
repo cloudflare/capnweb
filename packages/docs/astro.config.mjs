@@ -87,8 +87,10 @@ export default defineConfig({
 					label: 'Guides',
 					items: [
 						{ label: 'Security Considerations', slug: 'guides/security' },
-						{ label: 'Workers RPC Interop', slug: 'guides/workers-rpc' },
+						{ label: 'Sessions & Reconnection', slug: 'guides/sessions' },
 						{ label: 'Runtime Validation', slug: 'guides/validation' },
+						{ label: 'How It Compares', slug: 'guides/comparisons' },
+						{ label: 'Workers RPC Interop', slug: 'guides/workers-rpc' },
 					],
 				},
 				{

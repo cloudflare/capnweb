@@ -52,6 +52,25 @@ let c = await api.third(b);
 let c = await api.third(api.second(api.first()));
 ```
 
+### One round trip is not the same as one message
+
+"One round trip" is a claim about **waiting**, not about message count.
+
+| Transport                              | Three chained calls send…                       | Round trips |
+| --------------------------------------- | ------------------------------------------------ | ----------- |
+| [WebSocket](/transports/websocket/)      | Three `push` messages, written back-to-back      | 1           |
+| [HTTP batch](/transports/http-batch/)    | One request body containing all three            | 1           |
+
+Over a WebSocket, Cap'n Web really does send a separate message per call — so if you go looking in
+your browser's network inspector, you will find three frames, plus a `pull` for the result you
+awaited and a `release` afterwards. What it does *not* do is wait for a reply in between: they all
+go out in the same tick and the results come back together, which in elapsed network time is
+indistinguishable from sending one message. The HTTP batch transport goes further and concatenates
+the whole batch into a single request body.
+
+The useful rule: **count your `await`s, not your calls.** If you can set up an entire chain without
+awaiting anything, it costs one round trip no matter how many calls are in it.
+
 ## Transforming without pulling data back
 
 If you need to do something for each element of a result, use
@@ -81,6 +100,18 @@ let names = await api.listUserIds().map(id => [id, api.getUserName(id)]);
 }
 // Never awaited, so the server won't even send the response back over the wire.
 ```
+
+:::caution[Never disposing is a memory leak, on both sides]
+Un-awaited, un-disposed promises accumulate. Each one holds an entry in the session's import table,
+and pins the corresponding export — and the object it refers to — alive on the peer. A client that
+keeps issuing calls and never settles them will grow your server's memory for as long as the
+session lasts.
+
+This is only bounded by the session ending. The library has no reference-count limit to configure,
+so if you serve untrusted peers you have to bound it in application code — attaching disposers to
+the values you return gives you something to count. See
+[Security considerations](/guides/security/) and [Sessions](/guides/sessions/).
+:::
 
 ## `.dup()` on a property
 

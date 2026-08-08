@@ -120,6 +120,33 @@ expect. See [Security considerations](/guides/security/) and
 [Runtime validation](/guides/validation/).
 :::
 
+## Documenting your API
+
+There is no OpenAPI document to generate, because there is no schema to generate it from — and no
+separate artifact that can drift out of date with the implementation.
+
+The shared types file *is* the API description, so document it there:
+
+```ts
+// shared/api.ts
+
+export interface AuthedApi {
+  /**
+   * The user IDs of everyone this user is friends with.
+   *
+   * Returns at most 5000 entries; there is currently no pagination.
+   */
+  getFriendIds(): number[];
+}
+```
+
+That gives you three things at once: hover documentation in every editor for anyone importing the
+file, a single file you can hand someone as "the API", and, if you want a browsable site, ordinary
+TypeScript documentation output from a tool like [TypeDoc](https://typedoc.org/).
+
+The catch is the one you already know from OpenAPI: comments are not enforced. If you want the
+boundary actually checked, that is [runtime validation](/guides/validation/).
+
 ## Which transport?
 
 | You want                                        | Use                                                     |

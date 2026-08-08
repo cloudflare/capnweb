@@ -18,6 +18,20 @@ Why not a binary format? While the author is a big fan of optimized binary proto
 contexts, it cannot be denied that in a browser, JSON has big advantages. Being built into the
 browser gives it a leg up in performance, code size, and developer tooling.
 
+The usual argument for binary is size on the wire, and it is weaker here than it looks:
+
+- `JSON.parse` and `JSON.stringify` are native. A binary codec written in JavaScript has to beat
+  optimized C++ from inside the JS engine, which is a hard start.
+- In a browser, **the code you ship is part of the cost**. A binary format that saves bytes per
+  message but adds kilobytes to the bundle can easily lose, especially for an application that is
+  not chatty.
+- The obvious redundancy — the same property names repeating in every message — is exactly what
+  compression is good at. Where it is available, WebSocket `permessage-deflate` or HTTP content
+  encoding removes most of it without the protocol having to. (Availability is not universal:
+  Cloudflare Workers' `WebSocketPair` does not negotiate compression extensions.)
+
+You also get to read the traffic in your browser's network inspector, which is not nothing.
+
 Non-JSON types are encoded using arrays. The first element of the array contains a string type code,
 and the remaining elements contain the parameters needed to construct that type. For example, a
 `Date` might be encoded as:

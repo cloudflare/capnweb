@@ -37,6 +37,10 @@ Disposing the root stub of a session closes the connection:
 For HTTP batch, the session ends when the batch completes, and all stubs are implicitly disposed at
 that point. See [Disposal](/concepts/disposal/).
 
+Session state is in-memory and lasts exactly as long as the session — there is nothing to persist
+and no session store to run. [Sessions & reconnection](/guides/sessions/) covers what that means
+for reconnecting, versioning and load balancing.
+
 ## Message framing
 
 The protocol operates on a bidirectional stream of discrete messages, each a single JSON value. The

@@ -49,7 +49,12 @@ This aligns the Workers Runtime with Cap'n Web's stub ownership rules for call p
 ## Where they still differ
 
 As of this writing the feature set is not exactly the same between the two. We aim to fix this over
-time, by adding missing features to both sides until they match. In particular:
+time, by adding missing features to both sides until they match.
+
+Expect Cap'n Web to run ahead. It is a library rather than a runtime built-in, so it can ship a new
+idea in a version bump instead of a compatibility flag, and that makes it the natural place to
+experiment. `.map()` is the current example: it exists in Cap'n Web and is on the list for Workers
+RPC. The intent is that the two converge, with Cap'n Web arriving first.
 
 | Capability                                             | Cap'n Web | Workers RPC |
 | ------------------------------------------------------ | --------- | ----------- |

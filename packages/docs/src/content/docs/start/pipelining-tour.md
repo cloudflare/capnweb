@@ -82,8 +82,8 @@ let profile = await api.getUserProfile(user.id);
 
 ## How `.map()` can possibly work
 
-`friendsPromise.map(...)` runs your callback *on the server*, on a value that doesn't exist yet on
-the client. Cap'n Web does **not** send arbitrary code over the wire.
+`friendsPromise.map(...)` applies your callback to a value that doesn't exist yet on the client, and
+it does so without sending any code over the wire. Cap'n Web does **not** ship arbitrary code.
 
 The trick is **record-replay**:
 
@@ -99,7 +99,10 @@ behaviour is deterministic. Real computation (arithmetic, branching) can't meani
 those promises, so it must produce the same result on every invocation — and it gets performed once
 on the sending side, with the result baked into the recording.
 
-See [The magic `map()`](/concepts/map/) for the rules and restrictions.
+So the split is: **your JavaScript runs on the calling side exactly once; the RPCs it recorded run
+on the peer, once per element.** See
+[Which side runs what](/concepts/map/#which-side-runs-what) for why that matters, and
+[The magic `map()`](/concepts/map/) for the full rules and restrictions.
 
 ## With a WebSocket instead
 

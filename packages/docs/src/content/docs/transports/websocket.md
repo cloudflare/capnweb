@@ -107,6 +107,8 @@ stub.onRpcBroken((error) => {
 
 Cap'n Web does not reconnect automatically. Reconnection means establishing a new session and
 re-acquiring any capabilities you held, since stubs from the old session are permanently broken.
+See [Sessions & reconnection](/guides/sessions/) for the patterns that make this manageable,
+including the React one and how to resume a subscription without gaps.
 
 :::danger
 The WebSocket API in browsers always permits cross-site connections, and does not permit setting

@@ -16,6 +16,28 @@ If a validation decorator is left untransformed, it throws a configuration error
 silently running without validation. You cannot accidentally ship an unvalidated service.
 :::
 
+## Does this mean defining my API twice?
+
+No — and this is the reason `capnweb-validate` exists in this shape.
+
+"Schemaless" means the *library* needs no schema: Cap'n Web forwards whatever call you make without
+being told about it in advance. It does not mean you have no contract. Your contract is the
+TypeScript interface, used on both ends. The only problem is that TypeScript is erased before your
+code ever meets a hostile input.
+
+There are two honest ways to close that gap without writing the interface out twice:
+
+- **Generate the validators from the types.** That is what `capnweb-validate` does — the TypeScript
+  signature stays the single source of truth and the runtime check is derived from it at build time.
+- **Generate the types from the validators.** Schema libraries like [Zod](https://zod.dev/) infer
+  TypeScript types from the schema object, so you write the schema and get the types for free.
+  [ArkType](https://arktype.io/), [typia](https://typia.io/) and
+  [ts-runtime-checks](https://github.com/GoogleFeud/ts-runtime-checks) occupy similar territory,
+  the last two also transforming TypeScript types directly into checks.
+
+Either way you write one description of the boundary, not two. What you must not do is write only
+the TypeScript and assume it is doing something at runtime.
+
 ## Install
 
 ```sh
