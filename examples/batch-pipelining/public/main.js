@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 const rtt = () => Number($('rtt').value);
 
 function reset() {
-	for (const id of ['pPosts', 'pTime', 'sPosts', 'sTime']) $(id).textContent = '\u2014';
+	for (const id of ['pPosts', 'pTime', 'sPosts', 'sTime']) $(id).textContent = '\u2026';
 	$('pOut').textContent = $('sOut').textContent = 'Not run yet.';
 	$('pBar').style.width = $('sBar').style.width = '0';
 	$('verdict').hidden = true;
@@ -47,9 +47,17 @@ async function run() {
 	}
 }
 
-$('rtt').addEventListener('input', () => {
-	$('rttValue').textContent = `${$('rtt').value} ms`;
-});
+/** Keeps the readout and the slider's painted fill in step with the value. */
+function syncRtt() {
+	const el = $('rtt');
+	const min = Number(el.min);
+	const fraction = (Number(el.value) - min) / (Number(el.max) - min);
+	el.style.setProperty('--pct', `${fraction * 100}%`);
+	$('rttValue').textContent = `${el.value} ms`;
+}
+
+$('rtt').addEventListener('input', syncRtt);
+syncRtt();
 $('run').addEventListener('click', run);
 $('reset').addEventListener('click', reset);
 run();

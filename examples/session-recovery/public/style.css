@@ -6,16 +6,29 @@
 :root {
 	color-scheme: light dark;
 
-	--ground: light-dark(#ffffff, #070b16);
-	--surface: light-dark(#f7fafd, #0c1524);
-	--sunken: light-dark(#f2f6fb, #0e1a2c);
+	/* The ground is tinted and the cards are not, so a card is separated by
+	   its own lightness rather than by a hairline alone. */
+	--ground: light-dark(#eef3f9, #070b16);
+	--surface: light-dark(#ffffff, #0f1a2c);
+	--sunken: light-dark(#f2f6fb, #0a1322);
 	--ink: light-dark(#0d1a2b, #dbe7f5);
 	--ink-dim: light-dark(#56687f, #8299b6);
-	--rule: light-dark(#dbe4ee, #1e3350);
+	--rule: light-dark(#ccd8e6, #22395a);
+	/* `light-dark()` takes exactly two arguments, so the scheme switch happens
+	   on the colour and the geometry is written once around it. */
+	--shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
+	--shadow-far: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.42));
+	--shadow-sm: 0 1px 2px var(--shadow-near);
+	--shadow: 0 1px 2px var(--shadow-near), 0 8px 20px var(--shadow-far);
 	--accent: light-dark(#0a5292, #4db4ff);
 	--good: light-dark(#0d6d5b, #34d399);
 	--warn: light-dark(#b26a12, #f6821f);
 	--bad: light-dark(#b3261e, #ff6b6b);
+	/* The one primary action. Kept apart from `--warn`, which has to darken in
+	   light mode to stay readable as text and is the wrong colour for a filled
+	   button. */
+	--cta: #f6821f;
+	--cta-ink: #180a02;
 
 	--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
@@ -98,7 +111,7 @@ footer a,
 }
 
 :root[data-embedded='true'] body {
-	background: var(--surface);
+	background: var(--ground);
 }
 
 :root[data-embedded='true'] .page {
@@ -114,6 +127,7 @@ footer a,
 	background: var(--surface);
 	border: 1px solid var(--rule);
 	border-radius: 0.6rem;
+	box-shadow: var(--shadow);
 	padding: 1rem 1.1rem;
 }
 
@@ -201,10 +215,10 @@ footer a,
 }
 
 .btn--primary {
-	background: var(--warn);
-	border-color: var(--warn);
-	color: #180a02;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+	background: var(--cta);
+	border-color: var(--cta);
+	color: var(--cta-ink);
+	box-shadow: 0 2px 8px light-dark(rgba(246, 130, 31, 0.34), rgba(0, 0, 0, 0.35));
 }
 
 .btn--quiet {

@@ -58,12 +58,22 @@
 			:root {
 				color-scheme: light dark;
 
-				--ground: light-dark(#ffffff, #070b16);
-				--surface: light-dark(#f7fafd, #0c1524);
-				--pre: light-dark(#f2f6fb, #0e1a2c);
+				/* The ground is tinted and the cards are not, so a card is
+				   separated by its own lightness rather than by a hairline
+				   alone. Dark mode works the same way, inverted. */
+				--ground: light-dark(#eef3f9, #070b16);
+				--surface: light-dark(#ffffff, #0f1a2c);
+				--pre: light-dark(#f2f6fb, #0a1322);
 				--ink: light-dark(#0d1a2b, #dbe7f5);
 				--ink-dim: light-dark(#56687f, #8299b6);
-				--rule: light-dark(#dbe4ee, #1e3350);
+				--rule: light-dark(#ccd8e6, #22395a);
+				/* `light-dark()` takes exactly two arguments, so the scheme
+				   switch happens on the colour and the geometry is written
+				   once around it. */
+				--shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
+				--shadow-far: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.42));
+				--shadow-sm: 0 1px 2px var(--shadow-near);
+				--shadow: 0 1px 2px var(--shadow-near), 0 8px 20px var(--shadow-far);
 				--accent: #f6821f;
 				--accent-ink: #180a02;
 				/* Links are not the accent: orange is spent on the one primary
@@ -124,7 +134,7 @@
 			}
 
 			:root[data-embedded] body {
-				background: var(--surface);
+				background: var(--ground);
 			}
 
 			:root[data-embedded] main {
@@ -160,6 +170,7 @@
 				border: 1px solid var(--rule);
 				border-radius: 0.75rem;
 				background: var(--surface);
+				box-shadow: var(--shadow-sm);
 				margin-bottom: 2rem;
 			}
 
@@ -171,9 +182,66 @@
 				color: var(--ink-dim);
 			}
 
+			/* The track is painted by hand rather than left to `accent-color`.
+			   Chrome derives the unfilled half from the accent, and for a
+			   saturated orange it picks something near black, which is wrong
+			   against a light page. `--pct` is the filled fraction and is kept
+			   up to date by the same handler that writes the millisecond
+			   readout. */
 			input[type='range'] {
-				accent-color: var(--accent);
+				--pct: 40%;
+				appearance: none;
 				width: 11rem;
+				height: 1rem;
+				background: transparent;
+				cursor: pointer;
+			}
+
+			input[type='range']::-webkit-slider-runnable-track {
+				height: 0.375rem;
+				border-radius: 999px;
+				background: linear-gradient(
+					to right,
+					var(--accent) 0 var(--pct),
+					var(--rule) var(--pct) 100%
+				);
+			}
+
+			input[type='range']::-moz-range-track {
+				height: 0.375rem;
+				border-radius: 999px;
+				background: var(--rule);
+			}
+
+			input[type='range']::-moz-range-progress {
+				height: 0.375rem;
+				border-radius: 999px;
+				background: var(--accent);
+			}
+
+			input[type='range']::-webkit-slider-thumb {
+				appearance: none;
+				width: 1rem;
+				height: 1rem;
+				margin-top: -0.3125rem;
+				border: 0;
+				border-radius: 50%;
+				background: var(--accent);
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+			}
+
+			input[type='range']::-moz-range-thumb {
+				width: 1rem;
+				height: 1rem;
+				border: 0;
+				border-radius: 50%;
+				background: var(--accent);
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+			}
+
+			input[type='range']:focus-visible {
+				outline: 2px solid var(--link);
+				outline-offset: 3px;
 			}
 
 			button {
@@ -185,7 +253,7 @@
 				padding: 0.55rem 1.4rem;
 				background: var(--accent);
 				color: var(--accent-ink);
-				box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+				box-shadow: 0 2px 8px light-dark(rgba(246, 130, 31, 0.34), rgba(0, 0, 0, 0.35));
 			}
 
 			button:hover:not(:disabled) {
@@ -214,6 +282,7 @@
 				border: 1px solid var(--rule);
 				border-radius: 0.75rem;
 				background: var(--surface);
+				box-shadow: var(--shadow);
 				padding: 1.25rem;
 			}
 

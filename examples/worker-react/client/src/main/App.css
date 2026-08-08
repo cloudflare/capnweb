@@ -10,12 +10,20 @@
   --theme-orange-hover: #ff9a3d;
   --theme-orange-foreground: #180a02;
 
-  --bg-primary: light-dark(#ffffff, #070b16);
-  --bg-secondary: light-dark(#f7fafd, #0c1524);
-  --bg-pre: light-dark(#f2f6fb, #0e1a2c);
+  /* The ground is tinted and the cards are not, so a card is separated by its
+     own lightness rather than by a hairline alone. */
+  --bg-primary: light-dark(#eef3f9, #070b16);
+  --bg-secondary: light-dark(#ffffff, #0f1a2c);
+  --bg-pre: light-dark(#f2f6fb, #0a1322);
   --text-primary: light-dark(#0d1a2b, #dbe7f5);
   --text-secondary: light-dark(#56687f, #8299b6);
-  --border-color: light-dark(#dbe4ee, #1e3350);
+  --border-color: light-dark(#ccd8e6, #22395a);
+  /* `light-dark()` takes exactly two arguments, so the scheme switch happens
+     on the colour and the geometry is written once around it. */
+  --shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
+  --shadow-far: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.42));
+  --shadow-sm: 0 1px 2px var(--shadow-near);
+  --shadow: 0 1px 2px var(--shadow-near), 0 8px 20px var(--shadow-far);
   --button-bg: var(--theme-orange);
   --button-hover: var(--theme-orange-hover);
   --button-foreground: var(--theme-orange-foreground);
@@ -105,7 +113,7 @@ footer a,
 }
 
 :root[data-embedded] body {
-  background: var(--bg-secondary);
+  background: var(--bg-primary);
 }
 
 :root[data-embedded] .page {
@@ -123,10 +131,14 @@ footer a,
   border-radius: 5px;
 }
 
+/* The label and the block below it are one sunken unit, parted by a rule
+   rather than by a colour step, so the strip does not disappear now that the
+   card behind it is plain white. */
 .response-title {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  padding: 3px 6px;
+  background: var(--bg-pre);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 4px 8px;
   font-size: 12px;
   border-radius: 4px 4px 0 0;
   margin: 0;
@@ -152,7 +164,7 @@ button {
   padding: 0.55rem 1.4rem;
   background: var(--button-bg);
   color: var(--button-foreground);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 2px 8px light-dark(rgba(246, 130, 31, 0.34), rgba(0, 0, 0, 0.35));
   transition: background 0.2s;
 }
 
@@ -183,6 +195,7 @@ section {
   padding: 1.1rem 1.25rem;
   border-radius: 0.75rem;
   background: var(--bg-secondary);
+  box-shadow: var(--shadow);
   margin-top: 2rem;
 }
 
