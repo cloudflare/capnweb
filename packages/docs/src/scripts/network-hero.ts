@@ -53,6 +53,8 @@ interface Pulse {
 	returning: boolean;
 	/** Seconds to wait before setting off again. */
 	wait: number;
+	/** Hover traffic is retired when it gets home; ambient traffic recycles. */
+	oneShot?: boolean;
 }
 
 /* ------------------------------------------------------------- tiny maths */
@@ -160,6 +162,25 @@ const NEIGHBOURS = 3;
    190-node sphere reads as an idle screensaver; a dozen reads as traffic. */
 const PULSE_COUNT = 12;
 const SPHERE_R = 1.32;
+
+/*
+ * Hover. Same idea as the 2D backdrop: put the pointer near a node and that
+ * node talks to its neighbours. Here the nodes are on a sphere, so the pick has
+ * to happen in screen space after projection, and a node on the far side of the
+ * sphere must not win over the one in front of it.
+ *
+ * Radii are CSS pixels, scaled by the device ratio at the point of use.
+ */
+const HOVER_RADIUS = 70;
+const HOVER_RELEASE = 120;
+const HOVER_HANDOVER = 18;
+/** Pixels of penalty per world unit of camera distance. The sphere is ~3 across. */
+const HOVER_DEPTH_PENALTY = 24;
+const HOVER_WAVE_GAP = 1.1;
+const HOVER_STAGGER = 0.07;
+const HOVER_SECOND_HOP_CHANCE = 0.35;
+/** A node has three or four neighbours, and two waves can overlap. */
+const HOVER_PULSE_MAX = 10;
 
 interface Graph {
 	positions: Float32Array;
@@ -270,8 +291,11 @@ in float a_flash;
 uniform mat4 u_mvp;
 uniform float u_time;
 uniform float u_scale;
+uniform int u_hover;
+uniform float u_hoverEase;
 out float v_fade;
 out float v_flash;
+out float v_hover;
 void main() {
   vec4 clip = u_mvp * vec4(a_pos, 1.0);
   gl_Position = clip;
@@ -279,13 +303,15 @@ void main() {
   // Fade with distance so the far half of the sphere recedes.
   v_fade = clamp((5.6 - clip.w) / 3.2, 0.05, 1.0) * twinkle;
   v_flash = a_flash;
-  gl_PointSize = u_scale * (1.0 + a_flash * 1.7) / max(clip.w, 0.2);
+  v_hover = (gl_VertexID == u_hover) ? u_hoverEase : 0.0;
+  gl_PointSize = u_scale * (1.0 + a_flash * 1.7 + v_hover * 1.1) / max(clip.w, 0.2);
 }`;
 
 const NODE_FS = `#version 300 es
 precision highp float;
 in float v_fade;
 in float v_flash;
+in float v_hover;
 uniform vec3 u_color;
 uniform vec3 u_flashColor;
 uniform float u_hot;
@@ -299,7 +325,7 @@ void main() {
   // node is flat ink instead.
   float hot = pow(1.0 - r, 9.0) * u_hot;
   vec3 c = mix(u_color, u_flashColor, clamp(v_flash, 0.0, 1.0)) + vec3(hot * 0.7);
-  float a = core * v_fade;
+  float a = core * v_fade * (1.0 + v_hover * 0.8);
   fragColor = vec4(c * a, a);
 }`;
 
@@ -491,7 +517,7 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 	const edgeGlow = new Float32Array(edgeCount);
 	const edgeGlowVerts = new Float32Array(edgeCount * 2);
 	const nodeFlash = new Float32Array(NODE_COUNT);
-	const pulsePositions = new Float32Array(PULSE_COUNT * 3);
+	const pulsePositions = new Float32Array((PULSE_COUNT + HOVER_PULSE_MAX) * 3);
 
 	/** Edge index for an unordered node pair, for lighting the right line. */
 	const edgeIndex = new Map<number, number>();
@@ -606,6 +632,103 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 	const pulses: Pulse[] = [];
 	for (let i = 0; i < PULSE_COUNT; i++) pulses.push(newPulse(i * 0.42));
 
+	/* ----------------------------------------------------------------- hover */
+
+	/**
+	 * Project every node into canvas device pixels. Only x, y and w are needed:
+	 * the depth buffer is off, and w doubles as camera distance for the pick.
+	 */
+	function projectNodes(mvp: Mat4) {
+		for (let i = 0; i < NODE_COUNT; i++) {
+			const x = graph.positions[i * 3]!;
+			const y = graph.positions[i * 3 + 1]!;
+			const z = graph.positions[i * 3 + 2]!;
+			// Column-major, so a row of the result reads m[col * 4 + row].
+			const cx = mvp[0]! * x + mvp[4]! * y + mvp[8]! * z + mvp[12]!;
+			const cy = mvp[1]! * x + mvp[5]! * y + mvp[9]! * z + mvp[13]!;
+			const cw = mvp[3]! * x + mvp[7]! * y + mvp[11]! * z + mvp[15]!;
+			const safe = Math.abs(cw) < 1e-4 ? 1e-4 : cw;
+			screenXY[i * 2] = ((cx / safe) * 0.5 + 0.5) * width;
+			screenXY[i * 2 + 1] = (1 - ((cy / safe) * 0.5 + 0.5)) * height;
+			screenW[i] = cw;
+		}
+	}
+
+	/**
+	 * The node under the pointer, or -1. Nearest in screen space wins, with a
+	 * penalty on camera distance so a node on the far side of the sphere cannot
+	 * steal the pick from the one drawn in front of it. Held with hysteresis,
+	 * since the sphere turns under a stationary pointer.
+	 */
+	function pickHovered() {
+		if (!pointerSeen || reduceMotion.matches) return -1;
+
+		const scale = dpr();
+		const nearest = SPHERE_R * 1.1;
+		const score = (i: number) => {
+			if (screenW[i]! <= 0) return Infinity;
+			const dx = screenXY[i * 2]! - hoverX;
+			const dy = screenXY[i * 2 + 1]! - hoverY;
+			// Distance from the front of the sphere, in world units.
+			const depth = Math.max(0, screenW[i]! - (cameraDist - nearest));
+			return Math.hypot(dx, dy) + depth * HOVER_DEPTH_PENALTY * scale;
+		};
+
+		let best = -1;
+		let bestScore = HOVER_RADIUS * scale;
+		for (let i = 0; i < NODE_COUNT; i++) {
+			const s = score(i);
+			if (s < bestScore) {
+				bestScore = s;
+				best = i;
+			}
+		}
+
+		if (hoverNode >= 0) {
+			const held = score(hoverNode);
+			if (
+				held <= HOVER_RELEASE * scale &&
+				(best < 0 || bestScore > held - HOVER_HANDOVER * scale)
+			) {
+				return hoverNode;
+			}
+		}
+
+		return best;
+	}
+
+	/**
+	 * One round trip along each edge of the hovered node, staggered so they leave
+	 * in sequence, and now and then one that carries on a hop further first.
+	 */
+	function emitWave(from: number) {
+		const neighbours = graph.adjacency[from];
+		if (!neighbours) return;
+
+		for (const [i, neighbour] of neighbours.entries()) {
+			if (pulses.length >= PULSE_COUNT + HOVER_PULSE_MAX) return;
+			const path = [from, neighbour];
+
+			// Anywhere but back the way it came, so it reads as a chain of hops
+			// rather than a bounce.
+			if (rand() < HOVER_SECOND_HOP_CHANCE) {
+				const onward = graph.adjacency[neighbour]!.filter((n) => n !== from);
+				if (onward.length > 0) path.push(onward[Math.floor(rand() * onward.length)]!);
+			}
+
+			pulses.push({
+				path,
+				hop: 0,
+				t: 0,
+				// Quicker than the ambient traffic: this one was asked for.
+				speed: 3.4 + rand() * 1.2,
+				returning: false,
+				wait: i * HOVER_STAGGER,
+				oneShot: true,
+			});
+		}
+	}
+
 	/* ------------------------------------------------------------------ view */
 
 	// The theme cross-fade. CSS cannot transition what WebGL paints, so the palette
@@ -622,11 +745,33 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 	let targetX = 0;
 	let targetY = 0;
 
+	// Hover. `hoverX/Y` are canvas-relative device pixels, which is the space the
+	// projection below lands in. The canvas rect is cached by `resize`, which
+	// already reads it once a frame.
+	let hoverX = 0;
+	let hoverY = 0;
+	let pointerSeen = false;
+	let hoverNode = -1;
+	/** Eased towards 1 while a node is held, so it grows in and out. */
+	let hoverEase = 0;
+	let nextWaveAt = 0;
+	/** Seconds since the loop started, for the wave clock. */
+	let clock = 0;
+	let rectLeft = 0;
+	let rectTop = 0;
+	/** Camera distance for the current frame, set in `frame`. */
+	let cameraDist = 4;
+	/** Screen-space node positions in device pixels, plus camera distance. */
+	const screenXY = new Float32Array(NODE_COUNT * 2);
+	const screenW = new Float32Array(NODE_COUNT);
+
 	const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)');
 	const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
 
 	function resize() {
 		const rect = canvas.getBoundingClientRect();
+		rectLeft = rect.left;
+		rectTop = rect.top;
 		const w = Math.max(1, Math.round(rect.width * dpr()));
 		const h = Math.max(1, Math.round(rect.height * dpr()));
 		if (w === canvas.width && h === canvas.height) return;
@@ -654,7 +799,9 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		pulsePositions.fill(0);
 		let live = 0;
 
-		for (let i = 0; i < pulses.length; i++) {
+		// Backwards, so a one-shot pulse can be spliced out without disturbing the
+		// indices still to be visited.
+		for (let i = pulses.length - 1; i >= 0; i--) {
 			const p = pulses[i]!;
 			if (p.wait > 0) {
 				if (!still) p.wait -= dt;
@@ -662,6 +809,8 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 			}
 
 			if (!still) p.t += dt * p.speed;
+
+			let retired = false;
 			while (p.t >= 1) {
 				p.t -= 1;
 				p.hop++;
@@ -672,29 +821,30 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 
 				if (p.hop >= p.path.length - 1) {
 					if (p.returning) {
-						// Home again: the whole chain cost one trip. Rest, then go again.
-						pulses[i] = newPulse(0.3 + rand() * 1.1);
+						// Home again: the whole chain cost one trip. Hover traffic is
+						// done; ambient traffic rests, then goes again.
+						if (p.oneShot) pulses.splice(i, 1);
+						else pulses[i] = newPulse(0.3 + rand() * 1.1);
+						retired = true;
 						break;
 					}
 					p.returning = true;
 					p.hop = 0;
 				}
 			}
+			if (retired || p.path.length < 2) continue;
 
-			const cur = pulses[i]!;
-			if (cur.wait > 0 || cur.path.length < 2) continue;
-
-			const n = cur.path.length;
-			const fromIdx = cur.returning ? n - 1 - cur.hop : cur.hop;
-			const toIdx = cur.returning ? n - 2 - cur.hop : cur.hop + 1;
-			const a = cur.path[fromIdx];
-			const b = cur.path[toIdx];
+			const n = p.path.length;
+			const fromIdx = p.returning ? n - 1 - p.hop : p.hop;
+			const toIdx = p.returning ? n - 2 - p.hop : p.hop + 1;
+			const a = p.path[fromIdx];
+			const b = p.path[toIdx];
 			if (a === undefined || b === undefined) continue;
 
 			const ei = edgeIndex.get(a < b ? a * NODE_COUNT + b : b * NODE_COUNT + a);
 			if (ei !== undefined) edgeGlow[ei] = 1;
 
-			const t = cur.t;
+			const t = p.t;
 			pulsePositions[live * 3] =
 				graph.positions[a * 3]! + (graph.positions[b * 3]! - graph.positions[a * 3]!) * t;
 			pulsePositions[live * 3 + 1] =
@@ -742,10 +892,30 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 
 		const aspect = width / height;
 		const dist = aspect < 0.9 ? 4.6 : 4.0;
+		cameraDist = dist;
 		const view = lookAtOrigin(0, 0, dist);
 		const proj = perspective((aspect < 0.9 ? 52 : 44) * (Math.PI / 180), aspect, 0.1, 20);
 		const model = multiply(rotationX(-0.22 + targetY * 0.13), rotationY(spin + targetX * 0.24));
 		const mvp = multiply(proj, multiply(view, model));
+
+		// Hover. The pick has to happen after the model matrix is known, since the
+		// sphere is turning and the node under the pointer changes with it.
+		if (!still) {
+			clock += dt;
+			projectNodes(mvp);
+			const picked = pickHovered();
+			if (picked !== hoverNode) {
+				hoverNode = picked;
+				if (picked >= 0) {
+					emitWave(picked);
+					nextWaveAt = clock + HOVER_WAVE_GAP;
+				}
+			} else if (hoverNode >= 0 && clock >= nextWaveAt) {
+				emitWave(hoverNode);
+				nextWaveAt = clock + HOVER_WAVE_GAP;
+			}
+			hoverEase += ((hoverNode >= 0 ? 1 : 0) - hoverEase) * Math.min(1, dt * 9);
+		}
 
 		const livePulses = simulate(dt, still);
 
@@ -804,6 +974,8 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		gl.uniform1f(gl.getUniformLocation(g.nodeProg, 'u_time'), now / 1000);
 		gl.uniform1f(gl.getUniformLocation(g.nodeProg, 'u_scale'), nodeScale);
 		gl.uniform1f(gl.getUniformLocation(g.nodeProg, 'u_hot'), hot);
+		gl.uniform1i(gl.getUniformLocation(g.nodeProg, 'u_hover'), hoverEase > 0.01 ? hoverNode : -1);
+		gl.uniform1f(gl.getUniformLocation(g.nodeProg, 'u_hoverEase'), hoverEase);
 		gl.uniform3fv(gl.getUniformLocation(g.nodeProg, 'u_color'), palette.node);
 		gl.uniform3fv(gl.getUniformLocation(g.nodeProg, 'u_flashColor'), palette.pulse);
 		gl.drawArrays(gl.POINTS, 0, NODE_COUNT);
@@ -850,8 +1022,19 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		if (e.pointerType !== 'mouse' || reduceMotion.matches) return;
 		pointerX = (e.clientX / window.innerWidth) * 2 - 1;
 		pointerY = (e.clientY / window.innerHeight) * 2 - 1;
+		const scale = dpr();
+		hoverX = (e.clientX - rectLeft) * scale;
+		hoverY = (e.clientY - rectTop) * scale;
+		pointerSeen = true;
 	};
 	window.addEventListener('pointermove', onPointer, { passive: true });
+
+	// Nothing should be left lit behind a pointer that has gone away.
+	const releaseHover = () => {
+		pointerSeen = false;
+	};
+	document.addEventListener('pointerleave', releaseHover);
+	window.addEventListener('blur', releaseHover);
 
 	// Only animate while actually on screen.
 	const io = new IntersectionObserver(
@@ -950,6 +1133,8 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		canvas.removeEventListener('webglcontextlost', onLost);
 		canvas.removeEventListener('webglcontextrestored', onRestored);
 		window.removeEventListener('pointermove', onPointer);
+		document.removeEventListener('pointerleave', releaseHover);
+		window.removeEventListener('blur', releaseHover);
 		document.removeEventListener('visibilitychange', onVisibility);
 		reduceMotion.removeEventListener('change', onMotionChange);
 		io.disconnect();
@@ -971,6 +1156,8 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		reduceMotion.removeEventListener('change', onMotionChange);
 		document.removeEventListener('visibilitychange', onVisibility);
 		window.removeEventListener('pointermove', onPointer);
+		document.removeEventListener('pointerleave', releaseHover);
+		window.removeEventListener('blur', releaseHover);
 		canvas.removeEventListener('webglcontextlost', onLost);
 		canvas.removeEventListener('webglcontextrestored', onRestored);
 	};
