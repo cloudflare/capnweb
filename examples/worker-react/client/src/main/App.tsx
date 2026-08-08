@@ -37,67 +37,78 @@ export function App() {
   }, [running, wrapFetch])
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, lineHeight: 1.5 }}>
-      <h1>Cap'n Web: Cloudflare Workers + React</h1>
-      <div style={{ opacity: 0.8 }}>Network RTT (round-trip-time) is simulated on the server (configurable via <code>SIMULATED_RTT_MS</code>/<code>SIMULATED_RTT_JITTER_MS</code> in <code>wrangler.jsonc</code>).</div>
-      <p>This demo calls the Worker API in two ways:</p>
-      <ul>
-        <li><b>Pipelined (batched)</b>: dependent calls in one round trip</li>
-        <li><b>Sequential (non-batched)</b>: three separate round trips</li>
-      </ul>
-      <button onClick={runDemo} disabled={running}>
-        {running ? 'Running…' : 'Run demo'}
-      </button>
+    <>
+      <header className="site"><a href="/">Cap'n Web &mdash; Workers + React</a></header>
 
-      <section style={{ marginTop: 24 }}>
-        <h2>Validation</h2>
-        <p>Calls <code>authenticate(12345)</code> instead of a string — the server rejects the wrong-typed argument.</p>
-        <button onClick={showValidationFailure}>Test validation failure</button>
-        {validationError && (
-          <pre style={{ color: '#ef4444', marginTop: 8, whiteSpace: 'pre-wrap' }}>{validationError}</pre>
-        )}
-      </section>
+      <main className="page">
+        <h1>One round trip, from a React app</h1>
+        <p className="lede">
+          Three dependent calls to a Worker, made both ways: pipelined into a single request, and
+          sequentially in three. The timeline shows when each call was in flight. Latency is
+          simulated on the server, so the work is identical either way &mdash; only the round trips
+          differ.
+        </p>
+        <button onClick={runDemo} disabled={running}>
+          {running ? 'Running…' : 'Run demo'}
+        </button>
 
-      {(pipelined && sequential) ? (<>
-        <section style={{ marginTop: 24 }}>
-          <h2>Pipelined (batched)</h2>
-          <div>HTTP POSTs: {pipelined.posts}</div>
-          <div>Time: {pipelined.ms.toFixed(1)} ms</div>
-          <TraceView trace={pipelined.trace} maxTime={sequential.trace.total} />
-          <div className="response-container">
-            <div className="response-title">Response</div>
-            <pre>{JSON.stringify({
-              user: pipelined.user,
-              profile: pipelined.profile,
-              notifications: pipelined.notifications,
-            }, null, 2)}</pre>
-          </div>
+        <section>
+          <h2>Validation</h2>
+          <p>Calls <code>authenticate(12345)</code> instead of a string — the server rejects the wrong-typed argument.</p>
+          <button className="secondary" onClick={showValidationFailure}>Test validation failure</button>
+          {validationError && <pre className="validation-error">{validationError}</pre>}
         </section>
 
-        <section style={{ marginTop: 24 }}>
-          <h2>Sequential (non-batched)</h2>
-          <div>HTTP POSTs: {sequential.posts}</div>
-          <div>Time: {sequential.ms.toFixed(1)} ms</div>
-          <TraceView trace={sequential.trace} maxTime={sequential.trace.total} />
-          <div className="response-container">
-            <div className="response-title">Response</div>
-            <pre>{JSON.stringify({
-              user: sequential.user,
-              profile: sequential.profile,
-              notifications: sequential.notifications,
-            }, null, 2)}</pre>
-          </div>
-        </section>
+        {(pipelined && sequential) ? (<>
+          <section>
+            <h2>Pipelined (batched)</h2>
+            <div>HTTP POSTs: {pipelined.posts}</div>
+            <div>Time: {pipelined.ms.toFixed(1)} ms</div>
+            <TraceView trace={pipelined.trace} maxTime={sequential.trace.total} />
+            <div className="response-container">
+              <div className="response-title">Response</div>
+              <pre>{JSON.stringify({
+                user: pipelined.user,
+                profile: pipelined.profile,
+                notifications: pipelined.notifications,
+              }, null, 2)}</pre>
+            </div>
+          </section>
 
-        <section style={{ marginTop: 24 }}>
-          <h2>Summary</h2>
-          <div>Pipelined: {pipelined.posts} POST, {pipelined.ms.toFixed(1)} ms</div>
-          <div className="comparison-bar" style={{ width: `${(pipelined.ms / sequential.ms) * 100}%` }} />
-          <div style={{ marginTop: 5 }}>Sequential: {sequential.posts} POSTs, {sequential.ms.toFixed(1)} ms</div>
-          <div className="comparison-bar" style={{ width: '100%' }} />
-        </section></>
-      ) : null}
-    </div>
+          <section>
+            <h2>Sequential (non-batched)</h2>
+            <div>HTTP POSTs: {sequential.posts}</div>
+            <div>Time: {sequential.ms.toFixed(1)} ms</div>
+            <TraceView trace={sequential.trace} maxTime={sequential.trace.total} />
+            <div className="response-container">
+              <div className="response-title">Response</div>
+              <pre>{JSON.stringify({
+                user: sequential.user,
+                profile: sequential.profile,
+                notifications: sequential.notifications,
+              }, null, 2)}</pre>
+            </div>
+          </section>
+
+          <section>
+            <h2>Summary</h2>
+            <div>Pipelined: {pipelined.posts} POST, {pipelined.ms.toFixed(1)} ms</div>
+            <div className="comparison-bar" style={{ width: `${(pipelined.ms / sequential.ms) * 100}%` }} />
+            <div style={{ marginTop: 5 }}>Sequential: {sequential.posts} POSTs, {sequential.ms.toFixed(1)} ms</div>
+            <div className="comparison-bar" style={{ width: '100%' }} />
+          </section></>
+        ) : null}
+
+        <footer>
+          Source:{' '}
+          <a href="https://github.com/cloudflare/capnweb/tree/main/examples/worker-react">
+            examples/worker-react
+          </a>. Latency is simulated on the server via <code>SIMULATED_RTT_MS</code> in{' '}
+          <code>wrangler.jsonc</code>, so both columns do identical work &mdash; see{' '}
+          <a href="https://capnweb.com/concepts/promises/">promise pipelining</a>.
+        </footer>
+      </main>
+    </>
   )
 }
 

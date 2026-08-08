@@ -66,6 +66,9 @@
 				--rule: light-dark(#dbe4ee, #1e3350);
 				--accent: #f6821f;
 				--accent-ink: #180a02;
+				/* Links are not the accent: orange is spent on the one primary
+				   action, which is what makes it read as the primary action. */
+				--link: light-dark(#0a5292, #4db4ff);
 				--fast: light-dark(#0d6d5b, #34d399);
 				--slow: light-dark(#64748b, #7f95b3);
 
@@ -311,7 +314,7 @@
 
 			footer a,
 			.lede a {
-				color: var(--accent);
+				color: var(--link);
 			}
 
 			@media (prefers-reduced-motion: reduce) {

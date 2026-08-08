@@ -40,14 +40,14 @@
 		<link rel="stylesheet" href="./style.css" />
 	</head>
 	<body>
+		<header class="site"><a href="/">Cap&rsquo;n Web &mdash; session recovery</a></header>
+
 		<main class="page">
-			<header class="head">
-				<h1>What a disconnect destroys</h1>
-				<p class="sub">
-					A Cap&rsquo;n Web session over a WebSocket, with a button that kills it. The event
-					stream resumes without a gap only because the client keeps a cursor of its own.
-				</p>
-			</header>
+			<h1>What a disconnect destroys</h1>
+			<p class="lede">
+				A Cap&rsquo;n Web session over a WebSocket, with a button that kills it. The event
+				stream resumes without a gap only because the client keeps a cursor of its own.
+			</p>
 
 			<section class="panel status">
 				<div class="stat">
@@ -105,6 +105,14 @@
 					</li>
 				</ol>
 			</section>
+
+			<footer>
+				Source:
+				<a href="https://github.com/cloudflare/capnweb/tree/main/examples/session-recovery"
+					>examples/session-recovery</a
+				>. The event log lives outside the session on purpose &mdash; see
+				<a href="https://capnweb.com/guides/sessions/">session lifetime</a>.
+			</footer>
 		</main>
 
 		<script type="module" src="./main.js"></script>

@@ -19,6 +19,12 @@
   --button-bg: var(--theme-orange);
   --button-hover: var(--theme-orange-hover);
   --button-foreground: var(--theme-orange-foreground);
+  /* Links are not the accent: orange is spent on the one primary action,
+     which is what makes it read as the primary action. */
+  --link: light-dark(#0a5292, #4db4ff);
+
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 :root[data-theme='light'] {
@@ -29,19 +35,8 @@
   color-scheme: dark;
 }
 
-/* Embedded in the docs playground, which already supplies a title and frame. */
-:root[data-embedded] h1 {
-  display: none;
-}
-
-:root[data-embedded] body {
-  padding-top: 0.5rem;
-}
-
-/* The brand stripe is part of this app's own chrome. Embedded, it lands
-   directly under the playground's toolbar and just reads as a stray line. */
-:root[data-embedded] body::before {
-  display: none;
+* {
+  box-sizing: border-box;
 }
 
 body {
@@ -49,17 +44,77 @@ body {
   color: var(--text-primary);
   margin: 0;
   padding: 0;
+  line-height: 1.6;
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  background: var(--theme-orange);
-  z-index: 9999;
+/* The standalone page's own chrome: a title bar, a centred column and a
+   footer, matching the sibling examples so that popping any of them out of the
+   docs lands you somewhere familiar. */
+.site {
+  padding: 0.9rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.site a {
+  color: var(--text-primary);
+  font-weight: 700;
+  font-size: 1.15rem;
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.6rem;
+}
+
+.lede {
+  margin: 0 0 2rem;
+  max-width: 46rem;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+}
+
+footer {
+  border-top: 1px solid var(--border-color);
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+footer a,
+.lede a {
+  color: var(--link);
+}
+
+/* Embedded in the docs playground, which supplies the title and the frame, so
+   the duplicated chrome comes off. */
+:root[data-embedded] .site,
+:root[data-embedded] h1,
+:root[data-embedded] footer {
+  display: none;
+}
+
+:root[data-embedded] body {
+  background: var(--bg-secondary);
+}
+
+:root[data-embedded] .page {
+  padding: 1.25rem 1rem 2rem;
+}
+
+:root[data-embedded] .lede {
+  font-size: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .response-container {
@@ -89,13 +144,15 @@ pre {
 }
 
 button {
-  padding: 10px 20px;
-  font-size: 16px;
+  font: inherit;
+  font-weight: 600;
   cursor: pointer;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.55rem 1.4rem;
   background: var(--button-bg);
   color: var(--button-foreground);
-  border: none;
-  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   transition: background 0.2s;
 }
 
@@ -105,24 +162,45 @@ button:hover:not(:disabled) {
 }
 
 button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  opacity: 0.55;
+  cursor: progress;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 section {
   border: 1px solid var(--border-color);
-  padding: 16px;
-  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  border-radius: 0.75rem;
   background: var(--bg-secondary);
-}
-
-h1 {
-  margin-top: 0;
+  margin-top: 2rem;
 }
 
 h2 {
   margin-top: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
+}
+
+.validation-error {
+  color: light-dark(#b91c1c, #fca5a5);
+  margin: 0.75rem 0 0;
+  white-space: pre-wrap;
+  background: var(--bg-pre);
+  border-radius: 0.4rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
 }
 
 code {

@@ -35,7 +35,25 @@ body {
 	margin: 0;
 	background: var(--ground);
 	color: var(--ink);
-	font: 15px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif;
+	font-family:
+		ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	line-height: 1.6;
+}
+
+/* The standalone page's own chrome: a title bar, a centred column and a
+   footer, matching the sibling examples so that popping any of them out of the
+   docs lands you somewhere familiar. */
+.site {
+	padding: 0.9rem 1.5rem;
+	border-bottom: 1px solid var(--rule);
+}
+
+.site a {
+	color: var(--ink);
+	font-weight: 700;
+	font-size: 1.15rem;
+	text-decoration: none;
+	letter-spacing: -0.01em;
 }
 
 .page {
@@ -44,20 +62,52 @@ body {
 	padding: 2.5rem 1.5rem 4rem;
 }
 
+h1 {
+	font-size: clamp(1.9rem, 4vw, 2.6rem);
+	line-height: 1.15;
+	letter-spacing: -0.02em;
+	margin: 0 0 0.6rem;
+}
+
+.lede {
+	margin: 0 0 2rem;
+	max-width: 46rem;
+	font-size: 1.1rem;
+	color: var(--ink-dim);
+}
+
+footer {
+	border-top: 1px solid var(--rule);
+	margin-top: 3rem;
+	padding-top: 1.25rem;
+	color: var(--ink-dim);
+	font-size: 0.9rem;
+}
+
+footer a,
+.lede a {
+	color: var(--accent);
+}
+
+/* Embedded in the docs playground, which supplies the title and the frame, so
+   the duplicated chrome comes off. */
+:root[data-embedded='true'] .site,
+:root[data-embedded='true'] h1,
+:root[data-embedded='true'] footer {
+	display: none;
+}
+
+:root[data-embedded='true'] body {
+	background: var(--surface);
+}
+
 :root[data-embedded='true'] .page {
 	padding: 1.25rem 1rem 2rem;
 }
 
-.head h1 {
-	margin: 0 0 0.35rem;
-	font-size: 1.6rem;
-	letter-spacing: -0.02em;
-}
-
-.sub {
-	margin: 0 0 1.5rem;
-	max-width: 46rem;
-	color: var(--ink-dim);
+:root[data-embedded='true'] .lede {
+	font-size: 1rem;
+	margin-bottom: 1.25rem;
 }
 
 .panel {
@@ -130,13 +180,14 @@ body {
 }
 
 .btn {
-	padding: 0.5rem 0.9rem;
+	padding: 0.55rem 1.1rem;
 	border: 1px solid var(--rule);
-	border-radius: 0.4rem;
+	border-radius: 999px;
 	background: var(--surface);
 	color: var(--ink);
 	font: inherit;
 	font-size: 0.9rem;
+	font-weight: 600;
 	cursor: pointer;
 }
 
@@ -153,7 +204,7 @@ body {
 	background: var(--warn);
 	border-color: var(--warn);
 	color: #180a02;
-	font-weight: 600;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .btn--quiet {
