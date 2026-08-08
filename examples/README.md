@@ -22,7 +22,7 @@ npm run setup              # first time only: installs the docs and the React
                            # client, which sit outside the npm workspace
 npm run build              # the examples resolve `capnweb` to dist/
 
-# then any of these, one per shell -- each is a long-running server
+# then any of these, one per shell: each is a long-running server
 npx wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788
 npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
 npx wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789

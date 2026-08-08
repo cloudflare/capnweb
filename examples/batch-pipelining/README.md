@@ -72,7 +72,7 @@ Two separate knobs, deliberately kept apart:
 Keeping the round-trip cost on the client means the deployed Worker adds no artificial network
 delay, and the page can change it without a redeploy.
 
-## Why this matters
+## Why latency stops multiplying
 
 With plain HTTP, or naive GraphQL usage, each dependent call usually needs another round trip. Here
 the dependent calls are constructed locally, sent once, and resolved on the server, so latency

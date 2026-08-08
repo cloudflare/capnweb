@@ -3,7 +3,7 @@
 A Cap'n Web session over a WebSocket, with a button that kills it.
 
 The other two examples are about making calls cheap. This one is about what happens when the
-connection they travel over goes away, which is the part that surprises people.
+connection they travel over goes away.
 
 ## The point
 
@@ -34,7 +34,7 @@ npx wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
 Then open <http://127.0.0.1:8789>. There is no build step for the page itself; it is plain ES
 modules, and Wrangler stages the library next to it.
 
-With a real Worker you can also disconnect the honest way, by turning off your network, and see the
+With a real Worker you can also turn your network off instead of pressing the button, and watch the
 same thing happen.
 
 ## Files
