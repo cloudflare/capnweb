@@ -782,6 +782,35 @@ main:has(.hero) {
 	z-index: 2;
 }
 
+/*
+ * The wipe itself. This lives in CSS rather than in a WAAPI call from
+ * `transition.ready.then(...)`, because a promise callback cannot run until
+ * after the browser has already composited the transition's first frame: the
+ * new snapshot flashes in unclipped, and the circle then starts from nothing.
+ * Declared here, it is clipped from the very first frame.
+ *
+ * The centre and the radius come from custom properties that ThemeToggle sets
+ * before starting the transition. They are inherited from the document element,
+ * which is what the view-transition pseudo tree hangs off.
+ *
+ * The easing keeps the leading edge within about 1.6x of constant speed. The
+ * ease-out-expo this used to have put 92% of the circle's *area* down in the
+ * first 30% of the duration, so the wipe appeared to finish and then stall for
+ * a third of a second.
+ */
+@keyframes cw-theme-wipe {
+	from {
+		clip-path: circle(0px at var(--cw-wipe-x) var(--cw-wipe-y));
+	}
+	to {
+		clip-path: circle(var(--cw-wipe-r) at var(--cw-wipe-x) var(--cw-wipe-y));
+	}
+}
+
+:root[data-theme-switching]::view-transition-new(root) {
+	animation: cw-theme-wipe 460ms cubic-bezier(0.5, 0.35, 0.9, 1) both;
+}
+
 /* The canvas cannot be captured mid-frame without tearing, and the sticky
    header would otherwise be painted into both snapshots at once. */
 :root[data-theme-switching] .cw-hero-field {

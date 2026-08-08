@@ -82,10 +82,12 @@
 	 * under the reader.
 	 *
 	 * The whole effect is one View Transition: the browser snapshots the page,
-	 * `apply()` runs, and the new snapshot is revealed through a growing
-	 * `clip-path`. Where `startViewTransition` is missing, or the reader has
-	 * asked for less motion, the theme just changes, which is the same thing
-	 * without the flourish.
+	 * `apply()` runs, and the new snapshot is revealed through a `clip-path`
+	 * circle that grows from the button. The animation is declared in CSS (see
+	 * `cw-theme-wipe`) and driven by the three custom properties set below, so it
+	 * is already running on the transition's first frame. Where
+	 * `startViewTransition` is missing, or the reader has asked for less motion,
+	 * the theme just changes, which is the same thing without the flourish.
 	 */
 	function toggleFrom(button: HTMLElement) {
 		const next: Theme = currentTheme() === 'dark' ? 'light' : 'dark';
@@ -102,28 +104,22 @@
 		// Reach the furthest corner, so the circle always finishes off-screen.
 		const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
 
-		document.documentElement.dataset.themeSwitching = '';
+		// The wipe is declared in CSS, keyed off `data-theme-switching`, and reads
+		// its geometry from these. Setting them before the transition starts is
+		// what lets the animation run from its first composited frame.
+		const root = document.documentElement;
+		root.style.setProperty('--cw-wipe-x', `${x}px`);
+		root.style.setProperty('--cw-wipe-y', `${y}px`);
+		root.style.setProperty('--cw-wipe-r', `${radius}px`);
+		root.dataset.themeSwitching = '';
+
 		const transition = document.startViewTransition(() => apply(next, true));
 
-		transition.ready
-			.then(() => {
-				document.documentElement.animate(
-					{
-						clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`],
-					},
-					{
-						duration: 520,
-						easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
-						pseudoElement: '::view-transition-new(root)',
-					}
-				);
-			})
-			.catch(() => {
-				/* a transition can be skipped (rapid clicks); the theme still changed */
-			});
-
 		transition.finished.finally(() => {
-			delete document.documentElement.dataset.themeSwitching;
+			delete root.dataset.themeSwitching;
+			root.style.removeProperty('--cw-wipe-x');
+			root.style.removeProperty('--cw-wipe-y');
+			root.style.removeProperty('--cw-wipe-r');
 		});
 	}
 
