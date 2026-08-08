@@ -96,6 +96,14 @@
 	--cw-wash-2: rgba(246, 130, 31, 0.045);
 	--cw-graph-node: #6cc2fb;
 	--cw-graph-edge: #1487e0;
+	/* Read by the backdrop renderer. The dark field sits on near-black, where a
+	   hairline at the light field's strength all but disappears, so the lines
+	   are drawn harder here. */
+	--cw-graph-edge-alpha: 0.3;
+	/* The round-trip pulse. Muted well below `--cw-orange`, because this is
+	   decoration behind text and orange is the colour we reserve for things the
+	   reader is meant to act on. */
+	--cw-graph-pulse: #c9782e;
 
 	/* Hero canvas colours, read by the WebGL renderer as well as by CSS. */
 	--cw-hero-bg-inner: #072041;
@@ -164,6 +172,8 @@
 	--cw-wash-2: rgba(246, 130, 31, 0.05);
 	--cw-graph-node: #0a5292;
 	--cw-graph-edge: #0d6cbd;
+	--cw-graph-edge-alpha: 0.17;
+	--cw-graph-pulse: #b85f14;
 
 	--cw-hero-bg-inner: #d5e8fa;
 	--cw-hero-bg-outer: #eef3f9;
