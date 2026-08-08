@@ -16,8 +16,6 @@
  * would cost far more than it returns.
  */
 
-import { themeFadeMs } from './theme-fade';
-
 interface Node {
 	/** Home position in field space, x and y in [-1, 1], z in [0, 1]. */
 	x: number;
@@ -77,10 +75,20 @@ interface Palette {
 	edge: Rgb;
 	pulse: Rgb;
 	edgeAlpha: number;
+	/** 0 on the dark field, 1 on the pale one, tweened across a theme change. */
+	light: number;
 }
 
-const TARGET_FPS = 30;
-const FRAME_MS = 1000 / TARGET_FPS;
+/*
+ * The field drifts slowly, and at rest it is a background: thirty frames a
+ * second is indistinguishable from sixty and costs half as much. Scrolling and
+ * hovering are the two moments a reader is actually watching it move, and there
+ * a half-rate field reads as a stutter against smoothly scrolling text, so those
+ * get the full rate. A draw costs about 2ms at 1920x1080, so the busy rate is
+ * around a tenth of a frame's budget.
+ */
+const IDLE_FPS = 30;
+const ACTIVE_FPS = 60;
 
 /**
  * Field time runs at half the wall clock. Everything derives from `t`, so this
@@ -131,6 +139,29 @@ const HOP_SECONDS = 0.35;
 const HOVER_WAVE_GAP = 0.9;
 const HOVER_STAGGER = 0.09;
 const SECOND_HOP_CHANCE = 0.35;
+/**
+ * The hover blink, in radians per WALL second, so it is about 1.1 seconds a beat
+ * whatever `TIME_SCALE` is doing. The hero uses the same number, since the two
+ * highlights should keep time with each other.
+ */
+const BLINK_RATE = 5.7;
+
+/**
+ * Scroll parallax.
+ *
+ * The offset saturates: it tracks the scroll almost exactly for the first
+ * screenful and then stops growing, so the field stays roughly where it started
+ * instead of sliding off the top of a long page and leaving nothing but the far,
+ * blurred layer huddled in the middle of the screen.
+ *
+ * The follow is a critically damped spring rather than an exponential ease. An
+ * exponential applies its largest correction on the very first frame, which is
+ * precisely the jerk a wheel notch produces; a spring starts from rest, so the
+ * field takes up the movement and glides. `SCROLL_STIFFNESS` is in radians per
+ * second and settles in roughly `4 / k`, so this is a little under half a second.
+ */
+const SCROLL_SATURATE = 900;
+const SCROLL_STIFFNESS = 9;
 /** Enough for a well-connected node plus the ambient pair, and no more. */
 const MAX_PULSES = 16;
 
@@ -224,6 +255,7 @@ function readPalette(): Palette {
 		edge: parseHex(s.getPropertyValue('--cw-graph-edge'), [20, 135, 224]),
 		pulse: parseHex(s.getPropertyValue('--cw-graph-pulse'), [201, 120, 46]),
 		edgeAlpha: Number(s.getPropertyValue('--cw-graph-edge-alpha')) || 0.17,
+		light: document.documentElement.dataset.theme === 'light' ? 1 : 0,
 	};
 }
 
@@ -241,19 +273,14 @@ function parseHex(raw: string, fallback: Rgb): Rgb {
 
 const mixChannel = (a: number, b: number, u: number) => a + (b - a) * u;
 
-function mixPalette(a: Palette, b: Palette, u: number): Palette {
-	const mix = (x: Rgb, y: Rgb): Rgb => [
-		mixChannel(x[0], y[0], u),
-		mixChannel(x[1], y[1], u),
-		mixChannel(x[2], y[2], u),
-	];
-	return {
-		node: mix(a.node, b.node),
-		edge: mix(a.edge, b.edge),
-		pulse: mix(a.pulse, b.pulse),
-		edgeAlpha: mixChannel(a.edgeAlpha, b.edgeAlpha, u),
-	};
-}
+const mixRgb = (a: Rgb, b: Rgb, u: number): Rgb => [
+	mixChannel(a[0], b[0], u),
+	mixChannel(a[1], b[1], u),
+	mixChannel(a[2], b[2], u),
+];
+
+/** The bright end of the hover blink. */
+const WHITE: Rgb = [255, 255, 255];
 
 export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	const ctx = canvas.getContext('2d', { alpha: true });
@@ -261,14 +288,8 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 
 	const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
-	// The theme cross-fade. CSS cannot transition what a canvas paints, so the
-	// palette is tweened here over the same duration the stylesheet uses, and the
-	// two arrive together.
-	let paletteFrom = readPalette();
-	let paletteTo = paletteFrom;
-	let palette = paletteFrom;
-	let fadeStart = 0;
-	let fadeMs = 0;
+	// Read from CSS custom properties, and re-read when the theme flips.
+	let palette = readPalette();
 	let nodes: Node[] = [];
 	let edges: Edge[] = [];
 	let incident: number[][] = [];
@@ -280,7 +301,13 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	let dpr = 1;
 	let frame = 0;
 	let lastDraw = 0;
-	let scrollY = 0;
+	/** Where the page actually is, where the field has got to, and the shift the
+	    projection uses. All in CSS pixels. */
+	let scrollTarget = 0;
+	let scrollEased = 0;
+	let scrollVel = 0;
+	let scrollShift = 0;
+	let lastNow = 0;
 	let running = false;
 	let layer: CanvasRenderingContext2D | null = null;
 	const pulses: Pulse[] = [];
@@ -362,7 +389,7 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		const parallax = (1 - n.z) * 0.16;
 		return {
 			x: width / 2 + rx * width * 0.5 * spread,
-			y: height / 2 + (n.y + wobbleY) * height * 0.62 * spread - scrollY * parallax,
+			y: height / 2 + (n.y + wobbleY) * height * 0.62 * spread - scrollShift * parallax,
 			// Same depth cue applied to size and opacity.
 			fade: 0.35 + (1 - n.z) * 0.65,
 		};
@@ -529,10 +556,13 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 			const q = points[e.b]!;
 			const depth = (p.fade + q.fade) / 2;
 			const brightness = lit.get(j) ?? 0;
-			target.strokeStyle =
-				brightness > 0
-					? withAlpha(palette.pulse, 0.22 * brightness * depth)
-					: withAlpha(palette.edge, palette.edgeAlpha * e.strength * depth);
+			if (brightness > 0) {
+				target.strokeStyle = withAlpha(palette.pulse, 0.9 * brightness * depth);
+				target.lineWidth = 1 + brightness;
+			} else {
+				target.strokeStyle = withAlpha(palette.edge, palette.edgeAlpha * e.strength * depth);
+				target.lineWidth = 1;
+			}
 			target.beginPath();
 			target.moveTo(p.x, p.y);
 			target.lineTo(q.x, q.y);
@@ -548,13 +578,20 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 
 		for (const [i, n] of nodes.entries()) {
 			if (n.z < minZ || n.z >= maxZ) continue;
+			// The hovered node is painted last, unblurred, so it stays crisp whichever
+			// band it happens to be in.
+			if (i === hoverNode) continue;
 			const p = points[i]!;
-			// A lit node brightens and swells a little. Depth still applies: a node
-			// at the back does not get to outshine the ones in front of it.
+			// A node that has just been reached brightens, swells and takes on the
+			// message colour, which is what makes a round trip legible at a glance.
+			// Depth still applies: a node at the back does not outshine the front.
 			const heat = nodeGlow[i] ?? 0;
-			target.fillStyle = withAlpha(palette.node, (0.36 + 0.5 * heat) * p.fade);
+			target.fillStyle = withAlpha(
+				mixRgb(palette.node, palette.pulse, Math.min(1, heat)),
+				(0.36 + 0.5 * heat) * p.fade
+			);
 			target.beginPath();
-			target.arc(p.x, p.y, n.radius * (1 + 0.55 * heat), 0, Math.PI * 2);
+			target.arc(p.x, p.y, n.radius * (1 + 0.25 * heat), 0, Math.PI * 2);
 			target.fill();
 		}
 
@@ -562,21 +599,21 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		target.shadowColor = 'transparent';
 	}
 
-	/** Advance the theme cross-fade, if one is running. */
-	function updatePalette(now: number) {
-		if (fadeMs <= 0) {
-			palette = paletteTo;
-			return;
-		}
-		const u = Math.min(1, (now - fadeStart) / fadeMs);
-		palette = u >= 1 ? paletteTo : mixPalette(paletteFrom, paletteTo, u);
-		if (u >= 1) fadeMs = 0;
-	}
-
 	function draw(now: number) {
 		const t = reduced.matches ? 0 : (now / 1000) * TIME_SCALE;
-		updatePalette(now);
 		ctx!.clearRect(0, 0, width, height);
+
+		// Wall-clock step, clamped: the loop can have been parked for minutes. The
+		// scroll follow is eased in real seconds rather than field seconds, since it
+		// answers to the reader's hand and not to the pace of the field.
+		const wallDt = lastNow ? Math.min(0.1, Math.max(0, (now - lastNow) / 1000)) : 0;
+		lastNow = now;
+		// Semi-implicit Euler on x'' = k^2 (target - x) - 2k x', which is stable for
+		// steps well beyond the 100ms the clamp above allows.
+		const k = SCROLL_STIFFNESS;
+		scrollVel += (k * k * (scrollTarget - scrollEased) - 2 * k * scrollVel) * wallDt;
+		scrollEased += scrollVel * wallDt;
+		scrollShift = SCROLL_SATURATE * Math.tanh(scrollEased / SCROLL_SATURATE);
 
 		const points = nodes.map((n) => project(n, t));
 
@@ -659,17 +696,30 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 
 		ctx!.filter = 'none';
 
-		// A ring around the node the pointer is on, so it is clear which one is
-		// doing the talking. Node colour, not pulse colour: the orange is reserved
-		// for the messages themselves.
+		/*
+		 * The node the pointer is on: a soft dot blinking between white and the
+		 * message colour, drawn crisp and at full brightness whatever depth it sits
+		 * at. It is the one thing in the field the reader put there, so it does not
+		 * get the depth treatment the rest of the field gets.
+		 */
 		if (hoverNode >= 0 && hoverEase > 0.01) {
 			const p = points[hoverNode]!;
 			const n = nodes[hoverNode]!;
-			ctx!.strokeStyle = withAlpha(palette.node, 0.4 * hoverEase * p.fade);
-			ctx!.lineWidth = 1;
+			const blink = 0.5 + 0.5 * Math.sin((now / 1000) * BLINK_RATE);
+			// The bright end of the blink is white on the dark field. On the pale one a
+			// white dot on near-white paper is nothing at all, so it is warmed towards
+			// the message colour in proportion to how light the field is.
+			const bright = mixRgb(WHITE, palette.pulse, 0.5 * palette.light);
+			const colour = mixRgb(bright, palette.pulse, blink);
+			ctx!.shadowBlur = 9 * hoverEase;
+			ctx!.shadowColor = withAlpha(palette.pulse, hoverEase);
+			// Flat alpha: dimming the white half of the blink is what made it vanish.
+			ctx!.fillStyle = withAlpha(colour, 0.95 * hoverEase);
 			ctx!.beginPath();
-			ctx!.arc(p.x, p.y, n.radius + 5 + 3 * hoverEase, 0, Math.PI * 2);
-			ctx!.stroke();
+			ctx!.arc(p.x, p.y, n.radius * (1 + 0.3 * hoverEase), 0, Math.PI * 2);
+			ctx!.fill();
+			ctx!.shadowBlur = 0;
+			ctx!.shadowColor = 'transparent';
 		}
 
 		// The pulse heads go last and unblurred, so they stay crisp against the
@@ -699,7 +749,11 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	function tick(now: number) {
 		if (!running) return;
 		frame = requestAnimationFrame(tick);
-		if (now - lastDraw < FRAME_MS) return;
+		// Full rate while the scroll offset is still catching up, or while a node is
+		// held. Half rate for the idle drift.
+		const busy =
+			hoverNode >= 0 || Math.abs(scrollTarget - scrollEased) > 0.5 || Math.abs(scrollVel) > 1;
+		if (now - lastDraw < 1000 / (busy ? ACTIVE_FPS : IDLE_FPS) - 1) return;
 		lastDraw = now;
 		draw(now);
 	}
@@ -725,11 +779,16 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	// symptoms, so a reader who asked for less gets a field that does not budge.
 	const onScroll = () => {
 		if (reduced.matches) return;
-		scrollY = window.scrollY;
+		scrollTarget = window.scrollY;
+		// The ease only advances while the loop is drawing.
+		if (!document.hidden) start();
 	};
 
-	// A page can open already scrolled, from an anchor or a restored position.
+	// A page can open already scrolled, from an anchor or a restored position, and
+	// that is a starting state rather than a scroll to glide towards.
 	onScroll();
+	scrollEased = scrollTarget;
+	scrollVel = 0;
 	resize();
 	start();
 
@@ -776,34 +835,19 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	});
 
 	reduced.addEventListener('change', () => {
-		scrollY = reduced.matches ? 0 : window.scrollY;
+		scrollTarget = reduced.matches ? 0 : window.scrollY;
+		scrollEased = scrollTarget;
+		scrollVel = 0;
 		stop();
 		start();
 	});
 
-	// The palette lives in CSS custom properties, which change with the theme.
-	// Fade from wherever the tween currently is, so toggling twice quickly picks up
-	// from what is on screen rather than snapping back to the previous scheme.
+	// The palette lives in CSS custom properties, which change with the theme, so
+	// re-read it and repaint. A parked field is left alone: it will read the new
+	// colours from this variable whenever it next draws.
 	new MutationObserver(() => {
-		const next = readPalette();
-		if (reduced.matches) {
-			// Everything else snaps for this reader too. See the theme-transition
-			// block in theme.css.
-			paletteFrom = next;
-			paletteTo = next;
-			palette = next;
-			fadeMs = 0;
-			draw(0);
-			return;
-		}
-
-		paletteFrom = palette;
-		paletteTo = next;
-		fadeStart = performance.now();
-		fadeMs = themeFadeMs();
-		// The field is parked while the tab is hidden, and a fade nobody can see
-		// does not need to run. It will be drawn with the final palette on return.
-		if (!document.hidden) start();
+		palette = readPalette();
+		if (!document.hidden && (reduced.matches || !running)) draw(performance.now());
 	}).observe(document.documentElement, {
 		attributes: true,
 		attributeFilter: ['data-theme'],

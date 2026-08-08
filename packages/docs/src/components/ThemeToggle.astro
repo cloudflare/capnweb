@@ -33,8 +33,6 @@
 </starlight-theme-toggle>
 
 <script>
-	import { themeFadeMs } from '../scripts/theme-fade';
-
 	/** Same key Starlight's ThemeProvider reads, so the choice survives reloads. */
 	const storageKey = 'starlight-theme';
 
@@ -78,47 +76,16 @@
 		if (!stored()) apply(systemTheme(), false);
 	});
 
-	/**
-	 * Switch themes with a page-wide cross-fade.
-	 *
-	 * All this does is set `data-theme-switching`, flip `data-theme`, and clear
-	 * the attribute once the fade is over. The fade itself is a CSS transition
-	 * (see the theme-transition block in `theme.css`) that is only attached while
-	 * that attribute is present, so it costs nothing the rest of the time.
-	 *
-	 * The attribute is also the signal the two canvases and the demo iframes use
-	 * to fade their own palettes over the same duration, since neither a WebGL
-	 * canvas nor a separate document can be cross-faded by the parent's CSS.
-	 */
-	function toggleFrom(_button: HTMLElement) {
-		const next: Theme = currentTheme() === 'dark' ? 'light' : 'dark';
-		const root = document.documentElement;
-
-		// Read the duration from CSS so there is one number, not two that drift.
-		const fade = themeFadeMs();
-
-		clearTimeout(fadeTimer);
-		root.dataset.themeSwitching = '';
-		// The attribute has to be in effect before the colours change, or the first
-		// frame of the new scheme lands before the transition is attached.
-		requestAnimationFrame(() => {
-			apply(next, true);
-			// Generous slack. A busy main thread can start the transition a frame or
-			// two late, and clearing the attribute while it is still running removes
-			// the transition property and snaps the remainder. Holding it a little
-			// longer than necessary costs nothing but a brief delay on hover colours.
-			fadeTimer = window.setTimeout(() => delete root.dataset.themeSwitching, fade + 150);
-		});
+	/** Flip to the other theme and remember the choice. */
+	function toggle() {
+		apply(currentTheme() === 'dark' ? 'light' : 'dark', true);
 	}
-
-	let fadeTimer = 0;
 
 	class StarlightThemeToggle extends HTMLElement {
 		constructor() {
 			super();
 			apply(currentTheme(), false);
-			const button = this.querySelector('button');
-			button?.addEventListener('click', () => toggleFrom(button));
+			this.querySelector('button')?.addEventListener('click', toggle);
 		}
 	}
 

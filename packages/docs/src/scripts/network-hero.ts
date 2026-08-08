@@ -22,14 +22,12 @@
 
 interface Palette {
 	/**
-	 * How far towards the light scheme this palette is, 0 to 1. Not a boolean,
-	 * because a theme change cross-fades: for 200ms the drawing is genuinely part
-	 * way between the two.
+	 * 1 on the light scheme, 0 on the dark one. A number rather than a boolean
+	 * because several of the strengths below are scaled by it.
 	 *
 	 * Light mode is not a recolour of the same drawing. Additive blending can only
 	 * ever add light, so on a near-white page it does nothing, and the network has
-	 * to be composited normally, as dark ink, instead. That one property cannot be
-	 * interpolated, so it flips at the halfway point; see `frame()`.
+	 * to be composited normally, as dark ink, instead; see `frame()`.
 	 */
 	light: number;
 	bgInner: [number, number, number];
@@ -38,8 +36,6 @@ interface Palette {
 	edge: [number, number, number];
 	pulse: [number, number, number];
 }
-
-import { themeFadeMs } from './theme-fade';
 
 interface Pulse {
 	/** Node indices: outward leg. The return leg is this reversed. */
@@ -157,10 +153,20 @@ function rotationX(a: number): Mat4 {
 
 const NODE_COUNT = 190;
 const NEIGHBOURS = 3;
-/* More sparks than there used to be, each one quicker and resting less. One
-   pulse crossing five hops and back is the argument, but a single spark on a
-   190-node sphere reads as an idle screensaver; a dozen reads as traffic. */
-const PULSE_COUNT = 12;
+/*
+ * Spontaneous traffic: a message out to one neighbour and straight back, the
+ * same single-edge bounce the 2D backdrop uses. A multi-hop walk out and back
+ * turned out to read as a wandering dot rather than as a round trip, and the
+ * round trip is the entire argument this drawing is making.
+ *
+ * Deliberately sparse. Three in flight at most, resting for seconds between
+ * trips, which works out at about a fifth of the traffic there used to be: a
+ * signal every 1.4s or so against four a second. The reader provokes the rest by
+ * pointing at a node.
+ */
+const PULSE_COUNT = 3;
+const AMBIENT_REST_MIN = 2.4;
+const AMBIENT_REST_SPAN = 2.2;
 const SPHERE_R = 1.32;
 
 /*
@@ -181,6 +187,8 @@ const HOVER_STAGGER = 0.07;
 const HOVER_SECOND_HOP_CHANCE = 0.35;
 /** A node has three or four neighbours, and two waves can overlap. */
 const HOVER_PULSE_MAX = 10;
+/** Radians per second of the hover blink. The backdrop uses the same number. */
+const BLINK_RATE = 5.7;
 
 interface Graph {
 	positions: Float32Array;
@@ -304,7 +312,7 @@ void main() {
   v_fade = clamp((5.6 - clip.w) / 3.2, 0.05, 1.0) * twinkle;
   v_flash = a_flash;
   v_hover = (gl_VertexID == u_hover) ? u_hoverEase : 0.0;
-  gl_PointSize = u_scale * (1.0 + a_flash * 1.7 + v_hover * 1.1) / max(clip.w, 0.2);
+  gl_PointSize = u_scale * (1.0 + a_flash * 1.7 + v_hover * 2.2) / max(clip.w, 0.2);
 }`;
 
 const NODE_FS = `#version 300 es
@@ -314,6 +322,7 @@ in float v_flash;
 in float v_hover;
 uniform vec3 u_color;
 uniform vec3 u_flashColor;
+uniform vec3 u_hoverColor;
 uniform float u_hot;
 out vec4 fragColor;
 void main() {
@@ -325,7 +334,13 @@ void main() {
   // node is flat ink instead.
   float hot = pow(1.0 - r, 9.0) * u_hot;
   vec3 c = mix(u_color, u_flashColor, clamp(v_flash, 0.0, 1.0)) + vec3(hot * 0.7);
-  float a = core * v_fade * (1.0 + v_hover * 0.8);
+  // The held node is not one of the crowd: it blinks between white and the
+  // message colour, and takes that over whatever the flash left behind.
+  float held = clamp(v_hover, 0.0, 1.0);
+  c = mix(c, u_hoverColor, held);
+  // The held node is the one thing here the reader put on screen, so it is exempt
+  // from the depth fade and the twinkle that keep the other 189 in their place.
+  float a = core * max(v_fade, held * 0.92) * (1.0 + held * 1.2);
   fragColor = vec4(c * a, a);
 }`;
 
@@ -416,24 +431,16 @@ function link(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram 
 	return p;
 }
 
-/** Channelwise blend of two palettes, for the theme cross-fade. */
-function mixPalette(a: Palette, b: Palette, u: number): Palette {
-	const mix3 = (
-		x: [number, number, number],
-		y: [number, number, number]
-	): [number, number, number] => [
-		x[0] + (y[0] - x[0]) * u,
-		x[1] + (y[1] - x[1]) * u,
-		x[2] + (y[2] - x[2]) * u,
-	];
-	return {
-		light: a.light + (b.light - a.light) * u,
-		bgInner: mix3(a.bgInner, b.bgInner),
-		bgOuter: mix3(a.bgOuter, b.bgOuter),
-		node: mix3(a.node, b.node),
-		edge: mix3(a.edge, b.edge),
-		pulse: mix3(a.pulse, b.pulse),
-	};
+/** Normalised white, the bright end of the hover blink. */
+const WHITE: [number, number, number] = [1, 1, 1];
+
+/** Channelwise blend of two colours. Components are 0 to 1, as the shaders want. */
+function mixRgb(
+	a: [number, number, number],
+	b: [number, number, number],
+	u: number
+): [number, number, number] {
+	return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u, a[2] + (b[2] - a[2]) * u];
 }
 
 function readPalette(root: HTMLElement): Palette {
@@ -621,16 +628,18 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 	}
 
 	const newPulse = (wait: number): Pulse => ({
-		path: makePath(3 + Math.floor(rand() * 3)),
+		// One edge, there and back.
+		path: makePath(1),
 		hop: 0,
 		t: 0,
-		speed: 2.7 + rand() * 1.5,
+		// Slower than anything the reader provokes: ambient traffic is not urgent.
+		speed: 1.8 + rand() * 0.8,
 		returning: false,
 		wait,
 	});
 
 	const pulses: Pulse[] = [];
-	for (let i = 0; i < PULSE_COUNT; i++) pulses.push(newPulse(i * 0.42));
+	for (let i = 0; i < PULSE_COUNT; i++) pulses.push(newPulse(i * 1.3));
 
 	/* ----------------------------------------------------------------- hover */
 
@@ -731,13 +740,7 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 
 	/* ------------------------------------------------------------------ view */
 
-	// The theme cross-fade. CSS cannot transition what WebGL paints, so the palette
-	// is tweened here over the same duration the stylesheet uses for the page.
-	let paletteFrom = readPalette(document.documentElement);
-	let paletteTo = paletteFrom;
-	let palette = paletteFrom;
-	let fadeStart = 0;
-	let fadeMs = 0;
+	let palette = readPalette(document.documentElement);
 	let width = 1;
 	let height = 1;
 	let pointerX = 0;
@@ -824,7 +827,7 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 						// Home again: the whole chain cost one trip. Hover traffic is
 						// done; ambient traffic rests, then goes again.
 						if (p.oneShot) pulses.splice(i, 1);
-						else pulses[i] = newPulse(0.3 + rand() * 1.1);
+						else pulses[i] = newPulse(AMBIENT_REST_MIN + rand() * AMBIENT_REST_SPAN);
 						retired = true;
 						break;
 					}
@@ -870,15 +873,6 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 
 		const dt = last ? Math.min((now - last) / 1000, 0.05) : 0.016;
 		last = now;
-
-		// Advance the theme cross-fade.
-		if (fadeMs > 0) {
-			const u = Math.min(1, (now - fadeStart) / fadeMs);
-			palette = u >= 1 ? paletteTo : mixPalette(paletteFrom, paletteTo, u);
-			if (u >= 1) fadeMs = 0;
-			// A parked hero still has to finish the fade it started.
-			else if (!running) raf = requestAnimationFrame(frame);
-		}
 
 		resize();
 		gl.viewport(0, 0, width, height);
@@ -935,10 +929,8 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		 * (ONE, ONE_MINUS_SRC_ALPHA) rather than (SRC_ALPHA, ...).
 		 */
 		gl.enable(gl.BLEND);
-		// The one thing in the palette that cannot be interpolated. Mid-fade the
-		// background is halfway between the two schemes, so whichever side this
-		// picks is nearly right; it switches at the crossover, where the two modes
-		// disagree least.
+		// Glow on black and ink on paper are different drawings, not one drawing in
+		// two palettes, so the blend function changes with the scheme.
 		if (palette.light >= 0.5) {
 			// Normal "over": dark ink laid onto a pale page.
 			gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -976,6 +968,15 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		gl.uniform1f(gl.getUniformLocation(g.nodeProg, 'u_hot'), hot);
 		gl.uniform1i(gl.getUniformLocation(g.nodeProg, 'u_hover'), hoverEase > 0.01 ? hoverNode : -1);
 		gl.uniform1f(gl.getUniformLocation(g.nodeProg, 'u_hoverEase'), hoverEase);
+		const blink = 0.5 + 0.5 * Math.sin((now / 1000) * BLINK_RATE);
+		// White is the bright end of the blink on the dark field. On the pale one it
+		// would be a white dot on near-white paper, so it is warmed towards the
+		// message colour in proportion to how light the field is.
+		const bright = mixRgb(WHITE, palette.pulse, 0.5 * palette.light);
+		gl.uniform3fv(
+			gl.getUniformLocation(g.nodeProg, 'u_hoverColor'),
+			mixRgb(bright, palette.pulse, blink)
+		);
 		gl.uniform3fv(gl.getUniformLocation(g.nodeProg, 'u_color'), palette.node);
 		gl.uniform3fv(gl.getUniformLocation(g.nodeProg, 'u_flashColor'), palette.pulse);
 		gl.drawArrays(gl.POINTS, 0, NODE_COUNT);
@@ -1060,29 +1061,10 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 	});
 	ro.observe(canvas);
 
-	// Re-read the palette when the theme flips and fade towards it. Fading from
-	// whatever is currently on screen, rather than from the previous scheme, means
-	// a second toggle mid-fade continues from what the reader can see.
+	// Re-read the palette when the theme flips. A running loop picks the new
+	// colours up on its next frame; a parked one needs telling to paint once.
 	const themeObserver = new MutationObserver(() => {
-		const next = readPalette(document.documentElement);
-		if (reduceMotion.matches) {
-			// This reader gets the snap, in step with the page. See the
-			// theme-transition block in theme.css.
-			paletteFrom = next;
-			paletteTo = next;
-			palette = next;
-			fadeMs = 0;
-			repaint();
-			return;
-		}
-
-		paletteFrom = palette;
-		paletteTo = next;
-		fadeStart = performance.now();
-		fadeMs = themeFadeMs();
-		// The loop parks when the hero scrolls out of view or the tab is hidden. A
-		// fade that cannot be seen does not need to run: whenever it comes back it
-		// is drawn with whatever the tween has settled on.
+		palette = readPalette(document.documentElement);
 		if (!running && !document.hidden) repaint();
 	});
 	themeObserver.observe(document.documentElement, {

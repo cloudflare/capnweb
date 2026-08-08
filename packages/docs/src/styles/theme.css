@@ -98,12 +98,12 @@
 	--cw-graph-edge: #1487e0;
 	/* Read by the backdrop renderer. The dark field sits on near-black, where a
 	   hairline at the light field's strength all but disappears, so the lines
-	   are drawn harder here. */
-	--cw-graph-edge-alpha: 0.3;
+	   are drawn considerably harder here. */
+	--cw-graph-edge-alpha: 0.46;
 	/* The round-trip pulse. Muted well below `--cw-orange`, because this is
 	   decoration behind text and orange is the colour we reserve for things the
 	   reader is meant to act on. */
-	--cw-graph-pulse: #c9782e;
+	--cw-graph-pulse: #d9832f;
 
 	/* Hero canvas colours, read by the WebGL renderer as well as by CSS. */
 	--cw-hero-bg-inner: #072041;
@@ -408,13 +408,16 @@ starlight-theme-toggle button:hover {
 
 /*
  * On desktop the nav sits beside the page, so letting the node field carry on
- * behind it makes both flanks of the sheet the same space. Below that width it
- * is a drawer laid *over* the content, where translucency would show the
- * article through the menu, so it stays opaque.
+ * behind it makes both flanks of the sheet the same space. Barely, though: the
+ * panel holds the navigation, and a field legible enough to compete with link
+ * text is a field in the way. Just enough comes through to say the space is
+ * continuous. Below this width the nav is a drawer laid *over* the content,
+ * where any translucency would show the article through the menu, so it stays
+ * fully opaque.
  */
 @media (min-width: 50rem) {
 	.sidebar-pane {
-		background-color: color-mix(in srgb, var(--cw-chrome) 78%, transparent);
+		background-color: color-mix(in srgb, var(--cw-chrome) 94%, transparent);
 	}
 }
 
@@ -757,64 +760,6 @@ main:has(.hero) {
 	outline: 2px solid var(--cw-blue-400);
 	outline-offset: 2px;
 	border-radius: 2px;
-}
-
-/* ------------------------------------------------------- theme transition */
-
-/*
- * Switching schemes fades the whole page over `--cw-theme-fade`, rather than
- * wiping the new scheme in behind an expanding circle. The wipe was a View
- * Transition, which meant snapshotting the document: that cannot capture a
- * canvas mid-frame, so the hero had to be blanked for the duration and came
- * back at a different rotation, and the demo iframes were left out of the
- * effect entirely.
- *
- * A plain cross-fade has none of those problems. Every element animates its own
- * colours in place, so canvases and iframes can fade their own palettes over the
- * same duration and arrive together.
- *
- * The transition is only attached while `data-theme-switching` is set, which
- * ThemeToggle adds for exactly this long. Left on permanently it would lag every
- * hover affordance on the page by the same 200ms.
- */
-:root {
-	/*
-	 * Held unitless, in milliseconds, and given its unit by `calc()` below.
-	 * Chrome serialises a `200ms` custom property back out as `.2s`, so anything
-	 * reading this from script and calling `parseFloat` would get 0.2 and fade for
-	 * a fifth of a millisecond. A unitless number cannot be misread.
-	 */
-	--cw-theme-fade-ms: 200;
-	--cw-theme-fade: calc(var(--cw-theme-fade-ms) * 1ms);
-}
-
-:root[data-theme-switching],
-:root[data-theme-switching] *,
-:root[data-theme-switching] *::before,
-:root[data-theme-switching] *::after {
-	transition:
-		background-color var(--cw-theme-fade) ease,
-		border-color var(--cw-theme-fade) ease,
-		color var(--cw-theme-fade) ease,
-		fill var(--cw-theme-fade) ease,
-		stroke var(--cw-theme-fade) ease,
-		box-shadow var(--cw-theme-fade) ease,
-		text-decoration-color var(--cw-theme-fade) ease !important;
-}
-
-/*
- * Readers who asked for less motion get the snap. Not because a cross-fade would
- * hurt, but because the two canvases and the iframes each fade themselves, and
- * the honest way to keep four independent fades in step is to have none of them.
- * Everything changes on the same frame instead.
- */
-@media (prefers-reduced-motion: reduce) {
-	:root[data-theme-switching],
-	:root[data-theme-switching] *,
-	:root[data-theme-switching] *::before,
-	:root[data-theme-switching] *::after {
-		transition: none !important;
-	}
 }
 
 @media print {
