@@ -1,6 +1,6 @@
 ---
 title: Wire Protocol
-description: The complete Cap'n Web wire protocol — serialization, import/export tables, top-level messages, and expressions.
+description: The complete Cap'n Web wire protocol, covering serialization, import/export tables, top-level messages, and expressions.
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
@@ -25,7 +25,7 @@ The usual argument for binary is size on the wire, and it is weaker here than it
 - In a browser, **the code you ship is part of the cost**. A binary format that saves bytes per
   message but adds kilobytes to the bundle can easily lose, especially for an application that is
   not chatty.
-- The obvious redundancy — the same property names repeating in every message — is exactly what
+- The obvious redundancy (the same property names repeating in every message) is exactly what
   compression is good at. Where it is available, WebSocket `permessage-deflate` or HTTP content
   encoding removes most of it without the protocol having to. (Availability is not universal:
   Cloudflare Workers' `WebSocketPair` does not negotiate compression extensions.)
@@ -134,8 +134,8 @@ Some notes:
   multiple calls that use this data structure via pipelining, avoiding sending the same data
   multiple times.
 - If the call throws an exception, the server sends a **reject** message instead of resolve.
-- Resolve and reject are the same messages used to resolve exported promises — that is, a promise
-  introduced when it was sent as part of some other RPC message. Thus, calls and exported promises
+- Resolve and reject are the same messages used to resolve exported promises (that is, a promise
+  introduced when it was sent as part of some other RPC message). Thus, calls and exported promises
   work the same. This differs from Cap'n Proto, where returning from a call and resolving an
   exported promise were entirely different messages, with a lot of duplicated semantics.
 
@@ -192,7 +192,7 @@ Instructs the recipient to release the given entry in the import table, disposin
 connected to. If the import is a promise, the recipient is no longer obliged to send a resolve
 message for it, though it is still permitted to do so.
 
-`refcount` is the total number of times this import ID has been "introduced" — the number of times
+`refcount` is the total number of times this import ID has been "introduced": the number of times
 it has been the subject of an `export` or `promise` expression, plus 1 if it was created by a push.
 The refcount must be sent to avoid a race condition if the receiving side has recently exported the
 same ID again. The exporter remembers how many times it has exported this ID, decrements by the
@@ -226,7 +226,7 @@ overhead of separate pull and release messages is high.
 Creates a "pipe" on the remote end. A pipe consists of a `ReadableStream` end and a `WritableStream`
 end. The pipe is implicitly assigned the next sequential positive import ID, similar to push.
 
-The new import is **not** a promise. It is immediately usable as if it were a `WritableStream` — the
+The new import is **not** a promise. It is immediately usable as if it were a `WritableStream`; the
 sender can call `write`, `close`, and/or `abort` on it, using the same interface described for the
 [`writable`](#writable) expression.
 
@@ -334,7 +334,7 @@ A `Blob` value. `type` is the MIME type string (`blob.type`), which may be an em
 `readableExpression` evaluates to a `ReadableStream` carrying the blob's bytes; in practice the
 encoder always uses a [`readable`](#readable) expression backed by a pipe.
 
-Because reading a `Blob`'s bytes is inherently asynchronous, the pipe path is always used — there is
+Because reading a `Blob`'s bytes is inherently asynchronous, the pipe path is always used. There is
 no inline fast path even for small blobs. The receiver must collect all chunks from the stream before
 delivering the value to application code.
 
@@ -366,8 +366,8 @@ A JavaScript `Error` value. `type` is the name of the specific well-known `Error
 though **by default stacks are redacted for security reasons**.
 
 `props` is an optional fifth element carrying any extra data attached to the error. It is a JSON
-object whose keys are the error's own enumerable properties — plus the standard non-enumerable
-`cause` slot, and `errors` for `AggregateError` — and whose values are themselves valid expressions
+object whose keys are the error's own enumerable properties (plus the standard non-enumerable
+`cause` slot, and `errors` for `AggregateError`), and whose values are themselves valid expressions
 of this protocol, so they round-trip naturally. Property values that cannot be represented are
 silently dropped from `props`; the error itself always reaches the receiver.
 
@@ -381,7 +381,7 @@ unchanged.
 ["url", href]
 ```
 
-A `URL` object. `href` is the fully-serialized, normalized URL string — the value of the URL's
+A `URL` object. `href` is the fully-serialized, normalized URL string, the value of the URL's
 `href` property. The receiver reconstructs it with `new URL(href)`. For example:
 
 ```json
@@ -448,7 +448,7 @@ evaluates to a **promise**. The difference is important because promises must be
 resolution before delivering the message to the application, whereas stubs are delivered as stubs
 without waiting for any resolution.
 
-`propertyPath` is optional. If specified, it is an array of property names — strings or numbers —
+`propertyPath` is optional. If specified, it is an array of property names (strings or numbers)
 leading to a specific property of the import's target. The expression evaluates to that property,
 unless `callArguments` is also specified.
 

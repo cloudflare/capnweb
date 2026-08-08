@@ -82,7 +82,7 @@ Pipelining lets a client enqueue a lot of work in one message. Consider configur
 [per-request CPU limits](https://developers.cloudflare.com/workers/wrangler/configuration/#limits)
 lower than the default 30s.
 
-Note that in stateless Workers — that is, not Durable Objects — the system considers an entire
+Note that in stateless Workers (that is, not Durable Objects), the system considers an entire
 WebSocket session to be one "request" for CPU limit purposes.
 
 ```jsonc
@@ -94,6 +94,6 @@ WebSocket session to be one "request" for CPU limit purposes.
 
 ## Durable Objects
 
-For stateful sessions — chat rooms, collaborative documents, anything where clients need to reach
-the *same* server object — route the WebSocket to a Durable Object and start the session there. The
-Durable Object's `fetch()` can call `newWorkersRpcResponse()` exactly the same way.
+For stateful sessions such as chat rooms, collaborative documents, or anything where clients need
+to reach the *same* server object, route the WebSocket to a Durable Object and start the session
+there. The Durable Object's `fetch()` can call `newWorkersRpcResponse()` exactly the same way.

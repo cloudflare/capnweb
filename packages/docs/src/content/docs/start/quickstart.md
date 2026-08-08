@@ -60,7 +60,7 @@ See [Server runtimes](/servers/workers/) for Node.js, Deno, Bun, and Hono equiva
 
 ## Adding types
 
-You don't *have to* declare your interface separately — the client could just use
+You don't *have to* declare your interface separately; the client could just use
 `import("./server").ApiServer` as the type. But a shared types file is often cleaner:
 
 ```ts
@@ -102,7 +102,7 @@ export default {
 };
 ```
 
-On the client, the stub is fully typed — you get compile-time checking and autocomplete, even
+On the client, the stub is fully typed: you get compile-time checking and autocomplete, even
 though nothing was generated:
 
 ```ts
@@ -122,7 +122,7 @@ expect. See [Security considerations](/guides/security/) and
 
 ## Documenting your API
 
-There is no OpenAPI document to generate, because there is no schema to generate it from — and no
+There is no OpenAPI document to generate, because there is no schema to generate it from, and no
 separate artifact that can drift out of date with the implementation.
 
 The shared types file *is* the API description, so document it there:
@@ -158,6 +158,6 @@ boundary actually checked, that is [runtime validation](/guides/validation/).
 
 ## Next steps
 
-- [Pipelining tour](/start/pipelining-tour/) — do all of the above in one round trip.
-- [What can be passed](/concepts/values/) — the type system on the wire.
-- [Disposal](/concepts/disposal/) — the one piece of bookkeeping Cap'n Web asks of you.
+- [Pipelining tour](/start/pipelining-tour/): do all of the above in one round trip.
+- [What can be passed](/concepts/values/): the type system on the wire.
+- [Disposal](/concepts/disposal/): the one piece of bookkeeping Cap'n Web asks of you.

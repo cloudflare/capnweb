@@ -35,7 +35,7 @@ async function run() {
 		const times = (s.ms / p.ms).toFixed(2);
 		$('verdict').innerHTML =
 			`<strong>${p.posts} round trip vs ${s.posts}.</strong> Pipelining finished ` +
-			`${saved} ms sooner &mdash; ${times}&times; faster &mdash; returning identical data.`;
+			`${saved} ms sooner (${times}&times; faster), returning identical data.`;
 		$('verdict').hidden = false;
 	} catch (err) {
 		$('verdict').classList.add('error');

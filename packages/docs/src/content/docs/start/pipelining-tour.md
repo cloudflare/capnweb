@@ -24,7 +24,7 @@ On a 100 ms link, that's 400 ms of doing nothing.
 
 Calling an RPC method returns an [`RpcPromise`](/concepts/promises/), not a regular `Promise`. An
 `RpcPromise` is *also a stub for its own eventual result*. So you can call methods on it, read
-properties of it, and pass it as an argument to other calls — all before it resolves.
+properties of it, and pass it as an argument to other calls, all before it resolves.
 
 When the peer receives a call whose arguments contain an unresolved promise, it substitutes the
 resolved value before delivering the call to your application code.
@@ -66,7 +66,7 @@ Five logical calls, arbitrary depth of dependency, **one round trip**.
 :::note
 It's important to simultaneously await all promises for which you actually want the result. If you
 don't await a promise before the batch is sent, the system detects this and doesn't ask the server
-to send the return value back at all — it saves the bandwidth.
+to send the return value back at all; it saves the bandwidth.
 :::
 
 ## Properties pipeline too
@@ -89,14 +89,14 @@ The trick is **record-replay**:
 
 1. On the calling side, Cap'n Web invokes your callback once in a special *recording* mode, passing
    a placeholder stub that records what you do with it.
-2. During that invocation, any RPCs the callback invokes (on *any* stub) are not executed — they're
+2. During that invocation, any RPCs the callback invokes (on *any* stub) are not executed, only
    recorded as actions the callback performs. Any stubs used are "captured" as well.
 3. The recording plus the capture list is sent to the peer, where it can be replayed as needed for
    each individual result.
 
 Because every not-yet-determined value the callback sees is an `RpcPromise`, the callback's
 behaviour is deterministic. Real computation (arithmetic, branching) can't meaningfully consume
-those promises, so it must produce the same result on every invocation — and it gets performed once
+those promises, so it must produce the same result on every invocation, and it gets performed once
 on the sending side, with the result baked into the recording.
 
 So the split is: **your JavaScript runs on the calling side exactly once; the RPCs it recorded run

@@ -3,7 +3,7 @@ title: Security Considerations
 description: Authentication over WebSocket, denial-of-service from pipelining, payload limits, and why types are not validation.
 ---
 
-Cap'n Web is an object-capability system, which gives you strong tools for authorization — but there
+Cap'n Web is an object-capability system, which gives you strong tools for authorization, but there
 are a handful of things you must get right yourself.
 
 ## Authenticate in-band, not with cookies
@@ -55,7 +55,7 @@ authorization. There is no ambient authority to confuse, and no way to call an a
 without holding the capability. Thanks to [pipelining](/concepts/promises/), it also costs no extra
 round trip.
 
-Yes, this means the server holds state — but only in memory, and only for the lifetime of that one
+Yes, this means the server holds state, but only in memory, and only for the lifetime of that one
 session: the WebSocket connection, or the single HTTP batch. Nothing is persisted, and there is no
 session store to secure or expire. See [Sessions & reconnection](/guides/sessions/).
 
@@ -65,28 +65,28 @@ Cap'n Web's pipelining can make it easy for a malicious client to enqueue a larg
 occur on a server, in a single message.
 
 To mitigate this, implement **rate limits on expensive operations**. Note that limits applied by a
-load balancer or gateway will not help here — they count requests or frames, and pipelining makes
+load balancer or gateway will not help here: they count requests or frames, and pipelining makes
 one frame arbitrarily expensive. The limit has to live in the application.
 
 Two amplifiers worth knowing about:
 
 - **Nested `.map()` multiplies.** A map over N elements whose callback maps over M produces N × M
-  server-side calls from one client message. Unbounded *recursion* is less dangerous than it looks —
+  server-side calls from one client message. Unbounded *recursion* is less dangerous than it looks:
   [the recording is built on the caller's stack](/concepts/map/#nesting-and-recursion), so a runaway
-  callback overflows the client first — but a deliberately crafted deep recording is not
+  callback overflows the client first. But a deliberately crafted deep recording is not
   self-limiting.
 - **Un-awaited calls accumulate.** Every outstanding promise and every stub the peer holds pins an
   entry in your export table, and the object behind it, for the life of the session. A peer that
   never settles or disposes anything grows your memory monotonically.
 
   There is no library setting for this. `RpcSessionOptions.limits` covers message size, nesting
-  depth and bigint digits — not reference counts — so if you need a bound on how much one session
+  depth and bigint digits (not reference counts), so if you need a bound on how much one session
   can pin, you have to enforce it in your own code. Attaching disposers to the objects you return
   gives you something to count.
 
 If using Cloudflare Workers, also consider configuring
 [per-request CPU limits](https://developers.cloudflare.com/workers/wrangler/configuration/#limits)
-to be lower than the default 30s. Note that in stateless Workers — that is, not Durable Objects —
+to be lower than the default 30s. Note that in stateless Workers (that is, not Durable Objects),
 the system considers an entire WebSocket session to be one "request" for CPU limit purposes.
 
 ## Set transport payload limits
@@ -131,7 +131,7 @@ Type confusion is your problem, but prototype pollution is not. The protocol har
 regardless of what you do:
 
 - **`Object.prototype` members are unreachable.** Any property name that exists on
-  `Object.prototype` — `constructor`, `__proto__`, `valueOf`, `hasOwnProperty` and friends — is
+  `Object.prototype` (`constructor`, `__proto__`, `valueOf`, `hasOwnProperty` and friends) is
   blocked both when resolving a property path and when deserializing an object literal. This holds
   even if the target object has legitimately overridden the name.
 - **`toJSON` is stripped on the way in.** It is not an `Object.prototype` member, but it would let a
@@ -153,7 +153,7 @@ from RPC. Use `#`-prefixed names for genuinely private members. See
 
 **Stubs captured by `.map()` are handed to the peer.** Any stubs you use in a `.map()` callback, and
 any parameters you pass to them, are sent to the peer, and a malicious peer can use them for
-anything — not just calling your callback. Typically it only makes sense to invoke stubs that came
+anything, not just calling your callback. Typically it only makes sense to invoke stubs that came
 from that same peer originally. See [The magic `map()`](/concepts/map/).
 
 ## Reporting vulnerabilities

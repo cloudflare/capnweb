@@ -20,7 +20,7 @@ const cardPath = `/og/${entry.id === '' ? 'index' : entry.id}.png`;
 const cardUrl = Astro.site ? new URL(cardPath, Astro.site).href : cardPath;
 
 const heroTitle = entry.data.hero?.title;
-const alt = `${heroTitle ?? entry.data.title} — Cap’n Web`;
+const alt = `${heroTitle ?? entry.data.title}, from the Cap’n Web documentation`;
 ---
 
 <Default><slot /></Default>

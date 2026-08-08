@@ -69,23 +69,23 @@ declare an `encodingLevel` property:
 
 Details:
 
-- **`"string"`** — full JSON round-trip. The transport deals in strings only; Cap'n Web handles all
+- **`"string"`**: full JSON round-trip. The transport deals in strings only; Cap'n Web handles all
   encoding and decoding.
-- **`"jsonCompatible"`** — the transport works with JavaScript value trees, but they must be
+- **`"jsonCompatible"`**: the transport works with JavaScript value trees, but they must be
   JSON-compatible. Cap'n Web still encodes special types, but skips the final `JSON.stringify`. The
   transport is responsible for serialization.
-- **`"jsonCompatibleWithBytes"`** — like `"jsonCompatible"`, except byte arrays are left as
+- **`"jsonCompatibleWithBytes"`**: like `"jsonCompatible"`, except byte arrays are left as
   `Uint8Array` instead of base64-encoded, avoiding the ~33% base64 size overhead and the
   encode/decode CPU cost. Handy with CBOR or MessagePack.
-- **`"structuredClonable"`** — messages are structured-clonable values. Cap'n Web passes through
+- **`"structuredClonable"`**: messages are structured-clonable values. Cap'n Web passes through
   native structured-clone types where possible, while still handling RPC-specific values such as
   stubs.
 
 ## Framing is your job
 
 The protocol operates on a stream of **discrete messages**; it does not define how they are framed.
-If your underlying stream is byte-oriented (a TCP socket, a serial line), you must add framing —
-length prefixes or newline delimiting, as the built-in HTTP transport does.
+If your underlying stream is byte-oriented (a TCP socket, a serial line), you must add framing
+using length prefixes or newline delimiting, as the built-in HTTP transport does.
 
 ## A worked example
 
@@ -127,6 +127,6 @@ class QueueTransport implements RpcTransport {
 :::caution
 Apply payload size limits at the transport layer. Cap'n Web enforces a maximum incoming message size
 before `JSON.parse`, but that check runs only after `receive()` has returned a *complete* message
-string — so transport-level limits are the first line of defence against buffering very large
+string, so transport-level limits are the first line of defence against buffering very large
 frames. See [Security considerations](/guides/security/).
 :::

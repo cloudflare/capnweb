@@ -58,6 +58,6 @@ Everything else is portable.
 
 ## If your runtime isn't HTTP at all
 
-Cap'n Web only needs a bidirectional stream of discrete messages. If you have one — a TCP socket, a
-message queue, a serial link, an `ipc` channel between processes — implement
+Cap'n Web only needs a bidirectional stream of discrete messages. If you have one (a TCP socket, a
+message queue, a serial link, an `ipc` channel between processes), implement
 [`RpcTransport`](/transports/custom/) and use `new RpcSession(transport, localMain)` directly.

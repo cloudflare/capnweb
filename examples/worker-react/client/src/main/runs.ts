@@ -143,7 +143,7 @@ export async function runValidationFailure(): Promise<string> {
   const api = connectApi() as any
   try {
     await api.authenticate(12345)
-    return '(no error — unexpected)'
+    return '(no error thrown, which is unexpected)'
   } catch (err) {
     return err instanceof Error ? err.message : String(err)
   }

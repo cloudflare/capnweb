@@ -9,7 +9,7 @@
 			rel="icon"
 			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2304070e'/%3E%3Cline x1='7' y1='23' x2='16' y2='9' stroke='%234db4ff' stroke-width='2'/%3E%3Cline x1='16' y1='9' x2='25' y2='20' stroke='%234db4ff' stroke-width='2'/%3E%3Ccircle cx='7' cy='23' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='25' cy='20' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='16' cy='9' r='3.8' fill='%23f6821f'/%3E%3C/svg%3E"
 		/>
-		<title>Batch + pipelining &mdash; Cap'n Web</title>
+		<title>Batch + pipelining in Cap'n Web</title>
 		<script>
 			// The docs playground embeds this page in an iframe and passes its own
 			// state on the URL. Applied before first paint so there is no flash of
@@ -325,13 +325,13 @@
 		</style>
 	</head>
 	<body>
-		<header><a href="/">Cap'n Web &mdash; batch + pipelining</a></header>
+		<header><a href="/">Cap'n Web: batch + pipelining</a></header>
 
 		<main>
 			<h1>One round trip, three dependent calls</h1>
 			<p class="lede">
-				This page authenticates a user, then fetches that user's profile and notifications
-				&mdash; both of which need the user ID from the first call. Pipelined, all three
+				This page authenticates a user, then fetches that user's profile and notifications,
+				both of which need the user ID from the first call. Pipelined, all three
 				travel in a <strong>single</strong> HTTP request. Done the ordinary way, they take
 				three. Only the round trips differ; the server does identical work either way.
 			</p>
@@ -350,8 +350,8 @@
 				<section class="panel">
 					<h2>Pipelined</h2>
 					<p class="sub">One session, calls chained on unresolved promises.</p>
-					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="pPosts">&mdash;</span></div>
-					<div class="stat"><span class="k">Elapsed</span><span class="v" id="pTime">&mdash;</span></div>
+					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="pPosts">&hellip;</span></div>
+					<div class="stat"><span class="k">Elapsed</span><span class="v" id="pTime">&hellip;</span></div>
 					<div class="bar fast"><span id="pBar" style="width: 0"></span></div>
 					<pre id="pOut">Not run yet.</pre>
 				</section>
@@ -359,8 +359,8 @@
 				<section class="panel">
 					<h2>Sequential</h2>
 					<p class="sub">A fresh session per call, each awaited in turn.</p>
-					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="sPosts">&mdash;</span></div>
-					<div class="stat"><span class="k">Elapsed</span><span class="v" id="sTime">&mdash;</span></div>
+					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="sPosts">&hellip;</span></div>
+					<div class="stat"><span class="k">Elapsed</span><span class="v" id="sTime">&hellip;</span></div>
 					<div class="bar slow"><span id="sBar" style="width: 0"></span></div>
 					<pre id="sOut">Not run yet.</pre>
 				</section>
@@ -373,8 +373,8 @@
 				<a href="https://github.com/cloudflare/capnweb/tree/main/examples/batch-pipelining"
 					>examples/batch-pipelining</a
 				>. The same comparison runs in a terminal via <code>client.mjs</code>. Latency is
-				simulated in the browser, so the server is doing the same work in both columns
-				&mdash; see <a href="https://capnweb.com/concepts/promises/">promise pipelining</a>.
+				simulated in the browser, so the server is doing the same work in both columns;
+				see <a href="https://capnweb.com/concepts/promises/">promise pipelining</a>.
 			</footer>
 		</main>
 

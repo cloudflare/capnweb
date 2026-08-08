@@ -9,15 +9,15 @@ import { exampleBySlug } from '../../../examples.ts';
 
 <Playground example={exampleBySlug('session-recovery')} />
 
-Connect, watch the events arrive, then sever the connection and reconnect. Everything comes back —
-including the events that happened while you were gone — because the client held on to one number.
+Connect, watch the events arrive, then sever the connection and reconnect. Everything comes back,
+including the events that happened while you were gone, because the client held on to one number.
 
 Untick **Resume from cursor** and do it again. Same disconnect, same reconnect, but now the feed
 shows a gap, because nothing told the server where to start.
 
 :::note[There is no server behind this page.]
 Both ends of the session run in this page, wired together by a shim that replaces `WebSocket` for
-one path. The session, the protocol, the callbacks and the disconnect are all genuine — see
+one path. The session, the protocol, the callbacks and the disconnect are all genuine. See
 [how this page runs](#how-this-page-runs).
 :::
 
@@ -34,7 +34,7 @@ Everything the session owned, and nothing else.
 
 The **Call a stub from the old session** button makes the second column concrete. It holds on to
 the `AuthedApi` from before the drop and calls `whoami()` on it. That call does not hang and does
-not quietly reconnect — it rejects:
+not quietly reconnect. It rejects:
 
 ```js
 const stub = this.#authed ?? this.#staleAuthed;
@@ -70,7 +70,7 @@ export function createMain() {
 :::caution
 Module scope is the right shape and the wrong storage. It lives as long as the isolate, and two
 clients can easily land on two different isolates. In a real deployment the log belongs somewhere
-addressable — a [Durable Object](/servers/workers/), a database, a queue. The demo's point is only
+addressable: a [Durable Object](/servers/workers/), a database, a queue. The demo's point is only
 that it must not live *in the session*.
 :::
 
@@ -91,7 +91,7 @@ subscribe(sinceId, sink) {
 Three things worth noticing in that handful of lines.
 
 **The cursor is the client's, not the server's.** It is a plain number in client-side state, which
-is exactly why it survives — a stub could not. Design the API so the caller can say where it left
+is exactly why it survives; a stub could not. Design the API so the caller can say where it left
 off, and reconnection becomes a normal operation rather than a recovery procedure.
 
 **`sink` is a callback going the other way.** The client passes an `RpcTarget`, the server receives
@@ -100,7 +100,7 @@ server-initiated messaging is here; there is no separate subscription mechanism.
 
 **The `.dup()` is mandatory.** Stubs arriving in parameters are disposed when the call returns, so
 holding one past that requires duplicating it. The `Subscription` disposes its copy in
-`[Symbol.dispose]()`, which also runs when the session dies — which is what stops the timer on an
+`[Symbol.dispose]()`, which also runs when the session dies, and that is what stops the timer on an
 abrupt disconnect.
 
 ## Replay has to be bounded
@@ -114,7 +114,7 @@ return { events, truncated: from > sinceId };
 ```
 
 The client surfaces that as a gap rather than pretending it received everything. An unbounded
-replay is a denial-of-service vector wearing a helpful hat — see
+replay is a denial-of-service vector wearing a helpful hat. See
 [Security considerations](/guides/security/).
 
 ## How this page runs
@@ -136,7 +136,7 @@ function Shim(url, protocols) {
 
 What that gives up: the Worker's `fetch` handler is not involved, so the upgrade handling is the one
 part of the example the page does not exercise. What it keeps: the API implementation, the session,
-the wire protocol, calls in both directions, and a connection that can genuinely be severed — which
+the wire protocol, calls in both directions, and a connection that can genuinely be severed, which
 is the only thing this example is really about.
 
 ## Run it yourself
@@ -151,6 +151,6 @@ way, by turning off your network.
 
 ## Next
 
-- [Sessions & reconnection](/guides/sessions/) — the patterns here, written out in full.
-- [Disposal](/concepts/disposal/) — why `.dup()` is needed and when disposers run.
-- [WebSocket transport](/transports/websocket/) — what this example is running on.
+- [Sessions & reconnection](/guides/sessions/): the patterns here, written out in full.
+- [Disposal](/concepts/disposal/): why `.dup()` is needed and when disposers run.
+- [WebSocket transport](/transports/websocket/): what this example is running on.

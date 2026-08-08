@@ -4,7 +4,7 @@ description: Use Cap'n Web to talk to Web Workers, iframes, and other same-proce
 ---
 
 Cap'n Web can talk over `MessagePort`s. In a browser, this lets you use the same RPC model to talk
-to Web Workers, iframes, and other contexts — no serialization boilerplate, no ad-hoc message
+to Web Workers, iframes, and other contexts: no serialization boilerplate, no ad-hoc message
 protocols with `type` fields and switch statements.
 
 ```ts
@@ -34,7 +34,7 @@ console.log(await stub.greet('Bob'));
 ## Sending a port somewhere else
 
 In a real-world scenario you'd send one of the two ports to another context. A `MessagePort` can
-itself be transferred using `postMessage()` — `window.postMessage()`, `worker.postMessage()`, or
+itself be transferred using `postMessage()`: `window.postMessage()`, `worker.postMessage()`, or
 even `port.postMessage()` on some other existing `MessagePort`.
 
 ```ts

@@ -18,8 +18,8 @@ The following types can be passed over RPC, in arguments or return values:
 - `ArrayBuffer`, `DataView`, and typed arrays
 - `Error` and its well-known subclasses
 - `Blob`
-- `ReadableStream` and `WritableStream`, with automatic flow control — see
-  [Streaming](/concepts/streaming/)
+- `ReadableStream` and `WritableStream`, with automatic flow control (see
+  [Streaming](/concepts/streaming/))
 - `URL`
 - `Headers`, `Request`, and `Response` from the Fetch API
 

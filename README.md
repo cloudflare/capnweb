@@ -20,8 +20,8 @@ The whole thing compresses (minify + gzip) to **under 10 kB with no dependencies
 
 Cap'n Web is more expressive than almost every other RPC system, because it implements an
 object-capability RPC model. That means it supports **bidirectional calling**, **passing functions
-and objects by reference**, **promise pipelining** — chaining dependent calls into a single network
-round trip — and **capability-based security patterns**, where holding a reference *is* the
+and objects by reference**, **promise pipelining** (chaining dependent calls into a single network
+round trip), and **capability-based security patterns**, where holding a reference *is* the
 permission to use it.
 
 ## Installation
@@ -88,7 +88,7 @@ export default {
 }
 ```
 
-And here is the part that makes it interesting — three dependent calls, one round trip:
+And here is the part that makes it interesting. Three dependent calls, one round trip:
 
 ```ts
 using api = newHttpBatchRpcSession<Api>("https://example.com/api");
@@ -157,19 +157,19 @@ cd packages/docs && npm install && npm run dev
 
 Runnable examples live in [`examples/`](examples/):
 
-* [`batch-pipelining`](examples/batch-pipelining/) — three dependent calls in one HTTP round trip.
-* [`worker-react`](examples/worker-react/) — a React app against a Cap'n Web Worker, with runtime
+* [`batch-pipelining`](examples/batch-pipelining/): three dependent calls in one HTTP round trip.
+* [`worker-react`](examples/worker-react/): a React app against a Cap'n Web Worker, with runtime
   validation at the RPC boundary.
 
 ## Related packages
 
-* [`capnweb-validate`](packages/capnweb-validate/) — generates runtime validators from your
+* [`capnweb-validate`](packages/capnweb-validate/): generates runtime validators from your
   TypeScript types at build time, since TypeScript types are erased and a malicious peer can send
   anything.
 
 ## Security
 
-Cap'n Web gives you strong authorization tools, but a few things are your responsibility —
+Cap'n Web gives you strong authorization tools, but a few things are your responsibility:
 authenticating in-band rather than with cookies, rate-limiting because pipelining is cheap for
 attackers, setting transport payload limits, and validating types at runtime. Read
 [Security considerations](packages/docs/src/content/docs/guides/security.md) before exposing a
@@ -180,7 +180,7 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 ## Contributing
 
 Bug reports and pull requests are welcome. Note that `packages/docs/` is the source of truth for
-user-facing documentation — behaviour changes should update the relevant page there.
+user-facing documentation; behaviour changes should update the relevant page there.
 
 ## License
 

@@ -79,7 +79,7 @@ wants to invoke it later, it must call `.dup()`. See
 ## Listening for disposal
 
 An `RpcTarget` may declare a `Symbol.dispose` method. If it does, the RPC system automatically
-invokes it when a stub pointing at it — and all its duplicates — has been disposed.
+invokes it when a stub pointing at it, and all its duplicates, has been disposed.
 
 ```ts
 class Session extends RpcTarget {

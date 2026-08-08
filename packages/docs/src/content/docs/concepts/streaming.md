@@ -4,8 +4,8 @@ description: Pass ReadableStream and WritableStream over RPC with automatic flow
 ---
 
 You may pass a `ReadableStream` or `WritableStream` over RPC. When you do, the RPC system
-automatically creates an equivalent stream at the other end and pumps bytes — or arbitrarily typed
-chunks — across.
+automatically creates an equivalent stream at the other end and pumps bytes (or arbitrarily typed
+chunks) across.
 
 ```ts
 class FileService extends RpcTarget {
@@ -38,7 +38,7 @@ You do not configure this. Write to the stream and the RPC system throttles the 
 
 ## Multiplexing
 
-Multiple streams can be sent across the same connection — they are multiplexed appropriately,
+Multiple streams can be sent across the same connection; they are multiplexed appropriately,
 similar to HTTP/2 stream multiplexing. A large upload will not block small RPC calls happening
 concurrently on the same session.
 
@@ -82,8 +82,8 @@ class LogService extends RpcTarget {
 }
 ```
 
-Do not skip the `cancel` handler. A consumer dropping the stream — including the peer releasing it
-or the session dying — is the normal way a `tail()` ends, and without `cancel` the generator is
+Do not skip the `cancel` handler. A consumer dropping the stream, including the peer releasing it
+or the session dying, is the normal way a `tail()` ends, and without `cancel` the generator is
 never finalized, so anything it holds open leaks.
 
 This only constrains what you *return*. The receiving side iterates a stream with `for await` just
@@ -91,8 +91,8 @@ fine, as at the top of this page.
 
 ## Callbacks, when a stream is the wrong shape
 
-Streams are for a sequence of chunks flowing one way. When you want the peer to call *you* — events,
-progress, subscriptions — pass an object by reference instead and let it call your methods:
+Streams are for a sequence of chunks flowing one way. When you want the peer to call *you* (events,
+progress, subscriptions), pass an object by reference instead and let it call your methods:
 
 ```ts
 // Client
@@ -115,7 +115,7 @@ class JobService extends RpcTarget {
 }
 ```
 
-This is more general than streaming — the peer can call any method you expose, in any order — but
+This is more general than streaming, since the peer can call any method you expose in any order, but
 it gives you no backpressure. Awaiting every call costs a round trip per event and underuses the
 link; awaiting none lets the queue grow without bound. If what you actually have is a sequence of
 chunks, use a stream and let the flow control above do the work.
@@ -127,7 +127,7 @@ releases it, including when the session drops, so you can detect an abandoned jo
 ## How it works on the wire
 
 A `WritableStream` is exported as a `["writable", exportId]` expression whose target accepts
-`write(chunk)`, `close()`, and `abort(reason?)` — mirroring `WritableStreamDefaultWriter`.
+`write(chunk)`, `close()`, and `abort(reason?)`, mirroring `WritableStreamDefaultWriter`.
 
 A `ReadableStream` is sent by first creating a pipe with a `["pipe"]` message, pumping data into the
 writable end immediately, and referencing the readable end via `["readable", importId]`. This means

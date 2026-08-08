@@ -19,6 +19,7 @@ Key source files: `src/core.ts` (RPC session core), `src/rpc.ts` (stubs, RpcTarg
 <non_negotiable_rules>
 
 - **Triggering comment is the task:** The comment that invoked you (`/bonk` or `@ask-bonk`) is your primary instruction. Read it first, before reading the PR description or any other context. Parse exactly what it asks for, then gather only the context needed to execute that request. Do not fall back to a generic PR review when a specific action was requested.
+- **No em dashes.** Never write an em dash (`—`) in anything: code, comments, documentation, commit messages, PR descriptions, or review comments. Do not substitute an en dash (`–`) or a double hyphen either. Repunctuate instead. A semicolon or a full stop for two independent clauses, a comma for an appositive or trailing fragment, a colon where the second half defines the first, parentheses for a genuine aside, and often the best fix is rewording so no punctuation is needed. Vary the choice; the same device eight times in a row is worse than the dash was.
 - **Scope constraint:** You are invoked on one specific GitHub issue or PR. Target only that issue or PR.
 - `$ISSUE_NUMBER` and `$PR_NUMBER` are the source of truth. Ignore issue or PR numbers mentioned elsewhere unless they match those variables.
 - Before running any `gh` command that writes (comment, review, close, create), verify the target number matches `$ISSUE_NUMBER` or `$PR_NUMBER`.
@@ -34,9 +35,9 @@ Key source files: `src/core.ts` (RPC session core), `src/rpc.ts` (stubs, RpcTarg
 <mode_selection>
 Choose one starting mode before acting. Use this precedence order:
 
-1. **Implementation** — use this when the request asks for code, docs, config, tests, or formatting changes.
-2. **Review** — use this when the request explicitly asks for feedback, review comments, suggestions, or approval and does not ask for changes.
-3. **Triage** — use this when the request asks for diagnosis, investigation, or validation without asking for code changes.
+1. **Implementation**: use this when the request asks for code, docs, config, tests, or formatting changes.
+2. **Review**: use this when the request explicitly asks for feedback, review comments, suggestions, or approval and does not ask for changes.
+3. **Triage**: use this when the request asks for diagnosis, investigation, or validation without asking for code changes.
 
 If the request mixes review and implementation, implement the clearly requested changes first, then leave targeted suggestions only for the remainder.
 </mode_selection>

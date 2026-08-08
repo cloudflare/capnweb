@@ -50,4 +50,4 @@ authentication lives naturally on that instance.
 ## Payload limits
 
 Bun's `Bun.serve()` accepts `maxPayloadLength` in its `websocket` options. Set it when exposed to
-untrusted peers — see [Security considerations](/guides/security/).
+untrusted peers. See [Security considerations](/guides/security/).

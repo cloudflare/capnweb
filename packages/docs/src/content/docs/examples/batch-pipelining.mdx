@@ -9,7 +9,7 @@ import { exampleBySlug } from '../../../examples.ts';
 
 <Playground example={exampleBySlug('batch-pipelining')} />
 
-Authenticate a user, then fetch that user's profile and notifications — both of which need the user
+Authenticate a user, then fetch that user's profile and notifications, both of which need the user
 ID that the first call returns. Pipelined, all three travel in **one** HTTP request. Written the
 ordinary way, they take three.
 
@@ -18,7 +18,7 @@ difference is how many times the browser has to cross the network.
 
 :::note[There is no server behind this page.]
 The Worker on the left is bundled into the page and answers its own requests, so the round-trip
-counts are real but nothing crosses the network. Same code, same protocol — see
+counts are real but nothing crosses the network. Same code, same protocol. See
 [how the playground works](#how-this-page-runs).
 :::
 
@@ -37,7 +37,7 @@ const notifications = api.getNotifications(user.id);
 const [u, p, n] = await Promise.all([user, profile, notifications]);
 ```
 
-`user.id` is not a string here — it is a *reference* to a field of a result the server has not
+`user.id` is not a string here. It is a *reference* to a field of a result the server has not
 produced yet. Cap'n Web sends that reference as part of the same batch, and the server substitutes
 the real value when it gets there. Nothing has to come back to the client in between.
 
@@ -50,16 +50,16 @@ const profile = await newHttpBatchRpcSession(RPC_URL).getUserProfile(user.id);
 const notifications = await newHttpBatchRpcSession(RPC_URL).getNotifications(user.id);
 ```
 
-Same data, same server work, three times the network cost — and that cost grows with the length of
+Same data, same server work, three times the network cost, and that cost grows with the length of
 the chain, which is the part that hurts on a slow connection.
 
 ## Where the latency comes from
 
 Two separate knobs, deliberately kept apart:
 
-- **Server-side work** — per-method delays set by `DELAY_AUTH_MS`, `DELAY_PROFILE_MS` and
+- **Server-side work**: per-method delays set by `DELAY_AUTH_MS`, `DELAY_PROFILE_MS` and
   `DELAY_NOTIFS_MS`. Identical in both modes, so it is *not* what the demo measures.
-- **Network round trips** — simulated in the browser by the slider. This is the part pipelining
+- **Network round trips**: simulated in the browser by the slider. This is the part pipelining
   removes.
 
 Keeping the round-trip cost on the client means the deployed Worker adds no artificial delay, and
@@ -81,7 +81,7 @@ globalThis.fetch = async (input, init) => {
 };
 ```
 
-Everything above that line is untouched — the same session setup, the same batch encoding, the same
+Everything above that line is untouched: the same session setup, the same batch encoding, the same
 `newWorkersRpcResponse` on the other end. Only the transport hop is gone, which is why the round-trip
 counts mean what they say and why these docs deploy as static files.
 
@@ -101,6 +101,6 @@ node examples/batch-pipelining/client.mjs        # in another
 
 ## Next
 
-- [RpcPromise & pipelining](/concepts/promises/) — how the promise references actually work.
-- [The pipelining tour](/start/pipelining-tour/) — a step-by-step walkthrough, including `.map()`.
-- [HTTP batch transport](/transports/http-batch/) — what this example is running on.
+- [RpcPromise & pipelining](/concepts/promises/): how the promise references actually work.
+- [The pipelining tour](/start/pipelining-tour/): a step-by-step walkthrough, including `.map()`.
+- [HTTP batch transport](/transports/http-batch/): what this example is running on.

@@ -15,7 +15,7 @@ built-in API provided by the Workers Runtime, whereas Cap'n Web is implemented i
   so you can use them interchangeably.
 - RPC stubs and promises originating from one RPC system can be **passed over the other**. This
   automatically sets up proxying.
-- You can also send Workers **Service Bindings** and **Durable Object stubs** over Cap'n Web — again,
+- You can also send Workers **Service Bindings** and **Durable Object stubs** over Cap'n Web; again,
   this sets up proxying.
 
 So basically, it "just works".
@@ -64,7 +64,7 @@ RPC. The intent is that the two converge, with Cap'n Web arriving first.
 | The magic `.map()` method                               | Yes       | Not yet     |
 
 \* Workers RPC supports sending values that contain aliases and cycles. This can actually cause
-problems, so we plan to **remove** this feature from Workers RPC — with a compatibility flag, of
+problems, so we plan to **remove** this feature from Workers RPC, with a compatibility flag, of
 course.
 
 ## Ownership differences

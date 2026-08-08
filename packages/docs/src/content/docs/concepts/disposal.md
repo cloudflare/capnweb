@@ -65,8 +65,8 @@ disposed. So, to achieve the rule that only the caller needs to dispose, the RPC
 disposes the callee's duplicates when the call completes:
 
 - Any stubs the callee receives in the parameters are implicitly disposed when the call completes.
-- Any stubs returned in the results are implicitly disposed some time after the call completes —
-  specifically, once the RPC system knows there will be no more pipelined calls.
+- Any stubs returned in the results are implicitly disposed some time after the call completes,
+  specifically once the RPC system knows there will be no more pipelined calls.
 
 ### Wonky details
 
@@ -75,7 +75,7 @@ disposes the callee's duplicates when the call completes:
   promise, dispose it.
 - Passing an `RpcPromise` in params or the return value of a call has the same ownership and
   disposal rules as passing an `RpcStub`.
-- When you access a property of an `RpcStub` or `RpcPromise`, the result is itself an `RpcPromise` —
+- When you access a property of an `RpcStub` or `RpcPromise`, the result is itself an `RpcPromise`,
   but it does not have its own disposer. You must dispose the stub or promise it came from. You can
   pass such properties in params or return values, but doing so never leads to anything being
   implicitly disposed.
@@ -109,7 +109,7 @@ the eventual stub would if you awaited it.
 ### Holding on to a callback past the call that delivered it
 
 A common bidirectional-calling pattern is for the client to pass a callback to the server, which the
-server then invokes later — from a timer, an event handler, or a subsequent RPC. Because the
+server then invokes later (from a timer, an event handler, or a subsequent RPC). Because the
 callback parameter is a stub, and stubs in params are implicitly disposed when the call returns, the
 server must duplicate the stub with `.dup()` if it wants to invoke the callback after the call
 completes:
@@ -151,7 +151,7 @@ the result is disposed.
 An `RpcTarget` may declare a `Symbol.dispose` method. If it does, the RPC system automatically
 invokes it when a stub pointing at it, and all its duplicates, have been disposed.
 
-If you pass the same `RpcTarget` instance to RPC multiple times — creating multiple stubs — you will
+If you pass the same `RpcTarget` instance to RPC multiple times (creating multiple stubs), you will
 eventually get a separate dispose call for each one. To avoid this, use `new RpcStub(target)` to
 create a single stub upfront, then pass that stub across multiple RPCs. You will then receive only
 one call to the target's disposer, when all stubs are disposed.

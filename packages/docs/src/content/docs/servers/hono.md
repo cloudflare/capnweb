@@ -3,7 +3,7 @@ title: Hono
 description: Use the @hono/capnweb middleware to mount a Cap'n Web endpoint in a Hono app.
 ---
 
-If your app is built on [Hono](https://hono.dev/) — on any runtime it supports — check out
+If your app is built on [Hono](https://hono.dev/), on any runtime it supports, check out
 [`@hono/capnweb`](https://github.com/honojs/middleware/tree/main/packages/capnweb).
 
 ```sh
@@ -16,7 +16,7 @@ so on.
 
 Refer to the
 [`@hono/capnweb` README](https://github.com/honojs/middleware/tree/main/packages/capnweb) for
-current usage and options — it is maintained in the Hono middleware repository, not here.
+current usage and options; it is maintained in the Hono middleware repository, not here.
 
 ## Rolling your own
 
@@ -40,6 +40,6 @@ app.post('/api', (c) => newHttpBatchRpcResponse(c.req.raw, new MyApiImpl()));
 export default app;
 ```
 
-WebSocket support depends on the runtime you deploy Hono to — see
+WebSocket support depends on the runtime you deploy Hono to. See
 [Cloudflare Workers](/servers/workers/), [Node.js](/servers/node/), [Deno](/servers/deno/), or
 [Bun](/servers/bun/).

@@ -66,7 +66,7 @@ Both, and it is worth being clear which one you are dealing with.
 
 The `capnweb` npm package is an implementation. The [wire protocol](/reference/protocol/) is a
 specification, and you can write your own peer against it. The protocol is JavaScript-flavoured to
-about the same extent JSON is — its value types are the JavaScript built-ins — but nothing in the
+about the same extent JSON is (its value types are the JavaScript built-ins), but nothing in the
 framing or the expression language demands a JavaScript implementation.
 
 The *library*, on the other hand, is deliberately scoped to JavaScript and TypeScript. If your
@@ -75,7 +75,7 @@ backend is written in something else, Cap'n Proto is the answer today; see
 
 ## Where to next
 
-- [Installation](/start/installation/) — one npm package, no build step.
-- [Quickstart](/start/quickstart/) — a working client and server.
-- [Pipelining tour](/start/pipelining-tour/) — the part that makes it fast.
-- [How it compares](/guides/comparisons/) — against the alternatives, including the honest gaps.
+- [Installation](/start/installation/): one npm package, no build step.
+- [Quickstart](/start/quickstart/): a working client and server.
+- [Pipelining tour](/start/pipelining-tour/): the part that makes it fast.
+- [How it compares](/guides/comparisons/): against the alternatives, including the honest gaps.

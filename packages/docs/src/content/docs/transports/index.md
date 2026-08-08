@@ -49,14 +49,14 @@ using api = newWebSocketRpcSession<PublicApi>('wss://example.com/api');
 For HTTP batch, the session ends when the batch completes, and all stubs are implicitly disposed at
 that point. See [Disposal](/concepts/disposal/).
 
-Session state is in-memory and lasts exactly as long as the session — there is nothing to persist
+Session state is in-memory and lasts exactly as long as the session; there is nothing to persist
 and no session store to run. [Sessions & reconnection](/guides/sessions/) covers what that means
 for reconnecting, versioning and load balancing.
 
 ## Message framing
 
 The protocol operates on a bidirectional stream of discrete messages, each a single JSON value. The
-protocol itself does not define framing — that is the transport's job.
+protocol itself does not define framing: that is the transport's job.
 
 - Transports with native framing (WebSocket, `MessagePort`) map one transport message to one RPC
   message.

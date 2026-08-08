@@ -14,12 +14,12 @@ real front end: a React app served as static assets by the same Worker that answ
 It draws a timeline of the requests, so you can watch the sequential version wait out three round
 trips while the pipelined version makes one.
 
-It also shows the two halves of runtime validation — `@validateRpc()` on the server and
-`validateStub()` on the client — including what a rejected call looks like.
+It also shows the two halves of runtime validation, `@validateRpc()` on the server and
+`validateStub()` on the client, including what a rejected call looks like.
 
 :::note[There is no server behind this page.]
 The Worker is bundled into the page and answers its own requests, with the simulated latency from
-its `wrangler.jsonc`. The POST counts and the validation error are real —
+its `wrangler.jsonc`. The POST counts and the validation error are real:
 see [how the playground works](/examples/batch-pipelining/#how-this-page-runs).
 :::
 
@@ -51,7 +51,7 @@ const api = validateStub<Api>(newHttpBatchRpcSession<Api>('/api'));
 
 `runs.ts` imports the `Api` class from `server/worker.ts` **as a type**. That gives the client full
 autocomplete and compile-time checking against the real server interface, with no schema, no
-codegen step, and nothing shipped to the browser — the import disappears at build time.
+codegen step, and nothing shipped to the browser. The import disappears at build time.
 
 Types alone stop at the network boundary though, since anything can POST to `/api`. That is what the
 validation layer is for:
@@ -77,11 +77,11 @@ npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
 
 That runs it as a real Worker over a real network, which is the honest way to feel the round trips.
 
-For React hot reloading, run the Worker and the Vite dev server side by side — see the
+For React hot reloading, run the Worker and the Vite dev server side by side. See the
 [example's README](https://github.com/cloudflare/capnweb/tree/main/examples/worker-react).
 
 ## Next
 
-- [Runtime validation](/guides/validation/) — the validation package in full.
-- [Cloudflare Workers](/servers/workers/) — serving Cap'n Web from a Worker.
-- [RpcPromise & pipelining](/concepts/promises/) — the mechanism being demonstrated.
+- [Runtime validation](/guides/validation/): the validation package in full.
+- [Cloudflare Workers](/servers/workers/): serving Cap'n Web from a Worker.
+- [RpcPromise & pipelining](/concepts/promises/): the mechanism being demonstrated.

@@ -94,5 +94,5 @@ accept cross-origin HTTP, since WebSockets always permit cross-origin requests a
 response.headers.set('Access-Control-Allow-Origin', '*');
 ```
 
-Read [Security considerations](/guides/security/) before doing this — in particular, do not rely on
+Read [Security considerations](/guides/security/) before doing this; in particular, do not rely on
 cookies for authentication.

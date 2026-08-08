@@ -27,7 +27,7 @@ import { examples } from '../../examples.ts';
 
 Cap'n Web is a spiritual sibling to [Cap'n Proto](https://capnproto.org), created by the same
 author, but designed to play nice in the web stack. Like Cap'n Proto it is an **object-capability**
-protocol — "Cap'n" is short for "capabilities and". Unlike Cap'n Proto, it has no schemas, almost no
+protocol: "Cap'n" is short for "capabilities and". Unlike Cap'n Proto, it has no schemas, almost no
 boilerplate, and its serialization is just JSON with a little pre- and post-processing.
 
 ## Call the server. Let the server call you back.
@@ -71,7 +71,7 @@ export default {
 <CardGrid>
 	<Card title="Promise pipelining" icon="rocket">
 		Don't await a result before using it. Chain dependent calls together and the whole chain
-		resolves in a **single network round trip** — even over plain HTTP.
+		resolves in a **single network round trip**, even over plain HTTP.
 	</Card>
 	<Card title="Bidirectional by default" icon="random">
 		Sessions are symmetric. The client can call the server, and the server can call the client.
@@ -83,7 +83,7 @@ export default {
 	</Card>
 	<Card title="No schemas, no codegen" icon="approve-check">
 		No `.proto` files, no build step, no generated clients. Write TypeScript interfaces if you
-		want types — they are erased at runtime and cost nothing.
+		want types; they are erased at runtime and cost nothing.
 	</Card>
 	<Card title="Runs everywhere" icon="laptop">
 		Every major browser, Cloudflare Workers, Node.js, Deno, and Bun. Over HTTP, WebSocket,
@@ -97,7 +97,7 @@ export default {
 
 ## The magic trick
 
-Every call returns an `RpcPromise`. You can use that promise — or a property of it — as the input to
+Every call returns an `RpcPromise`. You can use that promise, or a property of it, as the input to
 another call *before it has resolved*. The server substitutes the real value on arrival, so a chain
 of dependent calls costs exactly one round trip:
 

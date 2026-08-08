@@ -4,7 +4,7 @@ description: How stubs work, what TypeScript knows about them, and how to forwar
 ---
 
 When a type `T` which extends [`RpcTarget`](/concepts/rpc-target/) (or is a function) is sent as
-part of an RPC message — in the arguments to a call, or in a return value — it is replaced with a
+part of an RPC message (in the arguments to a call, or in a return value), it is replaced with a
 stub of type `RpcStub<T>`.
 
 ## Stubs are proxies
@@ -25,7 +25,7 @@ property:
 let foo = await stub.foo;
 ```
 
-Property access itself is lazy and free — it produces an [`RpcPromise`](/concepts/promises/) you can
+Property access itself is lazy and free: it produces an [`RpcPromise`](/concepts/promises/) you can
 also pipeline through without awaiting.
 
 ## Forwarding stubs to third parties
@@ -52,7 +52,7 @@ You may construct a stub explicitly, without an RPC connection:
 let stub = new RpcStub(target);
 ```
 
-This is useful to perform local calls as if they were remote, and to manage disposal — passing one
+This is useful to perform local calls as if they were remote, and to manage disposal; passing one
 explicitly-created stub across several RPCs means the underlying target's disposer runs only once,
 when all copies are gone. See [Disposal](/concepts/disposal/).
 
@@ -60,7 +60,7 @@ when all copies are gone. See [Disposal](/concepts/disposal/).
 
 `stub.dup()` returns an independent duplicate. The target is disposed only when *all* duplicates
 have been disposed. You need this whenever you want to keep a stub that the RPC system would
-otherwise dispose out from under you — most commonly a callback received in a call's parameters.
+otherwise dispose out from under you, most commonly a callback received in a call's parameters.
 
 ## Detecting breakage
 

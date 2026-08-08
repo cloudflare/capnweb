@@ -31,7 +31,7 @@ promise's result. Specifically:
 - If the promise resolves to **any other value**, the mapper executes once on that value, returning
   the result.
 
-So `map()` handles both arrays and nullable values — it doubles as an "optional chaining" operator
+So `map()` handles both arrays and nullable values; it doubles as an "optional chaining" operator
 across the network.
 
 ## Restrictions
@@ -41,7 +41,7 @@ across the network.
 - The callback must be **synchronous**. It cannot await anything.
 - The input to the callback is an `RpcPromise`, so the callback cannot actually operate on it, other
   than to invoke its RPC methods, or use it in the params of other RPC methods.
-- Any stubs you use in the callback — and any parameters you pass to them — **will be sent to the
+- Any stubs you use in the callback (and any parameters you pass to them) **will be sent to the
   peer**. A malicious peer can use these stubs for anything, not just calling your callback.
   Typically it only makes sense to invoke stubs that came from the same peer originally, since that
   is what saves the round trip.
@@ -59,20 +59,20 @@ ids.map(id => api.getUser(id));
 
 :::danger[Some of this fails loudly. The dangerous half fails silently.]
 The callback parameter is typed as a placeholder rather than a value, so TypeScript rejects the more
-obvious abuses — but not all of them, and the ones it misses are the quiet ones:
+obvious abuses, but not all of them, and the ones it misses are the quiet ones:
 
 | You wrote            | What actually happens                              | TypeScript |
 | -------------------- | -------------------------------------------------- | ---------- |
-| `if (id)`            | Always true — every object is truthy                | Compiles   |
+| `if (id)`            | Always true (every object is truthy)                | Compiles   |
 | `` `user-${id}` ``   | The string `"user-[object RpcPromise]"`             | Compiles   |
 | `id > 100`           | Always false                                        | Error      |
-| `[...id]`            | Throws — the placeholder is not iterable            | Error      |
+| `[...id]`            | Throws: the placeholder is not iterable             | Error      |
 
 `id.length` is a third case: it is neither an error nor a mistake, because property access on a
 placeholder is a legitimate pipelined operation. It just gives you a promise for the length, not a
 number you can branch on.
 
-Use TypeScript for `.map()` — and don't assume it caught everything.
+Use TypeScript for `.map()`, but don't assume it caught everything.
 :::
 
 Two mistakes are caught at runtime rather than silently:
@@ -100,7 +100,7 @@ This is the question that trips people up most, and the answer has two halves:
 - **Your JavaScript runs on the calling side, exactly once**, when the recording is made.
 - **The RPC calls it recorded run on the receiving side, once per element.**
 
-So local computation is not repeated per element — it is evaluated once and the result is baked
+So local computation is not repeated per element; it is evaluated once and the result is baked
 into the recording:
 
 ```ts
@@ -110,8 +110,8 @@ ids.map(id => api.log(id, n++, new Date().toISOString()));
 ```
 
 Every element receives `n === 0` and the *same* timestamp, taken from the **caller's** clock. `n`
-ends up as `1`, not `ids.length`. Anything locale- or environment-dependent —
-`toLocaleString()`, `Math.random()`, `Date.now()` — samples the calling side once. That is usually
+ends up as `1`, not `ids.length`. Anything locale- or environment-dependent, such as
+`toLocaleString()`, `Math.random()`, or `Date.now()`, samples the calling side once. That is usually
 not what you want inside a map, so compute it on the peer instead by calling a method.
 
 RPC calls, including calls on stubs you captured from outside the callback, *do* run once per
@@ -133,12 +133,12 @@ do arithmetic on anyway. If you need positions, have the peer return them.
 `.map()` is the only array combinator Cap'n Web special-cases, and that is a deliberate stopping
 point rather than a to-do item.
 
-`.map()` works precisely because the common case *does no computation on the values* — it just
+`.map()` works precisely because the common case *does no computation on the values*: it just
 pipelines each element into another RPC, which is exactly what a recording can express. `filter()`,
 `find()`, `reduce()` and `sort()` all require actually evaluating something about each value, and
 the callback never sees values.
 
-Making those work would mean shipping an expression library in the protocol — `eq`, `gt`, `and`,
+Making those work would mean shipping an expression library in the protocol: `eq`, `gt`, `and`,
 `not`, arithmetic, and then everything anyone ever wants next. That library would only ever grow,
 it would bloat every implementation, and every operator is new surface for a peer to abuse.
 
@@ -154,7 +154,7 @@ class Api extends RpcTarget {
   }
 }
 
-// On the client — still one round trip.
+// On the client, still one round trip.
 using active = await api.getActiveUsers(api.listUserIds());
 ```
 
@@ -182,9 +182,9 @@ can't possibly use these promises as meaningful inputs, so it would logically pr
 result for every invocation. Any such computation ends up being performed on the sending side, just
 once, with the results baked into the recording.
 
-The wire format for this is the `["remap", ...]` expression — see the
+The wire format for this is the `["remap", ...]` expression. See the
 [protocol reference](/reference/protocol/#remap). Because the recording is data rather than code,
-no arbitrary code ever crosses the wire, and a non-JavaScript peer could evaluate one — see
+no arbitrary code ever crosses the wire, and a non-JavaScript peer could evaluate one; see
 [How it compares](/guides/comparisons/#is-it-a-protocol-or-a-javascript-library).
 
 ## Nesting and recursion

@@ -20,10 +20,10 @@ Everything below is exported from the `capnweb` package.
 
 | Function | Runtime |
 | -------- | ------- |
-| `newWorkersRpcResponse(request, api, options?)` | [Cloudflare Workers](/servers/workers/) — handles batch *and* WebSocket. |
+| `newWorkersRpcResponse(request, api, options?)` | [Cloudflare Workers](/servers/workers/). Handles batch *and* WebSocket. |
 | `newHttpBatchRpcResponse(request, api, options?)` | Any Fetch-API runtime. [Deno](/servers/deno/), [Bun](/servers/bun/), [others](/servers/other/). |
 | `nodeHttpBatchRpcResponse(request, response, api, options?)` | [Node.js](/servers/node/) `http` module. |
-| `newBunWebSocketRpcHandler(factory)` | [Bun](/servers/bun/) — returns a `Bun.serve()` `websocket` handler. |
+| `newBunWebSocketRpcHandler(factory)` | [Bun](/servers/bun/). Returns a `Bun.serve()` `websocket` handler. |
 | `newWebSocketRpcSession(socket, api, options?)` | Any runtime, given an open `WebSocket`. |
 
 ## Types and classes
@@ -55,7 +55,7 @@ A thenable that is *also* a stub for its own eventual result.
 | Member | Meaning |
 | ------ | ------- |
 | `await` / `.then()` | Resolve normally. |
-| *any method or property* | Pipelined — no round trip. |
+| *any method or property* | Pipelined, no round trip. |
 | `.map(fn)` | Transform the value remotely. [Docs](/concepts/map/) |
 | `.dup()` | Duplicate, usable immediately. |
 | `[Symbol.dispose]()` | Release; disposes the future result too. |
@@ -91,8 +91,8 @@ Passed as the last argument to the session and response helpers. Commonly used f
 | A stub you passed as a **parameter** | Dispose your copy; the callee's copy is auto-disposed. |
 | A stub received as a **parameter**, needed later | `.dup()` it, then dispose the duplicate later. |
 | A promise you will never await | Dispose it (or use `using`). |
-| A property of a stub or promise | Nothing — dispose the parent. |
-| Anything, in an HTTP batch | Nothing — the batch end disposes everything. |
+| A property of a stub or promise | Nothing; dispose the parent. |
+| Anything, in an HTTP batch | Nothing; the batch end disposes everything. |
 
 [Full rules](/concepts/disposal/)
 

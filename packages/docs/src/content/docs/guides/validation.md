@@ -3,7 +3,7 @@ title: Runtime Validation
 description: Generate runtime validators from your TypeScript types at build time with capnweb-validate.
 ---
 
-Cap'n Web does not type-check incoming values at runtime — TypeScript types are erased. The
+Cap'n Web does not type-check incoming values at runtime; TypeScript types are erased. The
 companion package [`capnweb-validate`](https://www.npmjs.com/package/capnweb-validate) closes that
 gap by keeping **TypeScript method signatures as the source of truth** and generating validators
 from them at build time.
@@ -18,7 +18,7 @@ silently running without validation. You cannot accidentally ship an unvalidated
 
 ## Does this mean defining my API twice?
 
-No — and this is the reason `capnweb-validate` exists in this shape.
+No, and this is the reason `capnweb-validate` exists in this shape.
 
 "Schemaless" means the *library* needs no schema: Cap'n Web forwards whatever call you make without
 being told about it in advance. It does not mean you have no contract. Your contract is the
@@ -27,7 +27,7 @@ code ever meets a hostile input.
 
 There are two honest ways to close that gap without writing the interface out twice:
 
-- **Generate the validators from the types.** That is what `capnweb-validate` does — the TypeScript
+- **Generate the validators from the types.** That is what `capnweb-validate` does: the TypeScript
   signature stays the single source of truth and the runtime check is derived from it at build time.
 - **Generate the types from the validators.** Schema libraries like [Zod](https://zod.dev/) infer
   TypeScript types from the schema object, so you write the schema and get the types for free.
@@ -74,7 +74,7 @@ export default {
 
 With no explicit type argument, the RPC surface is the class's public string-named methods and
 RPC-readable getters/properties, matching Cap'n Web dispatch. `implements SomeInterface` can sharpen
-matching signatures, but it does **not** hide extra public class methods — keep local-only helpers
+matching signatures, but it does **not** hide extra public class methods. Keep local-only helpers
 private or symbol-named.
 
 An explicit `@validateRpc<SomeInterface>()` makes `SomeInterface` the RPC surface. Public class
@@ -95,7 +95,7 @@ export const api = validateStub<Api>(newHttpBatchRpcSession<Api>('/rpc'));
 ```
 
 `validateStub<T>()` validates resolved return values on the caller side. It does **not** validate
-outgoing arguments — the receiver validates those on arrival.
+outgoing arguments; the receiver validates those on arrival.
 
 ## Wiring it into your build
 
@@ -167,9 +167,9 @@ The supported set matches Cap'n Web's published wire format: every type Cap'n We
 travel over RPC also has a precise build-time validator. That includes primitives and literal types,
 arrays, tuples, `Map`/`Set`, plain object shapes, unions, `Record`/index signatures, `Promise<T>`
 returns, and the RPC-compatible built-ins (`Date`, `ArrayBuffer`, typed arrays, `Error` subclasses,
-`Blob`, streams, `URL`, `Headers`, `Request`, `Response`). Pass-by-reference values — functions,
-`RpcStub<T>`, `RpcPromise<T>`, `RpcTarget` subclasses, and Workers `Fetcher<T>` — are validated as
-stubs.
+`Blob`, streams, `URL`, `Headers`, `Request`, `Response`). Pass-by-reference values are validated
+as stubs: functions, `RpcStub<T>`, `RpcPromise<T>`, `RpcTarget` subclasses, and Workers
+`Fetcher<T>`.
 
 These are rejected **at build time** so you find out before the first RPC call:
 
@@ -180,7 +180,7 @@ These are rejected **at build time** so you find out before the first RPC call:
 | `SharedArrayBuffer` | Not a supported RPC validation type.           |
 | `File`              | Use a `Blob` or `Uint8Array` instead.          |
 
-Overloaded methods are passed through unvalidated with a warning — validating against one signature
+Overloaded methods are passed through unvalidated with a warning. Validating against one signature
 would reject valid calls to the others. Collapse the overloads into a single signature with union
 parameters, or use `@skipRpcValidation()` to silence the warning.
 
@@ -226,7 +226,7 @@ sum(label: string, ...values: number[]) {
 
 Truncation only applies where the spec declares its parameters. A client-side spec omits `args`
 entirely, so nothing is dropped there. Extra *object properties*, by contrast, are forwarded to the
-implementation unvalidated — an index signature is the exception, since it validates every property
+implementation unvalidated; an index signature is the exception, since it validates every property
 outside the declared ones.
 
 Keep `strictNullChecks` on. Without it TypeScript erases `null` from your types, and the generated

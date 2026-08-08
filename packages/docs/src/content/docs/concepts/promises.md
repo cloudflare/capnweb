@@ -61,7 +61,7 @@ let c = await api.third(api.second(api.first()));
 | [WebSocket](/transports/websocket/)      | Three `push` messages, written back-to-back      | 1           |
 | [HTTP batch](/transports/http-batch/)    | One request body containing all three            | 1           |
 
-Over a WebSocket, Cap'n Web really does send a separate message per call — so if you go looking in
+Over a WebSocket, Cap'n Web really does send a separate message per call, so if you go looking in
 your browser's network inspector, you will find three frames, plus a `pull` for the result you
 awaited and a `release` afterwards. What it does *not* do is wait for a reply in between: they all
 go out in the same tick and the results come back together, which in elapsed network time is
@@ -89,7 +89,7 @@ let names = await api.listUserIds().map(id => [id, api.getUserName(id)]);
   promise, dispose it.**
 - Passing an `RpcPromise` in the params or return value of a call follows the same ownership rules
   as passing an `RpcStub`.
-- When you access a property of an `RpcStub` or `RpcPromise`, the result is itself an `RpcPromise` —
+- When you access a property of an `RpcStub` or `RpcPromise`, the result is itself an `RpcPromise`,
   but this one does **not** have its own disposer. You must dispose the stub or promise it came
   from.
 
@@ -103,12 +103,12 @@ let names = await api.listUserIds().map(id => [id, api.getUserName(id)]);
 
 :::caution[Never disposing is a memory leak, on both sides]
 Un-awaited, un-disposed promises accumulate. Each one holds an entry in the session's import table,
-and pins the corresponding export — and the object it refers to — alive on the peer. A client that
+and pins the corresponding export (and the object it refers to) alive on the peer. A client that
 keeps issuing calls and never settles them will grow your server's memory for as long as the
 session lasts.
 
 This is only bounded by the session ending. The library has no reference-count limit to configure,
-so if you serve untrusted peers you have to bound it in application code — attaching disposers to
+so if you serve untrusted peers you have to bound it in application code. Attaching disposers to
 the values you return gives you something to count. See
 [Security considerations](/guides/security/) and [Sessions](/guides/sessions/).
 :::

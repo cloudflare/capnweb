@@ -3,7 +3,7 @@ title: Sessions & Reconnection
 description: How long RPC state lives, what a dropped connection destroys, how to reconnect and resume, and how to evolve and scale a Cap'n Web service.
 ---
 
-Cap'n Web keeps state — but only for the life of one session, and never on disk. Understanding
+Cap'n Web keeps state, but only for the life of one session, and never on disk. Understanding
 exactly how long "one session" is answers most operational questions about it.
 
 ## Nothing is persistent
@@ -18,7 +18,7 @@ live objects. Those tables exist only in memory, only for that session:
 | [MessagePort](/transports/message-port/)    | The lifetime of the port                             |
 
 So there is no persistence story, because there is nothing to persist. You do **not** need a
-database, a session store, or a serialization format for the tables — and you could not write one
+database, a session store, or a serialization format for the tables. You could not write one
 anyway. An export ID is a reference to a live object in a live process. Serializing it would be
 like serializing a file descriptor.
 
@@ -39,8 +39,8 @@ class AuthedApi extends RpcTarget {
 }
 ```
 
-The client's ability to call `getUserId()` *is* the `AuthedApi` reference it holds. That object —
-and the `user` it closed over — lives until the session ends or the client disposes the stub. On an
+The client's ability to call `getUserId()` *is* the `AuthedApi` reference it holds. That object
+(and the `user` it closed over) lives until the session ends or the client disposes the stub. On an
 HTTP batch it lives for a few milliseconds. See
 [Security considerations](/guides/security/#authenticate-in-band-not-with-cookies).
 
@@ -65,7 +65,7 @@ In practice that means:
 ## Reconnecting
 
 Cap'n Web does not reconnect automatically, and it deliberately does not try to re-establish your
-stubs for you — it cannot know whether the objects they referred to still make sense.
+stubs for you: it cannot know whether the objects they referred to still make sense.
 
 When a session drops, **every stub from that session is permanently broken.** Pending calls reject,
 and new calls on old stubs fail immediately. Detect it with `onRpcBroken`:
@@ -117,7 +117,7 @@ a component holding a stub from the previous session.
 :::danger[Three things that will bite you here]
 **A stub is callable.** `RpcStub` is a `Proxy` whose target is a function, so
 `typeof stub === 'function'` is true. React's state setters treat a function argument as an *updater
-callback*, which means `setApi(newStub)` calls your stub instead of storing it — and because the
+callback*, which means `setApi(newStub)` calls your stub instead of storing it; because the
 call returns an `RpcPromise` rather than throwing, you get a rejected promise in state and no
 obvious error. Always `setApi(() => newStub)`.
 
@@ -128,7 +128,7 @@ Tie disposal to real unmount or page unload, not to an effect. (StrictMode also 
 `useState` initializers, so expect one extra socket in development.)
 
 **`onRpcBroken` cannot be unregistered.** It returns nothing, and registering twice on the same stub
-fires twice. Register it where the session is created — as `connect()` does above — rather than in
+fires twice. Register it where the session is created (as `connect()` does above) rather than in
 an effect that might re-run.
 :::
 
@@ -150,7 +150,7 @@ subscription that survives a train tunnel and one that does not.
 
 ## Versioning and deploys
 
-Cap'n Web has no schema, so it also has no schema-evolution mechanism — no field numbers, no
+Cap'n Web has no schema, so it also has no schema-evolution mechanism: no field numbers, no
 reserved tags, no wire-level compatibility rules to learn. The rules are the ones you already know
 for **evolving a JavaScript API without breaking existing callers.**
 
@@ -163,7 +163,7 @@ for **evolving a JavaScript API without breaking existing callers.**
 | Return a new capability alongside the old one     | Change what an existing method returns         |
 
 \* These are the rules for Cap'n Web itself. If you use [`capnweb-validate`](/guides/validation/),
-its generated validators are stricter — a peer whose validator was built before you added a method
+its generated validators are stricter; a peer whose validator was built before you added a method
 will refuse the call. Its own compatibility table is under
 [Schema evolution](/guides/validation/#schema-evolution), and you should read both.
 
@@ -192,11 +192,11 @@ that is specific to pipelining.
   frames, sees almost nothing. Rate-limit expensive *operations* inside the application. See
   [Security considerations](/guides/security/#rate-limit-because-pipelining-is-cheap-for-attackers).
 - **Budget memory per session.** Everything the peer holds a reference to is pinned in your export
-  table until it is released, and the library has no export-count limit to set — bounding what a
+  table until it is released, and the library has no export-count limit to set; bounding what a
   single session may accumulate is your own bookkeeping. See
   [Security considerations](/guides/security/).
 
-[HTTP batch](/transports/http-batch/) sidesteps all of this — a batch is one request, any instance
+[HTTP batch](/transports/http-batch/) sidesteps all of this: a batch is one request, any instance
 can serve it, and everything is released when the response is written. It is the right transport
 for a stateless edge deployment.
 

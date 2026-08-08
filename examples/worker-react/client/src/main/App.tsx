@@ -38,14 +38,14 @@ export function App() {
 
   return (
     <>
-      <header className="site"><a href="/">Cap'n Web &mdash; Workers + React</a></header>
+      <header className="site"><a href="/">Cap'n Web: Workers + React</a></header>
 
       <main className="page">
         <h1>One round trip, from a React app</h1>
         <p className="lede">
           Three dependent calls to a Worker, made both ways: pipelined into a single request, and
           sequentially in three. The timeline shows when each call was in flight. Latency is
-          simulated on the server, so the work is identical either way &mdash; only the round trips
+          simulated on the server, so the work is identical either way; only the round trips
           differ.
         </p>
         <button onClick={runDemo} disabled={running}>
@@ -54,7 +54,7 @@ export function App() {
 
         <section>
           <h2>Validation</h2>
-          <p>Calls <code>authenticate(12345)</code> instead of a string — the server rejects the wrong-typed argument.</p>
+          <p>Calls <code>authenticate(12345)</code> instead of a string. The server rejects the wrong-typed argument.</p>
           <button className="secondary" onClick={showValidationFailure}>Test validation failure</button>
           {validationError && <pre className="validation-error">{validationError}</pre>}
         </section>
@@ -104,7 +104,7 @@ export function App() {
           <a href="https://github.com/cloudflare/capnweb/tree/main/examples/worker-react">
             examples/worker-react
           </a>. Latency is simulated on the server via <code>SIMULATED_RTT_MS</code> in{' '}
-          <code>wrangler.jsonc</code>, so both columns do identical work &mdash; see{' '}
+          <code>wrangler.jsonc</code>, so both columns do identical work. See{' '}
           <a href="https://capnweb.com/concepts/promises/">promise pipelining</a>.
         </footer>
       </main>

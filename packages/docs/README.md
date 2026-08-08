@@ -22,7 +22,7 @@ npm run check    # astro check (types + content collections)
 
 `dev` and `build` are both preceded by `npm run playgrounds`, which bundles the examples into
 `public/playground/`. That step reads the library's **build output**, so run `npm run build` at the
-repo root first — or just use `npm run dev:docs` there, which does both.
+repo root first, or just use `npm run dev:docs` there, which does both.
 
 The examples no longer need to be running for the docs to work: their demos are bundled into the
 pages. To run one as a real Worker over a real network, see `examples/README.md`.
@@ -53,7 +53,7 @@ means adding both the file and its sidebar entry.
 
 **This site is the source of truth for user-facing documentation.** It began as a migration of the
 repo's root `README.md` and `protocol.md`; the root README has since been trimmed to a landing page
-that links here, and `protocol.md` is gone — `reference/protocol` replaced it.
+that links here, and `protocol.md` is gone; `reference/protocol` replaced it.
 
 If you change behaviour, update the page here. Two files still hold prose of their own and should be
 kept in sync by hand:
@@ -170,7 +170,7 @@ Every page gets its own Open Graph image, generated at build time and written to
 `/og/<slug>.png` (`/og/index.png` for the landing page). `src/components/Head.astro` points each
 page at its own; Starlight already emits the rest of the Open Graph and Twitter tags.
 
-The card reuses the hero's motif — a network of nodes wired to their nearest neighbours, with a few
+The card reuses the hero's motif: a network of nodes wired to their nearest neighbours, with a few
 edges lit in Cloudflare orange to stand for calls in flight. `src/lib/og-network.ts` is a small,
 separate implementation of that idea: the hero needs GPU buffers and a frame loop, and a still image
 needs a string of SVG. The network is seeded from the page slug, so each page gets a different one
@@ -187,7 +187,7 @@ and it never changes between builds.
 Two things worth knowing:
 
 **The fonts are build-time only.** Satori has to measure glyphs to break lines, so it needs real
-font data. Nothing here is served to a browser — the site still uses system fonts and ships no web
+font data. Nothing here is served to a browser. The site still uses system fonts and ships no web
 fonts. If a new page title introduces a glyph outside the subset it renders as a blank box; extend
 the character set in `scripts/build-og-fonts.mjs` and run `npm run og:fonts -- <path-to-inter>`.
 
@@ -218,20 +218,20 @@ globalThis.fetch = async (input, init) => {
 };
 ```
 
-Everything above that line is the genuine code path — the same session setup, the same batch
+Everything above that line is the genuine code path: the same session setup, the same batch
 encoding, the same `newWorkersRpcResponse` answering. So the round-trip counts the demos print are
 real, and the whole site still deploys as static assets. `newWorkersRpcResponse` is safe to run in a
 browser because its POST branch is just the HTTP batch path; only the WebSocket-upgrade branch
 touches `WebSocketPair`, and the shim never routes an upgrade to it.
 
 Output lands in `public/playground/<slug>/` and is gitignored. `predev` and `prebuild` regenerate
-it, so it cannot go stale — but note it bundles the library's **build output**, so a change to
+it, so it cannot go stale, but note it bundles the library's **build output**, so a change to
 `src/` needs `npm run build` at the repo root before it reaches a playground.
 
 The iframe points at `/playground/<slug>/index.html`, spelled out in full. Astro's dev server does
 not resolve a directory request under `public/` to its index, so the tidier-looking
-`/playground/<slug>/` is a 404 in dev even though most static hosts — including Cloudflare's asset
-handling — would serve it. The path is derived from the slug in `examples.ts` so it cannot drift
+`/playground/<slug>/` is a 404 in dev even though most static hosts, including Cloudflare's asset
+handling, would serve it. The path is derived from the slug in `examples.ts` so it cannot drift
 from where the bundler writes.
 
 Worth knowing when verifying this: **a production build served by any ordinary static file server
@@ -255,7 +255,7 @@ Details worth keeping:
 
 **The code is read from the real files at build time.** `src/lib/source.ts` reads each path from the
 repo, so the source on the site cannot drift from the code that ships. A moved or renamed file is a
-build error, not a silently empty tab — that is the whole point, so please keep it that way rather
+build error, not a silently empty tab; that is the whole point, so please keep it that way rather
 than catching the error.
 
 **Whole files only.** There is no mechanism for showing an excerpt, and that is deliberate: an
@@ -264,7 +264,7 @@ numbers drift silently the moment anything above them changes, and named regions
 way of leaving a file badly organised while making its docs tab look tidy.
 
 So when a file is too long or too mixed to show, the fix is to split the file. Each example keeps
-its RPC code in a module of its own — `demo.js`, `runs.ts`, `session.js` — with the DOM wiring
+its RPC code in a module of its own (`demo.js`, `runs.ts`, `session.js`) with the DOM wiring
 somewhere else. That is better code regardless of the docs, which is the point.
 
 Finding the repo root is done by walking up to sentinel files rather than counting `..` segments,
@@ -287,17 +287,17 @@ Each demo applies the result with `color-scheme`, which is why they use `light-d
 
 The stage's own chrome deliberately does **not** use the site palette. It is meant to read as an
 editor, so `Playground.astro` defines a small local palette matching the code theme
-(github-dark / github-light) — the active tab's background is the same colour as the code block it
+(github-dark / github-light). The active tab's background is the same colour as the code block it
 sits on, which is what makes the tab strip look attached rather than stuck on top. Expressive Code
 publishes those colours as `--ec-frm-*`, but they are scoped to `.expressive-code .frame` and so do
 not inherit out to the toolbar; the values are mirrored locally instead. If the code theme changes,
 change them too.
 
 For the same reason the code block's own frame is stripped inside the stage (`border`,
-`border-radius`, `box-shadow`, and the empty `figcaption`) — nested frames were what made it look
+`border-radius`, `box-shadow`, and the empty `figcaption`); nested frames were what made it look
 like a widget. The tab strip and the preview toolbar are both `2.25rem` so the two panes line up.
 
-The demos keep their own visual identity — the React one is Cloudflare orange — on purpose. The
+The demos keep their own visual identity (the React one is Cloudflare orange) on purpose. The
 toolbar above the frame is the boundary; making them look like docs widgets would undercut the point
 that these are real apps. What they should *not* keep is their own page chrome: the React app's 5px
 brand stripe is `display: none` under `[data-embedded]`, alongside its `h1`, because framed it just
@@ -317,7 +317,7 @@ An entry in `src/examples.ts` (both the `files` list and the `build` block), a p
 ## Deployment
 
 `npm run build` emits a plain static site to `dist/`, deployable anywhere. Set `DOCS_SITE_URL` at
-build time once a canonical domain exists — it enables canonical URLs, Open Graph URLs and sitemap
+build time once a canonical domain exists; it enables canonical URLs, Open Graph URLs and sitemap
 generation:
 
 ```sh

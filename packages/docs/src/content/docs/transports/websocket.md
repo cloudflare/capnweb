@@ -89,10 +89,10 @@ closes it.
 
 Runtime-specific wiring:
 
-- [Cloudflare Workers](/servers/workers/) — `newWorkersRpcResponse()` does it for you.
-- [Node.js](/servers/node/) — use the `ws` package.
-- [Deno](/servers/deno/) — `Deno.upgradeWebSocket()`.
-- [Bun](/servers/bun/) — `newBunWebSocketRpcHandler()`.
+- [Cloudflare Workers](/servers/workers/): `newWorkersRpcResponse()` does it for you.
+- [Node.js](/servers/node/): use the `ws` package.
+- [Deno](/servers/deno/): `Deno.upgradeWebSocket()`.
+- [Bun](/servers/bun/): `newBunWebSocketRpcHandler()`.
 
 ## Disconnection
 
