@@ -67,8 +67,8 @@ kept in sync by hand:
 
 ## The theme
 
-`src/styles/theme.css` is dark-first. The palette is a near-black with a blue undertone -- never a
-neutral grey -- carrying a deep saturated blue as its structural colour and an electric azure for
+`src/styles/theme.css` is dark-first. The palette is a near-black with a blue undertone (never a
+neutral grey) carrying a deep saturated blue as its structural colour and an electric azure for
 anything interactive.
 
 Cloudflare orange appears in exactly three places, and the restraint is the point: a fourth use and
@@ -79,9 +79,9 @@ it stops meaning anything.
 3. the marker on the current sidebar page
 
 Light mode is a genuine second scheme rather than an inversion: a cool near-white with the same two
-accents, darkened to hold contrast on paper. The chrome -- masthead and sidebar -- stays near-black
-in **both** schemes, so it reads as one continuous piece of material. That is done by re-declaring
-the dark palette inside `[data-theme='light'] .sidebar-pane` so every Starlight component in there
+accents, darkened to hold contrast on paper. The masthead and sidebar stay near-black in **both**
+schemes, so the chrome reads as one continuous piece of material. That is done by re-declaring the
+dark palette inside `[data-theme='light'] .sidebar-pane` so every Starlight component in there
 recolours itself without individual rules.
 
 There are no web fonts and no raster images. The only textures are gradients.
@@ -112,7 +112,7 @@ nothing behind it, and shipping a 3D framework to draw points and lines would un
 first paint.
 
 The animation is an argument, not decoration. Each pulse leaves a node, runs outward across several
-hops and returns along the same path -- the whole dependent chain, one trip. That is what promise
+hops and returns along the same path: the whole dependent chain, one trip. That is what promise
 pipelining buys you, so the hero shows it rather than asserting it.
 
 Everything degrades, and each fallback is a designed state rather than a hole:
@@ -121,7 +121,7 @@ Everything degrades, and each fallback is a designed state rather than a hole:
 | --------------------------- | ------------------------------------------------------------------- |
 | No JavaScript               | The CSS gradient under the canvas, same composition                 |
 | No WebGL2                   | Same, and `data-state="unsupported"`; the canvas stays at opacity 0 |
-| `prefers-reduced-motion`    | Exactly one frame -- a still portrait of the network, no rAF loop   |
+| `prefers-reduced-motion`    | Exactly one frame, a still portrait of the network, no rAF loop     |
 | Canvas scrolled out of view | Loop parked by an `IntersectionObserver`                            |
 | Tab hidden                  | Loop parked on `visibilitychange`                                   |
 | Context lost                | Parked; **rebuilt** on `webglcontextrestored`                       |
@@ -132,8 +132,8 @@ rectangle. All GPU objects therefore live in one `Gpu` struct that is dropped an
 while the simulation state sits outside it so a restore resumes the animation instead of restarting
 it. Calling `preventDefault()` on the loss event is what makes the restore event fire at all.
 
-The graph is deterministic -- a fixed-seed PRNG over a Fibonacci sphere -- so the same hero renders
-every load and a visual difference means a real change rather than a new random seed.
+The graph is deterministic, built from a fixed-seed PRNG over a Fibonacci sphere, so the same hero
+renders every load and a visual difference means a real change rather than a new random seed.
 
 Light mode is not a recolour of the same drawing. Additive blending can only ever *add* light, so on
 a near-white page it does nothing at all. The renderer switches to normal compositing
@@ -159,12 +159,12 @@ Keep an eye on both when upgrading Starlight.
 build time; handing it `var(--cw-border)` fails the parse and silently drops the *entire* generated
 stylesheet. The symptom is code blocks losing their background and the copy button rendering
 unstyled in normal flow, which does not look like a colour problem at all. Retint through EC's own
-custom properties from CSS instead -- see the `.expressive-code` block at the end of `theme.css`.
+custom properties from CSS instead; see the `.expressive-code` block at the end of `theme.css`.
 
 **Clean the build before judging code-block styling.** `astro build` does not empty `dist/`, and a
 stale `index.html` can end up referencing an `ec.<hash>.css` that no longer exists. The stylesheet
-then 404s and every code block renders unstyled -- identical to the symptom above, from a completely
-different cause. `rm -rf dist` first.
+then 404s and every code block renders unstyled, identical to the symptom above but from a
+completely different cause. `rm -rf dist` first.
 
 ## Social cards
 
