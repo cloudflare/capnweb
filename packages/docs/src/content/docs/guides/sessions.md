@@ -46,7 +46,7 @@ HTTP batch it lives for a few milliseconds. See
 
 ## Design for the session going away
 
-Because a session can end at any moment, the important design rule is:
+Because a session can end at any moment:
 
 :::tip
 **It must always be possible to reconnect and reconstruct.** Never design an interaction where
@@ -201,4 +201,4 @@ can serve it, and everything is released when the response is written. It is the
 for a stateless edge deployment.
 
 On Cloudflare Workers, a [Durable Object](/servers/workers/) gives a session a natural, addressable
-home, which is why it pairs so well with long-lived Cap'n Web sessions.
+home.

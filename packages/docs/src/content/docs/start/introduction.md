@@ -9,7 +9,8 @@ same author), but designed to play nice in the web stack. That means:
 - Like Cap'n Proto, it is an **object-capability protocol**. ("Cap'n" is short for "capabilities
   and", making this *capabilities and the web*. The nautical breakfast-cereal overtones are
   inherited from Cap'n Proto, which bills itself as a "cerealization protocol", and are entirely
-  deliberate.) It's incredibly powerful, and we get into it below.
+  deliberate.) Possession of a stub is itself the authority to use it, which is what
+  [Security](/guides/security/) builds on.
 - Unlike Cap'n Proto, Cap'n Web has **no schemas**. In fact, it has almost no boilerplate
   whatsoever. This means it works more like the
   [JavaScript-native RPC system in Cloudflare Workers](https://blog.cloudflare.com/javascript-native-rpc/).
@@ -62,7 +63,7 @@ systems, see [How it compares](/guides/comparisons/).
 
 ## A protocol, or a library?
 
-Both, and it is worth being clear which one you are dealing with.
+Both, and the two are worth keeping apart.
 
 The `capnweb` npm package is an implementation. The [wire protocol](/reference/protocol/) is a
 specification, and you can write your own peer against it. The protocol is JavaScript-flavoured to

@@ -3,9 +3,8 @@ title: WebSocket
 description: Long-lived, fully bidirectional Cap'n Web sessions with newWebSocketRpcSession.
 ---
 
-In WebSocket mode, the client forms a long-lived connection to the server, allowing many calls over
-a long period of time. In this mode the server can also make asynchronous calls **back to the
-client**.
+In WebSocket mode, the client forms a long-lived connection to the server and makes many calls over
+it. The server can also make asynchronous calls **back to the client**.
 
 ## Client
 
@@ -84,8 +83,7 @@ function newWebSocketRpcSession(
 ): Disposable;
 ```
 
-Dispose the returned `Disposable` to close the connection, or just let it run until the client
-closes it.
+Dispose the returned `Disposable` to close the connection, or let it run until the client closes it.
 
 Runtime-specific wiring:
 

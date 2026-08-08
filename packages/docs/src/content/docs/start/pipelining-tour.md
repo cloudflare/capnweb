@@ -3,8 +3,8 @@ title: Pipelining Tour
 description: Chain dependent RPC calls into a single network round trip, including the record-replay trick behind .map().
 ---
 
-This is the feature that makes Cap'n Web interesting. Read this page and the rest of the library
-will make sense.
+Pipelining is what lets a chain of dependent calls cost one round trip instead of one per call. The
+rest of the library is built around it.
 
 ## The problem
 
@@ -64,7 +64,7 @@ console.log(`Hello, ${profile.name}!`);
 Five logical calls, arbitrary depth of dependency, **one round trip**.
 
 :::note
-It's important to simultaneously await all promises for which you actually want the result. If you
+Await every promise whose result you actually want, and await them together. If you
 don't await a promise before the batch is sent, the system detects this and doesn't ask the server
 to send the return value back at all; it saves the bandwidth.
 :::
@@ -99,10 +99,9 @@ behaviour is deterministic. Real computation (arithmetic, branching) can't meani
 those promises, so it must produce the same result on every invocation, and it gets performed once
 on the sending side, with the result baked into the recording.
 
-So the split is: **your JavaScript runs on the calling side exactly once; the RPCs it recorded run
-on the peer, once per element.** See
-[Which side runs what](/concepts/map/#which-side-runs-what) for why that matters, and
-[The magic `map()`](/concepts/map/) for the full rules and restrictions.
+**Your JavaScript runs on the calling side exactly once; the RPCs it recorded run on the peer, once
+per element.** See [Which side runs what](/concepts/map/#which-side-runs-what) for the consequences,
+and [The magic `map()`](/concepts/map/) for the full rules and restrictions.
 
 ## With a WebSocket instead
 

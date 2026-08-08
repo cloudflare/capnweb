@@ -30,7 +30,7 @@ for await (let chunk of stream) {
 
 ## Flow control
 
-Streaming is done in such a way as to ensure the available bandwidth is fully utilized while
+Streaming is done in such a way as to ensure the available bandwidth is fully used while
 minimizing buffer bloat, by observing the bandwidth-delay product and applying backpressure when too
 much is written.
 
@@ -44,7 +44,7 @@ concurrently on the same session.
 
 ## Blobs
 
-`Blob` is also supported by value. Because reading a `Blob`'s bytes is inherently asynchronous,
+`Blob` is also supported by value. Because reading a `Blob`'s bytes is asynchronous,
 blobs always travel over the same pipe machinery as streams, even when small. The receiver collects
 all chunks before delivering the value to application code.
 

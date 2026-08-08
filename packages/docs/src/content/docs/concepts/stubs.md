@@ -18,8 +18,7 @@ TypeScript, you get full compile-time type checking, autocomplete, and refactori
 
 ## Reading properties
 
-To read a property from the remote object, as opposed to calling a method, simply `await` the
-property:
+To read a property from the remote object, as opposed to calling a method, `await` the property:
 
 ```ts
 let foo = await stub.foo;
@@ -41,8 +40,8 @@ Carol ──call──▶ Alice ──proxied──▶ Bob
 As of this writing, any such calls are proxied through Alice. In the future we may support
 "three-party handoff" so that Carol can make a direct connection to Bob.
 
-This is the heart of the object-capability model: possession of the stub *is* the authority to use
-it, and that authority can be delegated by simply passing it along.
+In the object-capability model, possession of the stub *is* the authority to use it, and that
+authority is delegated by passing it along.
 
 ## Constructing a stub locally
 

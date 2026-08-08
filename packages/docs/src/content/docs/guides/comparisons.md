@@ -51,7 +51,7 @@ GraphQL and Cap'n Web attack the same problem from opposite ends. GraphQL gives 
 language so it can describe a whole dependent graph in one request. Cap'n Web gives the client
 promise pipelining so it can *write ordinary code* that happens to produce one request.
 
-The comparison is aggressive, though, and it is worth being precise about where it fails.
+The comparison is aggressive, though, and it breaks down in places.
 
 :::caution[`.map()` does not remove N+1; it relocates it]
 Pipelining collapses **network** round trips. It does not collapse **database** queries.
@@ -111,8 +111,7 @@ natural in a dynamic language and awkward in a static one.
 ## Isn't this distributed objects all over again?
 
 CORBA, Java RMI and .NET Remoting all tried to make remote objects work, and all are cautionary
-tales. It is a fair challenge, and the honest answer is that Cap'n Web is making a specific bet
-about *why* they failed.
+tales. It is a fair challenge, and Cap'n Web is making a specific bet about *why* they failed.
 
 The usual diagnosis is that they tried to make a remote call look exactly like a local call, to
 hide the network. That cannot work, because the differences are not cosmetic: remote calls have
@@ -140,9 +139,9 @@ how your API evolves (see [Sessions & reconnection](/guides/sessions/)).
 
 ## Is it a protocol, or a JavaScript library?
 
-Both, and the distinction matters if you want to build an interoperating peer. The `capnweb` npm
-package is one implementation; the [wire protocol](/reference/protocol/) is a specification you can
-implement yourself.
+Both. The `capnweb` npm package is one implementation; the [wire protocol](/reference/protocol/) is
+a specification you can implement yourself, which is what you would do to build an interoperating
+peer.
 
 The protocol is JavaScript-flavoured to roughly the same extent JSON is. Its value types are the
 JavaScript built-ins, but nothing about the framing, the import/export tables or the expression

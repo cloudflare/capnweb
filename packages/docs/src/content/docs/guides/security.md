@@ -121,9 +121,9 @@ Consider a runtime type-checking framework like [Zod](https://zod.dev/), or the 
 build time. In the future we hope to explore auto-generating type-checking code based on TypeScript
 types in the core library.
 
-A concrete version of the same worry: **can a peer pass a callback where you declared a `string`?**
-Yes. It will arrive as an `RpcStub`, your code will do something surprising with it, and TypeScript
-will have told you nothing. Validate at the boundary.
+Can a peer pass a callback where you declared a `string`? Yes. It will arrive as an `RpcStub`, your
+code will do something surprising with it, and TypeScript will have told you nothing. Validate at
+the boundary.
 
 ### What the protocol does guarantee
 
@@ -142,10 +142,9 @@ regardless of what you do:
 What is reachable *on* an object depends on what kind of object it is, and the two rules are
 opposites: an `RpcTarget` exposes its **prototype** members and explicitly refuses instance
 properties, while a plain object exposes its **own** properties only. That distinction decides where
-it is safe to put a secret, so it is worth reading
-[RpcTarget](/concepts/rpc-target/) rather than guessing.
+it is safe to put a secret, so read [RpcTarget](/concepts/rpc-target/) rather than guessing.
 
-## Two more things worth knowing
+## `private` and `.map()`
 
 **`private` is not private.** TypeScript's `private` is erased at runtime and does not hide a method
 from RPC. Use `#`-prefixed names for genuinely private members. See

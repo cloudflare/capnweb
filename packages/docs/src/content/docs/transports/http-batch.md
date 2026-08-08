@@ -75,7 +75,7 @@ new batch for further calls.
 - **Cheap.** No connection to keep alive, no reconnection logic, no heartbeats.
 - **No disposal bookkeeping.** All stubs are implicitly disposed when the batch ends.
 
-The trade-off: the server cannot call you back later, and there is no subscription model.
+In exchange, the server cannot call you back later, and there is no subscription model.
 
 ## Server side
 

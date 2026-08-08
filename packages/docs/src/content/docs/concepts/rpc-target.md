@@ -68,7 +68,7 @@ await api.subscribe((event) => console.log('got', event));
 
 If the function has any own properties, those *will* be available over RPC. Note this is the
 opposite of `RpcTarget`: with `RpcTarget`, own properties are not exposed; with functions, *only*
-own properties are exposed. Generally functions don't have properties anyway, making the point moot.
+own properties are exposed. Generally functions don't have properties anyway.
 
 :::caution
 A callback stub received in a call's parameters is disposed when that call returns. If the server

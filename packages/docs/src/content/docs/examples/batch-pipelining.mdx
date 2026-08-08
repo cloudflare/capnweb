@@ -18,8 +18,8 @@ difference is how many times the browser has to cross the network.
 
 :::note[There is no server behind this page.]
 The Worker on the left is bundled into the page and answers its own requests, so the round-trip
-counts are real but nothing crosses the network. Same code, same protocol. See
-[how the playground works](#how-this-page-runs).
+counts are real but nothing crosses the network. The code and the protocol are identical either way.
+See [how the playground works](#how-this-page-runs).
 :::
 
 ## What makes it one round trip
@@ -67,7 +67,7 @@ the page can change it without a redeploy.
 
 ## How this page runs
 
-The demo above is the example's real Worker and its real browser client, bundled together into one
+The demo above is the example's unmodified Worker and browser client, bundled together into one
 page. A small shim replaces `fetch` for the `/rpc` path and hands the request straight to the
 Worker's `fetch` handler:
 
@@ -92,7 +92,7 @@ npm run build   # the examples resolve capnweb to dist/
 npx wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788
 ```
 
-The terminal client runs the same comparison against a real server over a real network:
+The terminal client runs the same comparison against a server in a separate process:
 
 ```sh
 node examples/batch-pipelining/server-node.mjs   # in one shell
@@ -101,6 +101,6 @@ node examples/batch-pipelining/client.mjs        # in another
 
 ## Next
 
-- [RpcPromise & pipelining](/concepts/promises/): how the promise references actually work.
+- [RpcPromise & pipelining](/concepts/promises/): how the promise references work.
 - [The pipelining tour](/start/pipelining-tour/): a step-by-step walkthrough, including `.map()`.
 - [HTTP batch transport](/transports/http-batch/): what this example is running on.

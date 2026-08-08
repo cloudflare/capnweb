@@ -75,7 +75,7 @@ npm run build   # the examples resolve capnweb to dist/
 npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
 ```
 
-That runs it as a real Worker over a real network, which is the honest way to feel the round trips.
+That serves it from a Worker, so the round trips cross the network.
 
 For React hot reloading, run the Worker and the Vite dev server side by side. See the
 [example's README](https://github.com/cloudflare/capnweb/tree/main/examples/worker-react).

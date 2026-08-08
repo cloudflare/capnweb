@@ -63,9 +63,8 @@ RPC. The intent is that the two converge, with Cap'n Web arriving first.
 | `RpcPromise` in the parameters of a request             | Yes       | Not yet     |
 | The magic `.map()` method                               | Yes       | Not yet     |
 
-\* Workers RPC supports sending values that contain aliases and cycles. This can actually cause
-problems, so we plan to **remove** this feature from Workers RPC, with a compatibility flag, of
-course.
+\* Workers RPC supports sending values that contain aliases and cycles. This can cause problems, so
+we plan to **remove** this feature from Workers RPC, with a compatibility flag, of course.
 
 ## Ownership differences
 

@@ -57,7 +57,7 @@ ids.map(id => (id > 100 ? api.getBigUser(id) : api.getUser(id)));
 ids.map(id => api.getUser(id));
 ```
 
-:::danger[Some of this fails loudly. The dangerous half fails silently.]
+:::danger[TypeScript catches only some of these mistakes]
 The callback parameter is typed as a placeholder rather than a value, so TypeScript rejects the more
 obvious abuses, but not all of them, and the ones it misses are the quiet ones:
 
@@ -89,13 +89,13 @@ using listener = new RpcStub(new MyListener());
 ids.map(id => api.subscribe(id, listener.dup()));
 ```
 
-The `.dup()` in that last line is not decoration. Stubs captured by a recording are consumed when
+The `.dup()` in that last line is required. Stubs captured by a recording are consumed when
 the map completes, so passing `listener` bare leaves your outer stub disposed, and the next thing
 you do with it throws `Attempted to use an RPC StubHook after it was disposed.`
 
 ## Which side runs what
 
-This is the question that trips people up most, and the answer has two halves:
+The answer has two halves:
 
 - **Your JavaScript runs on the calling side, exactly once**, when the recording is made.
 - **The RPC calls it recorded run on the receiving side, once per element.**
@@ -124,7 +124,7 @@ let counter = new RpcStub(new Counter(0));
 await ids.map(id => { counter.increment(); return api.getUser(id); });
 ```
 
-There is also **no index argument.** `.map()` passes one parameter, and TypeScript will reject a
+There is also no index argument. `.map()` passes one parameter, and TypeScript will reject a
 callback that declares two. An index would have to be a promise for the index, which you could not
 do arithmetic on anyway. If you need positions, have the peer return them.
 

@@ -13,7 +13,7 @@ But you can do more with an `RpcPromise`, because it supports **promise pipelini
 
 ## 1. A promise is also a stub
 
-An `RpcPromise` acts as a stub for the eventual result of the promise. You can access properties and
+An `RpcPromise` is a stub for the eventual result of the promise. You can access properties and
 invoke methods on it without awaiting it first.
 
 ```ts
@@ -39,8 +39,8 @@ an `RpcPromise<T>` anywhere a `T` is required.
 
 ## Awaiting is what costs a round trip
 
-The mental model that matters: **building the chain is free; awaiting is what talks to the
-network.** Structure your code so that everything you need is expressed before the first `await`.
+**Building the chain is free; awaiting is what talks to the network.** Structure your code so that
+everything you need is expressed before the first `await`.
 
 ```ts
 // ❌ Three round trips.
@@ -68,8 +68,8 @@ go out in the same tick and the results come back together, which in elapsed net
 indistinguishable from sending one message. The HTTP batch transport goes further and concatenates
 the whole batch into a single request body.
 
-The useful rule: **count your `await`s, not your calls.** If you can set up an entire chain without
-awaiting anything, it costs one round trip no matter how many calls are in it.
+**Count your `await`s, not your calls.** If you can set up an entire chain without awaiting
+anything, it costs one round trip no matter how many calls are in it.
 
 ## Transforming without pulling data back
 
