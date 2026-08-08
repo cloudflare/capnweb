@@ -456,8 +456,17 @@ starlight-theme-toggle button:hover {
 }
 
 /* A hairline under every h2 that fades out to the right, so sections read as
-   sections without a hard rule across the column. */
-.sl-markdown-content h2 {
+   sections without a hard rule across the column.
+ *
+ * This goes on the heading's wrapper, not on the h2. Starlight sets the heading
+ * element itself to `display: inline` so the anchor link can sit at the end of
+ * the last line, and an inline box paints its background once per line
+ * fragment. Put the gradient on the h2 and any heading long enough to wrap gets
+ * a second hairline struck through its middle. The wrapper is a block, so it
+ * gets exactly one. An h2 that is a direct child of the content has no wrapper
+ * (no anchor link was added to it) and is still safe to style directly. */
+.sl-markdown-content > h2,
+.sl-markdown-content .sl-heading-wrapper.level-h2 {
 	padding-bottom: 0.35em;
 	background-image: linear-gradient(
 		to right,
@@ -496,10 +505,6 @@ starlight-theme-toggle button:hover {
 .sl-markdown-content :is(th, td) {
 	border: 1px solid var(--cw-border);
 	padding: 0.5rem 0.75rem;
-}
-
-.sl-markdown-content tbody tr:nth-child(even) {
-	background-color: var(--cw-raised);
 }
 
 .sl-markdown-content blockquote {
@@ -690,6 +695,15 @@ main:has(.hero) {
 
 .expressive-code .frame pre {
 	border-radius: var(--cw-radius-sm);
+}
+
+/* A code block with a title gets a tab above the `pre`. Rounding the `pre`'s
+   top corners underneath that tab leaves a notch where the two meet, a step in
+   the left edge that reads as a rendering fault. Square them off; the frame's
+   own radius still carries the outline. */
+.expressive-code .frame.has-title pre {
+	border-start-start-radius: 0;
+	border-start-end-radius: 0;
 }
 
 /* Code is the most common block on the page, so it carries the same lift as
