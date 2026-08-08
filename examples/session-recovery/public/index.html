@@ -31,8 +31,11 @@
 					})();
 				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
 
+				// Later theme toggles arrive by postMessage, so the frame does not
+				// have to reload. Only ever sets an attribute, so an unexpected
+				// sender can do nothing interesting.
 				addEventListener('message', (event) => {
-					const next = event.data?.capnwebTheme;
+					const next = event.data?.type === 'capn-theme' ? event.data.theme : null;
 					if (next === 'light' || next === 'dark') root.dataset.theme = next;
 				});
 			})();

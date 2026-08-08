@@ -762,66 +762,58 @@ main:has(.hero) {
 /* ------------------------------------------------------- theme transition */
 
 /*
- * Switching schemes is a View Transition: the old page stays put while the new
- * one is revealed through a circle expanding from the toggle. The default
- * cross-fade would run at the same time and turn the wipe into a smear, so
- * both snapshots are pinned and only the clip-path (set in ThemeToggle.astro)
- * animates.
+ * Switching schemes fades the whole page over `--cw-theme-fade`, rather than
+ * wiping the new scheme in behind an expanding circle. The wipe was a View
+ * Transition, which meant snapshotting the document: that cannot capture a
+ * canvas mid-frame, so the hero had to be blanked for the duration and came
+ * back at a different rotation, and the demo iframes were left out of the
+ * effect entirely.
+ *
+ * A plain cross-fade has none of those problems. Every element animates its own
+ * colours in place, so canvases and iframes can fade their own palettes over the
+ * same duration and arrive together.
+ *
+ * The transition is only attached while `data-theme-switching` is set, which
+ * ThemeToggle adds for exactly this long. Left on permanently it would lag every
+ * hover affordance on the page by the same 200ms.
  */
-::view-transition-old(root),
-::view-transition-new(root) {
-	animation: none;
-	mix-blend-mode: normal;
+:root {
+	/*
+	 * Held unitless, in milliseconds, and given its unit by `calc()` below.
+	 * Chrome serialises a `200ms` custom property back out as `.2s`, so anything
+	 * reading this from script and calling `parseFloat` would get 0.2 and fade for
+	 * a fifth of a millisecond. A unitless number cannot be misread.
+	 */
+	--cw-theme-fade-ms: 200;
+	--cw-theme-fade: calc(var(--cw-theme-fade-ms) * 1ms);
 }
 
-::view-transition-old(root) {
-	z-index: 1;
-}
-
-::view-transition-new(root) {
-	z-index: 2;
+:root[data-theme-switching],
+:root[data-theme-switching] *,
+:root[data-theme-switching] *::before,
+:root[data-theme-switching] *::after {
+	transition:
+		background-color var(--cw-theme-fade) ease,
+		border-color var(--cw-theme-fade) ease,
+		color var(--cw-theme-fade) ease,
+		fill var(--cw-theme-fade) ease,
+		stroke var(--cw-theme-fade) ease,
+		box-shadow var(--cw-theme-fade) ease,
+		text-decoration-color var(--cw-theme-fade) ease !important;
 }
 
 /*
- * The wipe itself. This lives in CSS rather than in a WAAPI call from
- * `transition.ready.then(...)`, because a promise callback cannot run until
- * after the browser has already composited the transition's first frame: the
- * new snapshot flashes in unclipped, and the circle then starts from nothing.
- * Declared here, it is clipped from the very first frame.
- *
- * The centre and the radius come from custom properties that ThemeToggle sets
- * before starting the transition. They are inherited from the document element,
- * which is what the view-transition pseudo tree hangs off.
- *
- * The easing keeps the leading edge within about 1.6x of constant speed. The
- * ease-out-expo this used to have put 92% of the circle's *area* down in the
- * first 30% of the duration, so the wipe appeared to finish and then stall for
- * a third of a second.
+ * Readers who asked for less motion get the snap. Not because a cross-fade would
+ * hurt, but because the two canvases and the iframes each fade themselves, and
+ * the honest way to keep four independent fades in step is to have none of them.
+ * Everything changes on the same frame instead.
  */
-@keyframes cw-theme-wipe {
-	from {
-		clip-path: circle(0px at var(--cw-wipe-x) var(--cw-wipe-y));
-	}
-	to {
-		clip-path: circle(var(--cw-wipe-r) at var(--cw-wipe-x) var(--cw-wipe-y));
-	}
-}
-
-:root[data-theme-switching]::view-transition-new(root) {
-	animation: cw-theme-wipe 460ms cubic-bezier(0.5, 0.35, 0.9, 1) both;
-}
-
-/* The canvas cannot be captured mid-frame without tearing, and the sticky
-   header would otherwise be painted into both snapshots at once. */
-:root[data-theme-switching] .cw-hero-field {
-	visibility: hidden;
-}
-
 @media (prefers-reduced-motion: reduce) {
-	::view-transition-group(*),
-	::view-transition-old(*),
-	::view-transition-new(*) {
-		animation: none !important;
+	:root[data-theme-switching],
+	:root[data-theme-switching] *,
+	:root[data-theme-switching] *::before,
+	:root[data-theme-switching] *::after {
+		transition: none !important;
 	}
 }
 

@@ -33,6 +33,8 @@
 </starlight-theme-toggle>
 
 <script>
+	import { themeFadeMs } from '../scripts/theme-fade';
+
 	/** Same key Starlight's ThemeProvider reads, so the choice survives reloads. */
 	const storageKey = 'starlight-theme';
 
@@ -77,51 +79,39 @@
 	});
 
 	/**
-	 * Switch themes behind an expanding circle centred on the button that was
-	 * pressed, so the new scheme is wiped over the old one rather than swapped
-	 * under the reader.
+	 * Switch themes with a page-wide cross-fade.
 	 *
-	 * The whole effect is one View Transition: the browser snapshots the page,
-	 * `apply()` runs, and the new snapshot is revealed through a `clip-path`
-	 * circle that grows from the button. The animation is declared in CSS (see
-	 * `cw-theme-wipe`) and driven by the three custom properties set below, so it
-	 * is already running on the transition's first frame. Where
-	 * `startViewTransition` is missing, or the reader has asked for less motion,
-	 * the theme just changes, which is the same thing without the flourish.
+	 * All this does is set `data-theme-switching`, flip `data-theme`, and clear
+	 * the attribute once the fade is over. The fade itself is a CSS transition
+	 * (see the theme-transition block in `theme.css`) that is only attached while
+	 * that attribute is present, so it costs nothing the rest of the time.
+	 *
+	 * The attribute is also the signal the two canvases and the demo iframes use
+	 * to fade their own palettes over the same duration, since neither a WebGL
+	 * canvas nor a separate document can be cross-faded by the parent's CSS.
 	 */
-	function toggleFrom(button: HTMLElement) {
+	function toggleFrom(_button: HTMLElement) {
 		const next: Theme = currentTheme() === 'dark' ? 'light' : 'dark';
-		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-		if (reduced || !document.startViewTransition) {
-			apply(next, true);
-			return;
-		}
-
-		const box = button.getBoundingClientRect();
-		const x = box.left + box.width / 2;
-		const y = box.top + box.height / 2;
-		// Reach the furthest corner, so the circle always finishes off-screen.
-		const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
-
-		// The wipe is declared in CSS, keyed off `data-theme-switching`, and reads
-		// its geometry from these. Setting them before the transition starts is
-		// what lets the animation run from its first composited frame.
 		const root = document.documentElement;
-		root.style.setProperty('--cw-wipe-x', `${x}px`);
-		root.style.setProperty('--cw-wipe-y', `${y}px`);
-		root.style.setProperty('--cw-wipe-r', `${radius}px`);
+
+		// Read the duration from CSS so there is one number, not two that drift.
+		const fade = themeFadeMs();
+
+		clearTimeout(fadeTimer);
 		root.dataset.themeSwitching = '';
-
-		const transition = document.startViewTransition(() => apply(next, true));
-
-		transition.finished.finally(() => {
-			delete root.dataset.themeSwitching;
-			root.style.removeProperty('--cw-wipe-x');
-			root.style.removeProperty('--cw-wipe-y');
-			root.style.removeProperty('--cw-wipe-r');
+		// The attribute has to be in effect before the colours change, or the first
+		// frame of the new scheme lands before the transition is attached.
+		requestAnimationFrame(() => {
+			apply(next, true);
+			// Generous slack. A busy main thread can start the transition a frame or
+			// two late, and clearing the attribute while it is still running removes
+			// the transition property and snaps the remainder. Holding it a little
+			// longer than necessary costs nothing but a brief delay on hover colours.
+			fadeTimer = window.setTimeout(() => delete root.dataset.themeSwitching, fade + 150);
 		});
 	}
+
+	let fadeTimer = 0;
 
 	class StarlightThemeToggle extends HTMLElement {
 		constructor() {

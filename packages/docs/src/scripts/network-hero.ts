@@ -22,17 +22,24 @@
 
 interface Palette {
 	/**
-	 * Light mode is not a recolour of the same drawing. Additive blending can
-	 * only ever add light, so on a near-white page it does nothing -- the
-	 * network has to be composited normally, as dark ink, instead.
+	 * How far towards the light scheme this palette is, 0 to 1. Not a boolean,
+	 * because a theme change cross-fades: for 200ms the drawing is genuinely part
+	 * way between the two.
+	 *
+	 * Light mode is not a recolour of the same drawing. Additive blending can only
+	 * ever add light, so on a near-white page it does nothing, and the network has
+	 * to be composited normally, as dark ink, instead. That one property cannot be
+	 * interpolated, so it flips at the halfway point; see `frame()`.
 	 */
-	light: boolean;
+	light: number;
 	bgInner: [number, number, number];
 	bgOuter: [number, number, number];
 	node: [number, number, number];
 	edge: [number, number, number];
 	pulse: [number, number, number];
 }
+
+import { themeFadeMs } from './theme-fade';
 
 interface Pulse {
 	/** Node indices: outward leg. The return leg is this reversed. */
@@ -383,6 +390,26 @@ function link(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram 
 	return p;
 }
 
+/** Channelwise blend of two palettes, for the theme cross-fade. */
+function mixPalette(a: Palette, b: Palette, u: number): Palette {
+	const mix3 = (
+		x: [number, number, number],
+		y: [number, number, number]
+	): [number, number, number] => [
+		x[0] + (y[0] - x[0]) * u,
+		x[1] + (y[1] - x[1]) * u,
+		x[2] + (y[2] - x[2]) * u,
+	];
+	return {
+		light: a.light + (b.light - a.light) * u,
+		bgInner: mix3(a.bgInner, b.bgInner),
+		bgOuter: mix3(a.bgOuter, b.bgOuter),
+		node: mix3(a.node, b.node),
+		edge: mix3(a.edge, b.edge),
+		pulse: mix3(a.pulse, b.pulse),
+	};
+}
+
 function readPalette(root: HTMLElement): Palette {
 	const cs = getComputedStyle(root);
 	const parse = (name: string, fallback: [number, number, number]): [number, number, number] => {
@@ -393,7 +420,7 @@ function readPalette(root: HTMLElement): Palette {
 		return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 	};
 	return {
-		light: root.dataset.theme === 'light',
+		light: root.dataset.theme === 'light' ? 1 : 0,
 		bgInner: parse('--cw-hero-bg-inner', [0.027, 0.125, 0.255]),
 		bgOuter: parse('--cw-hero-bg-outer', [0.016, 0.027, 0.055]),
 		node: parse('--cw-hero-node', [0.424, 0.761, 0.984]),
@@ -581,7 +608,13 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 
 	/* ------------------------------------------------------------------ view */
 
-	let palette = readPalette(document.documentElement);
+	// The theme cross-fade. CSS cannot transition what WebGL paints, so the palette
+	// is tweened here over the same duration the stylesheet uses for the page.
+	let paletteFrom = readPalette(document.documentElement);
+	let paletteTo = paletteFrom;
+	let palette = paletteFrom;
+	let fadeStart = 0;
+	let fadeMs = 0;
 	let width = 1;
 	let height = 1;
 	let pointerX = 0;
@@ -688,6 +721,15 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		const dt = last ? Math.min((now - last) / 1000, 0.05) : 0.016;
 		last = now;
 
+		// Advance the theme cross-fade.
+		if (fadeMs > 0) {
+			const u = Math.min(1, (now - fadeStart) / fadeMs);
+			palette = u >= 1 ? paletteTo : mixPalette(paletteFrom, paletteTo, u);
+			if (u >= 1) fadeMs = 0;
+			// A parked hero still has to finish the fade it started.
+			else if (!running) raf = requestAnimationFrame(frame);
+		}
+
 		resize();
 		gl.viewport(0, 0, width, height);
 
@@ -723,7 +765,11 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		 * (ONE, ONE_MINUS_SRC_ALPHA) rather than (SRC_ALPHA, ...).
 		 */
 		gl.enable(gl.BLEND);
-		if (palette.light) {
+		// The one thing in the palette that cannot be interpolated. Mid-fade the
+		// background is halfway between the two schemes, so whichever side this
+		// picks is nearly right; it switches at the crossover, where the two modes
+		// disagree least.
+		if (palette.light >= 0.5) {
 			// Normal "over": dark ink laid onto a pale page.
 			gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 		} else {
@@ -731,11 +777,11 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 			gl.blendFunc(gl.ONE, gl.ONE);
 		}
 
-		const hot = palette.light ? 0 : 1;
+		const hot = 1 - palette.light;
 		// Ink on paper carries much further than glow on black, so the light
 		// scheme needs materially less of it to read as the same drawing.
-		const edgeBase = palette.light ? 0.3 : 0.3;
-		const nodeScale = (palette.light ? 17 : 21) * dpr();
+		const edgeBase = 0.3;
+		const nodeScale = (21 - 4 * palette.light) * dpr();
 
 		gl.useProgram(g.edgeProg);
 		bindAttrib(g.edgeProg, 'a_pos', g.edgePosBuf, 3);
@@ -831,10 +877,30 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 	});
 	ro.observe(canvas);
 
-	// Re-read the palette when the theme flips, and repaint if parked.
+	// Re-read the palette when the theme flips and fade towards it. Fading from
+	// whatever is currently on screen, rather than from the previous scheme, means
+	// a second toggle mid-fade continues from what the reader can see.
 	const themeObserver = new MutationObserver(() => {
-		palette = readPalette(document.documentElement);
-		if (!running || reduceMotion.matches) repaint();
+		const next = readPalette(document.documentElement);
+		if (reduceMotion.matches) {
+			// This reader gets the snap, in step with the page. See the
+			// theme-transition block in theme.css.
+			paletteFrom = next;
+			paletteTo = next;
+			palette = next;
+			fadeMs = 0;
+			repaint();
+			return;
+		}
+
+		paletteFrom = palette;
+		paletteTo = next;
+		fadeStart = performance.now();
+		fadeMs = themeFadeMs();
+		// The loop parks when the hero scrolls out of view or the tab is hidden. A
+		// fade that cannot be seen does not need to run: whenever it comes back it
+		// is drawn with whatever the tween has settled on.
+		if (!running && !document.hidden) repaint();
 	});
 	themeObserver.observe(document.documentElement, {
 		attributes: true,

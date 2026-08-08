@@ -96,6 +96,7 @@ const demoSrc = `${example.demoPath}?embed=1`;
 </div>
 
 <script>
+	import { themeFadeMs } from '../scripts/theme-fade';
 	// Tabs. Roving tabindex with arrow keys, per the APG tabs pattern.
 	for (const stage of document.querySelectorAll<HTMLElement>('[data-capn-stage]')) {
 		const tabs = [...stage.querySelectorAll<HTMLButtonElement>('.capn-tab')];
@@ -146,14 +147,60 @@ const demoSrc = `${example.demoPath}?embed=1`;
 		});
 	}
 
-	// Keep the demo on the docs theme. The frame reads the initial value itself
-	// on the way up; this only has to push later toggles, which avoids a reload.
+	// Keep the demo on the docs theme. The frame reads the initial value itself on
+	// the way up; this only has to push later toggles, which avoids a reload.
 	const frames = document.querySelectorAll<HTMLIFrameElement>('.capn-preview iframe');
 	if (frames.length) {
+		/**
+		 * Fade the demo along with the page.
+		 *
+		 * The frame is a separate document, so the docs' own theme transition cannot
+		 * reach into it, and an example that snapped while everything around it faded
+		 * looked like the demo had reloaded. The frames are same-origin, so the rule
+		 * can simply be installed in them, once, carrying the duration the docs use
+		 * rather than a second copy of the number.
+		 *
+		 * The examples are left alone deliberately: standalone they have no theme
+		 * toggle to fade, only the OS preference, and this is the docs' effect.
+		 */
+		const installFade = (doc: Document, ms: number) => {
+			if (doc.getElementById('capn-theme-fade')) return;
+			const style = doc.createElement('style');
+			style.id = 'capn-theme-fade';
+			style.textContent = `:root[data-theme-switching],:root[data-theme-switching] *,:root[data-theme-switching] *::before,:root[data-theme-switching] *::after{transition:background-color ${ms}ms ease,border-color ${ms}ms ease,color ${ms}ms ease,fill ${ms}ms ease,stroke ${ms}ms ease,box-shadow ${ms}ms ease!important}`;
+			doc.head.append(style);
+		};
+
+		const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+		let clearFade = 0;
+
 		new MutationObserver(() => {
 			const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+			const ms = themeFadeMs();
+
+			clearTimeout(clearFade);
+			const roots: HTMLElement[] = [];
+
 			for (const frame of frames) {
+				const doc = frame.contentDocument;
+				// Cross-origin or not loaded yet. Either way the message below is still
+				// worth sending, and the frame will simply not fade.
+				if (doc?.head && doc.documentElement && !reduced.matches) {
+					installFade(doc, ms);
+					// Attach the transition before the colours change, or the first frame
+					// of the new scheme lands ahead of it.
+					doc.documentElement.dataset.themeSwitching = '';
+					roots.push(doc.documentElement);
+				}
 				frame.contentWindow?.postMessage({ type: 'capn-theme', theme }, location.origin);
+			}
+
+			if (roots.length) {
+				clearFade = window.setTimeout(() => {
+					for (const root of roots) delete root.dataset.themeSwitching;
+					// Same slack as the docs' own toggle: clearing this mid-transition
+					// would snap whatever is left of the fade.
+				}, ms + 150);
 			}
 		}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 	}

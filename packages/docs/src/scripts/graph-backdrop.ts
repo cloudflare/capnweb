@@ -16,6 +16,8 @@
  * would cost far more than it returns.
  */
 
+import { themeFadeMs } from './theme-fade';
+
 interface Node {
 	/** Home position in field space, x and y in [-1, 1], z in [0, 1]. */
 	x: number;
@@ -45,10 +47,12 @@ interface Pulse {
 	duration: number;
 }
 
+type Rgb = [number, number, number];
+
 interface Palette {
-	node: string;
-	edge: string;
-	pulse: string;
+	node: Rgb;
+	edge: Rgb;
+	pulse: Rgb;
 	edgeAlpha: number;
 }
 
@@ -146,14 +150,42 @@ function buildField(count: number, seed: number): { nodes: Node[]; edges: Edge[]
 	return { nodes, edges };
 }
 
-/** Read the two field colours from the stylesheet, so themes stay in one place. */
+/** Read the field colours from the stylesheet, so themes stay in one place. */
 function readPalette(): Palette {
 	const s = getComputedStyle(document.documentElement);
 	return {
-		node: s.getPropertyValue('--cw-graph-node').trim() || '#6cc2fb',
-		edge: s.getPropertyValue('--cw-graph-edge').trim() || '#1487e0',
-		pulse: s.getPropertyValue('--cw-graph-pulse').trim() || '#c9782e',
+		node: parseHex(s.getPropertyValue('--cw-graph-node'), [108, 194, 251]),
+		edge: parseHex(s.getPropertyValue('--cw-graph-edge'), [20, 135, 224]),
+		pulse: parseHex(s.getPropertyValue('--cw-graph-pulse'), [201, 120, 46]),
 		edgeAlpha: Number(s.getPropertyValue('--cw-graph-edge-alpha')) || 0.17,
+	};
+}
+
+function parseHex(raw: string, fallback: Rgb): Rgb {
+	const hex = raw.trim();
+	const full =
+		hex.length === 4 ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}` : hex;
+	if (!/^#[0-9a-f]{6}$/i.test(full)) return fallback;
+	return [
+		parseInt(full.slice(1, 3), 16),
+		parseInt(full.slice(3, 5), 16),
+		parseInt(full.slice(5, 7), 16),
+	];
+}
+
+const mixChannel = (a: number, b: number, u: number) => a + (b - a) * u;
+
+function mixPalette(a: Palette, b: Palette, u: number): Palette {
+	const mix = (x: Rgb, y: Rgb): Rgb => [
+		mixChannel(x[0], y[0], u),
+		mixChannel(x[1], y[1], u),
+		mixChannel(x[2], y[2], u),
+	];
+	return {
+		node: mix(a.node, b.node),
+		edge: mix(a.edge, b.edge),
+		pulse: mix(a.pulse, b.pulse),
+		edgeAlpha: mixChannel(a.edgeAlpha, b.edgeAlpha, u),
 	};
 }
 
@@ -163,7 +195,14 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 
 	const reduced = matchMedia('(prefers-reduced-motion: reduce)');
 
-	let palette = readPalette();
+	// The theme cross-fade. CSS cannot transition what a canvas paints, so the
+	// palette is tweened here over the same duration the stylesheet uses, and the
+	// two arrive together.
+	let paletteFrom = readPalette();
+	let paletteTo = paletteFrom;
+	let palette = paletteFrom;
+	let fadeStart = 0;
+	let fadeMs = 0;
 	let nodes: Node[] = [];
 	let edges: Edge[] = [];
 	let width = 0;
@@ -319,8 +358,20 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		target.shadowColor = 'transparent';
 	}
 
+	/** Advance the theme cross-fade, if one is running. */
+	function updatePalette(now: number) {
+		if (fadeMs <= 0) {
+			palette = paletteTo;
+			return;
+		}
+		const u = Math.min(1, (now - fadeStart) / fadeMs);
+		palette = u >= 1 ? paletteTo : mixPalette(paletteFrom, paletteTo, u);
+		if (u >= 1) fadeMs = 0;
+	}
+
 	function draw(now: number) {
 		const t = reduced.matches ? 0 : (now / 1000) * TIME_SCALE;
+		updatePalette(now);
 		ctx!.clearRect(0, 0, width, height);
 
 		const points = nodes.map((n) => project(n, t));
@@ -443,23 +494,34 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	});
 
 	// The palette lives in CSS custom properties, which change with the theme.
+	// Fade from wherever the tween currently is, so toggling twice quickly picks up
+	// from what is on screen rather than snapping back to the previous scheme.
 	new MutationObserver(() => {
-		palette = readPalette();
-		if (reduced.matches) draw(0);
+		const next = readPalette();
+		if (reduced.matches) {
+			// Everything else snaps for this reader too. See the theme-transition
+			// block in theme.css.
+			paletteFrom = next;
+			paletteTo = next;
+			palette = next;
+			fadeMs = 0;
+			draw(0);
+			return;
+		}
+
+		paletteFrom = palette;
+		paletteTo = next;
+		fadeStart = performance.now();
+		fadeMs = themeFadeMs();
+		// The field is parked while the tab is hidden, and a fade nobody can see
+		// does not need to run. It will be drawn with the final palette on return.
+		if (!document.hidden) start();
 	}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 	canvas.dataset.state = 'ready';
 }
 
-/** Accepts the `#rrggbb` the stylesheet holds and returns an rgba() string. */
-function withAlpha(hex: string, alpha: number): string {
-	if (!hex.startsWith('#') || (hex.length !== 7 && hex.length !== 4)) {
-		return hex;
-	}
-	const full =
-		hex.length === 4 ? `#${hex[1]}${hex[1]}${hex[2]}${hex[2]}${hex[3]}${hex[3]}` : hex;
-	const r = parseInt(full.slice(1, 3), 16);
-	const g = parseInt(full.slice(3, 5), 16);
-	const b = parseInt(full.slice(5, 7), 16);
-	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+/** Parsed channels to an `rgba()` string. */
+function withAlpha(rgb: Rgb, alpha: number): string {
+	return `rgba(${Math.round(rgb[0])}, ${Math.round(rgb[1])}, ${Math.round(rgb[2])}, ${alpha})`;
 }
