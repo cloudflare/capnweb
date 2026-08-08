@@ -58,13 +58,13 @@ httpServer.listen(8080);
 
 ## Install the WebSocket dependency
 
+You only need `ws` if you want to accept WebSocket sessions. HTTP batch works with nothing but
+`node:http`.
+
 ```sh
 npm i ws
 npm i -D @types/ws
 ```
-
-You only need `ws` if you want to accept WebSocket sessions. HTTP batch works with nothing but
-`node:http`.
 
 ## Payload limits
 

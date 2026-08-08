@@ -56,10 +56,10 @@ let c = await api.third(api.second(api.first()));
 
 "One round trip" is a claim about **waiting**, not about message count.
 
-| Transport                              | Three chained calls send…                       | Round trips |
-| --------------------------------------- | ------------------------------------------------ | ----------- |
-| [WebSocket](/transports/websocket/)      | Three `push` messages, written back-to-back      | 1           |
-| [HTTP batch](/transports/http-batch/)    | One request body containing all three            | 1           |
+| Transport                             | Three chained calls send…                   | Round trips |
+| ------------------------------------- | ------------------------------------------- | ----------- |
+| [WebSocket](/transports/websocket/)   | Three `push` messages, written back-to-back | 1           |
+| [HTTP batch](/transports/http-batch/) | One request body containing all three       | 1           |
 
 Over a WebSocket, Cap'n Web really does send a separate message per call, so if you go looking in
 your browser's network inspector, you will find three frames, plus a `pull` for the result you

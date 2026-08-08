@@ -28,7 +28,7 @@ permission to use it.
 
 [Cap'n Web is an npm package.](https://www.npmjs.com/package/capnweb)
 
-```
+```sh
 npm i capnweb
 ```
 
@@ -108,12 +108,12 @@ under [`packages/docs/`](packages/docs/), and every page is readable as Markdown
 
 Start here:
 
-| Page | What it covers |
-| --- | --- |
-| [Introduction](packages/docs/src/content/docs/start/introduction.md) | What Cap'n Web is and why object capabilities matter |
-| [Quickstart](packages/docs/src/content/docs/start/quickstart.md) | A working client and server |
-| [Pipelining tour](packages/docs/src/content/docs/start/pipelining-tour.md) | The part that makes it fast |
-| [How it compares](packages/docs/src/content/docs/guides/comparisons.md) | Against tRPC, JSON-RPC, GraphQL and Cap'n Proto |
+| Page                                                                       | What it covers                                       |
+| -------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [Introduction](packages/docs/src/content/docs/start/introduction.md)       | What Cap'n Web is and why object capabilities matter |
+| [Quickstart](packages/docs/src/content/docs/start/quickstart.md)           | A working client and server                          |
+| [Pipelining tour](packages/docs/src/content/docs/start/pipelining-tour.md) | The part that makes it fast                          |
+| [How it compares](packages/docs/src/content/docs/guides/comparisons.md)    | Against tRPC, JSON-RPC, GraphQL and Cap'n Proto      |
 
 Core concepts:
 [What can be passed](packages/docs/src/content/docs/concepts/values.md) ·
@@ -149,7 +149,7 @@ Guides and reference:
 
 To run the site locally, with both examples embedded as live in-browser playgrounds:
 
-```
+```sh
 cd packages/docs && npm install && npm run dev
 ```
 

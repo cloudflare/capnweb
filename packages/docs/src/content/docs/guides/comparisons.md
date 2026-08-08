@@ -12,15 +12,15 @@ buys you against each of the usual alternatives, and where the claim runs out.
 Cap'n Web: TypeScript types as the contract, no code generation, no schema language. The difference
 is what a call can *return*.
 
-|                                        | Cap'n Web | Typical TS RPC library      |
-| -------------------------------------- | --------- | --------------------------- |
-| TypeScript types as the contract        | Yes       | Yes                         |
-| No codegen                              | Yes       | Yes                         |
-| Return an **object** by reference       | Yes       | No, results are plain data  |
-| Pass a **function** by reference        | Yes       | No                          |
-| Server calls the client                 | Yes       | Subscriptions only          |
-| Dependent calls in one round trip       | Yes       | No                          |
-| Reference lifetime management           | Yes       | N/A                         |
+|                                   | Cap'n Web | Typical TS RPC library     |
+| --------------------------------- | --------- | -------------------------- |
+| TypeScript types as the contract  | Yes       | Yes                        |
+| No codegen                        | Yes       | Yes                        |
+| Return an **object** by reference | Yes       | No, results are plain data |
+| Pass a **function** by reference  | Yes       | No                         |
+| Server calls the client           | Yes       | Subscriptions only         |
+| Dependent calls in one round trip | Yes       | No                         |
+| Reference lifetime management     | Yes       | N/A                        |
 
 Those libraries can batch calls, but batching and pipelining solve different problems. Batching
 combines calls that are **independent**: you already know all the arguments. Pipelining combines
@@ -120,11 +120,11 @@ do not control.
 
 Cap'n Web does not hide any of those:
 
-| Reality of the network      | How it surfaces in Cap'n Web                                        |
-| --------------------------- | -------------------------------------------------------------------- |
-| Latency                     | Every call returns an [`RpcPromise`](/concepts/promises/). You can see every place you wait. |
-| Partial failure             | A dropped session [breaks every stub](/guides/sessions/) and rejects pending calls. |
-| Remote lifetime             | [Disposal](/concepts/disposal/) is explicit; there is no distributed GC pretending otherwise. |
+| Reality of the network | How it surfaces in Cap'n Web                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| Latency                | Every call returns an [`RpcPromise`](/concepts/promises/). You can see every place you wait.  |
+| Partial failure        | A dropped session [breaks every stub](/guides/sessions/) and rejects pending calls.           |
+| Remote lifetime        | [Disposal](/concepts/disposal/) is explicit; there is no distributed GC pretending otherwise. |
 
 The second failure was being **synchronous first.** In CORBA a call blocked until it returned, so a
 chain of N dependent calls cost N round trips, which made fine-grained object graphs unusable over

@@ -7,6 +7,9 @@ You can implement a custom RPC transport across any bidirectional stream.
 
 ## The interface
 
+A transport is two required methods, plus `abort()` if there is something useful to do with a
+fatal error:
+
 ```ts
 // Interface for an RPC transport, which is a simple bidirectional message stream.
 export interface RpcTransport {
@@ -34,6 +37,9 @@ export interface RpcTransport {
 
 ## Starting a session
 
+Hand the transport to `RpcSession`, along with whatever you want the other end to be able to
+call:
+
 ```ts
 // Create the transport.
 let transport: RpcTransport = new MyTransport();
@@ -60,12 +66,12 @@ By default, `send()` accepts a string and `receive()` returns a string, with Cap
 encoding all the way to and from strings. Transports that want more control over serialization can
 declare an `encodingLevel` property:
 
-| `encodingLevel`             | What the transport receives                                    | Use when                                              |
-| --------------------------- | -------------------------------------------------------------- | ----------------------------------------------------- |
-| `"string"` *(default)*      | Fully-serialized JSON strings.                                  | HTTP batch and WebSocket use this.                     |
-| `"jsonCompatible"`          | JavaScript value trees that are JSON-compatible.                | You serialize to CBOR, MessagePack, etc.               |
-| `"jsonCompatibleWithBytes"` | Same, but byte arrays stay as `Uint8Array`.                     | Your format has native binary; avoids base64 overhead. |
-| `"structuredClonable"`      | Structured-clonable values, native types passed through.        | `MessagePort` and similar.                             |
+| `encodingLevel`             | What the transport receives                              | Use when                                               |
+| --------------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| `"string"` *(default)*      | Fully-serialized JSON strings.                           | HTTP batch and WebSocket use this.                     |
+| `"jsonCompatible"`          | JavaScript value trees that are JSON-compatible.         | You serialize to CBOR, MessagePack, etc.               |
+| `"jsonCompatibleWithBytes"` | Same, but byte arrays stay as `Uint8Array`.              | Your format has native binary; avoids base64 overhead. |
+| `"structuredClonable"`      | Structured-clonable values, native types passed through. | `MessagePort` and similar.                             |
 
 Details:
 

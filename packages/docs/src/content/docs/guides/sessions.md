@@ -11,11 +11,11 @@ exactly how long "one session" is answers most operational questions about it.
 Each side of a session maintains [import and export tables](/reference/protocol/) mapping IDs to
 live objects. Those tables exist only in memory, only for that session:
 
-| Transport                                  | A session lasts                                     |
-| ------------------------------------------ | ---------------------------------------------------- |
-| [WebSocket](/transports/websocket/)         | The lifetime of the socket                           |
-| [HTTP batch](/transports/http-batch/)       | A single HTTP request/response                       |
-| [MessagePort](/transports/message-port/)    | The lifetime of the port                             |
+| Transport                                | A session lasts                |
+| ---------------------------------------- | ------------------------------ |
+| [WebSocket](/transports/websocket/)      | The lifetime of the socket     |
+| [HTTP batch](/transports/http-batch/)    | A single HTTP request/response |
+| [MessagePort](/transports/message-port/) | The lifetime of the port       |
 
 So there is no persistence story, because there is nothing to persist. You do **not** need a
 database, a session store, or a serialization format for the tables. You could not write one
@@ -154,13 +154,13 @@ Cap'n Web has no schema, so it also has no schema-evolution mechanism: no field 
 reserved tags, no wire-level compatibility rules to learn. The rules are the ones you already know
 for **evolving a JavaScript API without breaking existing callers.**
 
-| Safe                                            | Breaking                                       |
-| ------------------------------------------------ | ---------------------------------------------- |
-| Add a new method \*                               | Rename or remove a method                      |
-| Add a new **optional** parameter at the end       | Add a required parameter                       |
-| Add a property to a returned object               | Remove or rename a returned property           |
-| Accept a wider type than before                   | Accept a narrower type than before             |
-| Return a new capability alongside the old one     | Change what an existing method returns         |
+| Safe                                          | Breaking                               |
+| --------------------------------------------- | -------------------------------------- |
+| Add a new method \*                           | Rename or remove a method              |
+| Add a new **optional** parameter at the end   | Add a required parameter               |
+| Add a property to a returned object           | Remove or rename a returned property   |
+| Accept a wider type than before               | Accept a narrower type than before     |
+| Return a new capability alongside the old one | Change what an existing method returns |
 
 \* These are the rules for Cap'n Web itself. If you use [`capnweb-validate`](/guides/validation/),
 its generated validators are stricter; a peer whose validator was built before you added a method

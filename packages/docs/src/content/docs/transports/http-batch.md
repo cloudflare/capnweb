@@ -14,6 +14,8 @@ its resolution before delivering it to the callee. This is
 
 ## Client
 
+Declare the interface, then open a batch against it:
+
 ```ts
 import { RpcTarget, RpcStub, newHttpBatchRpcSession } from 'capnweb';
 

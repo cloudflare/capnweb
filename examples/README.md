@@ -4,11 +4,11 @@ The first two make the same point from opposite ends of the stack: a chain of de
 costs one HTTP round trip when pipelined, and three when it isn't. The third is about the other
 half of the story: what a session is, and what breaks when it ends.
 
-| Example                                      | What it is                                                          |
-| -------------------------------------------- | --------------------------------------------------------------------- |
-| [`batch-pipelining`](./batch-pipelining)     | Worker + zero-build browser page, plus a Node server and CLI client |
-| [`worker-react`](./worker-react)             | Worker + React/Vite app, with runtime validation                    |
-| [`session-recovery`](./session-recovery)     | Worker + WebSocket page: broken stubs, server push, gapless resume  |
+| Example                                  | What it is                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------- |
+| [`batch-pipelining`](./batch-pipelining) | Worker + zero-build browser page, plus a Node server and CLI client |
+| [`worker-react`](./worker-react)         | Worker + React/Vite app, with runtime validation                    |
+| [`session-recovery`](./session-recovery) | Worker + WebSocket page: broken stubs, server push, gapless resume  |
 
 All three also run as playgrounds in the docs, under **Examples**; see
 [In the docs](#in-the-docs).

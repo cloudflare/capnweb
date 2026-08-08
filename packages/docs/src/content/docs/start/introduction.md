@@ -46,14 +46,14 @@ object-capability RPC model. That means it:
 
 ## How it compares
 
-|                        | Cap'n Web                          | Cap'n Proto                     |
-| ---------------------- | ---------------------------------- | ------------------------------- |
-| Schemas                | None                               | `.capnp` schema language        |
-| Codegen                | None                               | Required                        |
-| Serialization          | JSON (human-readable)              | Binary, zero-copy               |
-| Object capabilities    | Yes                                | Yes                             |
-| Promise pipelining     | Yes                                | Yes                             |
-| Primary home           | The web stack                      | C++ and systems software        |
+|                     | Cap'n Web             | Cap'n Proto              |
+| ------------------- | --------------------- | ------------------------ |
+| Schemas             | None                  | `.capnp` schema language |
+| Codegen             | None                  | Required                 |
+| Serialization       | JSON (human-readable) | Binary, zero-copy        |
+| Object capabilities | Yes                   | Yes                      |
+| Promise pipelining  | Yes                   | Yes                      |
+| Primary home        | The web stack         | C++ and systems software |
 
 Cap'n Web is *not* a port of Cap'n Proto, and the two do not interoperate on the wire. They share
 a model, an author, and a sense of humour.

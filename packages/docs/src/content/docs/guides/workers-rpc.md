@@ -56,12 +56,12 @@ idea in a version bump instead of a compatibility flag, and that makes it the na
 experiment. `.map()` is the current example: it exists in Cap'n Web and is on the list for Workers
 RPC. The intent is that the two converge, with Cap'n Web arriving first.
 
-| Capability                                             | Cap'n Web | Workers RPC |
-| ------------------------------------------------------ | --------- | ----------- |
-| `Map`, `Set`, and some other built-ins                  | Not yet   | Yes         |
-| Values containing aliases and cycles                    | No        | Yes\*       |
-| `RpcPromise` in the parameters of a request             | Yes       | Not yet     |
-| The magic `.map()` method                               | Yes       | Not yet     |
+| Capability                                  | Cap'n Web | Workers RPC |
+| ------------------------------------------- | --------- | ----------- |
+| `Map`, `Set`, and some other built-ins      | Not yet   | Yes         |
+| Values containing aliases and cycles        | No        | Yes\*       |
+| `RpcPromise` in the parameters of a request | Yes       | Not yet     |
+| The magic `.map()` method                   | Yes       | Not yet     |
 
 \* Workers RPC supports sending values that contain aliases and cycles. This can cause problems, so
 we plan to **remove** this feature from Workers RPC, with a compatibility flag, of course.

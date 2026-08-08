@@ -40,6 +40,8 @@ the TypeScript and assume it is doing something at runtime.
 
 ## Install
 
+Two packages, or one if you are on Workers RPC:
+
 ```sh
 npm install capnweb capnweb-validate
 ```
@@ -48,6 +50,9 @@ Workers RPC users can install `capnweb-validate` without installing `capnweb`. T
 no runtime dependency on `capnweb`; Cap'n Web-specific helpers live under `capnweb-validate/capnweb`.
 
 ## Server usage
+
+Decorate the class you expose. Every call that arrives is checked against the method's declared
+parameter types before your code runs:
 
 ```ts
 import { newWorkersRpcResponse, RpcTarget } from 'capnweb';
@@ -125,8 +130,8 @@ files on disk:
 capnweb-validate build --out .capnweb-validate
 ```
 
-| Option              | Meaning                                              |
-| ------------------- | ---------------------------------------------------- |
+| Option              | Meaning                                               |
+| ------------------- | ----------------------------------------------------- |
 | `--out <dir>`       | Where to write the transformed source tree. Required. |
 | `--tsconfig <path>` | Defaults to `./tsconfig.json`.                        |
 | `--cwd <dir>`       | Defaults to `process.cwd()`.                          |
@@ -134,6 +139,8 @@ capnweb-validate build --out .capnweb-validate
 Point the downstream build tool at the generated entry under `--out`.
 
 ## Opting out per method
+
+`@skipRpcValidation()` exempts one method from an otherwise validated class:
 
 ```ts
 import { RpcTarget } from 'capnweb';
@@ -156,10 +163,10 @@ for that method.
 Failures throw `TypeError`, so they keep their standard error type when crossing RPC boundaries. The
 message includes the failing path, expected type, and actual type.
 
-| Boundary      | Failure                | How it surfaces                                             |
-| ------------- | ---------------------- | ----------------------------------------------------------- |
-| Client stub   | Bad resolved return    | The returned promise rejects.                                |
-| Server target | Bad incoming argument  | The server throws and the caller observes an RPC rejection.  |
+| Boundary      | Failure               | How it surfaces                                             |
+| ------------- | --------------------- | ----------------------------------------------------------- |
+| Client stub   | Bad resolved return   | The returned promise rejects.                               |
+| Server target | Bad incoming argument | The server throws and the caller observes an RPC rejection. |
 
 ## Type coverage
 
@@ -173,12 +180,12 @@ as stubs: functions, `RpcStub<T>`, `RpcPromise<T>`, `RpcTarget` subclasses, and 
 
 These are rejected **at build time** so you find out before the first RPC call:
 
-| Type                | Reason                                        |
-| ------------------- | --------------------------------------------- |
-| `WeakMap`           | Not a supported RPC validation type.           |
-| `WeakSet`           | Not a supported RPC validation type.           |
-| `SharedArrayBuffer` | Not a supported RPC validation type.           |
-| `File`              | Use a `Blob` or `Uint8Array` instead.          |
+| Type                | Reason                                |
+| ------------------- | ------------------------------------- |
+| `WeakMap`           | Not a supported RPC validation type.  |
+| `WeakSet`           | Not a supported RPC validation type.  |
+| `SharedArrayBuffer` | Not a supported RPC validation type.  |
+| `File`              | Use a `Blob` or `Uint8Array` instead. |
 
 Overloaded methods are passed through unvalidated with a warning. Validating against one signature
 would reject valid calls to the others. Collapse the overloads into a single signature with union
@@ -194,17 +201,17 @@ warning; a constrained one validates against its constraint.
 A validator built from one version of your types will eventually meet a peer built from another.
 Additive changes go through; changes that would let an unchecked value reach your code do not:
 
-| Change                                | Result  |
-| ------------------------------------- | ------- |
-| Extra argument                        | Allowed |
-| Extra object property                 | Allowed |
-| Extra index-signature key             | Allowed |
-| New optional parameter or property    | Allowed |
+| Change                                 | Result  |
+| -------------------------------------- | ------- |
+| Extra argument                         | Allowed |
+| Extra object property                  | Allowed |
+| Extra index-signature key              | Allowed |
+| New optional parameter or property     | Allowed |
 | Missing required parameter or property | Refused |
-| Renamed or retyped member             | Refused |
-| Changed tuple length, no rest element | Refused |
-| New union member                      | Refused |
-| New method                            | Refused |
+| Renamed or retyped member              | Refused |
+| Changed tuple length, no rest element  | Refused |
+| New union member                       | Refused |
+| New method                             | Refused |
 
 To remove a required member, make it optional in one release and delete it in a later one, so no
 build ever requires something a peer has already stopped sending.

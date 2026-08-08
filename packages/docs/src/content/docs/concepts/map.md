@@ -37,6 +37,7 @@ across the network.
 ## Restrictions
 
 :::caution
+
 - The callback must have **no side effects** other than calling RPCs.
 - The callback must be **synchronous**. It cannot await anything.
 - The input to the callback is an `RpcPromise`, so the callback cannot actually operate on it, other
@@ -45,6 +46,7 @@ across the network.
   peer**. A malicious peer can use these stubs for anything, not just calling your callback.
   Typically it only makes sense to invoke stubs that came from the same peer originally, since that
   is what saves the round trip.
+
 :::
 
 Because the callback's input is an opaque promise, you cannot branch on it:
@@ -61,12 +63,12 @@ ids.map(id => api.getUser(id));
 The callback parameter is typed as a placeholder rather than a value, so TypeScript rejects the more
 obvious abuses, but not all of them, and the ones it misses are the quiet ones:
 
-| You wrote            | What actually happens                              | TypeScript |
-| -------------------- | -------------------------------------------------- | ---------- |
-| `if (id)`            | Always true (every object is truthy)                | Compiles   |
-| `` `user-${id}` ``   | The string `"user-[object RpcPromise]"`             | Compiles   |
-| `id > 100`           | Always false                                        | Error      |
-| `[...id]`            | Throws: the placeholder is not iterable             | Error      |
+| You wrote          | What actually happens                   | TypeScript |
+| ------------------ | --------------------------------------- | ---------- |
+| `if (id)`          | Always true (every object is truthy)    | Compiles   |
+| `` `user-${id}` `` | The string `"user-[object RpcPromise]"` | Compiles   |
+| `id > 100`         | Always false                            | Error      |
+| `[...id]`          | Throws: the placeholder is not iterable | Error      |
 
 `id.length` is a third case: it is neither an error nor a mistake, because property access on a
 placeholder is a legitimate pipelined operation. It just gives you a promise for the length, not a

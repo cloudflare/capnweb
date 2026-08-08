@@ -21,13 +21,13 @@ Cap'n Web works in all major browsers, Cloudflare Workers, Node.js, Bun, Deno, a
 JavaScript runtimes. The package ships runtime-specific entry points and your bundler or runtime
 will pick the right one automatically:
 
-| Runtime            | Notes                                                              |
-| ------------------ | ------------------------------------------------------------------ |
-| Browsers           | `fetch` and `WebSocket` are used directly.                          |
-| Cloudflare Workers | Uses the `workerd` export condition; `RpcTarget` aliases the built-in. |
+| Runtime            | Notes                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------ |
+| Browsers           | `fetch` and `WebSocket` are used directly.                                           |
+| Cloudflare Workers | Uses the `workerd` export condition; `RpcTarget` aliases the built-in.               |
 | Node.js            | Use the [`ws`](https://www.npmjs.com/package/ws) package for server-side WebSockets. |
-| Deno               | Import as `npm:capnweb`.                                            |
-| Bun                | Uses the `bun` export condition.                                    |
+| Deno               | Import as `npm:capnweb`.                                                             |
+| Bun                | Uses the `bun` export condition.                                                     |
 
 Beyond `fetch` or `WebSocket`, Cap'n Web's serializer inspects a handful of WHATWG globals to decide
 how to encode a value, and expects them to exist: `ReadableStream`, `WritableStream`, `Blob`, `URL`,

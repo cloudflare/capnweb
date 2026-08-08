@@ -477,10 +477,10 @@ particular input value. Each instruction is an expression in the same format des
 special handling of imports and exports. For the purpose of mapper instructions, **there is no export
 table**, and the import table is defined as follows:
 
-| Index    | Refers to                                                    |
-| -------- | ------------------------------------------------------------ |
-| Negative | The `captures` list, starting from -1 (`-1` is `captures[0]`). |
-| Zero     | The input value of the map function.                           |
+| Index    | Refers to                                                        |
+| -------- | ---------------------------------------------------------------- |
+| Negative | The `captures` list, starting from -1 (`-1` is `captures[0]`).   |
+| Zero     | The input value of the map function.                             |
 | Positive | The result of a previous instruction (`1` is `instructions[0]`). |
 
 The instructions are always evaluated in order. Each instruction may only import results of
@@ -520,11 +520,11 @@ Represents a `WritableStream`. The sender has called `getWriter()` on the stream
 holds the writer to handle incoming operations. The `exportId` refers to an export table entry that
 accepts the following method calls:
 
-| Method            | Meaning                                                      |
-| ----------------- | ------------------------------------------------------------ |
-| `write(chunk)`    | Write a chunk. The chunk can be any RPC-compatible value.     |
-| `close()`         | Close the stream normally; all data has been written.         |
-| `abort(reason?)`  | Abort the stream with an optional reason.                     |
+| Method           | Meaning                                                   |
+| ---------------- | --------------------------------------------------------- |
+| `write(chunk)`   | Write a chunk. The chunk can be any RPC-compatible value. |
+| `close()`        | Close the stream normally; all data has been written.     |
+| `abort(reason?)` | Abort the stream with an optional reason.                 |
 
 These correspond to the methods of `WritableStreamDefaultWriter`.
 

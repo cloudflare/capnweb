@@ -29,7 +29,9 @@ pages. To run one as a real Worker over a real network, see `examples/README.md`
 
 ## Layout
 
-```
+Each directory under `src/` has one job:
+
+```text
 src/
   content/docs/       Markdown/MDX pages, one directory per sidebar group
     index.mdx         landing page (splash template)
@@ -58,10 +60,10 @@ that links here, and `protocol.md` is gone; `reference/protocol` replaced it.
 If you change behaviour, update the page here. Two files still hold prose of their own and should be
 kept in sync by hand:
 
-| Source                                | Pages that mirror it                          |
-| ------------------------------------- | --------------------------------------------- |
+| Source                                | Pages that mirror it                                                                                  |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Root `README.md`                      | `start/introduction`, `start/installation` (the intro bullets and the install snippet appear in both) |
-| `packages/capnweb-validate/README.md` | `guides/validation`                            |
+| `packages/capnweb-validate/README.md` | `guides/validation`                                                                                   |
 
 ## The theme
 
@@ -86,13 +88,13 @@ There are no web fonts and no raster images. The only textures are gradients.
 
 ### The palette
 
-| Token             | Dark      | Light     | Used for                          |
-| ----------------- | --------- | --------- | --------------------------------- |
-| `--cw-black`      | `#04070e` | `#eef3f9` | page ground                       |
-| `--cw-ink-900`    | `#070b16` | `#ffffff` | document surface                  |
-| `--cw-chrome`     | `#05080f` | `#05080f` | masthead and sidebar, both schemes |
-| `--cw-blue-500`   | `#1487e0` | `#0a5292` | links and accents                 |
-| `--cw-orange`     | `#f6821f` | `#f6821f` | the three sparks above            |
+| Token           | Dark      | Light     | Used for                           |
+| --------------- | --------- | --------- | ---------------------------------- |
+| `--cw-black`    | `#04070e` | `#eef3f9` | page ground                        |
+| `--cw-ink-900`  | `#070b16` | `#ffffff` | document surface                   |
+| `--cw-chrome`   | `#05080f` | `#05080f` | masthead and sidebar, both schemes |
+| `--cw-blue-500` | `#1487e0` | `#0a5292` | links and accents                  |
+| `--cw-orange`   | `#f6821f` | `#f6821f` | the three sparks above             |
 
 > **Careful:** Starlight nests a `div.header` inside `header.header`. A bare `.header` selector
 > matches both and paints the bar a second time inset by its own padding, leaving a visible seam.
@@ -115,14 +117,14 @@ pipelining buys you, so the hero shows it rather than asserting it.
 
 Everything degrades, and each fallback is a designed state rather than a hole:
 
-| Condition                    | Result                                                      |
-| ---------------------------- | ----------------------------------------------------------- |
-| No JavaScript                | The CSS gradient under the canvas, same composition          |
-| No WebGL2                    | Same, and `data-state="unsupported"`; the canvas stays at opacity 0 |
-| `prefers-reduced-motion`     | Exactly one frame -- a still portrait of the network, no rAF loop |
-| Canvas scrolled out of view  | Loop parked by an `IntersectionObserver`                     |
-| Tab hidden                   | Loop parked on `visibilitychange`                            |
-| Context lost                 | Parked; **rebuilt** on `webglcontextrestored`                |
+| Condition                   | Result                                                              |
+| --------------------------- | ------------------------------------------------------------------- |
+| No JavaScript               | The CSS gradient under the canvas, same composition                 |
+| No WebGL2                   | Same, and `data-state="unsupported"`; the canvas stays at opacity 0 |
+| `prefers-reduced-motion`    | Exactly one frame -- a still portrait of the network, no rAF loop   |
+| Canvas scrolled out of view | Loop parked by an `IntersectionObserver`                            |
+| Tab hidden                  | Loop parked on `visibilitychange`                                   |
+| Context lost                | Parked; **rebuilt** on `webglcontextrestored`                       |
 
 That last row matters. GPU driver resets, waking from sleep and tab discarding all really do lose
 the context, and handling `webglcontextlost` without handling the restore leaves a permanently dead
@@ -176,13 +178,13 @@ separate implementation of that idea: the hero needs GPU buffers and a frame loo
 needs a string of SVG. The network is seeded from the page slug, so each page gets a different one
 and it never changes between builds.
 
-| File                            | Role                                                     |
-| ------------------------------- | -------------------------------------------------------- |
-| `src/lib/og-network.ts`          | The seeded backdrop, as SVG                              |
-| `src/lib/og-card.ts`             | Composition and rasterization (Satori → resvg)           |
-| `src/pages/og/[...slug].png.ts`  | One route per docs page                                  |
-| `src/components/Head.astro`      | The `og:image` / `twitter:image` tags                    |
-| `src/assets/fonts/`              | Inter, subset to the glyphs titles use (SIL OFL 1.1)     |
+| File                            | Role                                                 |
+| ------------------------------- | ---------------------------------------------------- |
+| `src/lib/og-network.ts`         | The seeded backdrop, as SVG                          |
+| `src/lib/og-card.ts`            | Composition and rasterization (Satori → resvg)       |
+| `src/pages/og/[...slug].png.ts` | One route per docs page                              |
+| `src/components/Head.astro`     | The `og:image` / `twitter:image` tags                |
+| `src/assets/fonts/`             | Inter, subset to the glyphs titles use (SIL OFL 1.1) |
 
 Two things worth knowing:
 

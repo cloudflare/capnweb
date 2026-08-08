@@ -97,11 +97,11 @@ maximum incoming message size before `JSON.parse`.
 If your app is exposed to untrusted peers, **also configure native transport or socket payload
 limits where available**:
 
-| Runtime      | Option                                     |
-| ------------ | ------------------------------------------ |
-| Node.js `ws` | `new WebSocketServer({ maxPayload })`       |
-| Bun          | `Bun.serve({ websocket: { maxPayloadLength } })` |
-| Browsers / others | The runtime's built-in WebSocket cap   |
+| Runtime           | Option                                           |
+| ----------------- | ------------------------------------------------ |
+| Node.js `ws`      | `new WebSocketServer({ maxPayload })`            |
+| Bun               | `Bun.serve({ websocket: { maxPayloadLength } })` |
+| Browsers / others | The runtime's built-in WebSocket cap             |
 
 Cap'n Web's own check runs *after* `RpcTransport.receive()` has returned a complete message string,
 so transport-level limits are still the first line of defence against buffering very large frames.

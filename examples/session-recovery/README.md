@@ -31,7 +31,7 @@ npm run build   # the example resolves `capnweb` to dist/
 npx wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
 ```
 
-Then open http://127.0.0.1:8789. There is no build step for the page itself; it is plain ES
+Then open <http://127.0.0.1:8789>. There is no build step for the page itself; it is plain ES
 modules, and Wrangler stages the library next to it.
 
 With a real Worker you can also disconnect the honest way, by turning off your network, and see the
@@ -39,12 +39,12 @@ same thing happen.
 
 ## Files
 
-| File               | What it is                                                                 |
-| ------------------ | --------------------------------------------------------------------------- |
-| `api.mjs`          | The RPC API, and the event log that lives outside any session                |
-| `worker.js`        | The Worker: one endpoint, upgrading to a WebSocket                           |
-| `public/session.js`| The client: connect, authenticate, subscribe, recover. No DOM in it.         |
-| `public/main.js`   | DOM wiring, kept separate so the file above stays about RPC                  |
+| File                | What it is                                                           |
+| ------------------- | -------------------------------------------------------------------- |
+| `api.mjs`           | The RPC API, and the event log that lives outside any session        |
+| `worker.js`         | The Worker: one endpoint, upgrading to a WebSocket                   |
+| `public/session.js` | The client: connect, authenticate, subscribe, recover. No DOM in it. |
+| `public/main.js`    | DOM wiring, kept separate so the file above stays about RPC          |
 
 ## Things worth reading the source for
 

@@ -6,12 +6,12 @@ description: Choosing between HTTP batch, WebSocket, MessagePort, and custom tra
 Cap'n Web runs over any bidirectional stream of discrete messages. Four options ship in the box, and
 you can write your own.
 
-| Transport                                     | Long-lived | Server can call client | Best for                                     |
-| --------------------------------------------- | ---------- | ---------------------- | -------------------------------------------- |
-| [HTTP batch](/transports/http-batch/)          | No         | No                     | A burst of calls, then done. Stateless edges. |
-| [WebSocket](/transports/websocket/)            | Yes        | Yes                    | Interactive apps, subscriptions, callbacks.   |
-| [MessagePort](/transports/message-port/)       | Yes        | Yes                    | Web Workers, iframes, same-process boundaries. |
-| [Custom](/transports/custom/)                  | Up to you  | Yes                    | Anything else with two directions.             |
+| Transport                                | Long-lived | Server can call client | Best for                                       |
+| ---------------------------------------- | ---------- | ---------------------- | ---------------------------------------------- |
+| [HTTP batch](/transports/http-batch/)    | No         | No                     | A burst of calls, then done. Stateless edges.  |
+| [WebSocket](/transports/websocket/)      | Yes        | Yes                    | Interactive apps, subscriptions, callbacks.    |
+| [MessagePort](/transports/message-port/) | Yes        | Yes                    | Web Workers, iframes, same-process boundaries. |
+| [Custom](/transports/custom/)            | Up to you  | Yes                    | Anything else with two directions.             |
 
 ## Sessions are symmetric
 

@@ -33,7 +33,7 @@ A stub can be passed across RPC again, **including over independent connections*
 connected to Bob and Carol, and Alice receives a stub from Bob, Alice can pass that stub in an RPC
 to Carol, thus allowing Carol to call Bob.
 
-```
+```text
 Carol ──call──▶ Alice ──proxied──▶ Bob
 ```
 

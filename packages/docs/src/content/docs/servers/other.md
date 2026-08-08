@@ -36,6 +36,9 @@ function newWebSocketRpcSession(
 
 ## The general shape
 
+Both transports hang off one request handler. Check the path, then decide between a WebSocket
+upgrade and a batch:
+
 ```ts
 async function handle(request: Request): Promise<Response> {
   let url = new URL(request.url);

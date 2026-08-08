@@ -8,6 +8,8 @@ it. The server can also make asynchronous calls **back to the client**.
 
 ## Client
 
+Declare the interface, then open a session against it:
+
 ```ts
 import { RpcTarget, RpcStub, newWebSocketRpcSession } from 'capnweb';
 

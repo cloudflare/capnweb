@@ -7,6 +7,8 @@ Let's build the smallest useful Cap'n Web service, then add types.
 
 ## A client
 
+Open a session and call a method on it:
+
 ```js
 import { newWebSocketRpcSession } from 'capnweb';
 
@@ -23,6 +25,8 @@ There is no client generation and no interface registration. `api` is a *stub*: 
 appears to have every possible method. Calling one sends an RPC.
 
 ## A server
+
+The other half, implementing the `hello` the client just called:
 
 ```js
 import { RpcTarget, newWorkersRpcResponse } from 'capnweb';
@@ -149,12 +153,12 @@ boundary actually checked, that is [runtime validation](/guides/validation/).
 
 ## Which transport?
 
-| You want                                        | Use                                                     |
-| ----------------------------------------------- | ------------------------------------------------------- |
-| A burst of calls, then done                     | [HTTP batch](/transports/http-batch/)                    |
-| A long-lived session, server-initiated calls    | [WebSocket](/transports/websocket/)                      |
-| Talk to a Web Worker or iframe                  | [MessagePort](/transports/message-port/)                 |
-| Something else entirely                         | [Custom transport](/transports/custom/)                  |
+| You want                                     | Use                                      |
+| -------------------------------------------- | ---------------------------------------- |
+| A burst of calls, then done                  | [HTTP batch](/transports/http-batch/)    |
+| A long-lived session, server-initiated calls | [WebSocket](/transports/websocket/)      |
+| Talk to a Web Worker or iframe               | [MessagePort](/transports/message-port/) |
+| Something else entirely                      | [Custom transport](/transports/custom/)  |
 
 ## Next steps
 
