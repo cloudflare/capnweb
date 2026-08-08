@@ -51,14 +51,16 @@ means adding both the file and its sidebar entry.
 
 ## Where the content comes from
 
-Most prose is derived from the repo's root `README.md` and `protocol.md`. Those remain the canonical
-source. **If you change behaviour, update the root docs and mirror the change here** — in
-particular:
+**This site is the source of truth for user-facing documentation.** It began as a migration of the
+repo's root `README.md` and `protocol.md`; the root README has since been trimmed to a landing page
+that links here, and `protocol.md` is gone — `reference/protocol` replaced it.
+
+If you change behaviour, update the page here. Two files still hold prose of their own and should be
+kept in sync by hand:
 
 | Source                                | Pages that mirror it                          |
 | ------------------------------------- | --------------------------------------------- |
-| `README.md`                           | `start/`, `concepts/`, `transports/`, `servers/`, `guides/security` |
-| `protocol.md`                         | `reference/protocol`                           |
+| Root `README.md`                      | `start/introduction`, `start/installation` (the intro bullets and the install snippet appear in both) |
 | `packages/capnweb-validate/README.md` | `guides/validation`                            |
 
 ## The theme

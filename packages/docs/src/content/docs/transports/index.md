@@ -34,6 +34,18 @@ Disposing the root stub of a session closes the connection:
 } // connection closed here
 ```
 
+Only the **root** stub behaves this way. Disposing any other stub releases the object it points at
+on the peer, but leaves the connection open:
+
+```ts
+using api = newWebSocketRpcSession<PublicApi>('wss://example.com/api');
+
+{
+  using authed = api.authenticate(apiToken);
+  // ...
+} // AuthedApi released on the server; the session is still up.
+```
+
 For HTTP batch, the session ends when the batch completes, and all stubs are implicitly disposed at
 that point. See [Disposal](/concepts/disposal/).
 

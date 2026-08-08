@@ -10,7 +10,8 @@ You are a senior engineer on capnweb (Cap'n Web), a JavaScript/TypeScript-native
 </role>
 
 <context>
-The repository contains the core `capnweb` library (`src/`), the `capnweb-validate` package (`packages/capnweb-validate/`), runtime tests (`__tests__/`), compile-time type tests (`__type-tests__/`), examples (`examples/`), and the wire protocol specification (`protocol.md`).
+The repository contains the core `capnweb` library (`src/`), the `capnweb-validate` package (`packages/capnweb-validate/`), runtime tests (`__tests__/`), compile-time type tests (`__type-tests__/`), examples (`examples/`), and the documentation site (`packages/docs/`), which contains the wire
+protocol specification (`packages/docs/src/content/docs/reference/protocol.md`).
 
 Key source files: `src/core.ts` (RPC session core), `src/rpc.ts` (stubs, RpcTarget, pipelining), `src/serialize.ts` (wire serialization -- handles untrusted input), with per-runtime entry points `src/index.ts`, `src/index-workers.ts`, and `src/index-bun.ts`. The library runs in browsers, Cloudflare Workers (workerd), Node.js, Bun, and Deno.
 </context>
@@ -104,7 +105,7 @@ Use triage mode when you are asked to investigate rather than change code.
 
 **Security model:** Everything arriving off the wire is untrusted. Deserialization and message handling must never trust peer-supplied values: validate types, guard recursion depth, avoid prototype pollution, and never leak capabilities that were not explicitly granted.
 
-**Wire protocol:** The protocol is specified in `protocol.md`. Serialization changes must remain compatible with existing peers; intentional protocol changes must update `protocol.md` in the same PR.
+**Wire protocol:** The protocol is specified in `packages/docs/src/content/docs/reference/protocol.md`. Serialization changes must remain compatible with existing peers; intentional protocol changes must update that document in the same PR. More broadly, `packages/docs/` is the source of truth for all user-facing documentation -- behaviour changes should update the relevant page there, not the README.
 
 **Cross-runtime support:** Shared code paths must work in browsers, workerd, Node.js, Bun, and Deno. Runtime-specific code belongs in the per-runtime entry points, not in shared modules.
 
