@@ -148,7 +148,10 @@ function rotationX(a: number): Mat4 {
 
 const NODE_COUNT = 190;
 const NEIGHBOURS = 3;
-const PULSE_COUNT = 5;
+/* More sparks than there used to be, each one quicker and resting less. One
+   pulse crossing five hops and back is the argument, but a single spark on a
+   190-node sphere reads as an idle screensaver; a dozen reads as traffic. */
+const PULSE_COUNT = 12;
 const SPHERE_R = 1.32;
 
 interface Graph {
@@ -568,13 +571,13 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 		path: makePath(3 + Math.floor(rand() * 3)),
 		hop: 0,
 		t: 0,
-		speed: 1.5 + rand() * 1.1,
+		speed: 2.7 + rand() * 1.5,
 		returning: false,
 		wait,
 	});
 
 	const pulses: Pulse[] = [];
-	for (let i = 0; i < PULSE_COUNT; i++) pulses.push(newPulse(i * 1.15));
+	for (let i = 0; i < PULSE_COUNT; i++) pulses.push(newPulse(i * 0.42));
 
 	/* ------------------------------------------------------------------ view */
 
@@ -609,10 +612,10 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 
 	function simulate(dt: number, still: boolean) {
 		for (let e = 0; e < edgeCount; e++) {
-			edgeGlow[e] = Math.max(0, edgeGlow[e]! - dt * 1.05);
+			edgeGlow[e] = Math.max(0, edgeGlow[e]! - dt * 1.45);
 		}
 		for (let n = 0; n < NODE_COUNT; n++) {
-			nodeFlash[n] = Math.max(0, nodeFlash[n]! - dt * 1.9);
+			nodeFlash[n] = Math.max(0, nodeFlash[n]! - dt * 2.5);
 		}
 
 		pulsePositions.fill(0);
@@ -637,7 +640,7 @@ export function initNetworkHero(canvas: HTMLCanvasElement): () => void {
 				if (p.hop >= p.path.length - 1) {
 					if (p.returning) {
 						// Home again: the whole chain cost one trip. Rest, then go again.
-						pulses[i] = newPulse(0.7 + rand() * 2.2);
+						pulses[i] = newPulse(0.3 + rand() * 1.1);
 						break;
 					}
 					p.returning = true;

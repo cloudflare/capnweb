@@ -60,9 +60,42 @@
 	--cw-raised: var(--cw-ink-800);
 	--cw-raised-hover: var(--cw-ink-700);
 	--cw-chrome: #05080f;
-	--cw-border: rgba(120, 170, 230, 0.13);
-	--cw-border-strong: rgba(120, 170, 230, 0.26);
+	--cw-border: rgba(120, 170, 230, 0.2);
+	--cw-border-strong: rgba(120, 170, 230, 0.34);
 	--cw-glow: rgba(20, 135, 224, 0.16);
+
+	/*
+	 * The chrome carries its own ink, because it is a different material from
+	 * the page: dark in both schemes would have been simpler, but a black bar
+	 * over a white document reads as a screenshot of two different sites.
+	 */
+	--cw-chrome-ink: #dbe7f5;
+	--cw-chrome-ink-strong: #f2f7fd;
+	--cw-chrome-ink-dim: #8299b6;
+	--cw-chrome-label: #6b83a3;
+	--cw-chrome-line: rgba(120, 170, 230, 0.14);
+	--cw-chrome-line-strong: rgba(120, 170, 230, 0.3);
+	--cw-chrome-fill: rgba(120, 170, 230, 0.05);
+	--cw-chrome-fill-hover: rgba(120, 170, 230, 0.11);
+	--cw-chrome-ink-hover: var(--cw-blue-300);
+	--cw-current-fill: rgba(246, 130, 31, 0.09);
+
+	/* The card icon box: one gradient, used for every card. See `.card .icon`. */
+	--cw-icon-ink: var(--cw-blue-400);
+	--cw-icon-edge: rgba(20, 135, 224, 0.55);
+	--cw-icon-wash-a: rgba(20, 135, 224, 0.24);
+	--cw-icon-wash-b: rgba(20, 135, 224, 0.06);
+
+	/* Depth. The page is a sheet lifted off a textured ground. */
+	--cw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+	--cw-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 18px -8px rgba(0, 0, 0, 0.7);
+	--cw-shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.6), 0 18px 40px -22px rgba(0, 0, 0, 0.9);
+
+	/* Ground: two soft washes, with the node field drawn over them. */
+	--cw-wash-1: rgba(20, 135, 224, 0.1);
+	--cw-wash-2: rgba(246, 130, 31, 0.045);
+	--cw-graph-node: #6cc2fb;
+	--cw-graph-edge: #1487e0;
 
 	/* Hero canvas colours, read by the WebGL renderer as well as by CSS. */
 	--cw-hero-bg-inner: #072041;
@@ -98,14 +131,39 @@
 /* ------------------------------------------------------------------- light */
 
 :root[data-theme='light'] {
-	--cw-ground: #eef3f9;
+	--cw-ground: #e6edf6;
 	--cw-surface: #ffffff;
-	--cw-raised: #f7fafd;
-	--cw-raised-hover: #eff5fb;
-	--cw-chrome: #05080f; /* the chrome stays dark in both schemes */
-	--cw-border: rgba(12, 48, 90, 0.16);
-	--cw-border-strong: rgba(12, 48, 90, 0.3);
+	--cw-raised: #f4f8fc;
+	--cw-raised-hover: #eaf2fa;
+	--cw-chrome: #dfe8f4;
+	--cw-border: rgba(12, 48, 90, 0.2);
+	--cw-border-strong: rgba(12, 48, 90, 0.34);
 	--cw-glow: rgba(20, 135, 224, 0.1);
+
+	--cw-chrome-ink: #16283e;
+	--cw-chrome-ink-strong: #04070e;
+	--cw-chrome-ink-dim: #4a5f7c;
+	--cw-chrome-label: #556985;
+	--cw-chrome-line: rgba(12, 48, 90, 0.16);
+	--cw-chrome-line-strong: rgba(12, 48, 90, 0.34);
+	--cw-chrome-fill: rgba(12, 48, 90, 0.045);
+	--cw-chrome-fill-hover: rgba(12, 48, 90, 0.09);
+	--cw-chrome-ink-hover: var(--cw-blue-700);
+	--cw-current-fill: rgba(246, 130, 31, 0.14);
+
+	--cw-icon-ink: var(--cw-blue-700);
+	--cw-icon-edge: rgba(13, 108, 189, 0.42);
+	--cw-icon-wash-a: rgba(13, 108, 189, 0.15);
+	--cw-icon-wash-b: rgba(13, 108, 189, 0.03);
+
+	--cw-shadow-sm: 0 1px 2px rgba(13, 38, 76, 0.08);
+	--cw-shadow: 0 1px 2px rgba(13, 38, 76, 0.07), 0 6px 16px -8px rgba(13, 38, 76, 0.2);
+	--cw-shadow-lg: 0 1px 3px rgba(13, 38, 76, 0.08), 0 18px 38px -22px rgba(13, 38, 76, 0.35);
+
+	--cw-wash-1: rgba(20, 135, 224, 0.1);
+	--cw-wash-2: rgba(246, 130, 31, 0.05);
+	--cw-graph-node: #0a5292;
+	--cw-graph-edge: #0d6cbd;
 
 	--cw-hero-bg-inner: #d5e8fa;
 	--cw-hero-bg-outer: #eef3f9;
@@ -139,8 +197,42 @@
 
 /* ------------------------------------------------------------ page shell */
 
+/*
+ * Reserve the scrollbar's width whether or not the page needs one. Without
+ * this, navigating from a page that scrolls to one that does not widens the
+ * viewport by the scrollbar and every centred thing on the page jumps.
+ */
+html {
+	scrollbar-gutter: stable;
+}
+
 body {
 	background-color: var(--cw-ground);
+}
+
+/*
+ * Ground wash, under the node field. Two soft gradients so the canvas has
+ * something to sit on and the page is a sheet resting on a space rather than
+ * two flat fills meeting at a line.
+ *
+ * Fixed and behind everything, which also means it does not scroll with the
+ * content and cannot be hit by the pointer.
+ */
+body::before {
+	content: '';
+	position: fixed;
+	inset: 0;
+	z-index: -2;
+	pointer-events: none;
+	background-image:
+		radial-gradient(58rem 34rem at 8% -8%, var(--cw-wash-1), transparent 68%),
+		radial-gradient(46rem 30rem at 104% 4%, var(--cw-wash-2), transparent 66%);
+}
+
+/* The splash page paints its own field edge to edge, so the ground behind it
+   would only muddy the canvas. */
+body:has(main .hero)::before {
+	display: none;
 }
 
 .main-pane > main {
@@ -153,6 +245,7 @@ body {
 		border-top: 1px solid var(--cw-border);
 		border-inline-start: 1px solid var(--cw-border);
 		min-height: calc(100vh - var(--sl-nav-height));
+		box-shadow: var(--cw-shadow-lg);
 	}
 }
 
@@ -166,7 +259,7 @@ body {
 header.header {
 	border: 0;
 	background-color: var(--cw-chrome);
-	box-shadow: 0 1px 0 var(--cw-border);
+	box-shadow: 0 1px 0 var(--cw-chrome-line);
 	gap: var(--sl-nav-gap);
 }
 
@@ -192,7 +285,7 @@ header.header::after {
 .header .site-title,
 .header .social-icons a,
 .header starlight-theme-toggle button {
-	color: #dbe7f5;
+	color: var(--cw-chrome-ink);
 }
 
 .header .site-title {
@@ -202,7 +295,7 @@ header.header::after {
 }
 
 .header .social-icons a:hover {
-	color: var(--cw-blue-300);
+	color: var(--cw-chrome-ink-hover);
 }
 
 .header .social-icons::after {
@@ -211,14 +304,14 @@ header.header::after {
 
 .header button[data-open-modal] {
 	border: 0;
-	color: #8299b6;
+	color: var(--cw-chrome-ink-dim);
 }
 
 @media (min-width: 50rem) {
 	.header button[data-open-modal] {
-		border: 1px solid rgba(120, 170, 230, 0.14);
+		border: 1px solid var(--cw-chrome-line);
 		border-radius: var(--cw-radius-sm);
-		background-color: rgba(120, 170, 230, 0.05);
+		background-color: var(--cw-chrome-fill);
 		transition:
 			background-color 0.18s ease,
 			border-color 0.18s ease,
@@ -226,15 +319,15 @@ header.header::after {
 	}
 
 	.header button[data-open-modal]:hover {
-		background-color: rgba(120, 170, 230, 0.1);
-		border-color: rgba(120, 170, 230, 0.3);
-		color: #dbe7f5;
+		background-color: var(--cw-chrome-fill-hover);
+		border-color: var(--cw-chrome-line-strong);
+		color: var(--cw-chrome-ink);
 	}
 }
 
 .header button[data-open-modal] > kbd {
-	background-color: rgba(120, 170, 230, 0.1);
-	color: #8299b6;
+	background-color: var(--cw-chrome-fill-hover);
+	color: var(--cw-chrome-ink-dim);
 	border: 0;
 }
 
@@ -246,15 +339,15 @@ header.header::after {
 
 starlight-menu-button button,
 :root[data-theme='light'] starlight-menu-button button {
-	background-color: rgba(120, 170, 230, 0.1);
-	color: #dbe7f5;
+	background-color: var(--cw-chrome-fill-hover);
+	color: var(--cw-chrome-ink);
 	box-shadow: none;
 }
 
 starlight-menu-button [aria-expanded='true'] button,
 :root[data-theme='light'] starlight-menu-button [aria-expanded='true'] button {
-	background-color: rgba(120, 170, 230, 0.2);
-	color: #f2f7fd;
+	background-color: var(--cw-chrome-line-strong);
+	color: var(--cw-chrome-ink-strong);
 }
 
 /* ---------------------------------------------------------- theme toggle */
@@ -266,10 +359,10 @@ starlight-theme-toggle button {
 	width: 2rem;
 	height: 2rem;
 	padding: 0;
-	border: 1px solid rgba(120, 170, 230, 0.14);
+	border: 1px solid var(--cw-chrome-line);
 	border-radius: var(--cw-radius-sm);
-	background-color: rgba(120, 170, 230, 0.05);
-	color: #8299b6;
+	background-color: var(--cw-chrome-fill);
+	color: var(--cw-chrome-ink-dim);
 	cursor: pointer;
 	transition:
 		background-color 0.18s ease,
@@ -278,9 +371,9 @@ starlight-theme-toggle button {
 }
 
 starlight-theme-toggle button:hover {
-	background-color: rgba(120, 170, 230, 0.11);
-	border-color: rgba(120, 170, 230, 0.3);
-	color: var(--cw-blue-300);
+	background-color: var(--cw-chrome-fill-hover);
+	border-color: var(--cw-chrome-line-strong);
+	color: var(--cw-chrome-ink-hover);
 }
 
 /*
@@ -295,38 +388,24 @@ starlight-theme-toggle button:hover {
 
 /* --------------------------------------------------------------- side nav */
 
-/* The chrome is one continuous piece of near-black in both schemes, so the
-   sidebar keeps the dark palette even on the light theme. */
+/* The chrome is its own material: one shade off the ground in each scheme, so
+   the nav reads as a panel beside the page rather than a hole cut in it. */
 .sidebar-pane {
 	border-inline-end: 0;
 	background-color: var(--cw-chrome);
+	box-shadow: inset -1px 0 0 var(--cw-chrome-line);
 }
 
-:root[data-theme='light'] .sidebar-pane {
-	--sl-color-white: #f2f7fd;
-	--sl-color-gray-1: #dbe7f5;
-	--sl-color-gray-2: #b3c5da;
-	--sl-color-gray-3: #8299b6;
-	--sl-color-gray-4: #536b8a;
-	--sl-color-gray-5: #2a3d59;
-	--sl-color-gray-6: #131d2f;
-	--sl-color-gray-7: #0c1421;
-	--sl-color-black: var(--cw-black);
-
-	--sl-color-text: var(--sl-color-gray-2);
-	--sl-color-text-accent: var(--cw-blue-300);
-	--sl-color-accent: var(--cw-blue-500);
-	--sl-color-accent-low: var(--cw-blue-900);
-	--sl-color-accent-high: var(--cw-blue-300);
-
-	--sl-color-bg: var(--cw-chrome);
-	--sl-color-bg-nav: var(--cw-chrome);
-	--sl-color-bg-inline-code: rgba(56, 165, 245, 0.11);
-	--sl-color-hairline-light: rgba(120, 170, 230, 0.13);
-	--sl-color-hairline: rgba(120, 170, 230, 0.13);
-	--sl-color-hairline-shade: rgba(0, 0, 0, 0.6);
-
-	color: var(--sl-color-text);
+/*
+ * On desktop the nav sits beside the page, so letting the node field carry on
+ * behind it makes both flanks of the sheet the same space. Below that width it
+ * is a drawer laid *over* the content, where translucency would show the
+ * article through the menu, so it stays opaque.
+ */
+@media (min-width: 50rem) {
+	.sidebar-pane {
+		background-color: color-mix(in srgb, var(--cw-chrome) 78%, transparent);
+	}
 }
 
 .sidebar-content {
@@ -338,10 +417,10 @@ starlight-theme-toggle button:hover {
 	font-weight: 600;
 	letter-spacing: 0.11em;
 	text-transform: uppercase;
-	/* 5.2:1 on the chrome. The obvious `--sl-color-gray-4` is 3.66:1, which
-	   fails at this size, and gray-3 matches the links and flattens the
-	   hierarchy the label exists to create. */
-	color: #6b83a3;
+	/* Deliberately not `--sl-color-gray-4`, which fails contrast at this size,
+	   and not gray-3, which matches the links and flattens the hierarchy the
+	   label exists to create. */
+	color: var(--cw-chrome-label);
 }
 
 .sidebar-content a {
@@ -358,8 +437,8 @@ starlight-theme-toggle button:hover {
 .sidebar-content a[aria-current='page'],
 .sidebar-content a[aria-current='page']:hover,
 .sidebar-content a[aria-current='page']:focus {
-	background-color: rgba(246, 130, 31, 0.09);
-	color: #f2f7fd;
+	background-color: var(--cw-current-fill);
+	color: var(--cw-chrome-ink-strong);
 	box-shadow: inset 2px 0 0 var(--cw-orange);
 	font-weight: 600;
 }
@@ -532,18 +611,22 @@ main:has(.hero) {
 /* ------------------------------------------------------------- components */
 
 .card {
-	background-color: color-mix(in srgb, var(--cw-raised) 82%, transparent);
+	background-color: var(--cw-raised);
 	border: 1px solid var(--cw-border);
 	border-radius: var(--cw-radius);
 	padding: 1.25rem;
+	box-shadow: var(--cw-shadow-sm);
 	transition:
 		border-color 0.2s ease,
-		background-color 0.2s ease;
+		background-color 0.2s ease,
+		box-shadow 0.2s ease,
+		transform 0.2s ease;
 }
 
 .card:hover {
 	border-color: var(--cw-border-strong);
 	background-color: var(--cw-raised-hover);
+	box-shadow: var(--cw-shadow);
 }
 
 /*
@@ -559,22 +642,40 @@ main:has(.hero) {
 	min-width: 0;
 }
 
-.card .icon {
-	color: var(--cw-blue-400);
+/*
+ * Starlight tints each card's icon box a different hue, cycling orange, purple,
+ * green, red and blue through five `nth-child` rules. Six feature cards then
+ * read as a colour wheel, and the orange one competes with the single place
+ * orange is supposed to mean something. Every box gets the same house blue
+ * instead, as a gradient rather than a flat swatch so it has some depth.
+ *
+ * The doubled class is deliberate: Starlight sets `--sl-card-border` and
+ * `--sl-card-bg` from `.card:nth-child(...)`, which is two classes' worth of
+ * specificity, and a component's own styles can land either side of this file
+ * in the cascade. Doubling wins on specificity, so order stops mattering.
+ */
+.card.card .icon {
+	color: var(--cw-icon-ink);
+	border-color: var(--cw-icon-edge);
+	background-color: transparent;
+	background-image: linear-gradient(150deg, var(--cw-icon-wash-a), var(--cw-icon-wash-b));
 }
 
 .sl-link-card {
 	border-radius: var(--cw-radius);
 	border-color: var(--cw-border);
+	background-color: var(--cw-raised);
+	box-shadow: var(--cw-shadow-sm);
 	transition:
 		border-color 0.2s ease,
-		background-color 0.2s ease;
+		background-color 0.2s ease,
+		box-shadow 0.2s ease;
 }
 
 .sl-link-card:hover {
 	border-color: var(--cw-border-strong);
-	background-color: var(--cw-raised);
-	box-shadow: none;
+	background-color: var(--cw-raised-hover);
+	box-shadow: var(--cw-shadow);
 }
 
 .sl-link-card .icon {
@@ -584,10 +685,24 @@ main:has(.hero) {
 .starlight-aside {
 	border-radius: 0 var(--cw-radius-sm) var(--cw-radius-sm) 0;
 	border-inline-start-width: 2px;
+	box-shadow: var(--cw-shadow-sm);
 }
 
 .expressive-code .frame pre {
 	border-radius: var(--cw-radius-sm);
+}
+
+/* Code is the most common block on the page, so it carries the same lift as
+   the cards; without it a long article reads as one undifferentiated column. */
+.expressive-code .frame {
+	box-shadow: var(--cw-shadow);
+	border-radius: var(--cw-radius-sm);
+}
+
+.sl-markdown-content :is(table) {
+	box-shadow: var(--cw-shadow-sm);
+	border-radius: var(--cw-radius-sm);
+	overflow: hidden;
 }
 
 /* ------------------------------------------------------------------- misc */
@@ -604,6 +719,43 @@ main:has(.hero) {
 	outline: 2px solid var(--cw-blue-400);
 	outline-offset: 2px;
 	border-radius: 2px;
+}
+
+/* ------------------------------------------------------- theme transition */
+
+/*
+ * Switching schemes is a View Transition: the old page stays put while the new
+ * one is revealed through a circle expanding from the toggle. The default
+ * cross-fade would run at the same time and turn the wipe into a smear, so
+ * both snapshots are pinned and only the clip-path (set in ThemeToggle.astro)
+ * animates.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation: none;
+	mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+	z-index: 1;
+}
+
+::view-transition-new(root) {
+	z-index: 2;
+}
+
+/* The canvas cannot be captured mid-frame without tearing, and the sticky
+   header would otherwise be painted into both snapshots at once. */
+:root[data-theme-switching] .cw-hero-field {
+	visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
 }
 
 @media print {
@@ -626,6 +778,16 @@ main:has(.hero) {
  * screenshot of an application. Drop the bar but keep the figcaption in the
  * tree: it carries the "Terminal window" text for screen readers.
  */
+/*
+ * The copy button is positioned with `--button-spacing`, which Expressive Code
+ * inflates on terminal frames to clear the title bar. We removed that bar, so
+ * the reservation drops the button most of the way out of a two-line snippet.
+ * Put it back to the value every other frame uses.
+ */
+.expressive-code .frame.is-terminal {
+	--button-spacing: 0.4rem;
+}
+
 .expressive-code .frame.is-terminal .header {
 	/* The figcaption is kept in the DOM for its sr-only "Terminal window" label,
 	   but its box is collapsed: the empty .title span and the caption's own

@@ -76,13 +76,63 @@
 		if (!stored()) apply(systemTheme(), false);
 	});
 
+	/**
+	 * Switch themes behind an expanding circle centred on the button that was
+	 * pressed, so the new scheme is wiped over the old one rather than swapped
+	 * under the reader.
+	 *
+	 * The whole effect is one View Transition: the browser snapshots the page,
+	 * `apply()` runs, and the new snapshot is revealed through a growing
+	 * `clip-path`. Where `startViewTransition` is missing, or the reader has
+	 * asked for less motion, the theme just changes, which is the same thing
+	 * without the flourish.
+	 */
+	function toggleFrom(button: HTMLElement) {
+		const next: Theme = currentTheme() === 'dark' ? 'light' : 'dark';
+		const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+		if (reduced || !document.startViewTransition) {
+			apply(next, true);
+			return;
+		}
+
+		const box = button.getBoundingClientRect();
+		const x = box.left + box.width / 2;
+		const y = box.top + box.height / 2;
+		// Reach the furthest corner, so the circle always finishes off-screen.
+		const radius = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+
+		document.documentElement.dataset.themeSwitching = '';
+		const transition = document.startViewTransition(() => apply(next, true));
+
+		transition.ready
+			.then(() => {
+				document.documentElement.animate(
+					{
+						clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${radius}px at ${x}px ${y}px)`],
+					},
+					{
+						duration: 520,
+						easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+						pseudoElement: '::view-transition-new(root)',
+					}
+				);
+			})
+			.catch(() => {
+				/* a transition can be skipped (rapid clicks); the theme still changed */
+			});
+
+		transition.finished.finally(() => {
+			delete document.documentElement.dataset.themeSwitching;
+		});
+	}
+
 	class StarlightThemeToggle extends HTMLElement {
 		constructor() {
 			super();
 			apply(currentTheme(), false);
-			this.querySelector('button')?.addEventListener('click', () => {
-				apply(currentTheme() === 'dark' ? 'light' : 'dark', true);
-			});
+			const button = this.querySelector('button');
+			button?.addEventListener('click', () => toggleFrom(button));
 		}
 	}
 

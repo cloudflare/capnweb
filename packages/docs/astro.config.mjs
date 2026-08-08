@@ -23,6 +23,8 @@ export default defineConfig({
 				Hero: './src/components/Hero.astro',
 				// Delegates to the stock head; adds the generated social card.
 				Head: './src/components/Head.astro',
+				// Delegates to the stock frame; mounts the node field behind it.
+				PageFrame: './src/components/PageFrame.astro',
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: REPO }],
 			editLink: {
