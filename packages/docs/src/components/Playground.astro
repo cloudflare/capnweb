@@ -174,27 +174,32 @@ const demoSrc = `${example.demoPath}?embed=1`;
 </style>
 
 <style>
-	/* Editor colours, kept separate from the site palette on purpose: the panes
-	   should read as a tool, not as part of the page. These match the code
-	   theme (github-dark / github-light) so the tab strip sits flush against
-	   the code block. Starlight always writes an explicit `data-theme`, so a
-	   dark default plus one light override covers every case. */
+	/* Editor colours, kept as their own small palette rather than reusing the
+	   site tokens: the panes should read as a tool embedded in the page, not as
+	   more page. `--pg-bg` has to stay exactly the code theme's background
+	   (github-dark / github-light) or the active tab will not sit flush against
+	   the code block below it. Everything around it is retinted to the site's
+	   blue-black so the tool still belongs here.
+
+	   Starlight always writes an explicit `data-theme`, so a dark default plus
+	   one light override covers every case. */
 	.capn-stage {
 		--pg-bg: #0d1117;
-		--pg-bar: #010409;
-		--pg-border: #30363d;
-		--pg-fg-muted: #7d8590;
-		--pg-fg: #e6edf3;
-		--pg-accent: #f78166;
+		--pg-bar: #05080f;
+		--pg-border: rgba(120, 170, 230, 0.2);
+		--pg-fg-muted: #8299b6;
+		--pg-fg: #dbe7f5;
+		/* The one place the tool is allowed a spark: the active tab's edge. */
+		--pg-accent: #f6821f;
 	}
 
 	:root[data-theme='light'] .capn-stage {
 		--pg-bg: #ffffff;
-		--pg-bar: #f6f8fa;
-		--pg-border: #e1e4e8;
-		--pg-fg-muted: #57606a;
-		--pg-fg: #24292f;
-		--pg-accent: #f9826c;
+		--pg-bar: #f2f6fb;
+		--pg-border: rgba(12, 48, 90, 0.18);
+		--pg-fg-muted: #56687f;
+		--pg-fg: #0d1a2b;
+		--pg-accent: #d9700f;
 	}
 
 	.capn-stage {

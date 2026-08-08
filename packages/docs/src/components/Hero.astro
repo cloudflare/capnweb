@@ -1,0 +1,18 @@
+---
+/**
+ * Override of Starlight's `Hero`, purely to slide the WebGL field in behind it.
+ *
+ * The hero itself is unchanged -- this delegates to the stock component rather
+ * than reimplementing it, so title, tagline and actions keep working from
+ * frontmatter and nothing has to be kept in sync with upstream.
+ *
+ * The field is absolutely positioned. Starlight renders the hero inside an
+ * unpositioned `.content-panel`, so it resolves against `main`, which the
+ * theme makes a positioned stacking context on splash pages.
+ */
+import StarlightHero from '@astrojs/starlight/components/Hero.astro';
+import NetworkHero from './NetworkHero.astro';
+---
+
+<NetworkHero />
+<StarlightHero />

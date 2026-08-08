@@ -27,10 +27,6 @@ repo root first — or just use `npm run dev:docs` there, which does both.
 The examples no longer need to be running for the docs to work: their demos are bundled into the
 pages. To run one as a real Worker over a real network, see `examples/README.md`.
 
-`sharp` is a dev dependency because the logo (`src/assets/captain-web.jpg`) is a raster image, and
-Astro's image service needs `sharp` to hash and optimise it. If the site ever becomes all-SVG again,
-`sharp` can be dropped.
-
 ## Layout
 
 ```
@@ -45,8 +41,8 @@ src/
     reference/        wire protocol, API cheat sheet
   styles/theme.css    the theme (see below)
   components/         Starlight component overrides (see below)
-  assets/             captain-web.jpg, the logo and the source of the palette
-public/               favicon and other static files
+  scripts/            the WebGL hero renderer
+public/               favicon.svg, and the generated playground bundles
 astro.config.mjs      Starlight config, including the sidebar
 ```
 
@@ -67,67 +63,104 @@ particular:
 
 ## The theme
 
-`src/styles/theme.css` takes its structure from [capnproto.org](https://capnproto.org) (originally
-designed by @kentonv and @sailorhg) and its colour from the project logo. Carried over from the
-original site:
+`src/styles/theme.css` is dark-first. The palette is a near-black with a blue undertone -- never a
+neutral grey -- carrying a deep saturated blue as its structural colour and an electric azure for
+anything interactive.
 
-- a dark navigation column against a lighter document panel, in **both** colour schemes
-- the rounded corner where the document panel meets the nav (the original's "corner hack")
-- a horizontal rule under every `<h2>` that fades out to the right
-- a rotated starburst badge making an outrageous performance claim — "ONE ROUND TRIP" here, in place
-  of "INFINITY TIMES FASTER"
+Cloudflare orange appears in exactly three places, and the restraint is the point: a fourth use and
+it stops meaning anything.
+
+1. the pulses travelling the hero network
+2. the primary call to action
+3. the marker on the current sidebar page
+
+Light mode is a genuine second scheme rather than an inversion: a cool near-white with the same two
+accents, darkened to hold contrast on paper. The chrome -- masthead and sidebar -- stays near-black
+in **both** schemes, so it reads as one continuous piece of material. That is done by re-declaring
+the dark palette inside `[data-theme='light'] .sidebar-pane` so every Starlight component in there
+recolours itself without individual rules.
+
+There are no web fonts and no raster images. The only textures are gradients.
 
 ### The palette
 
-Every brand colour is sampled from `src/assets/captain-web.jpg` rather than picked by hand, so the
-chrome and the logo agree:
-
-| Token          | Light     | Dark      | Sampled from                 |
-| -------------- | --------- | --------- | ---------------------------- |
-| leather / nav  | `#1a2f3b` | `#1a2f3b` | the patch's navy field       |
-| page surface   | `#fbf8f0` | `#10222c` | the cream border             |
-| page ground    | `#e0d8c6` | `#0a161d` | —                            |
-| accent (links) | `#22688a` | `#7bc0e0` | the navy, lifted to pass AA  |
-| gold           | `#b99a66` | `#b99a66` | the rope and lettering       |
-
-The masthead and sidebar are navy "leather": the flat colour, a fine grain, and a top-to-bottom
-sheen. The grain is an inline `feTurbulence` SVG data URI (`--capn-grain`) composited with
-`background-blend-mode: overlay` — no image request. A gold rope band (`--capn-rope`, a repeating
-diagonal gradient) separates the masthead from the page in place of a border.
+| Token             | Dark      | Light     | Used for                          |
+| ----------------- | --------- | --------- | --------------------------------- |
+| `--cw-black`      | `#04070e` | `#eef3f9` | page ground                       |
+| `--cw-ink-900`    | `#070b16` | `#ffffff` | document surface                  |
+| `--cw-chrome`     | `#05080f` | `#05080f` | masthead and sidebar, both schemes |
+| `--cw-blue-500`   | `#1487e0` | `#0a5292` | links and accents                 |
+| `--cw-orange`     | `#f6821f` | `#f6821f` | the three sparks above            |
 
 > **Careful:** Starlight nests a `div.header` inside `header.header`. A bare `.header` selector
-> matches both, which paints the leather, sheen and rope band a second time inset by the bar's
-> padding and leaves a visible seam. Surface rules are qualified as `header.header` for this reason.
+> matches both and paints the bar a second time inset by its own padding, leaving a visible seam.
+> Surface rules are qualified as `header.header` for this reason.
 
-### The splash hero
+### The hero
 
-The landing page hero is dressed as a nautical chart, scoped with `main:has(.hero)` so no other page
-is affected:
+The landing page runs a 3D network in WebGL: `src/components/NetworkHero.astro` for the markup and
+`src/scripts/network-hero.ts` for the renderer. `src/components/Hero.astro` overrides Starlight's
+`Hero` purely to mount it, delegating to the stock component so title, tagline and actions keep
+working from frontmatter.
 
-- a **compass rose** watermark (`--capn-compass`, a generated portolan rose with rhumb lines),
-  centred behind the "one round trip" badge so the badge reads as pinned through its hub
-- a **graticule** of chart lines, major every 200px and minor every 40px
-- a warm **radial glow**, and a vertical mask that dissolves the whole thing before the prose starts
+It is raw WebGL2 with no dependency. The page it sits on claims the library is under 10 kB with
+nothing behind it, and shipping a 3D framework to draw points and lines would undercut that in the
+first paint.
 
-The rose is anchored to `.hero .hero-html` and sized from `--capn-burst-size`, the same token that
-sizes the badge — a percentage `background-position` on `main` cannot keep the two centred as the
-viewport changes. Both are hidden below 50rem along with the badge, and in print. The chart's
-contribution to background luminance is small enough that all hero text still clears WCAG AA
-(worst measured 5.5:1).
+The animation is an argument, not decoration. Each pulse leaves a node, runs outward across several
+hops and returns along the same path -- the whole dependent chain, one trip. That is what promise
+pipelining buys you, so the hero shows it rather than asserting it.
 
-To keep the nav dark while the page is light, the dark palette is re-declared inside
-`[data-theme='light'] .sidebar-pane`, so every Starlight component in the sidebar recolours itself
-without needing individual rules.
+Everything degrades, and each fallback is a designed state rather than a hole:
+
+| Condition                    | Result                                                      |
+| ---------------------------- | ----------------------------------------------------------- |
+| No JavaScript                | The CSS gradient under the canvas, same composition          |
+| No WebGL2                    | Same, and `data-state="unsupported"`; the canvas stays at opacity 0 |
+| `prefers-reduced-motion`     | Exactly one frame -- a still portrait of the network, no rAF loop |
+| Canvas scrolled out of view  | Loop parked by an `IntersectionObserver`                     |
+| Tab hidden                   | Loop parked on `visibilitychange`                            |
+| Context lost                 | Parked; **rebuilt** on `webglcontextrestored`                |
+
+That last row matters. GPU driver resets, waking from sleep and tab discarding all really do lose
+the context, and handling `webglcontextlost` without handling the restore leaves a permanently dead
+rectangle. All GPU objects therefore live in one `Gpu` struct that is dropped and rebuilt as a unit,
+while the simulation state sits outside it so a restore resumes the animation instead of restarting
+it. Calling `preventDefault()` on the loss event is what makes the restore event fire at all.
+
+The graph is deterministic -- a fixed-seed PRNG over a Fibonacci sphere -- so the same hero renders
+every load and a visual difference means a real change rather than a new random seed.
+
+Light mode is not a recolour of the same drawing. Additive blending can only ever *add* light, so on
+a near-white page it does nothing at all. The renderer switches to normal compositing
+(`ONE, ONE_MINUS_SRC_ALPHA`, since the shaders emit premultiplied colour) and drops the additive hot
+cores, drawing the network as dark ink instead.
 
 ### Component overrides
 
-One override, `src/components/ThemeToggle.astro`, replaces Starlight's `ThemeSelect`. It drops the
-three-way light/dark/auto `<select>` for a single button. It reads and writes the same
-`starlight-theme` `localStorage` key as upstream, so it stays compatible with Starlight's inlined
-no-FOUC script; which icon shows is decided in CSS from `:root[data-theme]`, so there is no flash on
-load. Unset still means "follow the OS". Keep an eye on this file when upgrading Starlight.
+Two, both listed in `astro.config.mjs`:
 
-No web fonts are loaded — the site uses the system UI stack.
+- `ThemeToggle.astro` replaces Starlight's `ThemeSelect`, dropping the three-way light/dark/auto
+  `<select>` for a single button. It reads and writes the same `starlight-theme` `localStorage` key
+  as upstream, so it stays compatible with Starlight's inlined no-FOUC script; which icon shows is
+  decided in CSS from `:root[data-theme]`, so there is no flash on load. Unset still means "follow
+  the OS".
+- `Hero.astro` mounts the WebGL field and then renders the stock hero.
+
+Keep an eye on both when upgrading Starlight.
+
+### Two traps worth knowing about
+
+**Do not pass CSS variables to Expressive Code's `styleOverrides`.** EC resolves those colours at
+build time; handing it `var(--cw-border)` fails the parse and silently drops the *entire* generated
+stylesheet. The symptom is code blocks losing their background and the copy button rendering
+unstyled in normal flow, which does not look like a colour problem at all. Retint through EC's own
+custom properties from CSS instead -- see the `.expressive-code` block at the end of `theme.css`.
+
+**Clean the build before judging code-block styling.** `astro build` does not empty `dist/`, and a
+stale `index.html` can end up referencing an `ec.<hash>.css` that no longer exists. The stylesheet
+then 404s and every code block renders unstyled -- identical to the symptom above, from a completely
+different cause. `rm -rf dist` first.
 
 ## The example playgrounds
 

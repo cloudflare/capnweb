@@ -1,0 +1,99 @@
+---
+/**
+ * Full-bleed WebGL backdrop for the splash hero.
+ *
+ * The canvas is purely decorative -- it is `aria-hidden` and carries no
+ * information that is not also in the hero copy beside it. Everything degrades:
+ * with no JavaScript, or no WebGL2, or a lost GPU context, the CSS gradient
+ * underneath is what shows, and it is designed to be a perfectly acceptable
+ * final state rather than an obvious hole.
+ */
+---
+
+<div class="cw-hero-field" aria-hidden="true">
+	<canvas class="cw-hero-canvas" data-state="idle"></canvas>
+	<div class="cw-hero-veil"></div>
+</div>
+
+<script>
+	import { initNetworkHero } from '../scripts/network-hero';
+
+	const canvas = document.querySelector<HTMLCanvasElement>('.cw-hero-canvas');
+	if (canvas) initNetworkHero(canvas);
+</script>
+
+<style>
+	.cw-hero-field {
+		position: absolute;
+		inset: 0 0 auto 0;
+		/* Taller than the hero itself so the field is still going behind the
+		   first band of prose, then taken out by the veil's mask. */
+		height: min(46rem, 108vh);
+		overflow: hidden;
+		pointer-events: none;
+		/* The fallback. Same geometry as the shader's gradient, so losing the
+		   canvas changes the texture of the hero and not its composition. */
+		background:
+			radial-gradient(
+				58rem 34rem at 68% 44%,
+				var(--cw-hero-bg-inner) 0%,
+				transparent 68%
+			),
+			var(--cw-hero-bg-outer);
+	}
+
+	.cw-hero-canvas {
+		display: block;
+		width: 100%;
+		height: 100%;
+		/* Fade in once the first frame is up, so there is no flash of an
+		   unpainted black rectangle over the gradient. */
+		opacity: 0;
+		transition: opacity 0.6s ease;
+	}
+
+	.cw-hero-canvas[data-state='ready'] {
+		opacity: 1;
+	}
+
+	/* Dissolve the field into the page, and hold contrast under the copy. The
+	   horizontal leg is skipped on narrow screens where text sits over the
+	   middle of the canvas rather than to one side of it. */
+	.cw-hero-veil {
+		position: absolute;
+		inset: 0;
+		background: linear-gradient(
+			180deg,
+			transparent 0%,
+			transparent 52%,
+			color-mix(in srgb, var(--cw-hero-bg-outer) 62%, transparent) 78%,
+			var(--cw-hero-bg-outer) 100%
+		);
+	}
+
+	@media (min-width: 50rem) {
+		.cw-hero-veil {
+			background:
+				linear-gradient(
+					90deg,
+					color-mix(in srgb, var(--cw-hero-bg-outer) 94%, transparent) 0%,
+					color-mix(in srgb, var(--cw-hero-bg-outer) 72%, transparent) 28%,
+					color-mix(in srgb, var(--cw-hero-bg-outer) 28%, transparent) 50%,
+					transparent 70%
+				),
+				linear-gradient(
+					180deg,
+					transparent 0%,
+					transparent 52%,
+					color-mix(in srgb, var(--cw-hero-bg-outer) 62%, transparent) 78%,
+					var(--cw-hero-bg-outer) 100%
+				);
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.cw-hero-canvas {
+			transition: none;
+		}
+	}
+</style>

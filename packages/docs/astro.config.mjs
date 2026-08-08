@@ -13,15 +13,13 @@ export default defineConfig({
 			title: "Cap'n Web",
 			description:
 				"Cap'n Web is a JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, under 10kB.",
-			logo: {
-				src: './src/assets/captain-web.jpg',
-				alt: "Cap'n Web -- Protect & Connect",
-			},
 			favicon: '/favicon.svg',
 			customCss: ['./src/styles/theme.css'],
 			components: {
 				// Single-button light/dark toggle in place of the 3-option <select>.
 				ThemeSelect: './src/components/ThemeToggle.astro',
+				// Delegates to the stock hero; exists only to mount the WebGL field.
+				Hero: './src/components/Hero.astro',
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: REPO }],
 			editLink: {
@@ -31,7 +29,7 @@ export default defineConfig({
 			expressiveCode: {
 				themes: ['github-dark-default', 'github-light'],
 				styleOverrides: {
-					borderRadius: '0.5rem',
+					borderRadius: '0.4rem',
 					borderWidth: '1px',
 					codeFontSize: '0.8125rem',
 				},
@@ -39,7 +37,7 @@ export default defineConfig({
 			head: [
 				{
 					tag: 'meta',
-					attrs: { name: 'theme-color', content: '#1a2f3b' },
+					attrs: { name: 'theme-color', content: '#05080f' },
 				},
 			],
 			sidebar: [
