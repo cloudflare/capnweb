@@ -49,7 +49,7 @@ const api = validateStub<Api>(newHttpBatchRpcSession<Api>('/api'));
 
 ## Typed end to end, checked at runtime
 
-`App.tsx` imports the `Api` class from `server/worker.ts` **as a type**. That gives the client full
+`runs.ts` imports the `Api` class from `server/worker.ts` **as a type**. That gives the client full
 autocomplete and compile-time checking against the real server interface, with no schema, no
 codegen step, and nothing shipped to the browser — the import disappears at build time.
 

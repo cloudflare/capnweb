@@ -14,7 +14,7 @@
  * read as an editor, so it borrows the code theme's own colours instead.
  */
 import { Code } from '@astrojs/starlight/components';
-import { readRepoFile, readRepoRegion } from '../lib/source';
+import { readRepoFile } from '../lib/source';
 import type { Example } from '../examples';
 
 interface Props {
@@ -25,7 +25,7 @@ const { example } = Astro.props;
 
 const files = example.files.map((file) => ({
 	...file,
-	code: file.region ? readRepoRegion(file.path, file.region) : readRepoFile(file.path),
+	code: readRepoFile(file.path),
 }));
 
 const id = `pg-${example.slug}`;

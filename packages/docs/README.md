@@ -258,18 +258,14 @@ repo, so the source on the site cannot drift from the code that ships. A moved o
 build error, not a silently empty tab — that is the whole point, so please keep it that way rather
 than catching the error.
 
-Some files are mostly boilerplate, so an entry can name a `#region` to show only the interesting
-part:
+**Whole files only.** There is no mechanism for showing an excerpt, and that is deliberate: an
+excerpt is a claim that the rest does not matter, and the reader has no way to check it. Line
+numbers drift silently the moment anything above them changes, and named regions turn out to be a
+way of leaving a file badly organised while making its docs tab look tidy.
 
-```js
-// #region demo
-...
-// #endregion
-```
-
-Those markers live in the example source, move with the code, and are the same ones editors fold on.
-A named region that has gone missing also fails the build. Line numbers were deliberately not used
-here — they drift silently the moment anything above them changes.
+So when a file is too long or too mixed to show, the fix is to split the file. Each example keeps
+its RPC code in a module of its own — `demo.js`, `runs.ts`, `session.js` — with the DOM wiring
+somewhere else. That is better code regardless of the docs, which is the point.
 
 Finding the repo root is done by walking up to sentinel files rather than counting `..` segments,
 because for a production build this code is bundled into `dist/.prerender/chunks/` and any fixed

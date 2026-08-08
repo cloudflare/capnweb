@@ -51,9 +51,10 @@ missing, which is what lets the docs deploy as static assets.
 
 Two consequences worth knowing when editing an example:
 
-- The docs read these files at build time. Move or rename one that is listed in
-  `packages/docs/src/examples.ts` and the docs build fails until it is updated. Same for a named
-  `#region` that disappears.
+- The docs read these files at build time and show them whole. Move or rename one that is listed in
+  `packages/docs/src/examples.ts` and the docs build fails until it is updated. Because they are
+  shown whole, a file worth putting in a tab is worth keeping short and free of unrelated wiring —
+  which is why each example splits its RPC code out from its DOM code.
 - The playground bundles `dist/`, so a library change needs `npm run build` at the repo root before
   it shows up in the docs.
 

@@ -1,25 +1,13 @@
 import { useCallback, useMemo, useState } from 'react'
-import { newHttpBatchRpcSession } from 'capnweb'
-import { validateStub } from 'capnweb-validate'
-import type { Api } from '../../../server/worker'
+import {
+  createFetchInstrument,
+  runPipelined,
+  runSequential,
+  runValidationFailure,
+  type Result,
+  type Trace,
+} from './runs'
 import './App.css'
-
-type Result = {
-  posts: number
-  ms: number
-  user: any
-  profile: any
-  notifications: any
-  trace: Trace
-}
-
-type CallEvent = { label: string, start: number, end: number }
-type NetEvent = { label: string, start: number, end: number }
-type Trace = { total: number, calls: CallEvent[], network: NetEvent[] }
-
-function connectApi() {
-  return validateStub<Api>(newHttpBatchRpcSession<Api>('/api'))
-}
 
 export function App() {
   const [pipelined, setPipelined] = useState<Result | null>(null)
@@ -27,107 +15,12 @@ export function App() {
   const [running, setRunning] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
 
-  // Network RTT is now simulated on the server (Worker). See wrangler.jsonc vars.
+  // Network RTT is simulated on the server (Worker). See wrangler.jsonc vars.
+  const wrapFetch = useMemo(createFetchInstrument, [])
 
-  /** Count RPC POSTs and capture network timing by wrapping fetch while this component is mounted. */
-  const wrapFetch = useMemo(() => {
-    let posts = 0
-    let origin = 0
-    let events: NetEvent[] = []
-    const orig = globalThis.fetch
-    function install() {
-      ;(globalThis as any).fetch = async (input: RequestInfo, init?: RequestInit) => {
-        const method = (init?.method) || (input instanceof Request ? input.method : 'GET')
-        const url = input instanceof Request ? input.url : String(input)
-        if (url.endsWith('/api') && method === 'POST') {
-          posts++
-          const start = performance.now() - origin
-          const resp = await orig(input as any, init)
-          const end = performance.now() - origin
-          events.push({ label: 'POST /api', start, end })
-          return resp
-        }
-        return orig(input as any, init)
-      }
-    }
-    function uninstall() { ;(globalThis as any).fetch = orig }
-    function get() { return posts }
-    function reset() { posts = 0; events = [] }
-    function setOrigin(o: number) { origin = o }
-    function getEvents(): NetEvent[] { return events.slice() }
-    return { install, uninstall, get, reset, setOrigin, getEvents }
-  }, [])
-
-  // #region runs
-  const runPipelined = useCallback(async () => {
-    wrapFetch.reset()
-    const t0 = performance.now()
-    wrapFetch.setOrigin(t0)
-    const calls: CallEvent[] = []
-    const api = connectApi()
-    const userStart = 0; calls.push({ label: 'authenticate', start: userStart, end: NaN })
-    const user = api.authenticate('cookie-123')
-    user.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
-
-    const profStart = performance.now() - t0; calls.push({ label: 'getUserProfile', start: profStart, end: NaN })
-    const profile = api.getUserProfile(user.id)
-    profile.then(() => { calls.find(c => c.label==='getUserProfile')!.end = performance.now() - t0 })
-
-    const notiStart = performance.now() - t0; calls.push({ label: 'getNotifications', start: notiStart, end: NaN })
-    const notifications = api.getNotifications(user.id)
-    notifications.then(() => { calls.find(c => c.label==='getNotifications')!.end = performance.now() - t0 })
-
-    const [u, p, n] = await Promise.all([user, profile, notifications])
-    const t1 = performance.now()
-    const net = wrapFetch.getEvents()
-    const total = t1 - t0
-    // Ensure any missing ends are set
-    calls.forEach(c => { if (!Number.isFinite(c.end)) c.end = total })
-    return { posts: wrapFetch.get(), ms: total, user: u, profile: p, notifications: n,
-      trace: { total, calls, network: net } }
-  }, [wrapFetch])
-
-  const runSequential = useCallback(async () => {
-    wrapFetch.reset()
-    const t0 = performance.now()
-    wrapFetch.setOrigin(t0)
-    const calls: CallEvent[] = []
-    const api1 = connectApi()
-    const aStart = 0; calls.push({ label: 'authenticate', start: aStart, end: NaN })
-    const uPromise = api1.authenticate('cookie-123')
-    uPromise.then(() => { calls.find(c => c.label==='authenticate')!.end = performance.now() - t0 })
-    const u = await uPromise
-
-    const api2 = connectApi()
-    const pStart = performance.now() - t0; calls.push({ label: 'getUserProfile', start: pStart, end: NaN })
-    const pPromise = api2.getUserProfile(u.id)
-    pPromise.then(() => { calls.find(c => c.label==='getUserProfile')!.end = performance.now() - t0 })
-    const p = await pPromise
-
-    const api3 = connectApi()
-    const nStart = performance.now() - t0; calls.push({ label: 'getNotifications', start: nStart, end: NaN })
-    const nPromise = api3.getNotifications(u.id)
-    nPromise.then(() => { calls.find(c => c.label==='getNotifications')!.end = performance.now() - t0 })
-    const n = await nPromise
-
-    const t1 = performance.now()
-    const net = wrapFetch.getEvents()
-    const total = t1 - t0
-    calls.forEach(c => { if (!Number.isFinite(c.end)) c.end = total })
-    return { posts: wrapFetch.get(), ms: total, user: u, profile: p, notifications: n,
-      trace: { total, calls, network: net } }
-  }, [wrapFetch])
-  // #endregion
-
-  const runValidationFailure = useCallback(async () => {
+  const showValidationFailure = useCallback(async () => {
     setValidationError(null)
-    const api = connectApi() as any
-    try {
-      await api.authenticate(12345)
-      setValidationError('(no error — unexpected)')
-    } catch (err) {
-      setValidationError(err instanceof Error ? err.message : String(err))
-    }
+    setValidationError(await runValidationFailure())
   }, [])
 
   const runDemo = useCallback(async () => {
@@ -135,15 +28,13 @@ export function App() {
     setRunning(true)
     wrapFetch.install()
     try {
-      const piped = await runPipelined()
-      setPipelined(piped)
-      const seq = await runSequential()
-      setSequential(seq)
+      setPipelined(await runPipelined(wrapFetch))
+      setSequential(await runSequential(wrapFetch))
     } finally {
       wrapFetch.uninstall()
       setRunning(false)
     }
-  }, [running, wrapFetch, runPipelined, runSequential])
+  }, [running, wrapFetch])
 
   return (
     <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24, lineHeight: 1.5 }}>
@@ -161,7 +52,7 @@ export function App() {
       <section style={{ marginTop: 24 }}>
         <h2>Validation</h2>
         <p>Calls <code>authenticate(12345)</code> instead of a string — the server rejects the wrong-typed argument.</p>
-        <button onClick={runValidationFailure}>Test validation failure</button>
+        <button onClick={showValidationFailure}>Test validation failure</button>
         {validationError && (
           <pre style={{ color: '#ef4444', marginTop: 8, whiteSpace: 'pre-wrap' }}>{validationError}</pre>
         )}

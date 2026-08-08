@@ -18,11 +18,6 @@
 export interface PlaygroundFile {
 	/** Path from the repo root. Read at build time; a bad path fails the build. */
 	path: string;
-	/**
-	 * Show only the named `#region` of the file rather than the whole thing.
-	 * Used where a file is mostly boilerplate; the markers live in the source.
-	 */
-	region?: string;
 	/** Tab label. */
 	label: string;
 	/** Language for syntax highlighting. */
@@ -125,16 +120,23 @@ const entries: Omit<Example, 'demoPath'>[] = [
 		build: {
 			html: 'examples/batch-pipelining/public/index.html',
 			server: 'examples/batch-pipelining/worker.js',
+			client: 'examples/batch-pipelining/public/main.js',
+			clientScript: './main.js',
 			rpcPath: '/rpc',
 			wrangler: 'examples/batch-pipelining/wrangler.jsonc',
 		},
 		files: [
 			{
-				path: 'examples/batch-pipelining/public/index.html',
-				region: 'demo',
-				label: 'index.html',
+				path: 'examples/batch-pipelining/public/demo.js',
+				label: 'demo.js',
 				lang: 'js',
-				note: 'The two strategies, exactly as the running demo does them. Everything else in the file is markup and styling.',
+				note: 'The two strategies, exactly as the running demo does them. No DOM in it -- main.js does the wiring.',
+			},
+			{
+				path: 'examples/batch-pipelining/public/main.js',
+				label: 'main.js',
+				lang: 'js',
+				note: 'The page: reads the slider, runs both strategies, fills in the numbers.',
 			},
 			{
 				path: 'examples/batch-pipelining/api.mjs',
@@ -191,11 +193,10 @@ const entries: Omit<Example, 'demoPath'>[] = [
 				note: 'The Worker. @validateRpc() adds runtime type checks at the RPC boundary.',
 			},
 			{
-				path: 'examples/worker-react/client/src/main/App.tsx',
-				region: 'runs',
-				label: 'App.tsx',
-				lang: 'tsx',
-				note: 'The two strategies, as React callbacks. The rest of the file is the timeline chart and layout.',
+				path: 'examples/worker-react/client/src/main/runs.ts',
+				label: 'runs.ts',
+				lang: 'ts',
+				note: 'Every RPC call the app makes, and the timing instrumentation. App.tsx is the chart and the layout.',
 			},
 			{
 				path: 'examples/worker-react/client/vite.config.ts',
