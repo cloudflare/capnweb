@@ -39,12 +39,35 @@ interface Edge {
 	midZ: number;
 }
 
-/** A message travelling out along an edge and back again. */
+/**
+ * A message travelling out along one or more edges and back again.
+ *
+ * `seq` is the whole itinerary, there and back: a trip from `a` to `b` is
+ * `[a, b, a]`, and one that carries on to `c` before returning is
+ * `[a, b, c, b, a]`. Storing the return legs explicitly rather than reversing at
+ * the halfway point means the same code walks both directions.
+ */
 interface Pulse {
-	edge: number;
-	/** Field time at which it left, and how long the full round trip takes. */
+	seq: number[];
+	/** The edge each leg travels along, so drawing does not have to look it up. */
+	legEdges: number[];
+	/** Field time it set off, and how long the whole itinerary takes. */
 	born: number;
 	duration: number;
+	/** Which leg the head was on last frame, used to flash nodes on arrival. */
+	leg: number;
+	/** Round trips the reader started are brighter than the ambient traffic. */
+	gain: number;
+}
+
+/** A field: the nodes, the edges, and which edges touch each node. */
+interface Field {
+	nodes: Node[];
+	edges: Edge[];
+	/** Indices into `edges` of every edge incident to node i. */
+	incident: number[][];
+	/** Node pair to edge index, for turning an itinerary into legs. */
+	edgeAt: Map<number, number>;
 }
 
 type Rgb = [number, number, number];
@@ -76,10 +99,40 @@ const BANDS = [
 	{ minZ: 0, blur: 0 },
 ];
 
-/** Round trips are an occasional event, not a light show. */
-const MAX_PULSES = 2;
+/** Ambient round trips are an occasional event, not a light show. */
+const MAX_AMBIENT_PULSES = 2;
 const PULSE_GAP_MIN = 6;
 const PULSE_GAP_MAX = 15;
+
+/**
+ * Hover. Bring the pointer near a node and that node starts talking to its
+ * neighbours: one round trip per edge, and now and then a neighbour passes the
+ * message on a further hop before answering.
+ *
+ * Only ever one node at a time. Lighting up everything the pointer drifts past
+ * would turn a background into a toy.
+ *
+ * Times are in field seconds, which run at `TIME_SCALE`, so a 0.35s leg takes
+ * 0.7s on a clock.
+ */
+const HOVER_RADIUS = 110;
+/**
+ * How far a node may drift before the pointer lets go of it. Larger than the
+ * acquire radius on purpose: the field moves under a stationary pointer, so a
+ * single threshold drops the node after a second or two and the reader is left
+ * pointing at a dead field.
+ */
+const HOVER_RELEASE = 190;
+/** How much nearer a rival must be to steal the hover, so the pick cannot flicker. */
+const HOVER_HANDOVER = 25;
+/** Far nodes are out of focus, so a crisp one wins a tie. In pixels of penalty. */
+const HOVER_DEPTH_PENALTY = 45;
+const HOP_SECONDS = 0.35;
+const HOVER_WAVE_GAP = 0.9;
+const HOVER_STAGGER = 0.09;
+const SECOND_HOP_CHANCE = 0.35;
+/** Enough for a well-connected node plus the ambient pair, and no more. */
+const MAX_PULSES = 16;
 
 /** Nodes per million device-independent pixels, and the range it is clamped to. */
 const NODE_DENSITY = 68;
@@ -97,7 +150,10 @@ function mulberry32(seed: number) {
 	};
 }
 
-function buildField(count: number, seed: number): { nodes: Node[]; edges: Edge[] } {
+/** Order-independent key for a node pair. Node counts here are far below 4096. */
+const pairKey = (a: number, b: number) => (a < b ? a * 4096 + b : b * 4096 + a);
+
+function buildField(count: number, seed: number): Field {
 	const rand = mulberry32(seed);
 	const nodes: Node[] = [];
 
@@ -147,7 +203,17 @@ function buildField(count: number, seed: number): { nodes: Node[]; edges: Edge[]
 		}
 	}
 
-	return { nodes, edges };
+	// Adjacency, so a hovered node can find its neighbours without a scan, and a
+	// pair to edge map, so an itinerary can be turned into legs.
+	const incident: number[][] = nodes.map(() => []);
+	const edgeAt = new Map<number, number>();
+	for (const [index, e] of edges.entries()) {
+		incident[e.a]!.push(index);
+		incident[e.b]!.push(index);
+		edgeAt.set(pairKey(e.a, e.b), index);
+	}
+
+	return { nodes, edges, incident, edgeAt };
 }
 
 /** Read the field colours from the stylesheet, so themes stay in one place. */
@@ -205,6 +271,10 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	let fadeMs = 0;
 	let nodes: Node[] = [];
 	let edges: Edge[] = [];
+	let incident: number[][] = [];
+	let edgeAt = new Map<number, number>();
+	/** Per-node brightness, 0 to 1, decaying. Raised by hover and by arrivals. */
+	let nodeGlow = new Float32Array(0);
 	let width = 0;
 	let height = 0;
 	let dpr = 1;
@@ -216,6 +286,17 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 	const pulses: Pulse[] = [];
 	const pulseRand = mulberry32(0xc0ffee);
 	let nextPulseAt = PULSE_GAP_MIN;
+
+	// Hover state. `pointerX/Y` are viewport coordinates, which is also canvas
+	// space: the canvas is `position: fixed; inset: 0`.
+	let pointerX = 0;
+	let pointerY = 0;
+	let pointerSeen = false;
+	let hoverNode = -1;
+	/** Eased towards 1 while a node is held, so the halo grows in and out. */
+	let hoverEase = 0;
+	let nextWaveAt = 0;
+	let lastT = 0;
 
 	/**
 	 * The offscreen surface the out-of-focus bands are composited from, at half
@@ -252,7 +333,14 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		const count = Math.round(
 			Math.max(MIN_NODES, Math.min(MAX_NODES, ((w * h) / 1e6) * NODE_DENSITY))
 		);
-		if (count !== nodes.length) ({ nodes, edges } = buildField(count, 0x5eed));
+		if (count !== nodes.length) {
+			({ nodes, edges, incident, edgeAt } = buildField(count, 0x5eed));
+			nodeGlow = new Float32Array(nodes.length);
+			// The old indices meant nothing in the new field.
+			pulses.length = 0;
+			hoverNode = -1;
+			hoverEase = 0;
+		}
 	}
 
 	/**
@@ -280,36 +368,149 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		};
 	}
 
+	/** The node at the other end of an edge. */
+	const otherEnd = (edge: number, from: number) =>
+		edges[edge]!.a === from ? edges[edge]!.b : edges[edge]!.a;
+
 	/**
-	 * Retire finished pulses and occasionally start a new one. Edges are picked
-	 * from the near half of the field, since a round trip is the one thing here
-	 * worth noticing and the far layers are out of focus.
+	 * Turn an itinerary into a pulse. Returns null if any leg is not an edge,
+	 * which should not happen but is cheaper to check than to reason about.
+	 */
+	function makePulse(path: number[], born: number, gain: number): Pulse | null {
+		if (path.length < 2) return null;
+		// There and back: [a,b,c] becomes [a,b,c,b,a].
+		const seq = [...path, ...path.slice(0, -1).reverse()];
+		const legEdges: number[] = [];
+		for (let i = 0; i < seq.length - 1; i++) {
+			const edge = edgeAt.get(pairKey(seq[i]!, seq[i + 1]!));
+			if (edge === undefined) return null;
+			legEdges.push(edge);
+		}
+		return {
+			seq,
+			legEdges,
+			born,
+			duration: legEdges.length * HOP_SECONDS * (0.9 + pulseRand() * 0.25),
+			leg: 0,
+			gain,
+		};
+	}
+
+	function addPulse(path: number[], born: number, gain: number) {
+		if (pulses.length >= MAX_PULSES) return;
+		const pulse = makePulse(path, born, gain);
+		if (pulse) pulses.push(pulse);
+	}
+
+	/**
+	 * Everything the hovered node has to say: one round trip along each of its
+	 * edges, staggered so they leave in sequence rather than all at once, and
+	 * occasionally one that carries on a further hop before turning back.
+	 */
+	function emitWave(t: number, from: number) {
+		const outgoing = incident[from];
+		if (!outgoing) return;
+
+		for (const [i, edge] of outgoing.entries()) {
+			const neighbour = otherEnd(edge, from);
+			const path = [from, neighbour];
+
+			// Sometimes the neighbour forwards it on. Anywhere but back the way it
+			// came, which is what makes it read as a chain rather than a bounce.
+			if (pulseRand() < SECOND_HOP_CHANCE) {
+				const onward = (incident[neighbour] ?? [])
+					.map((e) => otherEnd(e, neighbour))
+					.filter((n) => n !== from);
+				if (onward.length > 0) {
+					path.push(onward[Math.floor(pulseRand() * onward.length)]!);
+				}
+			}
+
+			addPulse(path, t + i * HOVER_STAGGER, 1);
+		}
+	}
+
+	/**
+	 * Retire finished pulses and occasionally start an ambient one. Ambient edges
+	 * are picked from the near half of the field, since a round trip is the one
+	 * thing here worth noticing and the far layers are out of focus.
 	 */
 	function updatePulses(t: number) {
+		let ambient = 0;
 		for (let i = pulses.length - 1; i >= 0; i--) {
-			if (t - pulses[i]!.born > pulses[i]!.duration) pulses.splice(i, 1);
+			const pulse = pulses[i]!;
+			if (t - pulse.born > pulse.duration) {
+				pulses.splice(i, 1);
+				continue;
+			}
+			if (pulse.gain < 1) ambient++;
 		}
 
-		if (t < nextPulseAt || pulses.length >= MAX_PULSES || edges.length === 0) return;
+		if (t < nextPulseAt || ambient >= MAX_AMBIENT_PULSES || edges.length === 0) return;
 
 		let edge = Math.floor(pulseRand() * edges.length);
 		for (let attempt = 0; attempt < 6 && edges[edge]!.midZ > 0.55; attempt++) {
 			edge = Math.floor(pulseRand() * edges.length);
 		}
 
-		pulses.push({ edge, born: t, duration: 1.6 + pulseRand() * 1.4 });
+		// Ambient traffic is slower than anything the reader provokes, and dimmer.
+		const pulse = makePulse([edges[edge]!.a, edges[edge]!.b], t, 0.62);
+		if (pulse) {
+			pulse.duration *= 2.6;
+			pulses.push(pulse);
+		}
 		nextPulseAt = t + PULSE_GAP_MIN + pulseRand() * (PULSE_GAP_MAX - PULSE_GAP_MIN);
 	}
 
-	/** Position and brightness of a pulse: out to the far node, then back. */
+	/**
+	 * Where a pulse's head is: which leg it is crossing, how far along, and how
+	 * bright. Ramped at both ends so it departs and arrives rather than popping.
+	 */
 	function pulseState(pulse: Pulse, t: number) {
+		const legs = pulse.legEdges.length;
 		const u = Math.min(1, Math.max(0, (t - pulse.born) / pulse.duration));
-		// A triangle wave, so the head reaches the far node at the halfway point
-		// and is home again at the end.
-		const along = u < 0.5 ? u * 2 : (1 - u) * 2;
-		// Ramped at both ends so it departs and arrives rather than popping in.
-		const envelope = Math.min(1, u / 0.12, (1 - u) / 0.12);
-		return { along, envelope };
+		const scaled = u * legs;
+		const leg = Math.min(legs - 1, Math.floor(scaled));
+		return {
+			u,
+			leg,
+			along: scaled - leg,
+			envelope: Math.min(1, u / 0.12, (1 - u) / 0.12),
+		};
+	}
+
+	/**
+	 * Pick the node under the pointer, or -1. Nearest wins, with a penalty on
+	 * depth so a node that is in focus is preferred to a blurred one behind it.
+	 */
+	function pickHovered(points: { x: number; y: number; fade: number }[]) {
+		if (!pointerSeen || reduced.matches) return -1;
+
+		const score = (i: number) => {
+			const p = points[i]!;
+			return Math.hypot(p.x - pointerX, p.y - pointerY) + nodes[i]!.z * HOVER_DEPTH_PENALTY;
+		};
+
+		let best = -1;
+		let bestScore = HOVER_RADIUS;
+		for (let i = 0; i < nodes.length; i++) {
+			const s = score(i);
+			if (s < bestScore) {
+				bestScore = s;
+				best = i;
+			}
+		}
+
+		// Hold on to the node we already have until it is properly gone, or until
+		// something else is clearly nearer.
+		if (hoverNode >= 0 && hoverNode < nodes.length) {
+			const held = score(hoverNode);
+			if (held <= HOVER_RELEASE && (best < 0 || bestScore > held - HOVER_HANDOVER)) {
+				return hoverNode;
+			}
+		}
+
+		return best;
 	}
 
 	/** Draw the edges and nodes whose depth falls in [minZ, maxZ). */
@@ -348,9 +549,12 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		for (const [i, n] of nodes.entries()) {
 			if (n.z < minZ || n.z >= maxZ) continue;
 			const p = points[i]!;
-			target.fillStyle = withAlpha(palette.node, 0.36 * p.fade);
+			// A lit node brightens and swells a little. Depth still applies: a node
+			// at the back does not get to outshine the ones in front of it.
+			const heat = nodeGlow[i] ?? 0;
+			target.fillStyle = withAlpha(palette.node, (0.36 + 0.5 * heat) * p.fade);
 			target.beginPath();
-			target.arc(p.x, p.y, n.radius, 0, Math.PI * 2);
+			target.arc(p.x, p.y, n.radius * (1 + 0.55 * heat), 0, Math.PI * 2);
 			target.fill();
 		}
 
@@ -375,14 +579,53 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		ctx!.clearRect(0, 0, width, height);
 
 		const points = nodes.map((n) => project(n, t));
-		if (!reduced.matches) updatePulses(t);
 
-		// Which edges are currently lit, and how brightly. Looked up per edge
-		// while drawing, so a pulse can colour the line it is travelling along.
+		// Field time can jump when the loop has been parked, so clamp the step.
+		const dt = lastT ? Math.min(0.1, Math.max(0, t - lastT)) : 0;
+		lastT = t;
+
+		if (!reduced.matches) {
+			updatePulses(t);
+
+			// Hover. A new node under the pointer starts talking immediately; while
+			// it is held, it says something again every wave.
+			const picked = pickHovered(points);
+			if (picked !== hoverNode) {
+				hoverNode = picked;
+				if (picked >= 0) {
+					emitWave(t, picked);
+					nextWaveAt = t + HOVER_WAVE_GAP;
+				}
+			} else if (hoverNode >= 0 && t >= nextWaveAt) {
+				emitWave(t, hoverNode);
+				nextWaveAt = t + HOVER_WAVE_GAP;
+			}
+
+			hoverEase += ((hoverNode >= 0 ? 1 : 0) - hoverEase) * Math.min(1, dt * 9);
+
+			for (let i = 0; i < nodeGlow.length; i++) {
+				nodeGlow[i] = Math.max(0, nodeGlow[i]! - dt * 1.5);
+			}
+			if (hoverNode >= 0) nodeGlow[hoverNode] = 1;
+		}
+
+		// Which edges are currently lit, and how brightly. Looked up per edge while
+		// drawing, so a pulse can colour the line it is travelling along. Advancing
+		// a leg also flashes the node just reached, which is what makes a chain of
+		// hops legible as arrivals rather than as a dot sliding about.
 		const lit = new Map<number, number>();
 		for (const pulse of pulses) {
-			const { envelope } = pulseState(pulse, t);
-			lit.set(pulse.edge, Math.max(lit.get(pulse.edge) ?? 0, envelope));
+			if (t < pulse.born) continue;
+			const { u, leg, envelope } = pulseState(pulse, t);
+			const brightness = envelope * pulse.gain;
+			const edge = pulse.legEdges[leg]!;
+			lit.set(edge, Math.max(lit.get(edge) ?? 0, brightness));
+
+			while (pulse.leg < leg) {
+				pulse.leg++;
+				nodeGlow[pulse.seq[pulse.leg]!] = 1;
+			}
+			if (u >= 1) nodeGlow[pulse.seq.at(-1)!] = 1;
 		}
 
 		// Far to near, one blur per band. The blurred bands are drawn into an
@@ -416,20 +659,35 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 
 		ctx!.filter = 'none';
 
+		// A ring around the node the pointer is on, so it is clear which one is
+		// doing the talking. Node colour, not pulse colour: the orange is reserved
+		// for the messages themselves.
+		if (hoverNode >= 0 && hoverEase > 0.01) {
+			const p = points[hoverNode]!;
+			const n = nodes[hoverNode]!;
+			ctx!.strokeStyle = withAlpha(palette.node, 0.4 * hoverEase * p.fade);
+			ctx!.lineWidth = 1;
+			ctx!.beginPath();
+			ctx!.arc(p.x, p.y, n.radius + 5 + 3 * hoverEase, 0, Math.PI * 2);
+			ctx!.stroke();
+		}
+
 		// The pulse heads go last and unblurred, so they stay crisp against the
 		// field they are crossing.
 		for (const pulse of pulses) {
-			const e = edges[pulse.edge];
-			if (!e) continue;
-			const p = points[e.a]!;
-			const q = points[e.b]!;
-			const { along, envelope } = pulseState(pulse, t);
-			const x = p.x + (q.x - p.x) * along;
-			const y = p.y + (q.y - p.y) * along;
+			if (t < pulse.born) continue;
+			const { leg, along, envelope } = pulseState(pulse, t);
+			const from = points[pulse.seq[leg]!];
+			const to = points[pulse.seq[leg + 1]!];
+			if (!from || !to) continue;
+
+			const x = from.x + (to.x - from.x) * along;
+			const y = from.y + (to.y - from.y) * along;
+			const bright = envelope * pulse.gain;
 
 			ctx!.shadowBlur = 8;
-			ctx!.shadowColor = withAlpha(palette.pulse, 0.55 * envelope);
-			ctx!.fillStyle = withAlpha(palette.pulse, 0.8 * envelope);
+			ctx!.shadowColor = withAlpha(palette.pulse, 0.55 * bright);
+			ctx!.fillStyle = withAlpha(palette.pulse, 0.8 * bright);
 			ctx!.beginPath();
 			ctx!.arc(x, y, 1.7, 0, Math.PI * 2);
 			ctx!.fill();
@@ -482,6 +740,36 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 
 	addEventListener('scroll', onScroll, { passive: true });
 
+	/*
+	 * Hover tracking. The canvas is `pointer-events: none` and sits at
+	 * `z-index: -1`, so it cannot be hit-tested; the pointer is followed on the
+	 * window instead. That is also the behaviour you want, since the field is
+	 * behind the text and the reader is pointing at the page, not at the canvas.
+	 */
+	addEventListener(
+		'pointermove',
+		(e: PointerEvent) => {
+			// Touch and pen would light a node up on tap and leave it lit, which is
+			// not an interaction, just a mark.
+			if (e.pointerType !== 'mouse' || reduced.matches) return;
+			pointerX = e.clientX;
+			pointerY = e.clientY;
+			pointerSeen = true;
+			// A pointer moving over a parked field should wake it, or the hover does
+			// nothing until something else happens to redraw.
+			if (!document.hidden) start();
+		},
+		{ passive: true }
+	);
+
+	// Let the node go when the pointer leaves the window or the page loses focus,
+	// so nothing is left lit behind a switched tab.
+	const releaseHover = () => {
+		pointerSeen = false;
+	};
+	document.addEventListener('pointerleave', releaseHover);
+	addEventListener('blur', releaseHover);
+
 	document.addEventListener('visibilitychange', () => {
 		if (document.hidden) stop();
 		else start();
@@ -516,7 +804,10 @@ export function initGraphBackdrop(canvas: HTMLCanvasElement) {
 		// The field is parked while the tab is hidden, and a fade nobody can see
 		// does not need to run. It will be drawn with the final palette on return.
 		if (!document.hidden) start();
-	}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+	}).observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ['data-theme'],
+	});
 
 	canvas.dataset.state = 'ready';
 }
