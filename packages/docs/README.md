@@ -164,6 +164,38 @@ stale `index.html` can end up referencing an `ec.<hash>.css` that no longer exis
 then 404s and every code block renders unstyled -- identical to the symptom above, from a completely
 different cause. `rm -rf dist` first.
 
+## Social cards
+
+Every page gets its own Open Graph image, generated at build time and written to
+`/og/<slug>.png` (`/og/index.png` for the landing page). `src/components/Head.astro` points each
+page at its own; Starlight already emits the rest of the Open Graph and Twitter tags.
+
+The card reuses the hero's motif — a network of nodes wired to their nearest neighbours, with a few
+edges lit in Cloudflare orange to stand for calls in flight. `src/lib/og-network.ts` is a small,
+separate implementation of that idea: the hero needs GPU buffers and a frame loop, and a still image
+needs a string of SVG. The network is seeded from the page slug, so each page gets a different one
+and it never changes between builds.
+
+| File                            | Role                                                     |
+| ------------------------------- | -------------------------------------------------------- |
+| `src/lib/og-network.ts`          | The seeded backdrop, as SVG                              |
+| `src/lib/og-card.ts`             | Composition and rasterization (Satori → resvg)           |
+| `src/pages/og/[...slug].png.ts`  | One route per docs page                                  |
+| `src/components/Head.astro`      | The `og:image` / `twitter:image` tags                    |
+| `src/assets/fonts/`              | Inter, subset to the glyphs titles use (SIL OFL 1.1)     |
+
+Two things worth knowing:
+
+**The fonts are build-time only.** Satori has to measure glyphs to break lines, so it needs real
+font data. Nothing here is served to a browser — the site still uses system fonts and ships no web
+fonts. If a new page title introduces a glyph outside the subset it renders as a blank box; extend
+the character set in `scripts/build-og-fonts.mjs` and run `npm run og:fonts -- <path-to-inter>`.
+
+**Absolute URLs need `DOCS_SITE_URL`.** Open Graph requires an absolute `og:image`, and `site` is
+only set when that variable is in the environment. Without it the tag falls back to a root-relative
+path, which resolves correctly in a browser but not for every crawler. Set it when building for a
+real deployment.
+
 ## The example playgrounds
 
 The `/examples/*` pages are laid out like a code playground: the real source on the left, the demo

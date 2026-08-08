@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import { sidebar } from './src/sidebar.mjs';
 
 const REPO = 'https://github.com/cloudflare/capnweb';
 
@@ -20,6 +21,8 @@ export default defineConfig({
 				ThemeSelect: './src/components/ThemeToggle.astro',
 				// Delegates to the stock hero; exists only to mount the WebGL field.
 				Hero: './src/components/Hero.astro',
+				// Delegates to the stock head; adds the generated social card.
+				Head: './src/components/Head.astro',
 			},
 			social: [{ icon: 'github', label: 'GitHub', href: REPO }],
 			editLink: {
@@ -40,74 +43,7 @@ export default defineConfig({
 					attrs: { name: 'theme-color', content: '#05080f' },
 				},
 			],
-			sidebar: [
-				{
-					label: 'Start Here',
-					items: [
-						{ label: 'Introduction', slug: 'start/introduction' },
-						{ label: 'Installation', slug: 'start/installation' },
-						{ label: 'Quickstart', slug: 'start/quickstart' },
-						{ label: 'Pipelining Tour', slug: 'start/pipelining-tour' },
-					],
-				},
-				{
-					label: 'Core Concepts',
-					items: [
-						{ label: 'What Can Be Passed', slug: 'concepts/values' },
-						{ label: 'RpcTarget & Functions', slug: 'concepts/rpc-target' },
-						{ label: 'RpcStub', slug: 'concepts/stubs' },
-						{ label: 'RpcPromise & Pipelining', slug: 'concepts/promises' },
-						{ label: 'The magic map()', slug: 'concepts/map' },
-						{ label: 'Streaming', slug: 'concepts/streaming' },
-						{ label: 'Disposal', slug: 'concepts/disposal' },
-					],
-				},
-				{
-					label: 'Transports',
-					items: [
-						{ label: 'Overview', slug: 'transports' },
-						{ label: 'HTTP Batch', slug: 'transports/http-batch' },
-						{ label: 'WebSocket', slug: 'transports/websocket' },
-						{ label: 'MessagePort', slug: 'transports/message-port' },
-						{ label: 'Custom Transports', slug: 'transports/custom' },
-					],
-				},
-				{
-					label: 'Server Runtimes',
-					items: [
-						{ label: 'Cloudflare Workers', slug: 'servers/workers' },
-						{ label: 'Node.js', slug: 'servers/node' },
-						{ label: 'Deno', slug: 'servers/deno' },
-						{ label: 'Bun', slug: 'servers/bun' },
-						{ label: 'Hono', slug: 'servers/hono' },
-						{ label: 'Other Runtimes', slug: 'servers/other' },
-					],
-				},
-				{
-					label: 'Guides',
-					items: [
-						{ label: 'Security Considerations', slug: 'guides/security' },
-						{ label: 'Sessions & Reconnection', slug: 'guides/sessions' },
-						{ label: 'Runtime Validation', slug: 'guides/validation' },
-						{ label: 'How It Compares', slug: 'guides/comparisons' },
-						{ label: 'Workers RPC Interop', slug: 'guides/workers-rpc' },
-					],
-				},
-				{
-					label: 'Examples',
-					items: [
-						{ label: 'Batch + Pipelining', slug: 'examples/batch-pipelining' },
-						{ label: 'Workers + React', slug: 'examples/worker-react' },
-					],
-				},
-				{
-					label: 'Reference',
-					items: [
-						{ label: 'Wire Protocol', slug: 'reference/protocol' },
-						{ label: 'API Cheat Sheet', slug: 'reference/api' },
-					],
-				},
-			],
+			sidebar,
 		}),
 	],
 });

@@ -7,6 +7,7 @@
   "license": "MIT",
   "scripts": {
     "playgrounds": "node scripts/build-playgrounds.mjs",
+    "og:fonts": "node scripts/build-og-fonts.mjs",
     "predev": "npm run playgrounds",
     "dev": "astro dev",
     "start": "astro dev",
@@ -29,6 +30,9 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
+    "@resvg/resvg-js": "^2.6.2",
+    "satori": "^0.29.0",
+    "subset-font": "^2.5.0",
     "typescript": "^6.0.3"
   }
 }
