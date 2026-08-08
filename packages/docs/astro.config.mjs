@@ -14,7 +14,11 @@ export default defineConfig({
 			title: "Cap'n Web",
 			description:
 				"Cap'n Web is a JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, under 10kB.",
-			favicon: '/favicon.svg',
+			// Chrome keeps favicons in a store of its own, keyed by URL and not
+			// touched by a hard reload, so a site that once served a different
+			// icon keeps showing it for a long time. The version marker changes
+			// the key. Bump it whenever favicon.svg changes.
+			favicon: '/favicon.svg?v=2',
 			customCss: ['./src/styles/theme.css'],
 			components: {
 				// Single-button light/dark toggle in place of the 3-option <select>.

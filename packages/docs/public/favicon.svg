@@ -1,8 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <!--
     Three nodes and the edges between them: the smallest thing that still reads
-    as a network at 16px. The originating node is Cloudflare orange, the rest of
-    the graph deep azure -- the same one-spark-on-blue rule the site uses.
+    as a network at 16px. The originating node is Cloudflare orange and the rest
+    of the graph deep azure, the same one-spark-on-blue rule the site uses.
+
+    Keep the two-hyphen sequence out of this comment. XML forbids it inside a
+    comment, and an SVG that fails to parse is an image the browser silently
+    declines to draw, which is a genuinely difficult bug to see.
   -->
   <rect width="32" height="32" rx="7" fill="#04070e"/>
   <g stroke="#1487e0" stroke-width="1.75" stroke-linecap="round" opacity=".9">
