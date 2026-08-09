@@ -9,6 +9,25 @@ export default defineConfig({
 	// Set DOCS_SITE_URL once a canonical domain is chosen; it enables canonical
 	// URLs, Open Graph URLs and sitemap generation.
 	site: process.env.DOCS_SITE_URL,
+	// Pull the next page into the HTTP cache while the pointer is resting on its
+	// link, so that clicking it navigates from cache rather than from the network.
+	//
+	// This is what stops the one-frame flash of an empty page between navigations.
+	// The stylesheet is hashed and immutable, so it is served from disk instantly,
+	// while the HTML is fetched fresh every time; the browser therefore has enough
+	// to paint a styled header before the body has finished arriving, and paints
+	// it. The result is a frame of chrome over bare background -- which, in the
+	// dark theme, reads as a flash to black. Locally the HTML arrives too fast for
+	// the gap to open, which is why it only showed up once deployed.
+	//
+	// `hover` covers the pointer case that this affects. It deliberately stops
+	// short of `viewport`, which would fetch every link in the sidebar on load,
+	// and of `experimental.clientPrerender`, which runs the target page's scripts
+	// -- and every page here starts a canvas animation.
+	prefetch: {
+		prefetchAll: true,
+		defaultStrategy: 'hover',
+	},
 	integrations: [
 		starlight({
 			title: "Cap'n Web",
