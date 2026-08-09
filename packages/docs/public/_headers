@@ -1,0 +1,29 @@
+# Cache policy for the asset store. Parsed by Workers, never served itself.
+#
+# Workers' default for every static asset is `public, max-age=0,
+# must-revalidate`, which is a safe default and the wrong one here in two ways.
+#
+# It made the hover prefetch useless. A response that must be revalidated
+# cannot be reused from cache, so the document Astro had already fetched was
+# thrown away and refetched on the click. Meanwhile the stylesheet -- also
+# revalidated, but tiny and answered with a 304 -- was ready first, so the
+# browser had enough to paint a styled header over bare background while the
+# body was still arriving. That frame is the flash of black between pages.
+#
+# It also revalidates fingerprinted files on every navigation. Those URLs
+# change whenever their content does, so the round trip can never do anything
+# except confirm what the URL already promised.
+
+# Everything, unless overridden below. A minute of freshness is what makes a
+# prefetched page reusable on the click; `must-revalidate` then forbids serving
+# it stale, so a deploy is picked up a minute later at the outside.
+/*
+  Cache-Control: public, max-age=60, must-revalidate
+
+# Astro fingerprints everything it emits here, so these are safe to keep for a
+# year and never revalidate. The detach is deliberate: a request matching two
+# rules inherits both, and a header set twice is joined with a comma rather
+# than replaced, so the broader rule above has to be removed first.
+/_astro/*
+  ! Cache-Control
+  Cache-Control: public, max-age=31536000, immutable
