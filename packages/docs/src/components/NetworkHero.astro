@@ -13,7 +13,7 @@ import Constellation from './Constellation.astro';
 ---
 
 <div class="cw-hero-field" aria-hidden="true">
-	<div class="cw-hero-canvas">
+	<div class="cw-hero-stage">
 		<Constellation variant="hero" />
 	</div>
 	<div class="cw-hero-veil"></div>
@@ -39,7 +39,7 @@ import Constellation from './Constellation.astro';
 			var(--cw-hero-bg-outer);
 	}
 
-	.cw-hero-canvas {
+	.cw-hero-stage {
 		display: block;
 		width: 100%;
 		height: 100%;
@@ -90,7 +90,7 @@ import Constellation from './Constellation.astro';
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.cw-hero-canvas {
+		.cw-hero-stage {
 			animation: none;
 			opacity: 1;
 		}
