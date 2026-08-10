@@ -8,16 +8,17 @@
   "scripts": {
     "playgrounds": "node scripts/build-playgrounds.mjs",
     "og:fonts": "node scripts/build-og-fonts.mjs",
-    "predev": "npm run playgrounds",
+    "predev": "npm run bundle-size && npm run playgrounds",
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "npm run playgrounds",
+    "prebuild": "npm run bundle-size && npm run playgrounds",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
     "predeploy": "npm run build",
     "deploy": "wrangler deploy",
-    "astro": "astro"
+    "astro": "astro",
+    "bundle-size": "node scripts/measure-bundle.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.41.6",

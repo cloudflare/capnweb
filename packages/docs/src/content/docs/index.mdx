@@ -1,6 +1,6 @@
 ---
 title: Cap'n Web
-description: A JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, under 10 kB.
+description: A JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, %BUNDLE_SIZE%.
 # Otherwise the landing page reads "Cap'n Web | Cap'n Web", since Starlight
 # appends the site title to the page title. Only this page has the collision.
 head:
@@ -11,7 +11,7 @@ editUrl: false
 lastUpdated: false
 hero:
   title: One round trip
-  tagline: A JavaScript-native, object-capability RPC system. Chain dependent calls and the whole chain resolves in a single trip. No schemas, no boilerplate, under 10 kB.
+  tagline: A JavaScript-native, object-capability RPC system. Chain dependent calls and the whole chain resolves in a single trip. No schemas, no boilerplate, %BUNDLE_SIZE%.
   actions:
     - text: Get started
       link: /start/quickstart/
@@ -89,7 +89,7 @@ export default {
 		Every major browser, Cloudflare Workers, Node.js, Deno, and Bun. Over HTTP, WebSocket,
 		`MessagePort`, or a transport you write yourself.
 	</Card>
-	<Card title="Under 10 kB" icon="download">
+	<Card title="%BUNDLE_SIZE%" icon="download">
 		Minified and gzipped, with zero dependencies. The whole protocol is human-readable JSON,
 		so you can debug it in your browser's network tab.
 	</Card>

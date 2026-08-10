@@ -7,3 +7,5 @@ node_modules/
 # environment variables
 .env
 .env.production
+# generated at build time
+src/generated/

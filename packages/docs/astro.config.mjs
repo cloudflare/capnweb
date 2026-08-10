@@ -2,6 +2,8 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import { sidebar } from './src/sidebar.mjs';
+import { remarkBundleSize } from './scripts/remark-bundle-size.mjs';
+import bundleSize from './src/generated/bundle-size.json' with { type: 'json' };
 
 const REPO = 'https://github.com/cloudflare/capnweb';
 
@@ -28,11 +30,16 @@ export default defineConfig({
 		prefetchAll: true,
 		defaultStrategy: 'hover',
 	},
+	// Substitutes %BUNDLE_SIZE% with the figure measured during prebuild. See
+	// scripts/measure-bundle.mjs.
+	markdown: {
+		remarkPlugins: [remarkBundleSize],
+	},
 	integrations: [
 		starlight({
 			title: "Cap'n Web",
 			description:
-				"Cap'n Web is a JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, under 10kB.",
+				`Cap'n Web is a JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, ${bundleSize.label}.`,
 			// Chrome keeps favicons in a store of its own, keyed by URL and not
 			// touched by a hard reload, so a site that once served a different
 			// icon keeps showing it for a long time. The version marker changes

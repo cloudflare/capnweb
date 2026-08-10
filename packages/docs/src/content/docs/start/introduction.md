@@ -22,7 +22,7 @@ same author), but designed to play nice in the web stack. That means:
 - It works in all major browsers, Cloudflare Workers, Node.js, Bun, Deno, and other modern
   JavaScript runtimes.
 
-The whole thing compresses (minify + gzip) to **under 10 kB with no dependencies**.
+The whole thing compresses (minify + gzip) to **%BUNDLE_SIZE% with no dependencies**.
 
 ## Why object-capability RPC
 

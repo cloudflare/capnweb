@@ -16,7 +16,7 @@ same author), but designed to play nice in the web stack. That means:
 * It works in all major browsers, Cloudflare Workers, Node.js, Bun, Deno, and other modern
   JavaScript runtimes.
 
-The whole thing compresses (minify + gzip) to **under 10 kB with no dependencies**.
+The whole thing compresses (minify + gzip) to **under 16 kB with no dependencies**.
 
 Cap'n Web is more expressive than almost every other RPC system, because it implements an
 object-capability RPC model. That means it supports **bidirectional calling**, **passing functions
