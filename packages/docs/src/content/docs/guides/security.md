@@ -116,14 +116,45 @@ For example, MongoDB uses special property names to express queries; placing att
 values directly into queries can result in query injection vulnerabilities, similar to SQL
 injection. Of course, JSON has always had the same problem, and there exists tooling to solve it.
 
-Consider a runtime type-checking framework like [Zod](https://zod.dev/), or the companion package
-[`capnweb-validate`](/guides/validation/), which generates validators from your TypeScript types at
-build time. In the future we hope to explore auto-generating type-checking code based on TypeScript
-types in the core library.
-
 Can a peer pass a callback where you declared a `string`? Yes. It will arrive as an `RpcStub`, your
 code will do something surprising with it, and TypeScript will have told you nothing. Validate at
 the boundary.
+
+### Use `capnweb-validate`
+
+The companion package [`capnweb-validate`](/guides/validation/) is the recommended answer, and it is
+built for exactly this problem. It keeps your **TypeScript method signatures as the source of
+truth** and generates the runtime checks from them at build time, so the boundary is described once
+rather than twice:
+
+```ts
+import { validateRpc } from 'capnweb-validate';
+
+@validateRpc()
+export class Api extends RpcTarget {
+  // Arguments are checked against these types before the method body runs.
+  getUser(id: string, opts: { includeEmail: boolean }) {
+    // ...
+  }
+}
+```
+
+Two properties make it worth reaching for over hand-written checks:
+
+- **Every method is covered.** Validation is applied to the class, so a method added next year is
+  checked without anyone remembering to check it. Hand-rolled guards protect only the boundary
+  someone thought about.
+- **It fails closed.** If the decorator is left untransformed because the bundler plugin is not
+  wired up, it throws a configuration error at startup rather than quietly running unvalidated. You
+  cannot ship a service that only looks validated.
+
+See [Runtime Validation](/guides/validation/) for setup.
+
+A general-purpose schema library such as [Zod](https://zod.dev/) works too, and is the better choice
+if you already validate with one elsewhere in the codebase, or if you need constraints a type cannot
+express, like "a string of at most 200 characters" or "a positive integer". The two compose: derive
+the shape from the types, then apply your own checks to the values. In the future we hope to explore
+auto-generating type-checking code based on TypeScript types in the core library.
 
 ### What the protocol does guarantee
 

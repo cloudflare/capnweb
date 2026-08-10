@@ -62,20 +62,16 @@ RPC. The intent is that the two converge, with Cap'n Web arriving first.
 | Values containing aliases and cycles        | No        | Yes\*       |
 | `RpcPromise` in the parameters of a request | Yes       | Not yet     |
 | The magic `.map()` method                   | Yes       | Not yet     |
+| `onRpcBroken()`                             | Yes       | Not yet     |
 
 \* Workers RPC supports sending values that contain aliases and cycles. This can cause problems, so
 we plan to **remove** this feature from Workers RPC, with a compatibility flag, of course.
 
-## Ownership differences
-
-:::caution
-The ownership behaviour of calls differs from the original behaviour in the native RPC
-implementation built into the Workers Runtime. In the original Workers behaviour, the callee loses
-ownership of stubs passed in a call's parameters.
-
-We plan to change the Workers Runtime to match Cap'n Web's behaviour, as the original has proven
-more problematic than helpful. See [Disposal](/concepts/disposal/) for the rules Cap'n Web uses.
-:::
+[`onRpcBroken()`](/guides/sessions/#reconnecting) is worth calling out, because there
+is no clean way to reconstruct it. It is how you learn that a peer went away, which is what drives
+reconnection and what lets a server drop a subscription whose subscriber has vanished. Code holding
+a native Workers stub has to fall back to noticing that calls have started failing, or to watching
+for the disposer of a stub it handed out.
 
 ## When to use which
 

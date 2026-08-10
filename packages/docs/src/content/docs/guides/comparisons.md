@@ -9,18 +9,37 @@ buys you against each of the usual alternatives, and where the claim runs out.
 ## vs. tRPC, oRPC, and friends
 
 [tRPC](https://trpc.io/), [oRPC](https://orpc.unnoq.com/) and similar libraries share a lot with
-Cap'n Web: TypeScript types as the contract, no code generation, no schema language. The difference
-is what a call can *return*.
+Cap'n Web: TypeScript inference instead of code generation, and no separate IDL to compile. The
+difference is what a call can *return*.
 
-|                                   | Cap'n Web | Typical TS RPC library     |
-| --------------------------------- | --------- | -------------------------- |
-| TypeScript types as the contract  | Yes       | Yes                        |
-| No codegen                        | Yes       | Yes                        |
-| Return an **object** by reference | Yes       | No, results are plain data |
-| Pass a **function** by reference  | Yes       | No                         |
-| Server calls the client           | Yes       | Subscriptions only         |
-| Dependent calls in one round trip | Yes       | No                         |
-| Reference lifetime management     | Yes       | N/A                        |
+|                                   | Cap'n Web         | Typical TS RPC library     |
+| --------------------------------- | ----------------- | -------------------------- |
+| TypeScript types as the contract  | Yes               | Yes                        |
+| Separate IDL and codegen step     | No                | No                         |
+| Runtime validation of inputs      | Opt-in, see below | Usually built in           |
+| Return an **object** by reference | Yes               | No, results are plain data |
+| Pass a **function** by reference  | Yes               | No                         |
+| Server calls the client           | Yes               | Subscriptions only         |
+| Dependent calls in one round trip | Yes               | No                         |
+| Reference lifetime management     | Yes               | N/A                        |
+
+One row there goes against us, and it is worth being straight about. "No schema language" is often
+claimed for this whole family, but it is only true of the *transport contract*. In practice a tRPC
+or oRPC procedure declares its input with a schema library, usually [Zod](https://zod.dev/) or
+anything else implementing [Standard Schema](https://standardschema.dev/), and the TypeScript type
+is inferred *from* that schema:
+
+```ts
+// tRPC: the schema is the contract, and the static type is derived from it.
+publicProcedure.input(z.object({ id: z.string() })).query(({ input }) => getUser(input.id));
+```
+
+So those libraries validate arriving data by default, and Cap'n Web does not. A Cap'n Web method
+signature is erased at runtime like any other TypeScript, and nothing checks the values against it
+unless you arrange for that. The direction of derivation is simply reversed: they generate types
+from a schema, while [`capnweb-validate`](/guides/validation/) generates the checks from your
+TypeScript signatures at build time. Either way you describe the boundary once, but with Cap'n Web
+it is a step you have to take. See [Types are not validation](/guides/security/#types-are-not-validation).
 
 Those libraries can batch calls, but batching and pipelining solve different problems. Batching
 combines calls that are **independent**: you already know all the arguments. Pipelining combines
@@ -63,6 +82,11 @@ let names = await api.listUserIds().map(id => api.getUserName(id));
 
 The client waits once instead of N+1 times, which is a real and often dominant win. But the server
 still runs one `listUserIds` query and N `getUserName` queries.
+
+**Whether that second half matters depends on where your database is.** If it is across a network,
+you have moved the problem rather than solved it, and you want a batched method. If it is
+[SQLite embedded in a Durable Object](#where-n1-stops-mattering), those N queries are in-process
+function calls and N+1 is a normal way to write code. Read on; that case is the interesting one.
 :::
 
 Things GraphQL has that Cap'n Web does not:
@@ -74,10 +98,21 @@ Things GraphQL has that Cap'n Web does not:
   before executing any of it. Cap'n Web has no query planner, so there is nothing to analyse. Rate
   limiting is your job. See [Security considerations](/guides/security/).
 
-Where the problem genuinely disappears is when a "query" is not a network hop at all. With SQLite
-embedded in a [Durable Object](/servers/workers/), the database is in the same process as your
-code, and the
-[N+1 problem largely stops being a problem](https://www.sqlite.org/np1queryprob.html).
+### Where N+1 stops mattering
+
+The N+1 problem is not really about the number of queries. It is about the number of **round
+trips**, and a query is only expensive because the database is usually on the other side of a
+network.
+
+Take that network away and the arithmetic changes. With SQLite embedded in a
+[Durable Object](/servers/workers/), the database lives in the same process as your code, so a query
+is a function call measured in microseconds. SQLite's own documentation makes the argument directly:
+[many small queries are efficient in SQLite](https://www.sqlite.org/np1queryprob.html), and N+1 is
+not an anti-pattern there.
+
+Pair that with pipelining and both halves are gone: `.map()` removes the client's N round trips, and
+in-process SQLite removes the server's. The `getUserName` loop above stops being something to
+engineer around and becomes what it looks like, a loop.
 
 The two ideas are also not mutually exclusive. Nothing stops you exposing a GraphQL-style
 `query(document)` method over a Cap'n Web session, or using Cap'n Web for the interactive,
@@ -106,7 +141,7 @@ natural in a dynamic language and awkward in a static one.
 - **A shared Rust/WASM core** does not obviously help either. The values Cap'n Web moves are
   JavaScript objects, so such an implementation would spend most of its size marshalling values
   across the JS/WASM boundary, plausibly more code than the entire TypeScript implementation, which
-  is [under 10 kB](/start/introduction/) in total.
+  is [%BUNDLE_SIZE%](/start/introduction/) in total.
 
 ## Isn't this distributed objects all over again?
 

@@ -130,6 +130,7 @@ Tie disposal to real unmount or page unload, not to an effect. (StrictMode also 
 **`onRpcBroken` cannot be unregistered.** It returns nothing, and registering twice on the same stub
 fires twice. Register it where the session is created (as `connect()` does above) rather than in
 an effect that might re-run.
+([#234](https://github.com/cloudflare/capnweb/issues/234) proposes returning a disposable handle.)
 :::
 
 ### Resumable subscriptions

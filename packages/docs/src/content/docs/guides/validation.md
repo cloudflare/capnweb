@@ -3,13 +3,25 @@ title: Runtime Validation
 description: Generate runtime validators from your TypeScript types at build time with capnweb-validate.
 ---
 
-Cap'n Web does not type-check incoming values at runtime; TypeScript types are erased. The
-companion package [`capnweb-validate`](https://www.npmjs.com/package/capnweb-validate) closes that
-gap by keeping **TypeScript method signatures as the source of truth** and generating validators
-from them at build time.
+Your method signature says `id: string`. Nothing stops a peer from sending an array, an object with
+a `$ne` property, or a callback that arrives as an `RpcStub`. TypeScript is erased long before the
+call does, so at runtime that signature is a comment.
 
-Add `@validateRpc()` to a service class; a bundler plugin or the CLI rewrites the decorator and
-injects validators generated from the resolved TypeScript types.
+[`capnweb-validate`](https://www.npmjs.com/package/capnweb-validate) makes it enforceable. Mark a
+class with `@validateRpc()`, and at build time a bundler plugin (or the CLI) reads the resolved
+TypeScript types and injects a validator for each method, which runs before your code does:
+
+```ts
+@validateRpc()
+export class Api extends RpcTarget {
+  // A caller sending anything but a string now gets an error, not your method body.
+  getUser(id: string) {
+    return this.db.find(id);
+  }
+}
+```
+
+You do not write a schema. The types you already wrote are the schema.
 
 :::note
 If a validation decorator is left untransformed, it throws a configuration error rather than

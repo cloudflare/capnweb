@@ -36,6 +36,48 @@ In precise JavaScript terms: they can access **prototype properties but not inst
 This policy is intended to do the right thing for typical JavaScript code, where private members are
 usually stored as instance properties.
 
+**Instance properties are treated as private.** Anything assigned in the constructor, or with a
+class field, is an instance property and is unreachable over RPC. Reading one does not return
+`undefined`; it throws, so a peer cannot probe for its existence:
+
+```text
+Attempted to access property 'apiKey', which is an instance property of the RpcTarget. To avoid
+leaking private internals, instance properties cannot be accessed over RPC.
+```
+
+That default is the safe one, and it means exposing a value is a deliberate act.
+
+### Exposing a property with a getter
+
+A getter lives on the prototype, so it is reachable. This is the sanctioned way to publish a value
+that is stored privately:
+
+```ts
+class Document extends RpcTarget {
+  #title = 'Untitled';
+  wordCount = 0; // instance property: NOT reachable over RPC
+
+  // Reachable: the peer reads `doc.title` and this getter runs.
+  get title() {
+    return this.#title;
+  }
+
+  // Reachable: writes have to be a method call. See below.
+  setTitle(title: string) {
+    this.#title = title;
+  }
+}
+```
+
+:::caution
+A **setter can never fire over RPC**. Assigning to a stub throws
+`Can't assign properties on RPC stubs`, because the protocol has no message for assignment. Pairing
+a setter with your getter is harmless but dead code as far as a peer is concerned.
+
+Expose writes as a method instead, as `setTitle` does above. A method is also the honest shape for
+a write that crosses a network: it returns a promise you can await, and it can fail.
+:::
+
 :::danger
 If you are using TypeScript, note that declaring a method `private` does **not** hide it from RPC.
 TypeScript annotations are erased at runtime, so they cannot be enforced.

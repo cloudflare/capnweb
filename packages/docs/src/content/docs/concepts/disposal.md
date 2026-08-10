@@ -86,13 +86,6 @@ disposes the callee's duplicates when the call completes:
   all stubs found in that response. It's a good idea to always dispose return values even if you
   don't expect them to contain stubs, in case the API adds stubs to the result in the future.
 
-:::caution
-The ownership behaviour of calls differs from the original behaviour of the native RPC
-implementation built into the Cloudflare Workers Runtime. In the original Workers behaviour, the
-callee loses ownership of stubs passed in a call's parameters. We plan to change the Workers Runtime
-to match Cap'n Web's behaviour, as the original has proven more problematic than helpful.
-:::
-
 ## Duplicating stubs
 
 Sometimes you need to pass a stub somewhere it will be disposed, but also keep it for later use. To
