@@ -1,17 +1,23 @@
 ---
 /**
- * Override of Starlight's `PageFrame`, purely to mount the node field once per
- * document behind everything else.
+ * Override of Starlight's `PageFrame`, purely to mount the node field once per document behind
+ * everything else.
  *
- * The frame itself is unchanged: this delegates to the stock component and
- * forwards its two named slots, so the header, the sidebar and the layout stay
- * upstream's problem rather than becoming ours.
+ * The frame itself is unchanged: this delegates to the stock component and forwards its two named
+ * slots, so the header, the sidebar and the layout stay upstream's problem rather than becoming
+ * ours.
+ *
+ * Splash pages paint their own field edge to edge behind the hero, so the backdrop is skipped
+ * there entirely rather than rendered and hidden. Two fields' worth of elements in the document is
+ * a cost with nothing to show for it.
  */
 import StarlightPageFrame from '@astrojs/starlight/components/PageFrame.astro';
 import GraphBackdrop from './GraphBackdrop.astro';
+
+const hasHero = Boolean(Astro.locals.starlightRoute.entry.data.hero);
 ---
 
-<GraphBackdrop />
+{!hasHero && <GraphBackdrop />}
 <StarlightPageFrame>
 	<slot name="header" slot="header" />
 	<slot name="sidebar" slot="sidebar" />

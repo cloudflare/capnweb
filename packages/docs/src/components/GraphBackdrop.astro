@@ -1,26 +1,18 @@
 ---
 /**
- * The node field behind the page, mounted once per document by the PageFrame
- * override. It is fixed to the viewport and sits behind everything, so it is
- * seen through the margins around the content sheet and through the sidebar.
+ * The node field behind the page, mounted once per document by the PageFrame override. It is fixed
+ * to the viewport and sits behind everything, so it is seen through the margins around the content
+ * sheet and through the sidebar.
  *
- * Splash pages already have the WebGL hero and skip this one; see the guard in
- * the script below.
+ * Splash pages have their own field behind the hero and are not given this one; the PageFrame
+ * override decides that at build time, from frontmatter.
  */
+import Constellation from './Constellation.astro';
 ---
 
-<canvas class="cw-graph" data-state="idle" aria-hidden="true"></canvas>
-
-<script>
-	import { initGraphBackdrop } from '../scripts/graph-backdrop';
-
-	const canvas = document.querySelector<HTMLCanvasElement>('.cw-graph');
-	// The splash page paints its own field edge to edge; two of them would
-	// fight, and the hero is the better one.
-	if (canvas && !document.querySelector('main .hero')) {
-		initGraphBackdrop(canvas);
-	}
-</script>
+<div class="cw-graph" aria-hidden="true">
+	<Constellation variant="backdrop" />
+</div>
 
 <style>
 	.cw-graph {
@@ -29,21 +21,22 @@
 		z-index: -1;
 		width: 100%;
 		height: 100%;
-		display: block;
 		pointer-events: none;
-		/* Held back until the first frame is on it, so there is no flicker of an
-		   empty canvas over the ground gradient. */
+		/* Eased in on load so the field arrives with the page rather than snapping in after it. */
+		animation: cw-graph-in 1s ease forwards;
 		opacity: 0;
-		transition: opacity 0.8s ease;
 	}
 
-	.cw-graph[data-state='ready'] {
-		opacity: 1;
+	@keyframes cw-graph-in {
+		to {
+			opacity: 1;
+		}
 	}
 
 	@media (prefers-reduced-motion: reduce) {
 		.cw-graph {
-			transition: none;
+			animation: none;
+			opacity: 1;
 		}
 	}
 </style>

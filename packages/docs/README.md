@@ -43,7 +43,8 @@ src/
     reference/        wire protocol, API cheat sheet
   styles/theme.css    the theme (see below)
   components/         Starlight component overrides (see below)
-  scripts/            the WebGL hero renderer
+  lib/                build-time helpers, including the node field geometry
+  scripts/            build-time scripts: playgrounds, bundle size, remark plugins
 public/               favicon.svg, and the generated playground bundles
 astro.config.mjs      Starlight config, including the sidebar
 ```
@@ -100,40 +101,42 @@ There are no web fonts and no raster images. The only textures are gradients.
 > matches both and paints the bar a second time inset by its own padding, leaving a visible seam.
 > Surface rules are qualified as `header.header` for this reason.
 
-### The hero
+### The node field
 
-The landing page runs a 3D network in WebGL: `src/components/NetworkHero.astro` for the markup and
-`src/scripts/network-hero.ts` for the renderer. `src/components/Hero.astro` overrides Starlight's
-`Hero` purely to mount it, delegating to the stock component so title, tagline and actions keep
-working from frontmatter.
+Two surfaces show a constellation of nodes and edges: the landing page hero
+(`src/components/NetworkHero.astro`) and a backdrop behind every other page
+(`src/components/GraphBackdrop.astro`). Both render `src/components/Constellation.astro`, whose
+geometry is computed at build time by `src/lib/constellation.ts` from a fixed seed, so the field is
+identical on every build and screenshot diffs stay meaningful.
 
-It is raw WebGL2 with no dependency. The page it sits on claims the library is under 10 kB with
-nothing behind it, and shipping a 3D framework to draw points and lines would undercut that in the
-first paint.
+This was a 2D canvas and a WebGL2 field, each driven by a `requestAnimationFrame` loop. They looked
+better than what replaced them and they cost a CPU core to look at, which is not a trade a
+documentation site should make. There is now no script at all: the markup is static and the motion
+is CSS.
 
-The animation is an argument, not decoration. Each pulse leaves a node, runs outward across several
-hops and returns along the same path: the whole dependent chain, one trip. That is what promise
-pipelining buys you, so the hero shows it rather than asserting it.
+**Only `transform` and `opacity` on HTML elements are animated.** That is the whole design
+constraint, because those are the two properties the compositor can animate without waking the main
+thread. Measured on this site, idling for eight seconds:
 
-Everything degrades, and each fallback is a designed state rather than a hole:
+| Technique                        | Main thread |
+| -------------------------------- | ----------- |
+| `transform` on HTML elements     | 0.1%        |
+| `opacity` on HTML elements       | 0.0%        |
+| `opacity` on SVG children        | 0.6%        |
+| `stroke-dashoffset` on SVG lines | 3.6%        |
 
-| Condition                   | Result                                                              |
-| --------------------------- | ------------------------------------------------------------------- |
-| No JavaScript               | The CSS gradient under the canvas, same composition                 |
-| No WebGL2                   | Same, and `data-state="unsupported"`; the canvas stays at opacity 0 |
-| `prefers-reduced-motion`    | Exactly one frame, a still portrait of the network, no rAF loop     |
-| Canvas scrolled out of view | Loop parked by an `IntersectionObserver`                            |
-| Tab hidden                  | Loop parked on `visibilitychange`                                   |
-| Context lost                | Parked; **rebuilt** on `webglcontextrestored`                       |
+That table is why edges are rotated `<div>`s rather than SVG `<line>`s, which would otherwise be
+the obvious choice. A message travelling along a connection is then a child element sliding with
+`translateX`, which is free; as an animated dash it cost several percent of a core on its own.
 
-That last row matters. GPU driver resets, waking from sleep and tab discarding all really do lose
-the context, and handling `webglcontextlost` without handling the restore leaves a permanently dead
-rectangle. All GPU objects therefore live in one `Gpu` struct that is dropped and rebuilt as a unit,
-while the simulation state sits outside it so a restore resumes the animation instead of restarting
-it. Calling `preventDefault()` on the loss event is what makes the restore event fire at all.
+The result is 0.9% of a core on a docs page and 1.7% on the landing page, and **exactly 0%** under
+`prefers-reduced-motion`, where the field is still drawn and simply stops moving.
 
-The graph is deterministic, built from a fixed-seed PRNG over a Fibonacci sphere, so the same hero
-renders every load and a visual difference means a real change rather than a new random seed.
+The one subtlety is `Constellation.astro`'s stage. It has a fixed `aspect-ratio` and is sized to
+cover its container, which makes the mapping from authored coordinates to pixels a single uniform
+scale, so an angle baked in at build time is still correct at every window size. Percentages alone
+would not survive a resize: they resolve against width and height separately, so a rotated edge
+would drift off its endpoints as the window changed shape.
 
 Light mode is not a recolour of the same drawing. Additive blending can only ever *add* light, so on
 a near-white page it does nothing at all. The renderer switches to normal compositing
@@ -149,7 +152,8 @@ Two, both listed in `astro.config.mjs`:
   as upstream, so it stays compatible with Starlight's inlined no-FOUC script; which icon shows is
   decided in CSS from `:root[data-theme]`, so there is no flash on load. Unset still means "follow
   the OS".
-- `Hero.astro` mounts the WebGL field and then renders the stock hero.
+- `Hero.astro` mounts the node field and then renders the stock hero.
+- `PageFrame.astro` mounts the backdrop on every page that is not a splash page.
 
 Keep an eye on both when upgrading Starlight.
 

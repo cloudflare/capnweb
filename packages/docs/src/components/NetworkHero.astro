@@ -1,26 +1,23 @@
 ---
 /**
- * Full-bleed WebGL backdrop for the splash hero.
+ * Full-bleed backdrop for the splash hero.
  *
- * The canvas is purely decorative -- it is `aria-hidden` and carries no
- * information that is not also in the hero copy beside it. Everything degrades:
- * with no JavaScript, or no WebGL2, or a lost GPU context, the CSS gradient
- * underneath is what shows, and it is designed to be a perfectly acceptable
- * final state rather than an obvious hole.
+ * This was a WebGL2 node field. It looked better than what replaced it and it cost a CPU core to
+ * look at, which is not a trade a documentation site should be making. The field is now a static
+ * SVG with a few CSS animations; the gradient and the veil below are unchanged, and they were
+ * always the fallback, so the composition of the hero is the same.
+ *
+ * Purely decorative: `aria-hidden`, and carrying nothing that is not also in the hero copy.
  */
+import Constellation from './Constellation.astro';
 ---
 
 <div class="cw-hero-field" aria-hidden="true">
-	<canvas class="cw-hero-canvas" data-state="idle"></canvas>
+	<div class="cw-hero-canvas">
+		<Constellation variant="hero" />
+	</div>
 	<div class="cw-hero-veil"></div>
 </div>
-
-<script>
-	import { initNetworkHero } from '../scripts/network-hero';
-
-	const canvas = document.querySelector<HTMLCanvasElement>('.cw-hero-canvas');
-	if (canvas) initNetworkHero(canvas);
-</script>
 
 <style>
 	.cw-hero-field {
@@ -46,14 +43,15 @@
 		display: block;
 		width: 100%;
 		height: 100%;
-		/* Fade in once the first frame is up, so there is no flash of an
-		   unpainted black rectangle over the gradient. */
+		/* Eased in so the field arrives with the page instead of snapping in. */
 		opacity: 0;
-		transition: opacity 0.6s ease;
+		animation: cw-hero-in 0.9s ease forwards;
 	}
 
-	.cw-hero-canvas[data-state='ready'] {
-		opacity: 1;
+	@keyframes cw-hero-in {
+		to {
+			opacity: 1;
+		}
 	}
 
 	/* Dissolve the field into the page, and hold contrast under the copy. The
@@ -93,7 +91,8 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.cw-hero-canvas {
-			transition: none;
+			animation: none;
+			opacity: 1;
 		}
 	}
 </style>
