@@ -129,23 +129,58 @@ That table is why edges are rotated `<div>`s rather than SVG `<line>`s, which wo
 the obvious choice. A message travelling along a connection is then a child element sliding with
 `translateX`, which is free; as an animated dash it cost several percent of a core on its own.
 
-The result is 0.9% of a core on a docs page and 1.7% on the landing page, and **exactly 0%** under
+The result is 0.6% of a core on a docs page and 0.7% on the landing page, and **exactly 0%** under
 `prefers-reduced-motion`, where the field is still drawn and simply stops moving.
 
-The one subtlety is `Constellation.astro`'s stage. It has a fixed `aspect-ratio` and is sized to
-cover its container, which makes the mapping from authored coordinates to pixels a single uniform
-scale, so an angle baked in at build time is still correct at every window size. Percentages alone
-would not survive a resize: they resolve against width and height separately, so a rotated edge
-would drift off its endpoints as the window changed shape.
+#### Keeping the lines attached to the dots
 
-Light mode is not a recolour of the same drawing. Additive blending can only ever *add* light, so on
-a near-white page it does nothing at all. The renderer switches to normal compositing
-(`ONE, ONE_MINUS_SRC_ALPHA`, since the shaders emit premultiplied colour) and drops the additive hot
-cores, drawing the network as dark ink instead.
+Three separate things have to hold, and two of them were got wrong first time round.
+
+**The scale has to be uniform.** `Constellation.astro`'s stage has a fixed `aspect-ratio` and is
+sized to cover its container, so the mapping from authored coordinates to pixels is a single scale
+factor and an angle baked in at build time is still correct at every window size and zoom level.
+Percentages alone would not survive a resize: they resolve against width and height separately, so
+a rotated edge would drift off its endpoints as the window changed shape.
+
+**Everything has to move together.** There used to be three parallax groups drifting at three
+speeds, and 76% of the edges joined nodes that were in two different groups, so most of the field
+was being pulled apart and back together over the drift cycle. It is not a tuning problem: an edge
+is one element, pinned at one end and rotated, so it can only stay attached at both ends if both
+ends share a transform. Since the field is one connected graph, that means the whole field is one
+transform group, and parallax is simply not available. Depth is carried by radius and brightness,
+which is where most of it was coming from anyway.
+
+**The graph has to be connected.** `buildField` guarantees a single connected component. The greedy
+nearest-neighbour pass that gives the field its look caps edge length and node degree, and both
+caps can strand a node; a second pass runs Kruskal over the same sorted pair list and adds back
+whatever is needed to join the pieces, ignoring both caps. `Constellation.astro` asserts the result
+and fails the build otherwise, because a dot sitting on its own is the kind of flaw a reader
+notices, cannot explain, and no screenshot diff will catch.
+
+`scripts/` has no test for this; the check lives in `Constellation.astro` and runs on every build.
+The rendered-geometry check that caught the parallax bug measured, for every edge at ten viewport
+sizes and six zoom levels, whether both of its endpoints landed on a dot. Worth rebuilding if this
+area is touched again: the failure is invisible in code review and obvious on screen.
+
+#### There is no hover response
+
+The old field lit up the node nearest the pointer and sent a pulse out and back along each of its
+edges. It has not been reimplemented, and it cannot be in CSS alone.
+
+It was built and measured before being removed: invisible hit circles per node, `pointer-events:
+auto` against a `pointer-events: none` parent, and a generated `:has()` rule per node. It works and
+it is unreachable. The field is painted behind the page, and CSS hit-testing cannot express
+"receive the pointer only where nothing is drawn over me" -- the topmost box wins whether or not it
+painted anything. On a docs page the content panel spans nearly the whole viewport, leaving the
+backdrop as the topmost hit target on **1.3%** of it. Putting the hit layer above the content
+restores the hover and costs the page its text selection and some of its links.
+
+Restoring the behaviour means a `pointermove` listener that finds the nearest node and sets one
+class. That is not a render loop, and the animation would stay on the compositor, but it is script.
 
 ### Component overrides
 
-Two, both listed in `astro.config.mjs`:
+Three, all listed in `astro.config.mjs`:
 
 - `ThemeToggle.astro` replaces Starlight's `ThemeSelect`, dropping the three-way light/dark/auto
   `<select>` for a single button. It reads and writes the same `starlight-theme` `localStorage` key
