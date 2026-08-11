@@ -1,6 +1,8 @@
 ---
 title: Security Considerations
 description: Authentication over WebSocket, denial-of-service from pipelining, payload limits, and why types are not validation.
+sidebar:
+  order: 1
 ---
 
 Cap'n Web is an object-capability system, which gives you strong tools for authorization, but there

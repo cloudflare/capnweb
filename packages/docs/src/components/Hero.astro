@@ -1,18 +1,66 @@
 ---
 /**
- * Override of Starlight's `Hero`, purely to slide the WebGL field in behind it.
+ * The landing page hero.
  *
- * The hero itself is unchanged -- this delegates to the stock component rather
- * than reimplementing it, so title, tagline and actions keep working from
- * frontmatter and nothing has to be kept in sync with upstream.
+ * Under Starlight this came out of frontmatter, because Starlight owned the splash template and
+ * `hero:` was the only way in. Nimbus has no splash template -- `mode: custom` gives you a bare
+ * `<main>` and the page composes what it wants -- so the hero is an ordinary component used from
+ * the top of `index.mdx`, and its copy lives with the rest of the page's prose instead of in a
+ * frontmatter block that only one page can use.
  *
- * The field is absolutely positioned. Starlight renders the hero inside an
- * unpositioned `.content-panel`, so it resolves against `main`, which the
- * theme makes a positioned stacking context on splash pages.
+ * The node field goes behind it, absolutely positioned against this section.
  */
-import StarlightHero from '@astrojs/starlight/components/Hero.astro';
+import { LinkButton } from '@/components/ui/link-button';
 import NetworkHero from './NetworkHero.astro';
+
+interface Props {
+	title: string;
+	tagline: string;
+}
+
+const { title, tagline } = Astro.props;
 ---
 
-<NetworkHero />
-<StarlightHero />
+<section class="relative isolate overflow-hidden">
+	<NetworkHero />
+	<div class="relative mx-auto w-full max-w-(--nb-content-max) px-4 pt-16 pb-14 lg:px-6 lg:pt-24 lg:pb-20">
+		<h1
+			class="cw-hero-title max-w-3xl text-5xl leading-[1.05] font-bold tracking-tight text-balance sm:text-6xl lg:text-7xl"
+		>
+			{title}
+		</h1>
+		<p class="mt-6 max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground">
+			{tagline}
+		</p>
+		<div class="mt-9 flex flex-wrap items-center gap-x-5 gap-y-3">
+			<LinkButton href="/start/quickstart/" variant="primary" size="lg" icon>Get started</LinkButton>
+			<LinkButton
+				href="https://github.com/cloudflare/capnweb"
+				variant="minimal"
+				size="lg"
+				target="_blank"
+				rel="noopener"
+			>
+				View on GitHub
+			</LinkButton>
+		</div>
+	</div>
+</section>
+
+<style>
+	/*
+	 * The one piece of colour the hero title does not take from a token: a vertical wash from the
+	 * foreground into the accent, which is what makes the headline read as the brightest thing on
+	 * the page without simply being the largest.
+	 */
+	.cw-hero-title {
+		background: linear-gradient(
+			175deg,
+			var(--cw-hero-title-top) 0%,
+			var(--cw-hero-title-bottom) 78%
+		);
+		-webkit-background-clip: text;
+		background-clip: text;
+		color: transparent;
+	}
+</style>

@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "playgrounds": "node scripts/build-playgrounds.mjs",
-    "og:fonts": "node scripts/build-og-fonts.mjs",
+    "bundle-size": "node scripts/measure-bundle.mjs",
     "predev": "npm run bundle-size && npm run playgrounds",
     "dev": "astro dev",
     "start": "astro dev",
@@ -15,14 +15,22 @@
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
+    "lint:docs": "nimbus-docs lint",
+    "lint:docs:fix": "nimbus-docs lint --fix",
     "predeploy": "npm run build",
     "deploy": "wrangler deploy",
-    "astro": "astro",
-    "bundle-size": "node scripts/measure-bundle.mjs"
+    "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.41.6",
-    "astro": "^7.1.6"
+    "@cloudflare/nimbus-docs": "^0.10.0",
+    "@fontsource-variable/inter": "^5.2.8",
+    "@fontsource-variable/jetbrains-mono": "^5.2.8",
+    "@iconify-json/ph": "^1.2.0",
+    "astro": "^7.2.1",
+    "astro-og-canvas": "^0.13.0",
+    "canvaskit-wasm": "^0.41.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.5.0"
   },
   "repository": {
     "type": "git",
@@ -31,9 +39,9 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@resvg/resvg-js": "^2.6.2",
-    "satori": "^0.29.0",
-    "subset-font": "^2.5.0",
+    "@tailwindcss/vite": "^4.1.4",
+    "pagefind": "^1.5.2",
+    "tailwindcss": "^4.1.4",
     "typescript": "^6.0.3"
   }
 }

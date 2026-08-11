@@ -1,6 +1,8 @@
 ---
 title: Quickstart
 description: Build a working Cap'n Web client and server, first in plain JavaScript and then with TypeScript types.
+sidebar:
+  order: 3
 ---
 
 Let's build the smallest useful Cap'n Web service, then add types.

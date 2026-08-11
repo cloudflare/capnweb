@@ -1,6 +1,8 @@
 ---
 title: API Cheat Sheet
 description: Every export of the capnweb package at a glance, with links to the page that explains it.
+sidebar:
+  order: 2
 ---
 
 Everything below is exported from the `capnweb` package.

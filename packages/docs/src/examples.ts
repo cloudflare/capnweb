@@ -20,8 +20,13 @@ export interface PlaygroundFile {
 	path: string;
 	/** Tab label. */
 	label: string;
-	/** Language for syntax highlighting. */
-	lang: string;
+	/**
+	 * Language for syntax highlighting. Narrow on purpose: the value goes
+	 * straight to Shiki through `<Code lang>`, which rejects anything it does
+	 * not know, so a typo should be a type error here rather than a build
+	 * failure three layers down. Widen the union when a tab needs more.
+	 */
+	lang: 'js' | 'ts';
 	/** One line on what this file is for, shown above the code. */
 	note: string;
 }

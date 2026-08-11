@@ -1,6 +1,8 @@
 ---
 title: Bun
 description: Serve Cap'n Web from Bun.serve using newBunWebSocketRpcHandler.
+sidebar:
+  order: 4
 ---
 
 Bun's server-side WebSocket API uses

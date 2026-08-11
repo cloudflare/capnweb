@@ -1,6 +1,8 @@
 ---
 title: Custom Transports
 description: Implement RpcTransport to run Cap'n Web over any bidirectional stream, and tune how much encoding it does for you.
+sidebar:
+  order: 4
 ---
 
 You can implement a custom RPC transport across any bidirectional stream.

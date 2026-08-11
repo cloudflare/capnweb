@@ -1,6 +1,8 @@
 ---
 title: Runtime Validation
 description: Generate runtime validators from your TypeScript types at build time with capnweb-validate.
+sidebar:
+  order: 3
 ---
 
 Your method signature says `id: string`. Nothing stops a peer from sending an array, an object with

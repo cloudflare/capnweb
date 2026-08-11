@@ -1,6 +1,8 @@
 ---
 title: RpcStub
 description: How stubs work, what TypeScript knows about them, and how to forward them between peers.
+sidebar:
+  order: 3
 ---
 
 When a type `T` which extends [`RpcTarget`](/concepts/rpc-target/) (or is a function) is sent as

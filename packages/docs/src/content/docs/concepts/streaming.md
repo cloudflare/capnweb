@@ -1,6 +1,8 @@
 ---
 title: Streaming
 description: Pass ReadableStream and WritableStream over RPC with automatic flow control and multiplexing.
+sidebar:
+  order: 6
 ---
 
 You may pass a `ReadableStream` or `WritableStream` over RPC. When you do, the RPC system

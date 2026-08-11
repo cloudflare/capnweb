@@ -1,6 +1,8 @@
 ---
 title: Sessions & Reconnection
 description: How long RPC state lives, what a dropped connection destroys, how to reconnect and resume, and how to evolve and scale a Cap'n Web service.
+sidebar:
+  order: 2
 ---
 
 Cap'n Web keeps state, but only for the life of one session, and never on disk. Understanding

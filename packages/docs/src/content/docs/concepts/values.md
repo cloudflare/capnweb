@@ -1,6 +1,8 @@
 ---
 title: What Can Be Passed
 description: The types Cap'n Web serializes by value, the types it passes by reference, and the types it deliberately refuses.
+sidebar:
+  order: 1
 ---
 
 Values crossing an RPC boundary are either **passed by value** (serialized, producing a copy at the

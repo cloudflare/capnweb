@@ -1,6 +1,8 @@
 ---
 title: WebSocket
 description: Long-lived, fully bidirectional Cap'n Web sessions with newWebSocketRpcSession.
+sidebar:
+  order: 2
 ---
 
 In WebSocket mode, the client forms a long-lived connection to the server and makes many calls over

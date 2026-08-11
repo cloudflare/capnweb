@@ -1,6 +1,8 @@
 ---
 title: Other Runtimes
 description: The two portable functions that let you serve Cap'n Web from any modern JavaScript runtime.
+sidebar:
+  order: 6
 ---
 
 Every runtime does HTTP handling and WebSockets a little differently, although most modern runtimes

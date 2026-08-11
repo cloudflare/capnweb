@@ -1,6 +1,8 @@
 ---
 title: Disposal
 description: Why garbage collection can't manage remote references, and the ownership rules Cap'n Web uses instead.
+sidebar:
+  order: 7
 ---
 
 ## Why you have to think about this

@@ -4,6 +4,8 @@ description: The complete Cap'n Web wire protocol, covering serialization, impor
 tableOfContents:
   minHeadingLevel: 2
   maxHeadingLevel: 3
+sidebar:
+  order: 1
 ---
 
 This page documents what actually goes over the socket. You do not need it to use Cap'n Web, but you

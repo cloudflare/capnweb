@@ -1,6 +1,8 @@
 ---
 title: How It Compares
 description: Cap'n Web against tRPC, JSON-RPC, GraphQL, Cap'n Proto and the older distributed-object systems, including the things it deliberately does not do.
+sidebar:
+  order: 4
 ---
 
 Cap'n Web claims to be more expressive than most RPC systems. This page is the receipt: what that

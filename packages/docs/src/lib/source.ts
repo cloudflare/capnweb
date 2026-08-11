@@ -15,7 +15,7 @@ import { fileURLToPath } from 'node:url';
  * of them makes a false positive effectively impossible.
  */
 function findRepoRoot(): string {
-	const sentinels = ['examples', join('packages', 'docs', 'astro.config.mjs')];
+	const sentinels = ['examples', join('packages', 'docs', 'astro.config.ts')];
 	const starts = [process.cwd(), dirname(fileURLToPath(import.meta.url))];
 
 	for (const start of starts) {

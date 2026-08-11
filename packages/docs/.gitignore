@@ -2,10 +2,19 @@
 dist/
 # generated types
 .astro/
+# nimbus build scratch: materialized lint config and the route manifest.
+# `nimbus.json` next to it is the opposite -- hand-owned, and committed.
+.nimbus/
+# wrangler local state
+.wrangler/
 # dependencies
 node_modules/
 # environment variables
 .env
 .env.production
-# generated at build time
+.dev.vars
+# generated at build time: the measured bundle size, and the playground bundles
 src/generated/
+public/playground/
+# pagefind writes its index into dist/, but leaves a cache here
+.pagefind/

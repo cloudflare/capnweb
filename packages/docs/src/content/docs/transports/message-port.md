@@ -1,6 +1,8 @@
 ---
 title: MessagePort
 description: Use Cap'n Web to talk to Web Workers, iframes, and other same-process contexts.
+sidebar:
+  order: 3
 ---
 
 Cap'n Web can talk over `MessagePort`s. In a browser, this lets you use the same RPC model to talk

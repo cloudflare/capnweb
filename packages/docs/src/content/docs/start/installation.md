@@ -1,6 +1,8 @@
 ---
 title: Installation
 description: Install Cap'n Web from npm, and the TypeScript settings you need for `using` declarations.
+sidebar:
+  order: 2
 ---
 
 Cap'n Web is [a single npm package](https://www.npmjs.com/package/capnweb) with no dependencies.

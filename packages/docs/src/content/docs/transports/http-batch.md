@@ -1,6 +1,8 @@
 ---
 title: HTTP Batch
 description: Send a whole dependent call graph in one HTTP request using newHttpBatchRpcSession.
+sidebar:
+  order: 1
 ---
 
 In HTTP batch mode, a batch of RPC calls is made in a single HTTP request, with the server returning

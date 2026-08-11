@@ -1,6 +1,8 @@
 ---
 title: Deno
 description: Serve Cap'n Web from Deno.serve, handling both HTTP batch and WebSocket upgrades.
+sidebar:
+  order: 3
 ---
 
 Import the package with the `npm:` specifier and use the standard Fetch-API helpers.

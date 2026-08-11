@@ -13,7 +13,7 @@
  * The chrome here deliberately does not use the site's palette. It is meant to
  * read as an editor, so it borrows the code theme's own colours instead.
  */
-import { Code } from '@astrojs/starlight/components';
+import { Code } from '@/components/ui/code';
 import { readRepoFile } from '../lib/source';
 import type { Example } from '../examples';
 
@@ -34,15 +34,7 @@ const id = `pg-${example.slug}`;
 const demoSrc = `${example.demoPath}?embed=1`;
 ---
 
-{/*
-	`not-content` opts the whole stage out of Starlight's prose spacing. That
-	rule puts `margin-top: var(--sl-content-gap-y)` on any block following a
-	sibling block, which lands on every tab after the first and on the preview
-	pane, knocking both out of alignment. The rule itself has to stay -- it is
-	what spaces the prose on every page -- and `:where(.not-content *)` is the
-	exemption Starlight ships for exactly this.
-*/}
-<div class="capn-stage not-content" data-capn-stage>
+<div class="capn-stage" data-capn-stage>
 	<section class="capn-pane capn-code" aria-label={`${example.title} source`}>
 		<div class="capn-tabs" role="tablist" aria-label="Files">
 			{
@@ -166,12 +158,15 @@ const demoSrc = `${example.demoPath}?embed=1`;
 	/* The stage wants the whole main column, but prose does not. Widen the
 	   container and cap the prose instead of trying to break the stage out of a
 	   centred column, which would mean guessing at the sidebar width. Left
-	   edges stay aligned with the page title. */
+	   edges stay aligned with the page title.
+
+	   Nimbus's prose rules are all `:not([class])`, so anything with a class is
+	   already exempt from them -- the stage needs no opt-out marker, only room. */
 	:root:has(.capn-stage) {
-		--sl-content-width: 100%;
+		--nb-content-max: 100%;
 	}
 
-	.sl-markdown-content > *:not(.capn-stage) {
+	.docs-content > *:not(.capn-stage) {
 		max-width: 47rem;
 	}
 </style>
@@ -283,7 +278,7 @@ const demoSrc = `${example.demoPath}?embed=1`;
 		border-right: 1px solid var(--pg-border);
 		background: none;
 		color: var(--pg-fg-muted);
-		font-family: var(--sl-font);
+		font-family: var(--nb-font-sans);
 		font-size: 0.78rem;
 		line-height: 1;
 		white-space: nowrap;
@@ -374,7 +369,7 @@ const demoSrc = `${example.demoPath}?embed=1`;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		color: var(--pg-fg-muted);
-		font-family: var(--sl-font-mono);
+		font-family: var(--nb-font-mono);
 		font-size: 0.72rem;
 	}
 
@@ -384,7 +379,7 @@ const demoSrc = `${example.demoPath}?embed=1`;
 		align-items: center;
 		gap: 0.25rem;
 		color: var(--pg-fg-muted);
-		font-family: var(--sl-font);
+		font-family: var(--nb-font-sans);
 		font-size: 0.72rem;
 		text-decoration: none;
 	}

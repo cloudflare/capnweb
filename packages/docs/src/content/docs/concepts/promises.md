@@ -1,6 +1,8 @@
 ---
 title: RpcPromise & Pipelining
 description: Why RPC calls return RpcPromise instead of Promise, and how that enables single-round-trip call chains.
+sidebar:
+  order: 4
 ---
 
 Calling an RPC method returns an `RpcPromise` rather than a regular `Promise`.

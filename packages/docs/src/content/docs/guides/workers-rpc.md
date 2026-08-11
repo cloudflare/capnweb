@@ -1,6 +1,8 @@
 ---
 title: Workers RPC Interop
 description: How Cap'n Web interoperates with the RPC system built into the Cloudflare Workers Runtime, and where the two still differ.
+sidebar:
+  order: 5
 ---
 
 Cap'n Web works on any JavaScript platform. But on Cloudflare Workers specifically, it's designed to

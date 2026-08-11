@@ -1,6 +1,8 @@
 ---
 title: Introduction
 description: What Cap'n Web is, how it relates to Cap'n Proto, and why object-capability RPC makes it more expressive than most RPC systems.
+sidebar:
+  order: 1
 ---
 
 Cap'n Web is a spiritual sibling to [Cap'n Proto](https://capnproto.org) (and is created by the

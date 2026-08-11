@@ -1,6 +1,8 @@
 ---
 title: Pipelining Tour
 description: Chain dependent RPC calls into a single network round trip, including the record-replay trick behind .map().
+sidebar:
+  order: 4
 ---
 
 Pipelining is what lets a chain of dependent calls cost one round trip instead of one per call. The

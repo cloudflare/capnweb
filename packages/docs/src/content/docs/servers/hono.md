@@ -1,6 +1,8 @@
 ---
 title: Hono
 description: Use the @hono/capnweb middleware to mount a Cap'n Web endpoint in a Hono app.
+sidebar:
+  order: 5
 ---
 
 If your app is built on [Hono](https://hono.dev/), on any runtime it supports, check out

@@ -1,6 +1,8 @@
 ---
 title: The magic map()
 description: Transform a remote value in place with .map(), the rules it imposes, and the record-replay mechanism that makes it possible.
+sidebar:
+  order: 5
 ---
 
 Every RPC promise has a special method `.map()` which can be used to remotely transform a value,

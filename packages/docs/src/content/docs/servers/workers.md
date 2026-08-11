@@ -1,6 +1,8 @@
 ---
 title: Cloudflare Workers
 description: Serve Cap'n Web from a Worker with newWorkersRpcResponse, handling HTTP batch and WebSocket at once.
+sidebar:
+  order: 1
 ---
 
 The helper function `newWorkersRpcResponse()` makes it easy to implement an HTTP server that accepts

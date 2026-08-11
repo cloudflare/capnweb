@@ -1,6 +1,8 @@
 ---
 title: Node.js
 description: Serve Cap'n Web from Node's http module, including WebSocket support via the ws package.
+sidebar:
+  order: 2
 ---
 
 A server on Node.js is a bit more involved, due to the awkward handling of WebSockets in Node's HTTP

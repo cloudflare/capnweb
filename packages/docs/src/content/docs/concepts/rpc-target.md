@@ -1,6 +1,8 @@
 ---
 title: RpcTarget & Functions
 description: Export an interface over RPC by extending RpcTarget, and understand exactly which members become reachable.
+sidebar:
+  order: 2
 ---
 
 ## `RpcTarget`
