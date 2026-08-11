@@ -22,7 +22,12 @@ export const ogCardConfig = {
   ],
   border: { color: [246, 130, 31], width: 12, side: "inline-start" },
   padding: 96,
-  fonts: ["./public/fonts/Inter-Bold.ttf"],
+  // Build-time only, and deliberately not under `public/`, where the starter
+  // puts it: this path is resolved from the project root when the cards are
+  // rasterized, and nothing ever requests the file over HTTP. Left in `public/`
+  // it is copied into `dist/` and deployed -- 420 kB in the asset store that no
+  // page links to. The rendered cards are byte-identical either way.
+  fonts: ["./fonts/Inter-Bold.ttf"],
   font: {
     title: {
       color: [242, 247, 253],
