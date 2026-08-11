@@ -1,9 +1,12 @@
 {
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
-    "baseUrl": ".",
+    // No `baseUrl`: it is deprecated as of TypeScript 6 and `tsc` errors on it
+    // outright (ts/5101), which `nimbus-docs check --types` surfaces even though
+    // `astro check` does not. Since TypeScript 4.4 `paths` resolves relative to
+    // the file it is declared in, so the alias works without it.
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [".astro/types.d.ts", "**/*"],
