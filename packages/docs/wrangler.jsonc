@@ -14,7 +14,7 @@
 		// redirects the non-slashed form instead of 404ing.
 		"html_handling": "auto-trailing-slash",
 
-		// A missing page should render Starlight's styled 404, not the bare
+		// A missing page should render the site's own 404, not the bare
 		// asset-store one.
 		"not_found_handling": "404-page"
 	}
