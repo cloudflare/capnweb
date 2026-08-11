@@ -26,8 +26,8 @@
       "code_blocks": false
     },
 
-    // Starlight takes each page's title from `title` in the frontmatter and
-    // renders it as the h1, so a document that opens with an h1 of its own
+    // The docs site takes each page's title from `title` in the frontmatter
+    // and renders it as the h1, so a document that opens with an h1 of its own
     // would render two. markdownlint's own frontmatter-title escape hatch
     // covers this, and is the default, but is stated here because the reason
     // is not obvious from the outside.

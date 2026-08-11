@@ -38,7 +38,9 @@ before it shows up on an examples page. `npm run dev:docs` at the root does both
 
 ## File layout
 
-```
+Where things are, and what each one is for:
+
+```text
 astro.config.ts              # nimbus(defineNimbusConfig({...})): sidebar, lint rules, markdown plugins
 nimbus.json                  # what the scaffold and the registry installed. Committed.
 .nimbus/                     # build scratch: materialized lint config, route manifest. Gitignored.
@@ -102,19 +104,19 @@ what it is first.
 
 ## Adding things
 
-| Goal                     | Action                                                                                                     |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------- |
-| New doc page             | `src/content/docs/<group>/<slug>.md`, with `sidebar.order`. The group autogenerates.                       |
-| New sidebar group        | A directory under `src/content/docs/` and an `autogenerate` entry in `astro.config.ts`.                    |
-| New partial              | `src/content/partials/<slug>.mdx` (the collection is registered; there are none yet), then `<Render file="<slug>" />`. |
-| UI from the registry     | `npx nimbus-docs add <slug>`, then register it in `src/components.ts` if MDX uses it.                      |
-| New playground example   | An entry in `src/examples.ts` (`files` and `build`), and a page under `src/content/docs/examples/`.         |
-| Custom page route        | A file under `src/pages/`.                                                                                 |
-| OG card restyle          | `src/pages/og/_og-card-config.ts`.                                                                         |
-| Check it builds          | `npx nimbus-docs check` -- build-free preflight. `--json` for an agent loop, `--fix` to repair what's safe. |
-| Check for updates        | `npx nimbus-docs outdated` -- starter files behind their tag, registry components behind.                   |
-| Review an upstream change| `npx nimbus-docs diff <file>`, then `diff --apply <file>`.                                                 |
-| Update a registry item   | `npx nimbus-docs add <slug> --overwrite`, then read `git diff`.                                             |
+| Goal                      | Action                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| New doc page              | `src/content/docs/<group>/<slug>.md`, with `sidebar.order`. The group autogenerates.                                   |
+| New sidebar group         | A directory under `src/content/docs/` and an `autogenerate` entry in `astro.config.ts`.                                |
+| New partial               | `src/content/partials/<slug>.mdx` (the collection is registered; there are none yet), then `<Render file="<slug>" />`. |
+| UI from the registry      | `npx nimbus-docs add <slug>`, then register it in `src/components.ts` if MDX uses it.                                  |
+| New playground example    | An entry in `src/examples.ts` (`files` and `build`), and a page under `src/content/docs/examples/`.                    |
+| Custom page route         | A file under `src/pages/`.                                                                                             |
+| OG card restyle           | `src/pages/og/_og-card-config.ts`.                                                                                     |
+| Check it builds           | `npx nimbus-docs check` -- build-free preflight. `--json` for an agent loop, `--fix` to repair what's safe.            |
+| Check for updates         | `npx nimbus-docs outdated` -- starter files behind their tag, registry components behind.                              |
+| Review an upstream change | `npx nimbus-docs diff <file>`, then `diff --apply <file>`.                                                             |
+| Update a registry item    | `npx nimbus-docs add <slug> --overwrite`, then read `git diff`.                                                        |
 
 `npx nimbus-docs list` shows what is installable.
 
