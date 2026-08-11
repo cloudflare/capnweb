@@ -180,10 +180,11 @@ const demoSrc = `${example.demoPath}?embed=1`;
 <style>
 	/* Editor colours, kept as their own small palette rather than reusing the
 	   site tokens: the panes should read as a tool embedded in the page, not as
-	   more page. `--pg-bg` has to stay exactly the code theme's background
-	   (github-dark / github-light) or the active tab will not sit flush against
-	   the code block below it. Everything around it is retinted to the site's
-	   blue-black so the tool still belongs here.
+	   more page. `--pg-bg` is the editor body: the stage paints it and the code
+	   block inside is stripped back to transparent, so the active tab and the
+	   code below it are the same fill by construction, which is what makes the
+	   tab look attached rather than stuck on. Everything around it is retinted
+	   to the site's blue-black so the tool still belongs here.
 
 	   Keyed off `data-theme`, which BaseLayout writes explicitly as light or dark
 	   for exactly this kind of consumer -- the frames read it too. Nimbus's own
@@ -328,32 +329,66 @@ const demoSrc = `${example.demoPath}?embed=1`;
 	}
 
 	/* Strip the code block's own frame. It is already inside one, and the
-	   doubled border and radius is what made this look like a widget rather
-	   than an editor. */
-	.capn-panel :global(.expressive-code) {
-		flex: 1;
-		min-height: 0;
-		display: flex;
-	}
+	   doubled border, radius and margin is what made this look like a widget
+	   rather than an editor -- and the tab strip only looks attached if the
+	   active tab meets the code itself rather than a gap above an inset panel.
 
-	.capn-panel :global(.expressive-code figure) {
+	   `.nb-code-figure` is Nimbus's wrapper around every Shiki block. The
+	   figure has to become the pane's flex column and give up its `overflow:
+	   hidden`, and the `<pre>` inside it has to be the thing that scrolls: left
+	   as it comes, the figure clips a file at the pane's height and the rest of
+	   it is unreachable. */
+	.capn-panel :global(.nb-code-figure) {
 		display: flex;
 		flex-direction: column;
+		flex: 1;
 		min-height: 0;
 		width: 100%;
+		margin: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
 		box-shadow: none;
+		/* The figure is the copy button's positioning ancestor, so it keeps
+		   `position: relative` from the base rule. */
+		overflow: visible;
 	}
 
-	.capn-panel :global(.expressive-code figcaption) {
+	.capn-panel :global(.nb-code-figure > pre.astro-code) {
+		flex: 1;
+		min-height: 0;
+		/* Both axes: a source file is not wrapped, and the pane is narrower
+		   than the lines in it. */
+		overflow: auto;
+		margin: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		/* Undo the room made for the language badge, which is suppressed
+		   below. */
+		padding-top: 0.75rem;
+	}
+
+	/* No language badge in here. It labels a block that appears in prose with
+	   no other indication of what it is; in the stage the tab above already
+	   names the file, and a chip floating over the first line of a source pane
+	   reads as a rendering fault. */
+	.capn-panel :global(.nb-code-figure)::before {
 		display: none;
 	}
 
-	.capn-panel :global(.expressive-code pre) {
-		flex: 1;
-		min-height: 0;
-		overflow: auto;
-		border: 0;
-		border-radius: 0;
+	/* The copy button is worth keeping -- it is a source pane -- but not in the
+	   site's colours: retint it to the editor palette like everything else in
+	   here. */
+	.capn-panel :global(.nb-code-copy) {
+		border-color: var(--pg-border);
+		background: var(--pg-bar);
+		color: var(--pg-fg-muted);
+	}
+
+	.capn-panel :global(.nb-code-copy:hover) {
+		background: var(--pg-bar);
+		color: var(--pg-fg);
 	}
 
 	/* --- preview --- */
