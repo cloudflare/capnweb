@@ -8,6 +8,7 @@
 import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
 import BaseLayout from "./BaseLayout.astro";
 import Header from "@/components/Header.astro";
+import GraphBackdrop from "@/components/GraphBackdrop.astro";
 import { Banner } from "@/components/ui/banner";
 import { Sidebar, SidebarFilter } from "@/components/ui/sidebar";
 import { TOC, MobileTOC } from "@/components/ui/toc";
@@ -75,6 +76,9 @@ const hasPagination = Astro.slots.has("pagination");
 ---
 
 <BaseLayout title={title} description={description} noindex={noindex || draft} markdownUrl={markdownUrl} socialImage={socialImage} lastUpdated={lastUpdated} head={head} collection={collection} entryId={entryId}>
+  {/* The node field, behind everything. Doc pages only: a custom page paints
+      its own field behind the hero, and two would fight. */}
+  {!isCustom && <GraphBackdrop />}
   <div class="flex flex-col min-h-screen">
     {hasHeader ? <slot name="header" /> : <Header collection={collection} entryId={entryId} showSidebar={showSidebar} />}
 
@@ -86,7 +90,7 @@ const hasPagination = Astro.slots.has("pagination");
       <div class="flex-1 mx-auto w-full">
         <div class="flex">
           {showSidebar && (
-            <aside id="desktop-sidebar" data-nb-desktop-sidebar class="hidden lg:flex w-(--nb-sidebar-width) shrink-0 border-r border-border bg-background sticky top-14 h-[calc(100vh-3.5rem)] flex-col overflow-y-auto overscroll-contain relative">
+            <aside id="desktop-sidebar" data-nb-desktop-sidebar class="hidden lg:flex w-(--nb-sidebar-width) shrink-0 border-r border-border sticky top-14 h-[calc(100vh-3.5rem)] flex-col overflow-y-auto overscroll-contain relative">
               {hasSidebar ? (
                 <slot name="sidebar" />
               ) : (
@@ -162,7 +166,7 @@ const hasPagination = Astro.slots.has("pagination");
           </script>
           )}
 
-          <main id="main-content" class="flex-1 min-w-0">
+          <main id="main-content" class="flex-1 min-w-0" data-cw-sheet>
             <div class="mx-auto max-w-(--nb-content-max) px-4 lg:px-6 pt-6 pb-12">
               {versionStatus?.isDeprecated && (
                 <Banner

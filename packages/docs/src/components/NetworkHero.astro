@@ -23,6 +23,10 @@ import Constellation from './Constellation.astro';
 	.cw-hero-field {
 		position: absolute;
 		inset: 0 0 auto 0;
+		/* Behind the hero's own copy, and behind whatever follows the hero on the
+		   page: the field overhangs the section it lives in, and without this it
+		   would paint over the top of the first paragraphs. */
+		z-index: -1;
 		/* Taller than the hero itself so the field is still going behind the
 		   first band of prose, then taken out by the veil's mask. */
 		height: min(46rem, 108vh);

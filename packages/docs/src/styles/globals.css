@@ -18,55 +18,111 @@
  *     `shadow-lg`, etc. as color names — they collide with built-ins)
  * ============================================================ */
 
-/* ---- Light mode (default) ---- */
+/* ---- Palette -------------------------------------------------------------
+ * Cap'n Web's own colours. A near-black with a blue undertone -- never a
+ * neutral grey -- carrying a deep saturated blue as its structural colour, an
+ * electric azure for anything interactive, and Cloudflare orange used only as
+ * a spark: the pulses in the hero, the primary call to action, and the marker
+ * on the current page. Three places, deliberately. The moment orange appears
+ * on a fourth it stops meaning anything.
+ *
+ * Kept as hex rather than converted to oklch: these are measured, tuned values
+ * carried over from the theme this replaced, and a round trip through another
+ * colour space would move them for no gain.
+ *
+ * Dark is the scheme the site was designed in; light is a genuine second
+ * scheme rather than an inversion. Which one loads is decided by the bootstrap
+ * in BaseLayout: a stored choice wins, and failing that the OS decides, with
+ * dark as the answer when the OS expresses no preference.
+ */
+:root {
+	/* Neutral spine. Blue-cast blacks, so the interface never looks like it is
+	   sitting on dead grey next to the saturated hero. */
+	--cw-black: #04070e;
+	--cw-ink-900: #070b16;
+	--cw-ink-800: #0a1120;
+	--cw-ink-700: #0e1729;
+	--cw-ink-600: #142238;
+	--cw-ink-500: #1c3050;
+	--cw-ink-400: #2a4166;
+
+	/* Deep saturated blue: the structural hue. */
+	--cw-blue-900: #05203f;
+	--cw-blue-800: #073a6b;
+	--cw-blue-700: #0a5292;
+	--cw-blue-600: #0d6cbd;
+	--cw-blue-500: #1487e0;
+	--cw-blue-400: #38a5f5;
+	--cw-blue-300: #6cc2fb;
+	--cw-blue-200: #a5dbfd;
+	--cw-blue-100: #d4eeff;
+
+	/* The spark. Used in three places; see the note above. */
+	--cw-orange: #f6821f;
+	--cw-orange-bright: #ff9a3d;
+	--cw-orange-deep: #b85f14;
+}
+
+/* ---- Light mode ---- */
 :root {
 	color-scheme: light;
 
-	/* Surfaces (paired with foregrounds for contrast) */
-	--nb-background: oklch(0.99 0 0);
-	--nb-foreground: oklch(0.21 0 0);
+	/* Surfaces. `--nb-background` is the content sheet; `--cw-ground` is the
+	   darker field it rests on, which is where the node backdrop shows. */
+	--nb-background: #ffffff;
+	--nb-foreground: #0d1a2b;
 
-	--nb-card: oklch(1 0 0);
+	--nb-card: #f4f8fc;
 	--nb-card-foreground: var(--nb-foreground);
 
-	--nb-muted: oklch(0.967 0 0);
-	--nb-muted-foreground: oklch(0.556 0 0);
+	--nb-muted: #eaf2fa;
+	--nb-muted-foreground: #56687f;
 
-	--nb-accent: oklch(0.967 0 0);
-	--nb-accent-foreground: var(--nb-foreground);
+	--nb-accent: #eaf2fa;
+	--nb-accent-foreground: #060d18;
 
-	/* Primary action / brand */
-	--nb-primary: oklch(0.145 0 0);
-	--nb-primary-foreground: oklch(0.97 0 0);
-	--nb-primary-hover: oklch(0.371 0 0);
+	/* Primary is the interactive azure, not the orange: it colours links and
+	   hover states all over the page, and orange has to stay rare to mean
+	   anything. The one orange button is the hero's, set in Hero.astro. */
+	--nb-primary: var(--cw-blue-700);
+	--nb-primary-foreground: #ffffff;
+	--nb-primary-hover: var(--cw-blue-600);
 
-	/* Borders / focus */
-	--nb-border: oklch(0.935 0 0);
-	--nb-border-strong: oklch(0.87 0 0);
-	--nb-selected: oklch(0.89 0 0);
-	--nb-ring: oklch(0.145 0 0 / 0.35);
+	--nb-border: rgba(12, 48, 90, 0.2);
+	--nb-border-strong: rgba(12, 48, 90, 0.34);
+	--nb-selected: rgba(12, 48, 90, 0.12);
+	--nb-ring: rgba(10, 82, 146, 0.45);
 
-	/* Status colors — paired (saturated for text/border + muted for bg) */
-	--nb-info: oklch(0.45 0.18 255);
-	--nb-info-foreground: oklch(0.45 0.18 255);
-	--nb-info-muted: oklch(0.965 0.015 255);
+	/* Status triples, in the same hues the asides used before. Caution is amber
+	   rather than Cloudflare orange, deliberately: orange means one specific
+	   thing here, and a warning aside is not it. */
+	--nb-info: #0a5292;
+	--nb-info-foreground: #063254;
+	--nb-info-muted: #d8e9f8;
 
-	--nb-success: oklch(0.42 0.14 152);
-	--nb-success-foreground: oklch(0.42 0.14 152);
-	--nb-success-muted: oklch(0.965 0.015 152);
+	--nb-success: #0d6d5b;
+	--nb-success-foreground: #054034;
+	--nb-success-muted: #d5f2ea;
 
-	--nb-warning: oklch(0.48 0.15 65);
-	--nb-warning-foreground: oklch(0.48 0.15 65);
-	--nb-warning-muted: oklch(0.97 0.02 70);
+	--nb-warning: #96580c;
+	--nb-warning-foreground: #573208;
+	--nb-warning-muted: #fbebd5;
 
-	--nb-danger: oklch(0.47 0.18 25);
-	--nb-danger-foreground: oklch(0.47 0.18 25);
-	--nb-danger-muted: oklch(0.965 0.015 25);
+	--nb-danger: #b32a20;
+	--nb-danger-foreground: #6d1610;
+	--nb-danger-muted: #fbdedb;
 
 	/* Layout */
 	--nb-sidebar-width: 18.75rem;
 	--nb-toc-width: 18rem;
 	--nb-content-max: 43.5rem;
+	/*
+	 * The landing page's column. It has no rails to share the viewport with, and
+	 * it carries two code samples side by side that a doc-page measure would
+	 * crush, so it is wider than `--nb-content-max` -- and one value, shared by
+	 * the hero and the prose under it, so both have the same left edge.
+	 */
+	--cw-landing-max: 68rem;
 
 	/* Typography — self-hosted via @fontsource-variable in BaseLayout.astro */
 	--nb-font-sans:
@@ -76,8 +132,8 @@
 		"JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code",
 		"Source Code Pro", Menlo, Consolas, monospace;
 	--nb-h1-size: 2.1875rem;
-	--nb-h1-weight: 600;
-	--nb-h1-tracking: -0.025em;
+	--nb-h1-weight: 640;
+	--nb-h1-tracking: -0.03em;
 	--nb-h2-size: 1.3rem;
 	--nb-h2-weight: 650;
 	--nb-h2-tracking: -0.015em;
@@ -86,10 +142,36 @@
 	--nb-h3-tracking: -0.01em;
 	--nb-h4-weight: 600;
 
-	/* Shadows */
-	--nb-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.04);
-	--nb-shadow: 0 1px 3px oklch(0 0 0 / 0.06), 0 1px 2px oklch(0 0 0 / 0.04);
-	--nb-shadow-lg: 0 4px 12px oklch(0 0 0 / 0.08), 0 2px 4px oklch(0 0 0 / 0.04);
+	/* Depth. The page is a sheet lifted off a textured ground. */
+	--nb-shadow-sm: 0 1px 2px rgba(13, 38, 76, 0.08);
+	--nb-shadow: 0 1px 2px rgba(13, 38, 76, 0.07), 0 6px 16px -8px rgba(13, 38, 76, 0.2);
+	--nb-shadow-lg: 0 1px 3px rgba(13, 38, 76, 0.08), 0 18px 38px -22px rgba(13, 38, 76, 0.35);
+
+	/* --- Ours, read by the page shell and by the constellation --- */
+
+	/* The ground the sheet rests on, and the chrome, which is a different
+	   material again: dark chrome over a white document would read as a
+	   screenshot of two different sites. */
+	--cw-ground: #e6edf6;
+	--cw-chrome: #dfe8f4;
+
+	/* Two soft washes under the node field, so the field has something to sit
+	   on and the page is a sheet resting on a space rather than two flat fills
+	   meeting at a line. */
+	--cw-wash-1: rgba(20, 135, 224, 0.1);
+	--cw-wash-2: rgba(246, 130, 31, 0.05);
+
+	/* Read by the constellation renderer as well as by its CSS. */
+	--cw-graph-node: var(--cw-blue-700);
+	--cw-graph-edge: var(--cw-blue-600);
+	--cw-graph-edge-alpha: 0.17;
+	--cw-graph-pulse: var(--cw-orange-deep);
+
+	--cw-hero-bg-inner: #d5e8fa;
+	--cw-hero-bg-outer: #eef3f9;
+	--cw-hero-title: linear-gradient(180deg, #0a1628 0%, #0a5292 116%);
+
+	--cw-radius: 0.625rem;
 }
 
 /* Wider content area on large displays (e.g. MacBook Pro 16″) */
@@ -103,46 +185,65 @@
 [data-mode="dark"] {
 	color-scheme: dark;
 
-	--nb-background: oklch(0.085 0 0);
-	--nb-foreground: oklch(0.97 0 0);
+	--nb-background: var(--cw-ink-900);
+	--nb-foreground: #dbe7f5;
 
-	--nb-card: #0F0F0F;
+	--nb-card: var(--cw-ink-800);
 	--nb-card-foreground: var(--nb-foreground);
 
-	--nb-muted: #060606;
-	--nb-muted-foreground: oklch(0.556 0 0);
+	--nb-muted: var(--cw-black);
+	--nb-muted-foreground: #8299b6;
 
-	--nb-accent: oklch(0.269 0 0);
-	--nb-accent-foreground: var(--nb-foreground);
+	--nb-accent: var(--cw-ink-700);
+	--nb-accent-foreground: #f2f7fd;
 
-	--nb-primary: oklch(0.9 0 0);
-	--nb-primary-foreground: oklch(0.085 0 0);
-	--nb-primary-hover: oklch(0.7 0 0);
+	--nb-primary: var(--cw-blue-400);
+	--nb-primary-foreground: var(--cw-black);
+	--nb-primary-hover: var(--cw-blue-300);
 
-	--nb-border: oklch(0.269 0 0);
-	--nb-border-strong: oklch(0.371 0 0);
-	--nb-selected: oklch(0.371 0 0);
-	--nb-ring: oklch(0.9 0 0 / 0.35);
+	--nb-border: rgba(120, 170, 230, 0.2);
+	--nb-border-strong: rgba(120, 170, 230, 0.34);
+	--nb-selected: rgba(120, 170, 230, 0.16);
+	--nb-ring: rgba(56, 165, 245, 0.5);
 
-	--nb-info: oklch(0.75 0.12 255);
-	--nb-info-foreground: oklch(0.75 0.12 255);
-	--nb-info-muted: oklch(0.17 0.03 260);
+	--nb-info: #1e6feb;
+	--nb-info-foreground: #8cc2ff;
+	--nb-info-muted: #071d3d;
 
-	--nb-success: oklch(0.72 0.12 150);
-	--nb-success-foreground: oklch(0.72 0.12 150);
-	--nb-success-muted: oklch(0.17 0.025 153);
+	--nb-success: #12866f;
+	--nb-success-foreground: #6ee7c8;
+	--nb-success-muted: #04231d;
 
-	--nb-warning: oklch(0.78 0.11 80);
-	--nb-warning-foreground: oklch(0.78 0.11 80);
-	--nb-warning-muted: oklch(0.19 0.03 70);
+	--nb-warning: #b26a12;
+	--nb-warning-foreground: #f5c37a;
+	--nb-warning-muted: #2b1a04;
 
-	--nb-danger: oklch(0.72 0.14 25);
-	--nb-danger-foreground: oklch(0.72 0.14 25);
-	--nb-danger-muted: oklch(0.17 0.03 25);
+	--nb-danger: #c2372c;
+	--nb-danger-foreground: #ff9d94;
+	--nb-danger-muted: #2d0b08;
 
-	--nb-shadow-sm: 0 1px 2px oklch(0 0 0 / 0.2);
-	--nb-shadow: 0 1px 3px oklch(0 0 0 / 0.3), 0 1px 2px oklch(0 0 0 / 0.2);
-	--nb-shadow-lg: 0 4px 12px oklch(0 0 0 / 0.4), 0 2px 4px oklch(0 0 0 / 0.2);
+	--nb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+	--nb-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 18px -8px rgba(0, 0, 0, 0.7);
+	--nb-shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.6), 0 18px 40px -22px rgba(0, 0, 0, 0.9);
+
+	--cw-ground: var(--cw-black);
+	--cw-chrome: #05080f;
+
+	--cw-wash-1: rgba(20, 135, 224, 0.1);
+	--cw-wash-2: rgba(246, 130, 31, 0.045);
+
+	--cw-graph-node: var(--cw-blue-300);
+	--cw-graph-edge: var(--cw-blue-500);
+	/* The dark field sits on near-black, where a hairline at the light field's
+	   strength all but disappears, so the lines are drawn considerably harder. */
+	--cw-graph-edge-alpha: 0.46;
+	/* The round-trip pulse, muted well below `--cw-orange`: this is decoration
+	   behind text, and orange is reserved for things to act on. */
+	--cw-graph-pulse: #d9832f;
+
+	--cw-hero-bg-inner: #072041;
+	--cw-hero-bg-outer: var(--cw-black);
+	--cw-hero-title: linear-gradient(180deg, #ffffff 0%, #a5dbfd 108%);
 }
 
 /* ---- Tailwind theme mapping ----
@@ -199,10 +300,92 @@
 html {
 	font-family: var(--nb-font-sans);
 	font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+	/*
+	 * Reserve the scrollbar's width whether or not the page needs one. Without
+	 * this, navigating from a page that scrolls to one that does not widens the
+	 * viewport by the scrollbar and every centred thing on the page jumps.
+	 */
+	scrollbar-gutter: stable;
 }
 
 body {
 	opacity: 1;
+	/*
+	 * The ground, not the sheet. BaseLayout deliberately leaves `bg-background`
+	 * off the body: the node field is fixed behind everything at `z-index: -1`,
+	 * which paints over the body's own background but under every element, so
+	 * the field is visible exactly where the page paints nothing.
+	 */
+	background-color: var(--cw-ground);
+}
+
+/*
+ * Ground wash, under the node field: two soft gradients, fixed, so they do not
+ * scroll with the content and cannot be hit by the pointer.
+ */
+body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: -2;
+	pointer-events: none;
+	background-image:
+		radial-gradient(58rem 34rem at 8% -8%, var(--cw-wash-1), transparent 68%),
+		radial-gradient(46rem 30rem at 104% 4%, var(--cw-wash-2), transparent 66%);
+}
+
+/*
+ * The landing page paints its own field edge to edge behind the hero, so the
+ * ground behind it would only muddy that canvas. The ground is set to the
+ * field's own outer colour as well, so where the field's veil finishes fading it
+ * meets the same value instead of stepping onto a different one.
+ */
+body:has(.cw-hero-field)::before {
+	display: none;
+}
+
+body:has(.cw-hero-field) {
+	background-color: var(--cw-hero-bg-outer);
+}
+
+/*
+ * The navigation rail is chrome: opaque, and a shade off the sheet. The table of
+ * contents on the other side is left transparent, so the node field shows
+ * through it -- but the nav is dense enough that a field behind it crosses the
+ * labels, and legibility wins over the effect.
+ */
+[data-nb-desktop-sidebar] {
+	background-color: var(--cw-chrome);
+}
+
+/*
+ * The content column on a doc page is a sheet lifted off the ground. The two
+ * rails stay transparent, which is where the node field shows: it is the one
+ * thing on the page that is meant to be seen through the layout rather than in
+ * it. Below the sidebar breakpoint there are no rails to speak of, so the sheet
+ * is edge to edge and the border would just be a line at the viewport edge.
+ */
+[data-cw-sheet] {
+	background-color: var(--nb-background);
+}
+
+@media (min-width: 64rem) {
+	[data-cw-sheet] {
+		border-top: 1px solid var(--nb-border);
+		border-inline: 1px solid var(--nb-border);
+		border-start-start-radius: var(--cw-radius);
+		border-start-end-radius: var(--cw-radius);
+		min-height: calc(100vh - 3.5rem);
+		box-shadow: var(--nb-shadow-lg);
+	}
+}
+
+/*
+ * Current page in the sidebar. The second of the three places orange appears:
+ * a bar in the margin, not a colour on the text, so the label stays readable.
+ */
+[data-nb-sidebar-link][aria-current="page"] {
+	box-shadow: inset 2px 0 0 var(--cw-orange);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -390,7 +573,6 @@ pre.astro-code span {
 	letter-spacing: 0.02em;
 	text-transform: uppercase;
 	pointer-events: none;
-	opacity: 0.75;
 	transition: opacity 0.15s ease;
 	z-index: 1;
 }
@@ -403,6 +585,24 @@ pre.astro-code span {
 .nb-code-figure[data-nb-lang="plain"]::before,
 .nb-code-figure[data-nb-lang="txt"]::before {
 	display: none;
+}
+
+/*
+ * Give the badge a row of its own. Pinned over the code it works until a first
+ * line is long enough to pass under it, which on this site is often: the badge
+ * fades on hover, so the text is recoverable, but a chip sitting on top of the
+ * code reads as a rendering fault rather than a label.
+ */
+.nb-code-figure[data-nb-lang]:not(.nb-code-figure-titled) > pre.astro-code {
+	padding-top: 1.625rem;
+}
+
+/* Nothing to make room for where the badge is suppressed. */
+.nb-code-figure[data-nb-lang="text"] > pre.astro-code,
+.nb-code-figure[data-nb-lang="plaintext"] > pre.astro-code,
+.nb-code-figure[data-nb-lang="plain"] > pre.astro-code,
+.nb-code-figure[data-nb-lang="txt"] > pre.astro-code {
+	padding-top: 0.75rem;
 }
 
 /* Block-level lines so tints + gutters paint across the full row. */

@@ -50,7 +50,10 @@ const llmsUrl = Astro.site
     <script>
       (() => {
         const KEY = "ui-mode";
-        const media = window.matchMedia("(prefers-color-scheme: dark)");
+        // Queried the other way round on purpose: the site is designed dark, so
+        // "no preference" resolves to dark rather than light. A stored choice
+        // still wins over both.
+        const media = window.matchMedia("(prefers-color-scheme: light)");
 
         const readPref = () => {
           try {
@@ -61,13 +64,20 @@ const llmsUrl = Astro.site
           }
         };
 
-        const resolveMode = () => readPref() ?? (media.matches ? "dark" : "light");
+        const resolveMode = () => readPref() ?? (media.matches ? "light" : "dark");
 
         const applyTheme = () => {
           const root = document.documentElement;
           const mode = resolveMode();
           if (mode === "dark") root.setAttribute("data-mode", "dark");
           else root.removeAttribute("data-mode");
+          // Published for same-origin embeds: the example playgrounds read the
+          // embedding page's `data-theme` before their first paint, so there is
+          // no flash of the wrong scheme inside the frame. They cannot read
+          // `data-mode`, which is absent rather than "light" in light mode, and
+          // an attribute that only exists half the time cannot be read
+          // positively by a document that may load either way round.
+          root.dataset.theme = mode;
           root.style.colorScheme = mode;
           document.querySelectorAll("[data-nb-theme-toggle]").forEach((b) => {
             b.setAttribute("data-nb-state", mode);
@@ -98,7 +108,9 @@ const llmsUrl = Astro.site
       entryId={entryId}
     />
   </head>
-  <body class="min-h-screen bg-background text-foreground antialiased">
+  <!-- No `bg-background` here: the body paints the ground (see globals.css) and
+       the content sheet paints itself, so the node field has somewhere to show. -->
+  <body class="min-h-screen text-foreground antialiased">
     <a
       href="#main-content"
       class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-100 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:no-underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"

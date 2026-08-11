@@ -17,6 +17,7 @@ import { Tabs, TabItem } from './components/ui/tabs';
 // Ours, not Nimbus's.
 import Hero from './components/Hero.astro';
 import Playground from './components/Playground.astro';
+import Prose from './components/Prose.astro';
 
 export const components = {
 	Aside,
@@ -26,6 +27,7 @@ export const components = {
 	LinkCard,
 	PackageManagers,
 	Playground,
+	Prose,
 	Render,
 	Step,
 	Steps,

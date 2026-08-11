@@ -21,9 +21,21 @@ interface Props {
 const { title, tagline } = Astro.props;
 ---
 
-<section class="relative isolate overflow-hidden">
+{/*
+	`relative` and nothing else. Two things this section must not do:
+
+	`overflow-hidden` would clip the field, which is deliberately taller than the hero -- it runs on
+	behind the first band of prose and is dissolved by its own veil -- and clipping it put a hard
+	seam across the page where the two backgrounds met.
+
+	`isolate` would make this section a stacking context, and a stacking context is painted as one
+	unit in the positioned layer: the field's `z-index: -1` would then be measured against the
+	section rather than the page, and the whole section, field included, would paint over the prose
+	that follows it.
+*/}
+<section class="relative">
 	<NetworkHero />
-	<div class="relative mx-auto w-full max-w-(--nb-content-max) px-4 pt-16 pb-14 lg:px-6 lg:pt-24 lg:pb-20">
+	<div class="relative mx-auto w-full max-w-(--cw-landing-max) px-4 pt-16 pb-14 lg:px-6 lg:pt-24 lg:pb-20">
 		<h1
 			class="cw-hero-title max-w-3xl text-5xl leading-[1.05] font-bold tracking-tight text-balance sm:text-6xl lg:text-7xl"
 		>
@@ -33,7 +45,21 @@ const { title, tagline } = Astro.props;
 			{tagline}
 		</p>
 		<div class="mt-9 flex flex-wrap items-center gap-x-5 gap-y-3">
-			<LinkButton href="/start/quickstart/" variant="primary" size="lg" icon>Get started</LinkButton>
+			{/*
+				The third and last place orange appears. `cn()` merges through
+				tailwind-merge and the consumer class wins, so these override the
+				primary variant's `bg-primary` / `text-primary-foreground` /
+				`hover:bg-primary-hover` without touching the shared variant.
+			*/}
+			<LinkButton
+				href="/start/quickstart/"
+				variant="primary"
+				size="lg"
+				icon
+				class="bg-[var(--cw-orange)] font-[620] text-[#180a02] ring-[6px] ring-[rgba(246,130,31,0)] transition-[background-color,box-shadow] hover:bg-[var(--cw-orange-bright)] hover:text-[#180a02] hover:ring-[rgba(246,130,31,0.14)]"
+			>
+				Get started
+			</LinkButton>
 			<LinkButton
 				href="https://github.com/cloudflare/capnweb"
 				variant="minimal"
@@ -49,18 +75,24 @@ const { title, tagline } = Astro.props;
 
 <style>
 	/*
-	 * The one piece of colour the hero title does not take from a token: a vertical wash from the
-	 * foreground into the accent, which is what makes the headline read as the brightest thing on
-	 * the page without simply being the largest.
+	 * A vertical wash from the foreground into the accent, which is what makes the headline read as
+	 * the brightest thing on the page without simply being the largest. The whole gradient is one
+	 * token because its final stop sits past 100% -- the box ends part-way along it -- and that is
+	 * per-scheme, so it cannot be reduced to two colour tokens.
 	 */
 	.cw-hero-title {
-		background: linear-gradient(
-			175deg,
-			var(--cw-hero-title-top) 0%,
-			var(--cw-hero-title-bottom) 78%
-		);
+		background-image: var(--cw-hero-title);
 		-webkit-background-clip: text;
 		background-clip: text;
 		color: transparent;
+		-webkit-text-fill-color: transparent;
+	}
+
+	/* Without `background-clip: text` the fill would leave the headline invisible. */
+	@supports not ((background-clip: text) or (-webkit-background-clip: text)) {
+		.cw-hero-title {
+			color: var(--nb-foreground);
+			-webkit-text-fill-color: currentColor;
+		}
 	}
 </style>

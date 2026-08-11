@@ -139,7 +139,8 @@ const demoSrc = `${example.demoPath}?embed=1`;
 	}
 
 	// Keep the demo on the docs theme. The frame reads the initial value itself on
-	// the way up; this only has to push later toggles, which avoids a reload.
+	// the way up (BaseLayout's `data-theme`); this only has to push later toggles,
+	// which avoids a reload.
 	const frames = document.querySelectorAll<HTMLIFrameElement>('.capn-preview iframe');
 	if (frames.length) {
 		// A toggle in the docs is pushed straight through to the frame, which flips
@@ -166,7 +167,12 @@ const demoSrc = `${example.demoPath}?embed=1`;
 		--nb-content-max: 100%;
 	}
 
-	.docs-content > *:not(.capn-stage) {
+	/* Guarded by the same `:has` as the width above, and for a sharper reason
+	   than symmetry: `is:global` styles are hoisted into the route's shared
+	   stylesheet, so every page built by `[...slug].astro` loads this rule
+	   whether or not it has a stage. Unguarded, it capped the landing page's
+	   prose at a measure meant for a page with a playground on it. */
+	:root:has(.capn-stage) .docs-content > *:not(.capn-stage) {
 		max-width: 47rem;
 	}
 </style>
@@ -179,8 +185,10 @@ const demoSrc = `${example.demoPath}?embed=1`;
 	   the code block below it. Everything around it is retinted to the site's
 	   blue-black so the tool still belongs here.
 
-	   Starlight always writes an explicit `data-theme`, so a dark default plus
-	   one light override covers every case. */
+	   Keyed off `data-theme`, which BaseLayout writes explicitly as light or dark
+	   for exactly this kind of consumer -- the frames read it too. Nimbus's own
+	   `data-mode` is absent in light mode, so a dark default plus one light
+	   override would not be expressible against it. */
 	.capn-stage {
 		--pg-bg: #0d1117;
 		--pg-bar: #05080f;

@@ -1,0 +1,17 @@
+---
+/**
+ * The prose container a `mode: custom` page has to bring itself.
+ *
+ * `mode: custom` gives the page a bare `<main>`: no sidebar, no table of contents, and -- the part
+ * that is easy to miss -- no `.docs-content` wrapper and no width cap either. Every prose rule in
+ * `styles/prose.css` is scoped to `.docs-content`, so without this the landing page's body text
+ * renders unstyled and edge to edge.
+ *
+ * The width is `--cw-landing-max`, the same token the hero uses, so the two share a left edge; it
+ * is wider than a doc page's measure because this page carries two code samples side by side.
+ */
+---
+
+<div class="docs-content mx-auto w-full max-w-(--cw-landing-max) px-4 pt-10 pb-20 lg:px-6">
+	<slot />
+</div>
