@@ -1,5 +1,11 @@
 # capnweb-validate
 
+## 0.2.4
+
+### Patch Changes
+
+- [#240](https://github.com/cloudflare/capnweb/pull/240) [`f7f7fa8`](https://github.com/cloudflare/capnweb/commit/f7f7fa87a182356614b43bae594c20c8e0136838) Thanks [@Maximo-Guk](https://github.com/Maximo-Guk)! - Ship `typescript` as a dependency (`>=5.7.0 <7`) instead of an uncapped peer, so the build-time transform keeps a JS-based compiler API in TypeScript 7 (tsgo) workspaces.
+
 ## 0.2.3
 
 ### Patch Changes
