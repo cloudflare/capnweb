@@ -269,22 +269,25 @@ Whenever an `RpcPromise` is passed in the parameters to an RPC, or returned as p
 
 #### Constructing `RpcPromise` from a `Promise`
 
-You can construct an `RpcPromise` yourself from a regular `Promise` (or any other thenable), using `new RpcPromise(promise)`. The result supports pipelining immediately: calls made before the promise settles are queued and delivered, in order, once it does, while awaiting it yields the promise's resolution. The promise may resolve to an `RpcTarget`, a stub, or a plain value; if it rejects, queued calls and `await`s fail with the rejection error, and `onRpcBroken()` callbacks are invoked.
+You can construct an `RpcPromise<T>` directly from a regular `Promise<T>`, allowing you to perform promise pipelining on a regular local promise. Pipelined calls will wait until the inner promise resolves, then will be delivered, in-order, to the resolution. This is useful when you plan to obtain some stub in the future, but you want to allow code to start queuing calls on it immediately.
 
-This is useful when the application knows a capability will exist but doesn't have it yet. For example, while re-establishing a broken session, you can publish a promise-backed stand-in, so that interim calls queue up and flow to the new connection once it is ready:
+Wrapping a `Promise<T>` in this way is semantically identical to creating a local-loopback RPC and then invoking it. That is:
 
 ```ts
-// reconnect() returns Promise<RpcStub<MyApi>>.
-let promise = new RpcPromise<MyApi>(reconnect());
+// this...
+let rpcPromise = new RpcPromise(myPromise);
 
-// Calls pipeline immediately, and are delivered once reconnect() resolves.
-let result = await promise.doSomething();
+// is semantically the same as this...
+let rpcFunc = new RpcStub(() => myPromise);
+let rpcPromise = rpcFunc();
 ```
 
-Two things to watch out for:
-
-* Ownership of the resolution transfers to the `RpcPromise`: disposing it disposes the target (or stub) that the promise resolved to. If you also want to keep the stub you resolved the promise with, resolve it with a `.dup()`.
-* Calls made while the promise is pending queue unboundedly, holding copies of their arguments. If the awaited capability may never arrive -- e.g. reconnection fails permanently -- reject the promise, so that queued calls fail rather than accumulate.
+In other words, this means:
+* The result of the promise must be serializable.
+* If the promise resolution contains `RpcTarget`s or `Function`s, the `RpcPromise`'s resolution will replace them with stubs.
+* Ownership of any stubs in the Promise result is transferred away. If you want to keep your own copies, you need to `dup()` them.
+* If the promise rejects, the rejection propagates to all pipelined calls.
+* etc.
 
 ### The magic `map()` method
 

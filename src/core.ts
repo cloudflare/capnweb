@@ -562,8 +562,8 @@ export class RpcStub extends RpcTarget {
 
 export class RpcPromise extends RpcStub {
   // Internally, an `RpcPromise` is constructed from a `StubHook` plus a property path. The
-  // application may instead pass a promise (or any other thenable) for the eventual resolution;
-  // calls made before it settles are queued and delivered, in order, once it does.
+  // application may instead pass a promise for the eventual resolution; calls made before it
+  // settles are queued and delivered, in order, once it does.
   constructor(hook: StubHook | PromiseLike<unknown>, pathIfPromise?: PropertyPath) {
     if (hook instanceof StubHook) {
       super(hook, pathIfPromise!);
@@ -571,7 +571,37 @@ export class RpcPromise extends RpcStub {
       if (pathIfPromise !== undefined) {
         throw new TypeError("RpcPromise constructor expected one argument, received two.");
       }
-      super(hookForPromiseArg(hook), []);
+
+      if (typeForRpc(hook) === "rpc-promise") {
+        // Adopt an existing `RpcPromise` directly, transferring ownership of its hook. In
+        // particular, this keeps the adopted promise lazy -- assimilating it as a thenable would
+        // instead force its resolution to be pulled -- and preserves hook-local behavior such as
+        // brokenness. This applies only to promises, not bare stubs: a non-promise hook may not
+        // implement pull(), so a bare stub takes the generic path below, which adopts the stub
+        // into the resolution payload.
+        super(unwrapStubTakingOwnership(<RpcStub><unknown>hook), []);
+      } else {
+        // `Promise.resolve()` natively handles the hazards of assimilating an arbitrary thenable
+        // (`then` getters with side effects, self-resolution, cross-realm thenables), so the
+        // resolution callback below only ever sees settled, non-thenable values.
+        //
+        // The resolution is adopted with "return" semantics, taking ownership of any stubs
+        // within (including a stub as the root value). This is the same representation used for
+        // the resolution of a local async call: pull() delivers the value, pipelined calls
+        // forward through the payload without forcing a pull, and a single-stub payload forwards
+        // onBroken(), preserving brokenness.
+        //
+        // A rejection is adopted as an ErrorStubHook rather than left to reject the backing
+        // promise. This way the promise chains backing queued calls never reject -- the calls
+        // land on the ErrorStubHook, which disposes their arguments -- and the error only
+        // surfaces through pull(), so a discarded pipelined call can't produce an unhandled
+        // rejection event.
+        let promiseHook = new PromiseStubHook(Promise.resolve(hook).then(
+            value => new PayloadStubHook(RpcPayload.fromAppReturn(value)),
+            err => new ErrorStubHook(err)));
+        promiseHook.ignoreUnhandledRejections();
+        super(promiseHook, []);
+      }
     }
   }
 
@@ -612,41 +642,6 @@ export function unwrapStubTakingOwnership(stub: RpcStub): StubHook {
   } else {
     return hook;
   }
-}
-
-// Given the application's argument to `new RpcPromise(value)`, produce the hook backing the
-// promise.
-function hookForPromiseArg(value: PromiseLike<unknown>): StubHook {
-  let type = typeForRpc(value);
-  if (type === "stub" || type === "rpc-promise") {
-    // Adopt an existing stub or promise directly, transferring ownership of its hook. In
-    // particular, this keeps an adopted `RpcPromise` lazy -- assimilating it as a thenable would
-    // instead force its resolution to be pulled -- and preserves hook-local behavior such as
-    // brokenness.
-    return unwrapStubTakingOwnership(<RpcStub><unknown>value);
-  }
-
-  // `Promise.resolve()` natively handles the hazards of assimilating an arbitrary thenable
-  // (`then` getters with side effects, self-resolution, cross-realm thenables), so
-  // `hookForResolution()` only ever sees settled, non-thenable values.
-  //
-  // A rejection is adopted as an ErrorStubHook rather than left to reject the backing promise.
-  // This way the promise chains backing queued calls never reject -- the calls land on the
-  // ErrorStubHook, which disposes their arguments -- and the error only surfaces through pull(),
-  // so a discarded pipelined call can't produce an unhandled rejection event.
-  let hook = new PromiseStubHook(
-      Promise.resolve(value).then(hookForResolution, err => new ErrorStubHook(err)));
-  hook.ignoreUnhandledRejections();
-  return hook;
-}
-
-// Adopt the resolution of a promise passed to `new RpcPromise()` with "return" semantics, taking
-// ownership of any stubs within (including a stub as the root value). This is the same
-// representation used for the resolution of a local async call: pull() delivers the value,
-// pipelined calls forward through the payload without forcing a pull, and a single-stub payload
-// forwards onBroken(), preserving brokenness.
-function hookForResolution(value: unknown): StubHook {
-  return new PayloadStubHook(RpcPayload.fromAppReturn(value));
 }
 
 // Given a stub (still wrapped in a Proxy), extract the underlying `StubHook`, and duplicate it,

@@ -2510,7 +2510,7 @@ describe("constructing RpcPromise from a promise", () => {
     expect(sent.filter(msg => msg.startsWith('["pull"'))).toHaveLength(1);
   });
 
-  it("preserves brokenness of an adopted stub", async () => {
+  it("preserves brokenness of a bare stub it was constructed from", async () => {
     await using harness = new TestHarness(new TestTarget());
     using stub = new RpcPromise<TestTarget>(<any>harness.stub.dup());
 
@@ -2522,7 +2522,7 @@ describe("constructing RpcPromise from a promise", () => {
     expect(errors).toStrictEqual([new Error("test disconnect")]);
   });
 
-  it("keeps adopted stub disposal idempotent", () => {
+  it("keeps disposal idempotent when constructed from a bare stub", async () => {
     let disposals = 0;
     class Disposable extends RpcTarget {
       [Symbol.dispose]() { ++disposals; }
@@ -2533,7 +2533,19 @@ describe("constructing RpcPromise from a promise", () => {
     inner[Symbol.dispose]();
     outer[Symbol.dispose]();
 
+    await pumpMicrotasks();
     expect(disposals).toBe(1);
+  });
+
+  it("resolves when awaited after construction from a bare local stub", async () => {
+    // Regression test: the constructor previously adopted a bare stub's hook directly, producing
+    // a promise whose pipelined calls worked but whose await rejected, because non-promise hooks
+    // don't implement pull().
+    using stub = new RpcPromise<Counter>(<any>new RpcStub(new Counter(1)));
+
+    expect(await stub.increment(2)).toBe(3);
+    let resolved = await stub;
+    expect(await resolved.increment(3)).toBe(6);
   });
 });
 
