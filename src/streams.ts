@@ -53,7 +53,6 @@ class WritableStreamStubHook extends StubHook {
       const method = path[0];
 
       if (method !== "write" && method !== "close" && method !== "abort") {
-        args.dispose();
         throw new Error(`Unknown WritableStream method: ${method}`);
       }
 
@@ -69,6 +68,8 @@ class WritableStreamStubHook extends StubHook {
           : args.deliverCall(state.writer[method] as Function, state.writer);
       return new PromiseStubHook(promise.then(payload => new PayloadStubHook(payload)));
     } catch (err) {
+      // We took ownership of `args`, and there is no callee left to consume them.
+      args.dispose();
       return new ErrorStubHook(err);
     }
   }
