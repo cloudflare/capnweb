@@ -335,9 +335,6 @@ export class ErrorStubHook extends StubHook {
   }
 };
 
-const DISPOSED_HOOK: StubHook = new ErrorStubHook(
-    new Error("Attempted to use RPC stub after it has been disposed."));
-
 // A call interceptor can be used to intercept all RPC stub invocations within some synchronous
 // scope. This is used to implement record/replay
 type CallInterceptor = (hook: StubHook, path: PropertyPath, params: RpcPayload) => StubHook;
@@ -391,7 +388,9 @@ const PROXY_HANDLERS: ProxyHandler<{raw: RpcStub}> = {
       // We only advertise Symbol.dispose on stubs and root promises, not properties.
       return () => {
         stub.hook.dispose();
-        stub.hook = DISPOSED_HOOK;
+        // Created here so that its stack trace points at the disposal site.
+        stub.hook = new ErrorStubHook(
+            new Error("Attempted to use RPC stub after it has been disposed."));
       };
     } else {
       return undefined;
