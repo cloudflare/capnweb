@@ -7,7 +7,7 @@
 import { RpcStub } from "./core.js";
 import { RpcSession, RpcSessionOptions } from "./rpc.js";
 
-/** Close-frame reason max UTF-8 bytes: 125 payload − 2-byte status (RFC 6455 §5.5). */
+/** Close-frame reason max UTF-8 bytes: 125 payload - 2-byte status (RFC 6455 section 5.5). */
 export const MAX_CLOSE_REASON_BYTES = 125 - 2;
 
 export function newWebSocketRpcSession(
