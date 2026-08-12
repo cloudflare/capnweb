@@ -1,5 +1,11 @@
 # capnweb-validate
 
+## 0.2.3
+
+### Patch Changes
+
+- [#227](https://github.com/cloudflare/capnweb/pull/227) [`2b292e4`](https://github.com/cloudflare/capnweb/commit/2b292e41adb4d2856f63118a13e1c70d01b5a0d9) Thanks [@teamchong](https://github.com/teamchong)! - Ignore extra arguments past a method's declared parameters instead of refusing the call, and drop them before invoking the implementation.
+
 ## 0.2.2
 
 ### Patch Changes
