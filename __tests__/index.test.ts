@@ -9,7 +9,8 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
-import { PromiseStubHook, RpcPayload, streamImpl } from "../src/core.js"
+import { PromiseStubHook, RpcPayload, RpcStub as RawRpcStub, streamImpl,
+         unwrapStubTakingOwnership } from "../src/core.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
@@ -2174,6 +2175,59 @@ describe("onRpcBroken", () => {
       {which: "counter1", error: new Error("test disconnect")},
       {which: "hangingCall", error: new Error("test disconnect")},
     ]);
+  });
+});
+
+// =======================================================================================
+
+describe("PromiseStubHook", () => {
+  it("disposes copied call arguments when the backing promise rejects", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let argument = new RpcStub(new Disposable());
+    let hook = new PromiseStubHook(Promise.reject(new Error("nope")));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("nope");
+    argument[Symbol.dispose]();
+    expect(disposed).toBe(true);
+  });
+
+  it("disposes copied stream arguments when the backing promise rejects", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let argument = new RpcStub(new Disposable());
+    let hook = new PromiseStubHook(Promise.reject(new Error("nope")));
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("nope");
+    argument[Symbol.dispose]();
+    expect(disposed).toBe(true);
+  });
+
+  it("delivers a call initiated before disposal", async () => {
+    let disposed = false;
+    class DisposableCounter extends Counter {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let inner = new RpcStub(new DisposableCounter(1));
+    let hook = new PromiseStubHook(Promise.resolve(unwrapStubTakingOwnership(<any>inner)));
+    await pumpMicrotasks();
+
+    let stub: RpcStub<Counter> = <any>new RawRpcStub(hook);
+    let result = stub.increment(2);
+    stub[Symbol.dispose]();
+
+    expect(disposed).toBe(false);
+    expect(await result).toBe(3);
+    expect(disposed).toBe(true);
   });
 });
 

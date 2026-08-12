@@ -1992,7 +1992,12 @@ export class PromiseStubHook extends StubHook {
     // can't serialize them yet, we have to deep-copy them now.
     args.ensureDeepCopied();
 
-    return new PromiseStubHook(this.promise.then(hook => hook.call(path, args)));
+    return new PromiseStubHook(this.promise.then(
+        hook => hook.call(path, args),
+        err => {
+          args.dispose();
+          throw err;
+        }));
   }
 
   stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
@@ -2000,10 +2005,15 @@ export class PromiseStubHook extends StubHook {
     // No size is returned because we can't know yet; this means the caller will await the promise,
     // which is the safe default (serialized writes).
     args.ensureDeepCopied();
-    let promise = this.promise.then(hook => {
-      let result = hook.stream(path, args);
-      return result.promise;
-    });
+    let promise = this.promise.then(
+        hook => {
+          let result = hook.stream(path, args);
+          return result.promise;
+        },
+        err => {
+          args.dispose();
+          throw err;
+        });
     return { promise };
   }
 
@@ -2056,15 +2066,11 @@ export class PromiseStubHook extends StubHook {
   }
 
   dispose(): void {
-    if (this.resolution) {
-      this.resolution.dispose();
-    } else {
-      this.promise.then(hook => {
-        hook.dispose();
-      }, err => {
-        // nothing to dispose
-      });
-    }
+    // Keep disposal behind calls already queued on this promise. Unlike pull(), dup(), and
+    // onBroken(), dispose() must not take a fast path through `this.resolution` even once it is
+    // available: it is the one destructive operation here, and a call chained on the promise just
+    // before disposal would otherwise be delivered after its target was disposed.
+    this.promise.then(hook => hook.dispose(), () => {});
   }
 
   onBroken(callback: (error: any) => void): void {
