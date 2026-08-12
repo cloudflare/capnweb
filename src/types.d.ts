@@ -160,6 +160,15 @@ type NonStubMembers<T> = Exclude<T, StubBase<any>>;
 // Note `unknown & T` is equivalent to `T`.
 type MaybeDisposable<T> = T extends object ? Disposable : unknown;
 
+// The type behind the public `RpcPromise` (re-exported with its `RpcCompatible` constraint from
+// index.ts). Defined here so that `Result`'s arms below resolve to the exact same alias
+// instantiation: when both sides of an assignability check are the same alias applied to the
+// same type arguments, the checker short-circuits on identity instead of recursing through the
+// full structural comparison of these mutually-recursive types.
+export type RpcPromise<T> =
+  T extends Stubable ? Promise<Stub<T>> & Provider<T> & StubBase<T>
+  : Promise<Stubify<T> & MaybeDisposable<T>> & Provider<T> & StubBase<T>;
+
 // Type for method return or property on an RPC interface.
 // - Stubable types are replaced by stubs.
 // - RpcCompatible types are passed by value, with stubable types replaced by stubs
@@ -171,8 +180,8 @@ type MaybeDisposable<T> = T extends object ? Disposable : unknown;
 type Result<R> =
   IsAny<R> extends true ? UnknownResult
   : IsUnknown<R> extends true ? UnknownResult
-  : R extends Stubable ? Promise<Stub<R>> & Provider<R> & StubBase<R>
-  : R extends RpcCompatible<R> ? Promise<Stubify<R> & MaybeDisposable<R>> & Provider<R> & StubBase<R>
+  : R extends Stubable ? RpcPromise<R>
+  : R extends RpcCompatible<R> ? RpcPromise<R>
   : never;
 
 type IsAny<T> = 0 extends (1 & T) ? true : false;

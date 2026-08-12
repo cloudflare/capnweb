@@ -677,9 +677,7 @@ class TestHarness<T extends RpcTarget> {
 
     this.client = new RpcSession<T>(this.clientTransport);
 
-    // TODO: If I remove `<undefined>` here, I get a TypeScript error about the instantiation being
-    //   excessively deep and possibly infinite. Why? `<undefined>` is supposed to be the default.
-    this.server = new RpcSession<undefined>(this.serverTransport, target, serverOptions);
+    this.server = new RpcSession(this.serverTransport, target, serverOptions);
 
     this.stub = this.client.getRemoteMain();
   }
