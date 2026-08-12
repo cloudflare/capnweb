@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-// Fails the build if any runtime bundle in dist/ contains non-ASCII bytes.
+// Fails the build if any runtime bundle in dist/ contains non-ASCII characters.
 //
 // Consumers inline these bundles into `data:` URLs and similar wrappers, often
 // through Latin-1-only APIs like btoa(), where a single non-ASCII character
@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const distDir = fileURLToPath(new URL("../dist/", import.meta.url));
 
-const runtimeFiles = readdirSync(distDir).filter(
+const runtimeFiles = readdirSync(distDir, { recursive: true }).filter(
   (name) => /\.(js|cjs|mjs)$/.test(name) && !/\.d\.(ts|cts|mts)$/.test(name)
 );
 
