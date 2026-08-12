@@ -9,7 +9,7 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
-import { PromiseStubHook, RpcPayload, RpcStub as RawRpcStub, streamImpl,
+import { ErrorStubHook, PayloadStubHook, PromiseStubHook, RpcPayload, RpcStub as RawRpcStub, streamImpl,
          unwrapStubTakingOwnership } from "../src/core.js"
 import { Counter, TestTarget } from "./test-util.js";
 
@@ -2227,6 +2227,65 @@ describe("PromiseStubHook", () => {
 
     expect(disposed).toBe(false);
     expect(await result).toBe(3);
+    expect(disposed).toBe(true);
+  });
+
+  it("disposes copied call arguments when the destination hook is broken", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let argument = new RpcStub(new Disposable());
+    let hook = new PromiseStubHook(Promise.resolve(new ErrorStubHook(new Error("broken"))));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("broken");
+    argument[Symbol.dispose]();
+    expect(disposed).toBe(true);
+  });
+
+  it("disposes copied stream arguments when the destination hook is broken", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let argument = new RpcStub(new Disposable());
+    let hook = new PromiseStubHook(Promise.resolve(new ErrorStubHook(new Error("broken"))));
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("broken");
+    argument[Symbol.dispose]();
+    expect(disposed).toBe(true);
+  });
+
+  it("disposes copied call arguments when the local call path fails", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let argument = new RpcStub(new Disposable());
+    let hook = new PromiseStubHook(
+        Promise.resolve(new PayloadStubHook(RpcPayload.fromAppReturn({}))));
+    let result = hook.call(["nope"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("'nope' is not a function");
+    argument[Symbol.dispose]();
+    expect(disposed).toBe(true);
+    hook.dispose();
+  });
+
+  it("disposes map captures when the destination hook is broken", () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let capture = unwrapStubTakingOwnership(<any>new RpcStub(new Disposable()));
+    let hook = new ErrorStubHook(new Error("broken"));
+    hook.map([], [capture], []);
     expect(disposed).toBe(true);
   });
 });

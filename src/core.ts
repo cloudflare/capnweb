@@ -318,8 +318,15 @@ export abstract class StubHook {
 export class ErrorStubHook extends StubHook {
   constructor(private error: any) { super(); }
 
-  call(path: PropertyPath, args: RpcPayload): StubHook { return this; }
-  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook { return this; }
+  // call() and map() take ownership of `args` / `captures`; there is no callee here to consume
+  // them, so dispose them before reporting the error.
+  call(path: PropertyPath, args: RpcPayload): StubHook { args.dispose(); return this; }
+  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
+    for (let cap of captures) {
+      cap.dispose();
+    }
+    return this;
+  }
   get(path: PropertyPath): StubHook { return this; }
   dup(): StubHook { return this; }
   pull(): RpcPayload | Promise<RpcPayload> { return Promise.reject(this.error); }
@@ -1717,6 +1724,8 @@ abstract class ValueStubHook extends StubHook {
         return new PayloadStubHook(payload);
       }));
     } catch (err) {
+      // We took ownership of `args`, and there is no callee left to consume them.
+      args.dispose();
       return new ErrorStubHook(err);
     }
   }
@@ -1993,7 +2002,14 @@ export class PromiseStubHook extends StubHook {
     args.ensureDeepCopied();
 
     return new PromiseStubHook(this.promise.then(
-        hook => hook.call(path, args),
+        hook => {
+          try {
+            return hook.call(path, args);
+          } catch (err) {
+            args.dispose();
+            throw err;
+          }
+        },
         err => {
           args.dispose();
           throw err;
@@ -2007,8 +2023,12 @@ export class PromiseStubHook extends StubHook {
     args.ensureDeepCopied();
     let promise = this.promise.then(
         hook => {
-          let result = hook.stream(path, args);
-          return result.promise;
+          try {
+            return hook.stream(path, args).promise;
+          } catch (err) {
+            args.dispose();
+            throw err;
+          }
         },
         err => {
           args.dispose();

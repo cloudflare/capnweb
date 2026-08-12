@@ -2,4 +2,4 @@
 "capnweb": patch
 ---
 
-Fix `PromiseStubHook` to dispose copied call and stream arguments when the backing promise rejects, and to keep disposal ordered behind calls already queued on the promise.
+Fix RPC argument and capture leaks on failure paths — rejected or broken destination hooks and local call errors now dispose the arguments they own — and keep `PromiseStubHook` disposal ordered behind already-queued calls.
