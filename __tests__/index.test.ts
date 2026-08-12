@@ -1647,6 +1647,30 @@ describe("map() over RPC", () => {
   });
 });
 
+describe("using a disposed stub", () => {
+  it("rejects calls with an error saying the stub was disposed", async () => {
+    let stub = new RpcStub(new TestTarget());
+    stub[Symbol.dispose]();
+
+    await expect(stub.square(3)).rejects.toThrow("after it has been disposed");
+  });
+
+  it("produces a distinct error for each disposal", async () => {
+    // Each disposal must create a fresh Error so that the stack trace points at the disposal
+    // site rather than at module initialization.
+    let stub1 = new RpcStub(new TestTarget());
+    let stub2 = new RpcStub(new TestTarget());
+    stub1[Symbol.dispose]();
+    stub2[Symbol.dispose]();
+
+    let e1 = await stub1.square(1).then(() => undefined, (e: unknown) => e);
+    let e2 = await stub2.square(2).then(() => undefined, (e: unknown) => e);
+    expect(e1).toBeInstanceOf(Error);
+    expect(e2).toBeInstanceOf(Error);
+    expect(e1).not.toBe(e2);
+  });
+});
+
 describe("stub disposal over RPC", () => {
   it("disposes remote RpcTarget when stub is disposed", async () => {
     let targetDisposedCount = 0;
