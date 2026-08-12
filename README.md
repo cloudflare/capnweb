@@ -267,6 +267,25 @@ let profile = await api.getUserProfile(user.id);
 
 Whenever an `RpcPromise` is passed in the parameters to an RPC, or returned as part of the result, the promise will be replaced with its resolution before delivery to the receiving application. So, you can use an `RpcPromise<T>` anywhere where a `T` is required!
 
+#### Constructing `RpcPromise` from a `Promise`
+
+You can construct an `RpcPromise` yourself from a regular `Promise` (or any other thenable), using `new RpcPromise(promise)`. The result supports pipelining immediately: calls made before the promise settles are queued and delivered, in order, once it does, while awaiting it yields the promise's resolution. The promise may resolve to an `RpcTarget`, a stub, or a plain value; if it rejects, queued calls and `await`s fail with the rejection error, and `onRpcBroken()` callbacks are invoked.
+
+This is useful when the application knows a capability will exist but doesn't have it yet. For example, while re-establishing a broken session, you can publish a promise-backed stand-in, so that interim calls queue up and flow to the new connection once it is ready:
+
+```ts
+// reconnect() returns Promise<RpcStub<MyApi>>.
+let promise = new RpcPromise<MyApi>(reconnect());
+
+// Calls pipeline immediately, and are delivered once reconnect() resolves.
+let result = await promise.doSomething();
+```
+
+Two things to watch out for:
+
+* Ownership of the resolution transfers to the `RpcPromise`: disposing it disposes the target (or stub) that the promise resolved to. If you also want to keep the stub you resolved the promise with, resolve it with a `.dup()`.
+* Calls made while the promise is pending queue unboundedly, holding copies of their arguments. If the awaited capability may never arrive -- e.g. reconnection fails permanently -- reject the promise, so that queued calls fail rather than accumulate.
+
 ### The magic `map()` method
 
 Every RPC promise has a special method `.map()` which can be used to remotely transform a value, without pulling it back locally. Here's an example:

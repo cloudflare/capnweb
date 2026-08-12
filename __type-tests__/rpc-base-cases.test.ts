@@ -150,3 +150,29 @@ api.invoke((name: string, attempt: number) => {
 
 // @ts-expect-error headers argument must be Headers
 api.roundTripHeaders(new Map([["x-id", "1"]]))
+
+// An RpcPromise can be constructed from a promise for a plain value, an RpcTarget, or a stub,
+// keeping the resolution's type in each case.
+expectType<RpcPromise<number>>(new RpcPromise(Promise.resolve(42)))
+expectType<RpcPromise<PointTarget>>(new RpcPromise(Promise.resolve(new PointTarget())))
+expectType<RpcPromise<PointTarget>>(new RpcPromise<PointTarget>(Promise.reject(new Error("x"))))
+
+// The target type is inferred exactly from a promise for a stub -- no explicit type argument.
+const promisedFromStub = new RpcPromise(Promise.resolve(pointStub))
+type _PromisedFromStubInfersTarget = Expect<Equal<typeof promisedFromStub, RpcPromise<PointTarget>>>
+
+async function assertAwaitedConstructedPromiseShapes() {
+  const target = await new RpcPromise(Promise.resolve(new PointTarget()))
+  expectType<RpcStub<PointTarget>>(target)
+
+  const value = await new RpcPromise(Promise.resolve(42))
+  expectType<number>(value)
+}
+
+void assertAwaitedConstructedPromiseShapes
+
+// @ts-expect-error a non-thenable value cannot back an RpcPromise
+void new RpcPromise(42)
+
+// @ts-expect-error a bare stub cannot back an RpcPromise; pass a promise for the stub instead
+void new RpcPromise(pointStub)

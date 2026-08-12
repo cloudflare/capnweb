@@ -6,7 +6,7 @@ import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPr
 import { serialize, deserialize, EncodingLevel } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
-import { RpcTargetBranded, RpcCompatible, Stub, type RpcPromise as RpcPromiseType,
+import { RpcTargetBranded, RpcCompatible, Stub, Stubable, type RpcPromise as RpcPromiseType,
          __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
@@ -58,10 +58,19 @@ export const RpcStub: {
  * until you actually `await` the promise (or call `then()`, etc. on it). This is an optimization:
  * if you only intend to use the promise for pipelining and you never await it, then there's no
  * need to transmit the resolution!
+ *
+ * You may also construct an `RpcPromise` yourself from a regular `Promise` (or any other
+ * thenable), using `new RpcPromise(promise)`. The promise may resolve to an `RpcTarget`, a stub,
+ * or a plain value. Calls made before the promise settles are queued and delivered, in order,
+ * once it does, so an `RpcPromise` can stand in for a capability that doesn't exist yet -- for
+ * example, one that will only become available after a broken session has been re-established.
+ * Note that the `RpcPromise` takes ownership of the resolution: disposing it disposes the
+ * resolution, so resolve the promise with a `dup()` if you also intend to keep the stub.
  */
 export type RpcPromise<T extends RpcCompatible<T>> = RpcPromiseType<T>;
 export const RpcPromise: {
-  // Note: Cannot construct directly!
+  new <T extends Stubable>(value: PromiseLike<T | Stub<T>>): RpcPromise<T>;
+  new <T extends RpcCompatible<T>>(value: PromiseLike<T | Stub<T>>): RpcPromise<T>;
 } = <any>RpcPromiseImpl;
 
 /**
