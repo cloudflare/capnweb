@@ -1,5 +1,23 @@
 # capnweb
 
+## 0.11.0
+
+### Minor Changes
+
+- [#212](https://github.com/cloudflare/capnweb/pull/212) [`1cca1a2`](https://github.com/cloudflare/capnweb/commit/1cca1a212da1e8bc4f807725d96702f0b78207e1) Thanks [@codehz](https://github.com/codehz)! - Support RpcTargets (and other RPC stubs) as ReadableStream/WritableStream chunks without disposing their capabilities when `write()` returns. Stream chunk payloads now keep lifecycle tied to the chunk (via `Symbol.dispose` when needed) so methods on streamed stubs remain usable after the write resolves.
+
+- [#201](https://github.com/cloudflare/capnweb/pull/201) [`7325f9d`](https://github.com/cloudflare/capnweb/commit/7325f9d5c80dd57fea896bb4696d22a102cf10a8) Thanks [@ttmx](https://github.com/ttmx)! - Support exact ArrayBuffer, DataView, and typed array serialization over RPC.
+
+- [#224](https://github.com/cloudflare/capnweb/pull/224) [`064b0f3`](https://github.com/cloudflare/capnweb/commit/064b0f352a5928caa91fe8a1fbc1c717c4b1ee09) Thanks [@dimitropoulos](https://github.com/dimitropoulos)! - Support serializing `URL` objects over RPC.
+
+### Patch Changes
+
+- [#220](https://github.com/cloudflare/capnweb/pull/220) [`43aa384`](https://github.com/cloudflare/capnweb/commit/43aa384b211f180c6b91ec7d2aa9acf4b57b3fcd) Thanks [@ndisidore](https://github.com/ndisidore)! - Remove the ~1ms per-batch latency floor in the HTTP batch client on Node and Bun by flushing via `setImmediate` instead of the clamped `setTimeout(0)`.
+
+- [#214](https://github.com/cloudflare/capnweb/pull/214) [`2a02db9`](https://github.com/cloudflare/capnweb/commit/2a02db961460c222b0643a92483255613c7f78d5) Thanks [@ndisidore](https://github.com/ndisidore)! - The RPC `ReadableStream` type accepts any RPC-compatible chunk type, matching `WritableStream`.
+
+- [#238](https://github.com/cloudflare/capnweb/pull/238) [`1a1f0d4`](https://github.com/cloudflare/capnweb/commit/1a1f0d419b13de0cf78d611cf9b1c99bc650dc7c) Thanks [@Maximo-Guk](https://github.com/Maximo-Guk)! - Share one `RpcPromise` alias between `Result` and the public export. Deeply-nested RPC interfaces no longer blow the checker's depth budget: this fixes all "excessively deep" / "excessive stack depth" (TS2589/TS2321) errors under TypeScript 7 (tsgo) and reduces TypeScript 5.9 type instantiations by ~13%. `RpcPromise<T>` for primitive `T` now also carries the pipelining `Provider<T>` surface, matching what stub calls already returned.
+
 ## 0.10.0
 
 ### Minor Changes
