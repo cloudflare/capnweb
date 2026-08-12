@@ -6,7 +6,8 @@ import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPr
 import { serialize, deserialize, EncodingLevel } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
-import { RpcTargetBranded, RpcCompatible, Stub, Stubify, __RPC_TARGET_BRAND } from "./types.js";
+import { RpcTargetBranded, RpcCompatible, Stub, Stubify, RpcPromise as RpcPromiseType,
+         __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
@@ -58,7 +59,7 @@ export const RpcStub: {
  * if you only intend to use the promise for pipelining and you never await it, then there's no
  * need to transmit the resolution!
  */
-export type RpcPromise<T extends RpcCompatible<T>> = Stub<T> & Promise<Stubify<T>>;
+export type RpcPromise<T extends RpcCompatible<T>> = RpcPromiseType<T>;
 export const RpcPromise: {
   // Note: Cannot construct directly!
 } = <any>RpcPromiseImpl;
