@@ -9,6 +9,7 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
+import { PromiseStubHook, RpcPayload, streamImpl } from "../src/core.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
@@ -2792,6 +2793,43 @@ describe("WritableStream over RPC", () => {
     expect(rpcDone).toBe(true);
     expect(rpcError).not.toBeNull();
     expect(rpcError.message).toContain("Simulated write failure");
+  });
+});
+
+describe("WritableStream stub argument disposal", () => {
+  it("disposes copied call arguments when a WritableStream call is invalid", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let argument = new RpcStub(new Disposable());
+    let hook = new PromiseStubHook(
+        Promise.resolve(streamImpl.createWritableStreamHook(new WritableStream())));
+    let result = hook.call(["not", "a", "method"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("only supports direct method calls");
+    argument[Symbol.dispose]();
+    expect(disposed).toBe(true);
+    hook.dispose();
+  });
+
+  it("disposes copied call arguments when the WritableStream stub was disposed", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let streamHook = streamImpl.createWritableStreamHook(new WritableStream());
+    streamHook.dispose();
+
+    let argument = new RpcStub(new Disposable());
+    let hook = new PromiseStubHook(Promise.resolve(streamHook));
+    let result = hook.call(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("after it was disposed");
+    argument[Symbol.dispose]();
+    expect(disposed).toBe(true);
   });
 });
 
