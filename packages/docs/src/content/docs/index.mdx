@@ -35,8 +35,8 @@ another call *before it has resolved*. The server substitutes the real value on 
 of dependent calls costs exactly one round trip:
 
 ```ts
-// Authenticate, get the user's ID, fetch their profile, fetch every friend's
-// profile too. One request. One response.
+// Authenticate, get the user's ID, fetch their profile, and
+// fetch every friend's profile too. One request, one response.
 let authed = api.authenticate(apiToken);
 let profile = api.getUserProfile(authed.getUserId());
 let friends = authed.getFriendIds().map(id => api.getUserProfile(id));

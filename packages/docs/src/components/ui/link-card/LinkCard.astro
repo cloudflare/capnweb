@@ -23,7 +23,7 @@ const { title, description, href, class: className, ...attrs } = Astro.props;
 <a
   href={href}
   class={cn(
-    "group my-4 flex h-full items-center justify-between gap-3 rounded-lg bg-card px-5 py-4 ring-1 ring-border no-underline text-inherit hover:bg-accent",
+    "group my-4 flex h-full items-center justify-between gap-3 rounded-lg bg-card px-5 py-4 ring-1 ring-border no-underline text-inherit hover:ring-foreground/25",
     className,
   )}
   {...attrs}

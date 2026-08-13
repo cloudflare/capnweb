@@ -396,7 +396,7 @@ pre.astro-code {
 	padding: 0.75rem 1rem;
 	border-radius: 0.5rem;
 	border: 1px solid var(--nb-border);
-	background-color: var(--nb-card);
+	background-color: transparent;
 	overflow-x: auto;
 	font-family: var(--nb-font-mono);
 	font-size: 0.875rem;
@@ -470,7 +470,7 @@ pre.astro-code span {
 	margin: 1rem 0;
 	border: 1px solid var(--nb-border);
 	border-radius: 0.5rem;
-	background-color: var(--nb-card);
+	background-color: transparent;
 	overflow: hidden;
 }
 .nb-code-figure > pre.astro-code {
@@ -541,13 +541,13 @@ pre.astro-code span {
 }
 
 /*
- * Give the badge a row of its own. Pinned over the code it works until a first
- * line is long enough to pass under it, which on this site is often: the badge
- * fades on hover, so the text is recoverable, but a chip sitting on top of the
- * code reads as a rendering fault rather than a label.
+ * The badge is pinned top-right and fades on hover, so it doesn't need a
+ * reserved row -- a blank line above the code reads as empty, especially now
+ * that the block has no background. Short first lines clear it; long ones are
+ * recoverable on hover.
  */
 .nb-code-figure[data-nb-lang]:not(.nb-code-figure-titled) > pre.astro-code {
-	padding-top: 1.625rem;
+	padding-top: 0.75rem;
 }
 
 /* Nothing to make room for where the badge is suppressed. */

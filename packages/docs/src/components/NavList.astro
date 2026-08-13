@@ -47,6 +47,7 @@ const { items } = Astro.props;
   }
 
   .cw-navrow {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -55,8 +56,12 @@ const { items } = Astro.props;
     text-decoration: none;
     color: inherit;
   }
+  /* Outset ring (not inset) so it lands on the row's edge, over the group
+     border/dividers, and is clipped round by the list's overflow:hidden --
+     lightens the cell's border with no inner offset. */
   .cw-navrow:hover {
-    background: var(--nb-accent);
+    z-index: 1;
+    box-shadow: 0 0 0 1px color-mix(in oklch, var(--nb-foreground) 32%, transparent);
   }
 
   .cw-navrow-text {
