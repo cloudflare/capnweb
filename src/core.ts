@@ -629,28 +629,6 @@ export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise
   return stub[RAW_STUB];
 }
 
-// RpcPromise elements are set using property access on the parent.
-//
-// To make this work for `Set`, this function defines a one-time-use setter that inserts the
-// resolved value in the correct order and rebuilds the set.
-//
-// The `property` must be unique for each element.
-export function defineSetPromiseSlot(set: Set<unknown>, property: string, placeholder: unknown) {
-  if (!(placeholder instanceof RpcPromise)) return;
-  Object.defineProperty(set, property, {
-    configurable: true, enumerable: false,
-    set(resolved: unknown) {
-      let elms = [...set];
-      let ri = elms.indexOf(placeholder);
-      delete (set as any)[property];
-      set.clear();
-      for (let i = 0; i < elms.length; i++) {
-        set.add(i === ri ? resolved : elms[i]);
-      }
-    }
-  });
-}
-
 // Given a promise stub (still wrapped in a Proxy), pull the remote promise and deliver the
 // payload. This is a helper used to implement the then/catch/finally methods of RpcPromise.
 async function pullPromise(promise: RpcPromise): Promise<unknown> {
@@ -1011,11 +989,14 @@ export class RpcPayload {
         // parent.
         let set = <Set<unknown>>value;
         let result = new Set();
-        let counter = 0;
+        let index = 0;
         for (let val of set) {
-          let key = `${counter++}`;
-          let copy = this.deepCopy(val, set, key, result, dupStubs, owner);
-          defineSetPromiseSlot(result, key, copy);
+          let copy = this.deepCopy(val, set, index++, result, dupStubs, owner);
+          if (copy instanceof RpcPromise) {
+            throw new TypeError(
+                "Cannot serialize a promise as an element of a Set. Await the value before " +
+                "adding it to the Set.");
+          }
           result.add(copy);
         }
         return result;

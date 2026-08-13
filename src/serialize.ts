@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook, defineSetPromiseSlot } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -323,7 +323,27 @@ export class Devaluator {
         let set = <Set<unknown>>value;
         let elements: unknown[] = [];
         for (let element of set) {
-          elements.push(this.devaluateImpl(element, set, depth + 1));
+          let encoded = this.devaluateImpl(element, set, depth + 1);
+
+          // A Set holds plain data only: no promises, stubs or blobs (see protocol.md). Blobs are
+          // rejected by the `blob` case, which has to refuse one before it starts a pipe.
+          if (encoded instanceof Array && typeof encoded[0] === "string") {
+            switch (encoded[0]) {
+              case "promise":
+              case "pipeline":
+              case "remap":
+                throw new TypeError(
+                    "Cannot serialize a promise as an element of a Set. Await the value before " +
+                    "adding it to the Set.");
+
+              case "export":
+              case "import":
+                throw new TypeError(
+                    "Cannot serialize a stub as an element of a Set.");
+            }
+          }
+
+          elements.push(encoded);
         }
         return ["set", elements];
       }
@@ -522,6 +542,14 @@ export class Devaluator {
         // synchronously, and we MUST serialize the message synchronously. Hence, we have no choice
         // but to use streaming even for small blobs.
         let blob = value as Blob;
+
+        // The receiver must buffer the whole stream before it can construct the Blob, so it
+        // delivers the Blob as a promise. Set doesn't support a promise. To avoid the creation of a
+        // pipe, we reject it here.
+        if (parent instanceof Set) {
+          throw new TypeError("Cannot serialize a Blob as an element of a Set.");
+        }
+
         let readable = blob.stream();
         let hook = streamImpl.createReadableStreamHook(readable);
         let importId = this.exporter.createPipe(readable, hook);
@@ -852,12 +880,18 @@ export class Evaluator {
           break;
         case "set":
           if (value.length === 2 && value[1] instanceof Array) {
+            let elements = value[1];
             let set = new Set();
-            let counter = 0;
-            for (let element of value[1]) {
-              let key = `${counter++}`;
-              let copy = this.evaluateImpl(element, set, key, depth + 1);
-              defineSetPromiseSlot(set, key, copy);
+            for (let i = 0; i < elements.length; i++) {
+              // A Set holds plain data only: no promises, stubs or blobs (see protocol.md). All
+              // three evaluate to an RpcStub, since RpcPromise extends it and a ["blob"] arrives as
+              // a promise for the streamed bytes. Nothing reads the `i` we pass as the property,
+              // but it stays a real index because "response" and "blob" elements pass the pair
+              // down to their contents.
+              let copy = this.evaluateImpl(elements[i], set, i, depth + 1);
+              if (copy instanceof RpcStub) {
+                throw new TypeError("Cannot deserialize a stub or promise as an element of a Set.");
+              }
               set.add(copy);
             }
             return set;
