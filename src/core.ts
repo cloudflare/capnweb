@@ -2086,10 +2086,10 @@ export class PromiseStubHook extends StubHook {
   }
 
   dispose(): void {
-    // Keep disposal behind calls already queued on this promise. Unlike pull(), dup(), and
-    // onBroken(), dispose() must not take a fast path through `this.resolution` even once it is
-    // available: it is the one destructive operation here, and a call chained on the promise just
-    // before disposal would otherwise be delivered after its target was disposed.
+    // We can't take the fast path here when this.resolution is available because if the resolution
+    // was just recently delivered, promise waiters may not have had a chance to consume it yet,
+    // and disposing it would preempt them. If we always wait on `this.promise` then we'll
+    // run after anything that was queued before us.
     this.promise.then(hook => hook.dispose(), () => {});
   }
 
