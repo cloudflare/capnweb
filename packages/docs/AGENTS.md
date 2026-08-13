@@ -6,7 +6,8 @@ hooks, and the `nimbus-docs` CLI. Everything in `src/` is a real file in this re
 edit, including the files the scaffold wrote.
 
 `README.md` next to this file explains why the site looks and works the way it does: the palette,
-the node field, the example playgrounds, the traps. Read it before changing anything visual.
+the page shell, the WebGL hero, the example playgrounds, the traps. Read it before changing anything
+visual.
 
 ## Working in here
 
@@ -51,7 +52,8 @@ scripts/
 └── mdast-bundle-size.mjs    # Sätteri plugin: %BUNDLE_SIZE% in .md bodies
 src/
 ├── components.ts            # MDX globals registry -- every component used in .mdx must be listed
-├── components/              # ours: Hero, NetworkHero, LightTunnel, Playground, Prose
+├── components/              # ours: Hero, NetworkHero, LightTunnel, HeroExample, Features, NavList,
+│                            #       Playground, Prose
 │   └── ui/<slug>/           # from the Nimbus registry, plus AgentDirective, Header, Render
 ├── content/docs/**.{md,mdx} # the pages, one directory per sidebar group
 ├── content.config.ts        # docsCollection() + partialsCollection() + the %BUNDLE_SIZE% transform
@@ -183,5 +185,7 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   Markdown transformations go in `markdown.mdastPlugins` / `hastPlugins`, and a Sätteri plugin is a
   visitor over read-only nodes that writes through `context.setProperty`.
 - Edit `src/components.ts` to bypass registration. If MDX uses a component, register it.
-- Add a third use of Cloudflare orange. It appears in two places and the restraint is the point.
+- Spend the tomato accent (`--cw-orange`, which is also `--nb-primary`) on anything else. It is the
+  call to action and almost nothing else -- prose links are ink, not accent -- and that restraint is
+  the point.
 - Remove `<AgentDirective />` unless asked.

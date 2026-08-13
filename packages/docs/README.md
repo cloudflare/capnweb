@@ -74,7 +74,7 @@ Ten scaffold files are modified, so an upgrade to any of them is a merge and not
 | --------------------------------- | ------------------------------------------------------------------------------------------- |
 | `src/styles/globals.css`          | The theme: palette, tokens, page shell, code chrome. Most of the port lives here.           |
 | `src/layouts/BaseLayout.astro`    | The theme bootstrap: `is:inline`, dark as the no-preference answer, `data-theme` published. |
-| `src/layouts/DocsLayout.astro`    | Mounts the node field, and marks `<main>` as the content sheet.                             |
+| `src/layouts/DocsLayout.astro`    | Marks `<main>` as the content sheet.                                                        |
 | `src/pages/[...slug].astro`       | Serves the root index entry at `/` rather than `/index`.                                    |
 | `src/pages/404.astro`             | `id="main-content"` on `<main>`, without which the skip link goes nowhere.                  |
 | `src/components.ts`               | Registers our three components as MDX globals.                                              |
@@ -97,13 +97,19 @@ with it.
 
 Ours, and the reason each exists:
 
-| Component             | Role                                                                      |
-| --------------------- | ------------------------------------------------------------------------- |
-| `Hero.astro`          | The landing page's headline, tagline and calls to action, over the field. |
-| `NetworkHero.astro`   | The field as the hero's own backdrop, edge to edge.                       |
-| `LightTunnel.astro`   | React Bits LightTunnel, ported to vanilla JS + ogl.                       |
-| `Playground.astro`    | The examples' source-and-demo stage.                                      |
-| `Prose.astro`         | The prose container a `mode: custom` page has to bring itself.            |
+| Component           | Role                                                                                |
+| ------------------- | ----------------------------------------------------------------------------------- |
+| `Hero.astro`        | The landing page's headline, tagline and calls to action, over the stage.           |
+| `NetworkHero.astro` | The stage behind the hero, edge to edge.                                            |
+| `LightTunnel.astro` | React Bits' LightTunnel, ported to vanilla JS + ogl, with `light-tunnel.client.ts`. |
+| `HeroExample.astro` | The paired client/server sample floating in the hero.                               |
+| `Features.astro`    | The landing page's bento figures.                                                   |
+| `NavList.astro`     | The landing page's link lists, built from `examples.ts` and a literal.              |
+| `Playground.astro`  | The examples' source-and-demo stage.                                                |
+| `Prose.astro`       | The prose container a `mode: custom` page has to bring itself.                      |
+
+Only `Hero`, `Playground` and `Prose` are registered as MDX globals; the other three are imported by
+`index.mdx` directly, which is the other way a component can reach an MDX page.
 
 `Prose` looks like ceremony and is not. `mode: custom` gives a page a bare `<main>`: no sidebar, no
 table of contents, and no `.docs-content` wrapper or width cap either. Every prose rule in
@@ -146,8 +152,8 @@ exists.
 ## The theme
 
 `src/styles/globals.css` is the file to edit. The palette is a soft cool grey (`#eef1f4`) with slate
-ink and a restrained tomato CTA. Type is Cal Sans for display (headings + hero), DM Sans for body
-and UI, and Commit Mono for code.
+ink and a restrained tomato CTA. Type is DM Sans for headings, body and UI, and Commit Mono for
+code.
 
 Light mode is a genuine second scheme rather than an inversion. The sidebar and the content sheet
 share `--nb-background`: one surface, not a darker rail meeting a lighter document.
@@ -156,14 +162,14 @@ share `--nb-background`: one surface, not a darker rail meeting a lighter docume
 
 Nimbus's own tokens are `--nb-*`, and Tailwind utilities like `bg-card` and `border-border` are
 generated from them in the `@theme` block. Ours are `--cw-*`: the raw palette, plus the handful of
-values the page shell and the node field need that have no Nimbus equivalent.
+values the page shell needs that have no Nimbus equivalent.
 
-| Token             | Dark      | Light     | Used for                                      |
-| ----------------- | --------- | --------- | --------------------------------------------- |
-| `--cw-ground`     | `#090c10` | `#e2e7ec` | the ground the page sheet rests on            |
-| `--nb-background` | `#0c1014` | `#eef1f4` | the content sheet and the desktop sidebar     |
-| `--nb-primary`    | `#e85d2c` | `#e85d2c` | primary actions                               |
-| `--cw-orange`     | `#e85d2c` | `#e85d2c` | the CTA spark                                 |
+| Token             | Dark      | Light     | Used for                                  |
+| ----------------- | --------- | --------- | ----------------------------------------- |
+| `--cw-ground`     | `#090c10` | `#e2e7ec` | the ground the page sheet rests on        |
+| `--nb-background` | `#0c1014` | `#eef1f4` | the content sheet and the desktop sidebar |
+| `--nb-primary`    | `#e85d2c` | `#e85d2c` | primary actions                           |
+| `--cw-orange`     | `#e85d2c` | `#e85d2c` | the CTA spark                             |
 
 The palette is kept as hex rather than converted to oklch, which the scaffold's own comment
 recommends. These are measured, tuned values carried over from the theme this replaced, and a round
@@ -171,23 +177,29 @@ trip through another colour space would move them for no gain.
 
 ### The page is a sheet on a ground
 
-Four layers, and the order matters because the node field has to be visible through the layout
-without being visible through the text:
+Three layers, so that the reading column reads as a panel resting on something rather than as the
+page itself:
 
-1. `body` paints `--cw-ground`. `BaseLayout` deliberately leaves `bg-background` off it.
-2. `body::before` adds two fixed radial washes, so the ground is a space rather than a flat fill.
-3. The node field is fixed at `z-index: -1`: above the body's own background, below every element.
-4. `<main data-cw-sheet>` paints `--nb-background`. The sidebar uses Nimbus's own `bg-background`
+1. `body` paints `--cw-ground`, a shade off the sheet. `BaseLayout` deliberately leaves
+   `bg-background` off it.
+2. `body::before` adds two fixed radial washes at `z-index: -2`, so the ground is a space rather
+   than a flat fill.
+3. `<main data-cw-sheet>` paints `--nb-background`. The sidebar uses Nimbus's own `bg-background`
    and a single `border-r`; the table-of-contents rail is left transparent.
 
-So the field shows through the right-hand rail and the margins, which are the parts of the page meant
-to be looked through rather than at, and, blurred, through the masthead, which is a translucent
-`bg-card` over a `backdrop-blur`. The current page in the sidebar is Nimbus's own `bg-accent`
-highlight, not a second indicator painted on top of it.
+So the washed ground shows through the right-hand rail and the page margins, and, blurred, through
+the masthead, which is `bg-background/80` over a `backdrop-blur`. The current page in the sidebar is
+Nimbus's own `bg-accent` highlight, not a second indicator painted on top of it.
 
-The landing page is the exception: it paints its own field edge to edge behind the hero, so the
-ground wash is suppressed under it and the ground is set to the field's own outer colour, which
-means the veil finishes fading onto the same value rather than stepping onto a different one.
+There used to be a fourth layer between the washes and the sheet: a CSS constellation of nodes and
+edges, fixed at `z-index: -1`, drawn behind every page. The landing redesign replaced it with the
+WebGL hero below and dropped it from docs pages entirely, which is why those pages now idle at 0.0%
+of a core. `git log -- src/lib/constellation.ts` has the whole thing if it is ever wanted back.
+
+The landing page is the exception to the layering: it paints its own dark stage edge to edge behind
+the hero, so `body:has(.cw-hero-field)` suppresses the wash and sets the body to `--nb-background`,
+which is exactly where the stage's veil finishes fading, so the seam below the hero lands on a single
+value.
 
 ### Which scheme loads
 
@@ -197,6 +209,11 @@ stored choice is `ui-mode` in `localStorage`.
 The bootstrap in `BaseLayout.astro` queries `(prefers-color-scheme: light)` rather than `dark`, on
 purpose: the site was designed dark, so a reader whose OS expresses no preference gets dark. A stored
 choice still wins over the OS.
+
+The landing page is outside all of that. It is a fixed dark design, so the bootstrap resolves `/` to
+dark whatever is stored, `BaseLayout` puts `.cw-home` on the body, and `globals.css` hides the theme
+toggle there rather than leaving a control that does nothing. The toggle still themes every docs
+page, and a choice made on one is honoured when the reader leaves the landing page.
 
 It also publishes `data-theme="light" | "dark"`, which nothing in Nimbus reads. The example
 playgrounds do: they are same-origin iframes that read the embedding page's theme before their first
@@ -213,41 +230,49 @@ direction.
 
 ### Type
 
-The site self-hosts Cal Sans, DM Sans (variable), and Commit Mono through `@fontsource`, imported in
-`BaseLayout.astro`. Latin subsets only, then cached for a year by `public/_headers`.
+The site self-hosts DM Sans (variable) and Commit Mono through `@fontsource`, imported in
+`BaseLayout.astro`: 83.1 kB on a first visit, latin subsets only, then cached for a year by
+`public/_headers`.
 
-Cal Sans is the display face, mapped to `--nb-font-display` and used by h1–h3 and the hero title;
-DM Sans (`--nb-font-sans`) carries body and UI; Commit Mono (`--nb-font-mono`) is code. Following the
-Kumo design skill (kumo-ui.com/skill), headings are set at the font's natural tracking rather than
-letter-spaced, sizes are a small set of deliberate steps, and nothing in the chrome is uppercased.
-Cal Sans ships one weight, so display headings stay at 400 instead of faux-bolding.
+DM Sans (`--nb-font-sans`) carries body, UI and headings; Commit Mono (`--nb-font-mono`) is code.
+There is a `--nb-font-display` token for headings, but it currently aliases `--nb-font-sans`: a
+separate display face (Cal Sans) was tried and dropped, and the token was left in place as the seam
+to reintroduce one. Following the Kumo design skill (kumo-ui.com/skill), headings are set at the
+font's natural tracking rather than letter-spaced (`--nb-h*-tracking: normal`), sizes are a small set
+of deliberate steps, and nothing in the chrome is uppercased.
 
 This is a change from the Starlight build, which used the system stack and shipped no fonts at all.
 It is a deliberate keep: the type is then identical on every OS, and the heading scale in
 `globals.css` was tuned against it. If it ever needs reverting, it is the imports and the
 `--nb-font-*` tokens, and the site will want a fresh visual review afterwards.
 
-There are no raster images anywhere in the site's own chrome. The only other textures are gradients.
+There are no raster images anywhere in the site's own chrome: the favicon is SVG, and apart from the
+hero's shader every texture is a gradient.
 
-## The homepage field
+## The homepage hero
 
 The landing page hero (`src/components/NetworkHero.astro`) mounts a vanilla port of React Bits'
-LightTunnel (`src/components/LightTunnel.astro` + `light-tunnel.client.ts`). It is WebGL2 via
-`ogl`, paused when off-screen or when the tab is hidden, and skipped entirely under
-`prefers-reduced-motion`. Docs pages do not get a field behind them: the content sheet is the page.
+LightTunnel (`src/components/LightTunnel.astro` + `light-tunnel.client.ts`). It is WebGL2 via `ogl`,
+paused when off-screen or when the tab is hidden, its device pixel ratio capped at 2, and skipped
+entirely under `prefers-reduced-motion`. It is also the only expensive thing the site ships: the
+landing page loads 62.7 kB of JavaScript (20.8 kB gzipped) against a docs page's 20.9 kB (9.4 kB),
+nearly all of it `ogl`. That is the trade -- one page pays for the first impression, no other page
+pays anything. Docs pages get nothing behind them at all: the content sheet is the page.
 
 ## Social cards
 
 Every page gets its own Open Graph image at `/og/<slug>.png`, generated at build time by
 `astro-og-canvas` through the routes the scaffold provides. The card's whole visual definition is
-`src/pages/og/_og-card-config.ts`: the site's dark scheme, and a 12px orange border on the leading
-edge, which is the one thing that makes one of these recognisable at thumbnail size.
+`src/pages/og/_og-card-config.ts`: the site's dark scheme, and a 12px tomato border on the leading
+edge, which is the one thing that makes one of these recognisable at thumbnail size. The cards are
+still set in Inter, which the site itself no longer uses -- they are rasterized, so the face is a
+build input rather than something a reader downloads.
 
-There used to be a hand-written pipeline here: a seeded SVG rendering of the same node field, laid
-out with Satori and rasterized with resvg, plus a subset of Inter and a script to build it. It came
-to about seven hundred lines to produce a nicer picture than the framework's, and it was deleted
-during the port. The framework's cards are worse and are one config object, and social cards are not
-where this site earns anything.
+There used to be a hand-written pipeline here: a seeded SVG rendering of the node field the site had
+at the time, laid out with Satori and rasterized with resvg, plus a subset of Inter and a script to
+build it. It came to about seven hundred lines to produce a nicer picture than the framework's, and
+it was deleted during the port. The framework's cards are worse and are one config object, and
+social cards are not where this site earns anything.
 
 Two things worth knowing:
 
