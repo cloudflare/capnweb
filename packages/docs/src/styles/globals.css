@@ -51,7 +51,7 @@
 	color-scheme: light;
 
 	/* Surfaces. `--nb-background` is the content sheet; `--cw-ground` is the
-	   field it rests on. */
+	   ground it rests on. */
 	--nb-background: var(--cw-paper);
 	--nb-foreground: #1a222b;
 
@@ -284,16 +284,17 @@ body {
 	opacity: 1;
 	/*
 	 * The ground, not the sheet. BaseLayout deliberately leaves `bg-background`
-	 * off the body: the node field is fixed behind everything at `z-index: -1`,
-	 * which paints over the body's own background but under every element, so
-	 * the field is visible exactly where the page paints nothing.
+	 * off the body, so the ground and its wash are visible exactly where the
+	 * page paints nothing: the TOC rail, the margins, and, blurred, the
+	 * masthead.
 	 */
 	background-color: var(--cw-ground);
 }
 
 /*
- * Ground wash, under the node field: two soft gradients, fixed, so they do not
- * scroll with the content and cannot be hit by the pointer.
+ * Ground wash: two soft gradients, fixed, so they do not scroll with the
+ * content and cannot be hit by the pointer. Kept at `z-index: -2`, below every
+ * element, so nothing on the page has to opt out of it.
  */
 body::before {
 	content: "";
@@ -321,8 +322,8 @@ body:has(.cw-hero-field) {
 }
 
 /*
- * The content column on a doc page is a sheet over the ground, so the node
- * field can show through the TOC rail and the page margins. The sidebar keeps
+ * The content column on a doc page is a sheet over the ground, so the washed
+ * ground shows through the TOC rail and the page margins. The sidebar keeps
  * Nimbus's own `bg-background` and `border-r`; we do not add a second border,
  * radius, or current-page marker on top of those.
  */
