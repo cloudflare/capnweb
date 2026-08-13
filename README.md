@@ -421,13 +421,17 @@ Note that if you pass the same `RpcTarget` instance to RPC multiple times -- thu
 
 ### Listening for disconnect
 
-You can monitor any stub for "brokenness" with its `onRpcBroken()` method:
+You can monitor any stub for "brokenness" with its `onRpcBroken()` method. It returns a
+`Disposable` registration, which lets you stop listening without disposing the stub:
 
 ```ts
-stub.onRpcBroken((error: any) => {
+using registration = stub.onRpcBroken((error: any) => {
   console.error(error);
 });
 ```
+
+Calling `registration[Symbol.dispose]()` more than once is safe. Disposing the stub also removes
+its registrations without calling them.
 
 If anything happens to the stub that would cause all further method calls and property accesses to throw exceptions, then the callback will be called. In particular, this happens if:
 * The stub's underlying connection is lost.

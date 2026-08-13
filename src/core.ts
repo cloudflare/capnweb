@@ -4,14 +4,7 @@
 
 import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
 import { WORKERS_MODULE_SYMBOL } from "./symbols.js"
-
-// Polyfill Symbol.dispose for browsers that don't support it yet
-if (!Symbol.dispose) {
-  (Symbol as any).dispose = Symbol.for('dispose');
-}
-if (!Symbol.asyncDispose) {
-  (Symbol as any).asyncDispose = Symbol.for('asyncDispose');
-}
+import { DeferredDisposable, makeDisposable, NOOP_DISPOSABLE } from "./disposable.js";
 
 // Polyfill Promise.withResolvers() for old Safari versions (ugh), Hermes (React Native), and
 // maybe others.
@@ -312,7 +305,7 @@ export abstract class StubHook {
   // a disposed payload) or it may reject. It's safe to call dispose() multiple times.
   abstract dispose(): void;
 
-  abstract onBroken(callback: (error: any) => void): void;
+  abstract onBroken(callback: (error: any) => void): Disposable;
 }
 
 export class ErrorStubHook extends StubHook {
@@ -325,13 +318,14 @@ export class ErrorStubHook extends StubHook {
   pull(): RpcPayload | Promise<RpcPayload> { return Promise.reject(this.error); }
   ignoreUnhandledRejections(): void {}
   dispose(): void {}
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     try {
       callback(this.error);
     } catch (err) {
       // Don't throw back into the RPC system. Treat this as an unhandled rejection.
       Promise.resolve(err);
     }
+    return NOOP_DISPOSABLE;
   }
 };
 
@@ -519,8 +513,8 @@ export class RpcStub extends RpcTarget {
     }
   }
 
-  onRpcBroken(callback: (error: any) => void) {
-    this[RAW_STUB].hook.onBroken(callback);
+  onRpcBroken(callback: (error: any) => void): Disposable {
+    return this[RAW_STUB].hook.onBroken(callback);
   }
 
   map(func: (value: RpcPromise) => unknown): RpcPromise {
@@ -1843,17 +1837,18 @@ export class PayloadStubHook extends ValueStubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     if (this.payload) {
       if (this.payload.value instanceof RpcStub) {
         // Payload is a single stub, we should forward onRpcBroken to it.
         // TODO: Consider prohibiting PayloadStubHook created around a single stub; should always
         //   use the underlying stub's hook instead?
-        this.payload.value.onRpcBroken(callback);
+        return this.payload.value.onRpcBroken(callback);
       }
 
       // TODO: Should native stubs be able to implement onRpcBroken?
     }
+    return NOOP_DISPOSABLE;
   }
 }
 
@@ -1964,8 +1959,9 @@ class TargetStubHook extends ValueStubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     // TODO: Should RpcTargets be able to implement onRpcBroken?
+    return NOOP_DISPOSABLE;
   }
 }
 
@@ -1974,6 +1970,7 @@ class TargetStubHook extends ValueStubHook {
 export class PromiseStubHook extends StubHook {
   private promise: Promise<StubHook>;
   private resolution: StubHook | undefined;
+  private onBrokenRegistrations?: Set<Disposable>;
 
   constructor(promise: Promise<StubHook>) {
     super();
@@ -2056,6 +2053,7 @@ export class PromiseStubHook extends StubHook {
   }
 
   dispose(): void {
+    this.disposeOnBrokenRegistrations();
     if (this.resolution) {
       this.resolution.dispose();
     } else {
@@ -2067,13 +2065,42 @@ export class PromiseStubHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     if (this.resolution) {
-      this.resolution.onBroken(callback);
+      return this.trackOnBrokenRegistration(this.resolution.onBroken(callback));
     } else {
+      let registration = new DeferredDisposable();
       this.promise.then(hook => {
-        hook.onBroken(callback);
-      }, callback);
+        if (!registration.isDisposed) {
+          registration.set(hook.onBroken(callback));
+        }
+      }, error => {
+        if (!registration.isDisposed) {
+          registration.set(new ErrorStubHook(error).onBroken(callback));
+        }
+      });
+      return this.trackOnBrokenRegistration(registration);
+    }
+  }
+
+  private trackOnBrokenRegistration(inner: Disposable): Disposable {
+    let handle: Disposable;
+    handle = makeDisposable(() => {
+      inner[Symbol.dispose]();
+      this.onBrokenRegistrations?.delete(handle);
+    });
+    if (!this.onBrokenRegistrations) this.onBrokenRegistrations = new Set();
+    this.onBrokenRegistrations.add(handle);
+    return handle;
+  }
+
+  private disposeOnBrokenRegistrations(): void {
+    let registrations = this.onBrokenRegistrations;
+    this.onBrokenRegistrations = undefined;
+    if (registrations) {
+      for (let registration of registrations) {
+        registration[Symbol.dispose]();
+      }
     }
   }
 }

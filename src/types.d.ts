@@ -54,7 +54,7 @@ export type RpcCompatible<T> =
 interface StubBase<T = unknown> extends Disposable {
   [__RPC_STUB_BRAND]: T;
   dup(): this;
-  onRpcBroken(callback: (error: any) => void): void;
+  onRpcBroken(callback: (error: any) => void): Disposable;
 }
 export type Stub<T extends RpcCompatible<T>> =
     T extends object ? Provider<T> & StubBase<T> : StubBase<T>;

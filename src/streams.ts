@@ -5,6 +5,7 @@
 import {
   StubHook, RpcPayload, PropertyPath, ErrorStubHook, PayloadStubHook, PromiseStubHook, streamImpl
 } from "./core.js";
+import { NOOP_DISPOSABLE } from "./disposable.js";
 
 // =======================================================================================
 // WritableStreamStubHook - wraps a local WritableStream for export
@@ -115,9 +116,10 @@ class WritableStreamStubHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     // WritableStream stubs don't really have a "broken" state in the same way.
     // The caller would notice when write/close/abort fails.
+    return NOOP_DISPOSABLE;
   }
 }
 
@@ -517,8 +519,9 @@ class ReadableStreamStubHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     // ReadableStream stubs don't have a "broken" state.
+    return NOOP_DISPOSABLE;
   }
 }
 

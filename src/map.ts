@@ -227,7 +227,7 @@ class MapVariableHook extends StubHook {
     // Probably never called but whatever.
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     throwMapperBuilderUseError();
   }
 }

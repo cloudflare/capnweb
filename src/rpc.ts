@@ -4,6 +4,7 @@
 
 import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
 import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize, EncodingLevel, RpcLimits, DEFAULT_LIMITS } from "./serialize.js";
+import { DeferredDisposable, makeDisposable, NOOP_DISPOSABLE } from "./disposable.js";
 
 /**
  * Interface for a string-based RPC transport. This is the default transport type — no
@@ -178,6 +179,11 @@ type ExportTableEntry = {
   pipeReadable?: ReadableStream
 };
 
+type OnBrokenRegistration = {
+  index: number;
+  handle: DeferredDisposable;
+};
+
 // Entry on the imports table.
 class ImportTableEntry {
   constructor(public session: RpcSessionImpl, public importId: number, pulling: boolean) {
@@ -192,9 +198,9 @@ class ImportTableEntry {
   private activePull?: PromiseWithResolvers<void>;
   public resolution?: StubHook;
 
-  // List of integer indexes into session.onBrokenCallbacks which are callbacks registered on
-  // this import. Initialized on first use (so `undefined` is the same as an empty list).
-  private onBrokenRegistrations?: number[];
+  // Registrations made on this unresolved import, including their indexes in the session's
+  // callback array. Initialized on first use (so `undefined` is the same as an empty list).
+  private onBrokenRegistrations?: OnBrokenRegistration[];
 
   resolve(resolution: StubHook) {
     // TODO: Need embargo handling here? PayloadStubHook needs to be wrapped in a
@@ -217,20 +223,23 @@ class ImportTableEntry {
     if (this.onBrokenRegistrations) {
       // Delete all our callback registrations from this session and re-register them on the
       // target stub.
-      for (let i of this.onBrokenRegistrations) {
-        let callback = this.session.onBrokenCallbacks[i];
+      for (let registration of this.onBrokenRegistrations) {
+        let callback = this.session.onBrokenCallbacks[registration.index];
+        if (!callback) continue;
+
         let endIndex = this.session.onBrokenCallbacks.length;
-        resolution.onBroken(callback);
+        let forwarded = resolution.onBroken(callback);
         if (this.session.onBrokenCallbacks[endIndex] === callback) {
           // Oh, calling onBroken() just registered the callback back on this connection again.
           // But when the connection dies, we want all the callbacks to be called in the order in
           // which they were registered. So we don't want this one pushed to the back of the line
           // here. So, let's remove the newly-added registration and keep the original.
           // TODO: This is quite hacky, think about whether this is really the right answer.
-          delete this.session.onBrokenCallbacks[endIndex];
+          forwarded[Symbol.dispose]();
         } else {
           // The callback is now registered elsewhere, so delete it from our session.
-          delete this.session.onBrokenCallbacks[i];
+          delete this.session.onBrokenCallbacks[registration.index];
+          registration.handle.set(forwarded);
         }
       }
       this.onBrokenRegistrations = undefined;
@@ -271,19 +280,46 @@ class ImportTableEntry {
 
       // The RpcSession itself will have called all our callbacks so we don't need to track the
       // registrations anymore.
+      if (this.onBrokenRegistrations) {
+        let sessionAborting = this.session.isAborted();
+        for (let registration of this.onBrokenRegistrations) {
+          // During session abort, an earlier callback may dispose a stub whose callback has not
+          // run yet. Keep its slot until the session finishes iterating the callback array.
+          if (!sessionAborting) {
+            delete this.session.onBrokenCallbacks[registration.index];
+          }
+          registration.handle.set(NOOP_DISPOSABLE);
+        }
+      }
       this.onBrokenRegistrations = undefined;
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     if (this.resolution) {
-      this.resolution.onBroken(callback);
+      return this.resolution.onBroken(callback);
     } else {
       let index = this.session.onBrokenCallbacks.length;
       this.session.onBrokenCallbacks.push(callback);
 
       if (!this.onBrokenRegistrations) this.onBrokenRegistrations = [];
-      this.onBrokenRegistrations.push(index);
+      let handle = new DeferredDisposable();
+      let registration = {index, handle};
+      handle.set(makeDisposable(() => {
+        // Once abort has started, preserve the callback array until RpcSessionImpl finishes
+        // dispatching it. An earlier callback may dispose the stub for a later callback.
+        if (!this.session.isAborted()) {
+          delete this.session.onBrokenCallbacks[index];
+        }
+        let registrations = this.onBrokenRegistrations;
+        if (registrations) {
+          let registrationIndex = registrations.indexOf(registration);
+          if (registrationIndex !== -1) registrations.splice(registrationIndex, 1);
+          if (registrations.length === 0) this.onBrokenRegistrations = undefined;
+        }
+      }));
+      this.onBrokenRegistrations.push(registration);
+      return handle;
     }
   }
 
@@ -297,6 +333,7 @@ class ImportTableEntry {
 
 class RpcImportHook extends StubHook {
   public entry?: ImportTableEntry;  // undefined when we're disposed
+  private onBrokenRegistrations?: Set<Disposable>;
 
   // `pulling` is true if we already expect that this import is going to be resolved later, and
   // null if this import is not allowed to be pulled (i.e. it's a stub not a promise).
@@ -393,6 +430,7 @@ class RpcImportHook extends StubHook {
   }
 
   dispose(): void {
+    this.disposeOnBrokenRegistrations();
     let entry = this.entry;
     this.entry = undefined;
     if (entry) {
@@ -402,9 +440,28 @@ class RpcImportHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void): Disposable {
     if (this.entry) {
-      this.entry.onBroken(callback);
+      let inner = this.entry.onBroken(callback);
+      let handle: Disposable;
+      handle = makeDisposable(() => {
+        inner[Symbol.dispose]();
+        this.onBrokenRegistrations?.delete(handle);
+      });
+      if (!this.onBrokenRegistrations) this.onBrokenRegistrations = new Set();
+      this.onBrokenRegistrations.add(handle);
+      return handle;
+    }
+    return NOOP_DISPOSABLE;
+  }
+
+  protected disposeOnBrokenRegistrations(): void {
+    let registrations = this.onBrokenRegistrations;
+    this.onBrokenRegistrations = undefined;
+    if (registrations) {
+      for (let registration of registrations) {
+        registration[Symbol.dispose]();
+      }
     }
   }
 }
@@ -418,6 +475,7 @@ class RpcMainHook extends RpcImportHook {
   }
 
   dispose(): void {
+    this.disposeOnBrokenRegistrations();
     if (this.session) {
       let session = this.session;
       this.session = undefined;
@@ -514,6 +572,10 @@ class RpcSessionImpl implements Importer, Exporter {
     this.imports.push(new ImportTableEntry(this, 0, false));
 
     this.readLoop().catch(err => this.abort(err));
+  }
+
+  isAborted(): boolean {
+    return this.abortReason !== undefined;
   }
 
   // Should only be called once immediately after construction.
@@ -940,6 +1002,7 @@ class RpcSessionImpl implements Importer, Exporter {
         Promise.resolve(err);
       }
     }
+    this.onBrokenCallbacks = [];
     for (let i in this.imports) {
       this.imports[i].abort(error);
     }

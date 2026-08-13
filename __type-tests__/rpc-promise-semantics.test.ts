@@ -63,9 +63,9 @@ expectType<RpcPromise<string>>(namePromise)
 expectType<RpcPromise<number>>(idPromise)
 expectType<RpcPromise<Counter>>(nestedCounterPromise)
 
-userPromise.onRpcBroken((_error) => {})
-counterPromise.onRpcBroken((_error) => {})
-idPromise.onRpcBroken((_error) => {})
+expectType<Disposable>(userPromise.onRpcBroken((_error) => {}))
+expectType<Disposable>(counterPromise.onRpcBroken((_error) => {}))
+expectType<Disposable>(idPromise.onRpcBroken((_error) => {}))
 
 expectAssignable<Promise<number>>(counterPromise.increment(3))
 expectAssignable<Promise<number>>(counterPromise.value)

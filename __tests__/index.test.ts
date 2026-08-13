@@ -9,6 +9,7 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
+import { ErrorStubHook, PromiseStubHook, type StubHook } from "../src/core.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
@@ -2110,6 +2111,87 @@ describe("error serialization", () => {
 });
 
 describe("onRpcBroken", () => {
+  it("preserves registration order when a callback disposes a later stub", async () => {
+    class TestBroken extends RpcTarget {
+      makeCounter() { return new Counter(0); }
+      hangingCall(): Promise<void> {
+        return new Promise(() => {});
+      }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let first = await harness.stub.makeCounter();
+    let second = await harness.stub.makeCounter();
+    let hangingPromise = harness.stub.hangingCall();
+    let fired: string[] = [];
+
+    first.onRpcBroken(() => {
+      fired.push("first");
+      second[Symbol.dispose]();
+    });
+    second.onRpcBroken(() => { fired.push("second"); });
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await hangingPromise.catch(() => {});
+
+    expect(fired).toStrictEqual(["first", "second"]);
+  });
+
+  it("unregisters from a deferred hook when its promise stub is disposed", async () => {
+    let deferred = Promise.withResolvers<StubHook>();
+    let hook = new PromiseStubHook(deferred.promise);
+    let errors: unknown[] = [];
+
+    hook.onBroken(error => { errors.push(error); });
+    hook.dispose();
+    deferred.resolve(new ErrorStubHook(new Error("late failure")));
+    await deferred.promise;
+    await pumpMicrotasks();
+
+    expect(errors).toStrictEqual([]);
+  });
+
+  it("returns disposable registrations and removes them with their stub", async () => {
+    class TestBroken extends RpcTarget {
+      makeCounter() { return new Counter(0); }
+      hangingCall(): Promise<Counter> {
+        return new Promise(() => {});
+      }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let stub = harness.stub;
+    let fired: string[] = [];
+
+    let duplicateCallback = () => { fired.push("duplicate"); };
+    let removedDuplicate = stub.onRpcBroken(duplicateCallback);
+    let keptDuplicate = stub.onRpcBroken(duplicateCallback);
+    expect(Symbol.dispose in removedDuplicate).toBe(true);
+    removedDuplicate[Symbol.dispose]();
+    expect(() => removedDuplicate[Symbol.dispose]()).not.toThrow();
+
+    let counterPromise = stub.makeCounter();
+    let forwardedRegistration = counterPromise.onRpcBroken(() => { fired.push("forwarded"); });
+    let counter = await counterPromise;
+    forwardedRegistration[Symbol.dispose]();
+    expect(() => forwardedRegistration[Symbol.dispose]()).not.toThrow();
+    counter[Symbol.dispose]();
+
+    let hangingPromise = stub.hangingCall();
+    let pendingRegistration = hangingPromise.onRpcBroken(() => { fired.push("pending"); });
+    pendingRegistration[Symbol.dispose]();
+
+    let disposedStub = await stub.makeCounter();
+    disposedStub.onRpcBroken(() => { fired.push("disposed stub"); });
+    disposedStub[Symbol.dispose]();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await hangingPromise.catch(() => {});
+
+    expect(fired).toStrictEqual(["duplicate"]);
+    expect(() => keptDuplicate[Symbol.dispose]()).not.toThrow();
+  });
+
   it("signals when the connection is lost", async () => {
     class TestBroken extends RpcTarget {
       getValue() { return 42; }
@@ -2152,11 +2234,14 @@ describe("onRpcBroken", () => {
     ]);
 
     // onRpcBroken() when already broken just reports the error immediately.
-    throwingPromise.onRpcBroken(error => { errors.push({which: "throwError2", error}); });
+    let brokenRegistration = throwingPromise.onRpcBroken(
+        error => { errors.push({which: "throwError2", error}); });
     expect(errors).toStrictEqual([
       {which: "throwError", error: new Error("test error")},
       {which: "throwError2", error: new Error("test error")},
     ]);
+    expect(() => brokenRegistration[Symbol.dispose]()).not.toThrow();
+    expect(() => brokenRegistration[Symbol.dispose]()).not.toThrow();
 
     // Simulate disconnect by making the transport fail
     harness.clientTransport.forceReceiveError(new Error("test disconnect"));
