@@ -533,6 +533,9 @@ console.log(await stub.greet("Bob"));
 // response back over the wire.
 ```
 
+For a complete example that exposes an RPC interface on both ends of the same connection, see
+[Bidirectional WebSocket calls](examples/websocket-bidirectional/README.md).
+
 ### HTTP server on Cloudflare Workers
 
 The helper function `newWorkersRpcResponse()` makes it easy to implement an HTTP server that accepts both the HTTP batch and WebSocket APIs at once:
