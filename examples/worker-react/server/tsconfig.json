@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "ES2022",
-    "lib": ["ES2022"],
+    "lib": ["ES2022", "ES2024.Promise", "ESNext.Disposable"],
     "types": ["@cloudflare/workers-types"],
     "moduleResolution": "bundler",
     "resolveJsonModule": true,

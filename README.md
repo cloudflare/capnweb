@@ -24,6 +24,29 @@ Cap'n Web is more expressive than almost every other RPC system, because it impl
 npm i capnweb
 ```
 
+### TypeScript configuration
+
+Cap'n Web's type definitions refer to several recent built-in APIs. If your project sets
+[`compilerOptions.lib`](https://www.typescriptlang.org/tsconfig/#lib) explicitly, use this as a
+baseline:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "ES2024.Promise", "ESNext.Disposable"]
+  }
+}
+```
+
+`ES2024.Promise` provides the types for `Promise.withResolvers()`, while `ESNext.Disposable`
+provides `Disposable`, `Symbol.dispose`, and `Symbol.asyncDispose`. Cap'n Web supplies runtime
+polyfills for those APIs, so the emit target can remain `ES2022`. `DOM` provides the web platform
+types exposed by the main package.
+
+If your project already includes `ESNext`, it covers the Promise and disposable definitions above.
+Keep any additional libraries required by your environment, such as `DOM.Iterable` or `WebWorker`.
+
 ## Example
 
 A client looks like this:
