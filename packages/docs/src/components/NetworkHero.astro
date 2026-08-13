@@ -2,101 +2,114 @@
 /**
  * Full-bleed backdrop for the splash hero.
  *
- * This was a WebGL2 node field. It looked better than what replaced it and it cost a CPU core to
- * look at, which is not a trade a documentation site should be making. The field is now a static
- * SVG with a few CSS animations; the gradient and the veil below are unchanged, and they were
- * always the fallback, so the composition of the hero is the same.
- *
- * Purely decorative: `aria-hidden`, and carrying nothing that is not also in the hero copy.
+ * React Bits' LightTunnel, ported to vanilla JS + ogl. The tunnel is centred in
+ * its own canvas so it reads as concentric rings / a loop, and that canvas is
+ * parked in the top-right of the hero so the cables sweep in from the corner
+ * while the copy on the left stays on the page background. A dark navy corner
+ * backs it so the blue pulses glow. Decorative only: the canvas is aria-hidden,
+ * pointer-events stay off, and reduced-motion visitors get the static corner.
  */
-import Constellation from './Constellation.astro';
+import LightTunnel from "./LightTunnel.astro";
 ---
 
 <div class="cw-hero-field" aria-hidden="true">
-	<div class="cw-hero-stage">
-		<Constellation variant="hero" />
-	</div>
-	<div class="cw-hero-veil"></div>
+  <div class="cw-hero-stage">
+    <LightTunnel
+      cableColor="#112039"
+      pulseColor="#3B82F6"
+      tunnelColor="#5227FF"
+      tunnelOpacity={0}
+      speed={0.1}
+      flowDirection="inward"
+      pulseSpeed={2}
+      pulseLength={0.2}
+      pulseBlend={0.8}
+      pulseWidth={0.12}
+      cableCount={44}
+      thickness={0.5}
+      rimWidth={0}
+      waviness={0.6}
+      sway={0.2}
+      spiral={0.62}
+      spinSpeed={0.02}
+      size={1.5}
+      centerX={0}
+      centerY={0}
+      glow={1.7}
+      fadeNear={0.5}
+      fadeFar={2.6}
+      brightness={1.1}
+      colorVariance
+      grain
+      grainIntensity={0.05}
+      mouseInteraction={false}
+    />
+  </div>
+  <div class="cw-hero-veil"></div>
 </div>
 
 <style>
-	.cw-hero-field {
-		position: absolute;
-		inset: 0 0 auto 0;
-		/* Behind the hero's own copy, and behind whatever follows the hero on the
-		   page: the field overhangs the section it lives in, and without this it
-		   would paint over the top of the first paragraphs. */
-		z-index: -1;
-		/* Taller than the hero itself so the field is still going behind the
-		   first band of prose, then taken out by the veil's mask. */
-		height: min(46rem, 108vh);
-		overflow: hidden;
-		pointer-events: none;
-		/* The fallback. Same geometry as the shader's gradient, so losing the
-		   canvas changes the texture of the hero and not its composition. */
-		background:
-			radial-gradient(
-				58rem 34rem at 68% 44%,
-				var(--cw-hero-bg-inner) 0%,
-				transparent 68%
-			),
-			var(--cw-hero-bg-outer);
-	}
+  .cw-hero-field {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: -1;
+    height: min(48rem, 112vh);
+    overflow: hidden;
+    pointer-events: none;
+    /* The page background, with a soft pool centred behind the vortex that its
+       rings glow against. */
+    background:
+      radial-gradient(
+        60rem 52rem at 50% 42%,
+        var(--cw-hero-stage-bg) 0%,
+        color-mix(in srgb, var(--cw-hero-stage-bg) 40%, transparent) 40%,
+        transparent 68%
+      ),
+      var(--nb-background);
+  }
 
-	.cw-hero-stage {
-		display: block;
-		width: 100%;
-		height: 100%;
-		/* Eased in so the field arrives with the page instead of snapping in. */
-		opacity: 0;
-		animation: cw-hero-in 0.9s ease forwards;
-	}
+  /* The canvas is full-bleed so the vortex is never clipped by a container
+     edge; its vanishing point is pushed to the top-right in the shader
+     (centerX/centerY) so the spiral sits in the corner, clear of the copy. */
+  .cw-hero-stage {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    animation: cw-hero-in 1s ease forwards;
+  }
 
-	@keyframes cw-hero-in {
-		to {
-			opacity: 1;
-		}
-	}
+  @keyframes cw-hero-in {
+    to {
+      opacity: 1;
+    }
+  }
 
-	/* Dissolve the field into the page, and hold contrast under the copy. The
-	   horizontal leg is skipped on narrow screens where text sits over the
-	   middle of the canvas rather than to one side of it. */
-	.cw-hero-veil {
-		position: absolute;
-		inset: 0;
-		background: linear-gradient(
-			180deg,
-			transparent 0%,
-			transparent 52%,
-			color-mix(in srgb, var(--cw-hero-bg-outer) 62%, transparent) 78%,
-			var(--cw-hero-bg-outer) 100%
-		);
-	}
+  /* Reveal the vortex in the centre and dissolve its edges into the page, with
+     a stronger fade at the bottom so it meets the copy below cleanly. */
+  .cw-hero-veil {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        78% 86% at 50% 42%,
+        transparent 0%,
+        transparent 46%,
+        color-mix(in srgb, var(--nb-background) 50%, transparent) 72%,
+        var(--nb-background) 96%
+      ),
+      linear-gradient(
+        180deg,
+        transparent 0%,
+        transparent 64%,
+        color-mix(in srgb, var(--nb-background) 60%, transparent) 84%,
+        var(--nb-background) 100%
+      );
+  }
 
-	@media (min-width: 50rem) {
-		.cw-hero-veil {
-			background:
-				linear-gradient(
-					90deg,
-					color-mix(in srgb, var(--cw-hero-bg-outer) 94%, transparent) 0%,
-					color-mix(in srgb, var(--cw-hero-bg-outer) 72%, transparent) 28%,
-					color-mix(in srgb, var(--cw-hero-bg-outer) 28%, transparent) 50%,
-					transparent 70%
-				),
-				linear-gradient(
-					180deg,
-					transparent 0%,
-					transparent 52%,
-					color-mix(in srgb, var(--cw-hero-bg-outer) 62%, transparent) 78%,
-					var(--cw-hero-bg-outer) 100%
-				);
-		}
-	}
-
-	@media (prefers-reduced-motion: reduce) {
-		.cw-hero-stage {
-			animation: none;
-			opacity: 1;
-		}
-	}
+  @media (prefers-reduced-motion: reduce) {
+    .cw-hero-stage {
+      animation: none;
+      opacity: 1;
+    }
+  }
 </style>

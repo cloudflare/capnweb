@@ -8,7 +8,6 @@
 import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
 import BaseLayout from "./BaseLayout.astro";
 import Header from "@/components/Header.astro";
-import GraphBackdrop from "@/components/GraphBackdrop.astro";
 import { Banner } from "@/components/ui/banner";
 import { Sidebar, SidebarFilter } from "@/components/ui/sidebar";
 import { TOC, MobileTOC } from "@/components/ui/toc";
@@ -76,9 +75,6 @@ const hasPagination = Astro.slots.has("pagination");
 ---
 
 <BaseLayout title={title} description={description} noindex={noindex || draft} markdownUrl={markdownUrl} socialImage={socialImage} lastUpdated={lastUpdated} head={head} collection={collection} entryId={entryId}>
-  {/* The node field, behind everything. Doc pages only: a custom page paints
-      its own field behind the hero, and two would fight. */}
-  {!isCustom && <GraphBackdrop />}
   <div class="flex flex-col min-h-screen">
     {hasHeader ? <slot name="header" /> : <Header collection={collection} entryId={entryId} showSidebar={showSidebar} />}
 
@@ -90,7 +86,7 @@ const hasPagination = Astro.slots.has("pagination");
       <div class="flex-1 mx-auto w-full">
         <div class="flex">
           {showSidebar && (
-            <aside id="desktop-sidebar" data-nb-desktop-sidebar class="hidden lg:flex w-(--nb-sidebar-width) shrink-0 border-r border-border sticky top-14 h-[calc(100vh-3.5rem)] flex-col overflow-y-auto overscroll-contain relative">
+            <aside id="desktop-sidebar" data-nb-desktop-sidebar class="hidden lg:flex w-(--nb-sidebar-width) shrink-0 border-r border-border bg-background sticky top-14 h-[calc(100vh-3.5rem)] flex-col overflow-y-auto overscroll-contain relative">
               {hasSidebar ? (
                 <slot name="sidebar" />
               ) : (
@@ -194,22 +190,18 @@ const hasPagination = Astro.slots.has("pagination");
                     )}
                     <PageActions markdownUrl={markdownUrl} lastUpdated={lastUpdated} class={description ? undefined : "mt-3"} />
                     {headings !== false && headings.length > 0 && (
-                      <div class="border-border bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-14 z-20 -mx-4 mt-3 border-y px-4 py-2 backdrop-blur lg:-mx-6 lg:px-6 xl:hidden">
+                      <div class="sticky top-14 z-20 mt-4 xl:hidden">
                         <MobileTOC headings={headings} />
                       </div>
                     )}
-                    {(markdownUrl || audience === "human") && (
-                      audience === "human" ? (
-                        <div class="mt-3 mb-6 flex items-center gap-3" role="none">
-                          <div class="h-px flex-1 bg-border"></div>
-                          <Badge text="For humans" variant="success" size="small" class="font-mono uppercase border border-success/15" />
-                          <div class="h-px flex-1 bg-border"></div>
-                        </div>
-                      ) : (
-                        <div class="mt-3 mb-6 h-px w-full bg-border" role="none" />
-                      )
+                    {audience === "human" && (
+                      <div class="mt-4 mb-6 flex items-center gap-3" role="none">
+                        <div class="h-px flex-1 bg-border"></div>
+                        <Badge text="For humans" variant="success" size="small" class="font-mono uppercase border border-success/15" />
+                        <div class="h-px flex-1 bg-border"></div>
+                      </div>
                     )}
-                    {!description && !markdownUrl && audience !== "human" && <div class="mb-4" />}
+                    {audience !== "human" && <div class="mb-6" />}
                   </Fragment>
                 )}
                 <article class="docs-content max-w-none">

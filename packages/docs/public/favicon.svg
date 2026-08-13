@@ -1,20 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <!--
-    Three nodes and the edges between them: the smallest thing that still reads
-    as a network at 16px. The originating node is Cloudflare orange and the rest
-    of the graph deep azure, the same one-spark-on-blue rule the site uses.
+    A quiet cool-grey mark: two waves and a tomato spark.
 
     Keep the two-hyphen sequence out of this comment. XML forbids it inside a
     comment, and an SVG that fails to parse is an image the browser silently
     declines to draw, which is a genuinely difficult bug to see.
   -->
-  <rect width="32" height="32" rx="7" fill="#04070e"/>
-  <g stroke="#1487e0" stroke-width="1.75" stroke-linecap="round" opacity=".9">
-    <path d="M10 9.5 22 16"/>
-    <path d="M10 9.5v13"/>
-    <path d="M10 22.5 22 16"/>
-  </g>
-  <circle cx="22" cy="16" r="3.1" fill="#38a5f5"/>
-  <circle cx="10" cy="22.5" r="3.1" fill="#38a5f5"/>
-  <circle cx="10" cy="9.5" r="3.6" fill="#f6821f"/>
+  <rect width="32" height="32" rx="7" fill="#eef1f4"/>
+  <path d="M6 20c3-4 6-4 10 0s7 4 10 0" fill="none" stroke="#6a7c8f" stroke-width="2" stroke-linecap="round"/>
+  <path d="M6 13c3-4 6-4 10 0s7 4 10 0" fill="none" stroke="#9aa8b8" stroke-width="2" stroke-linecap="round"/>
+  <circle cx="24" cy="10" r="2.4" fill="#e85d2c"/>
 </svg>

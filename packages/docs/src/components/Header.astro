@@ -31,11 +31,11 @@ const sections = await getSidebarSections(currentSlug, { collection });
 const showSections = sections.length >= 2;
 ---
 
-<header class="sticky top-0 z-30 border-b border-border bg-card/80 backdrop-blur-lg">
+<header class="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-lg">
   <div class="mx-auto flex items-center justify-between h-14 px-4 lg:px-6">
     <div class="flex items-center gap-3">
       <a href="/" class="group">
-        <span class="font-semibold text-sm text-foreground group-hover:text-primary transition-colors">
+        <span class="text-lg text-foreground group-hover:text-muted-foreground" style="font-family: var(--nb-font-display)">
           {config.title}
         </span>
       </a>

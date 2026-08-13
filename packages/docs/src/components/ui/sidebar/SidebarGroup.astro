@@ -66,9 +66,9 @@ const isOpen = Boolean(hasActive || collapsed === false || collapsed === undefin
 // Shared classes for the row that holds the label + caret in both
 // rendering modes (landing-as-link vs. label-as-trigger).
 const rowClass = cn(
-  "group/expander flex min-h-[2rem] items-center rounded-lg px-3 py-1 text-[0.8125rem] no-underline transition-colors duration-150 focus-visible:outline-offset-[-2px]",
+  "group/expander flex min-h-[1.875rem] items-center rounded-md px-2.5 py-1 font-mono text-[0.6875rem] uppercase tracking-[0.14em] no-underline transition-colors duration-150 focus-visible:outline-offset-[-2px]",
   "hover:bg-accent hover:text-foreground",
-  hasActive ? "font-semibold text-foreground" : "font-medium text-muted-foreground",
+  hasActive ? "text-foreground" : "text-muted-foreground",
 );
 // Chevron icon classes. Rotation is driven by an explicit CSS rule in
 // `<style is:global>` at the bottom of this file.

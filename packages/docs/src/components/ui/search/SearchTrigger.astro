@@ -6,13 +6,13 @@ import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
 <button
   data-search-trigger
   type="button"
-  class="flex items-center gap-2 rounded-md border border-border bg-card text-sm text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground p-2 sm:px-2.5 sm:py-1.5"
+  class="flex items-center gap-2 rounded-md border border-border bg-transparent font-mono text-[0.6875rem] uppercase tracking-[0.14em] text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground p-2 sm:px-2.5 sm:py-1.5"
   aria-label="Search documentation"
   aria-keyshortcuts="Control+K"
 >
   <Icon name="ph:magnifying-glass" class="h-4 w-4" />
   <span class="hidden md:inline">Search</span>
-  <kbd class="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 text-[0.625rem] font-medium text-muted-foreground">
+  <kbd class="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[0.625rem] font-medium uppercase tracking-[0.08em] text-muted-foreground">
     <span data-shortcut-key>Ctrl</span>K
   </kbd>
 </button>

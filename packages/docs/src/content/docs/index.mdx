@@ -6,11 +6,16 @@ mode: custom
 
 import { examples } from '../../examples.ts';
 import bundleSize from '../../generated/bundle-size.json';
+import HeroExample from '../../components/HeroExample.astro';
+import Features from '../../components/Features.astro';
+import NavList from '../../components/NavList.astro';
 
 <Hero
 	title="One round trip"
 	tagline={`A JavaScript-native, object-capability RPC system. Chain dependent calls and the whole chain resolves in a single trip. No schemas, no boilerplate, ${bundleSize.label}.`}
-/>
+>
+	<HeroExample />
+</Hero>
 
 <Prose>
 
@@ -19,70 +24,9 @@ author, but designed to play nice in the web stack. Like Cap'n Proto it is an **
 protocol: "Cap'n" is short for "capabilities and". Unlike Cap'n Proto, it has no schemas, almost no
 boilerplate, and its serialization is just JSON with a little pre- and post-processing.
 
-## Call the server. Let the server call you back.
-
-<CardGrid>
-<Card title="The client">
-```js
-import { newWebSocketRpcSession } from "capnweb";
-
-// One-line setup.
-let api = newWebSocketRpcSession("wss://example.com/api");
-
-// Call a method on the server!
-let result = await api.hello("World");
-
-console.log(result);
-```
-</Card>
-
-<Card title="The server">
-```js
-import { RpcTarget, newWorkersRpcResponse } from "capnweb";
-
-class MyApiServer extends RpcTarget {
-  hello(name) {
-    return `Hello, ${name}!`
-  }
-}
-
-export default {
-  fetch(request, env, ctx) {
-    return newWorkersRpcResponse(request, new MyApiServer());
-  }
-}
-```
-</Card>
-</CardGrid>
-
 ## Why it's different
 
-<CardGrid>
-	<Card title="Promise pipelining" icon="ph:rocket-launch">
-		Don't await a result before using it. Chain dependent calls together and the whole chain
-		resolves in a **single network round trip**, even over plain HTTP.
-	</Card>
-	<Card title="Bidirectional by default" icon="ph:arrows-left-right">
-		Sessions are symmetric. The client can call the server, and the server can call the client.
-		Pass a function over RPC and the recipient gets a stub that calls back to you.
-	</Card>
-	<Card title="Pass by reference" icon="ph:puzzle-piece">
-		Classes extending `RpcTarget` travel as references, not copies. Method calls on the reference
-		run where the object actually lives.
-	</Card>
-	<Card title="No schemas, no codegen" icon="ph:seal-check">
-		No `.proto` files, no build step, no generated clients. Write TypeScript interfaces if you
-		want types; they are erased at runtime and cost nothing.
-	</Card>
-	<Card title="Runs everywhere" icon="ph:devices">
-		Every major browser, Cloudflare Workers, Node.js, Deno, and Bun. Over HTTP, WebSocket,
-		`MessagePort`, or a transport you write yourself.
-	</Card>
-	<Card title={bundleSize.label} icon="ph:download-simple">
-		Minified and gzipped, with zero dependencies. The whole protocol is human-readable JSON,
-		so you can debug it in your browser's network tab.
-	</Card>
-</CardGrid>
+<Features bundleLabel={bundleSize.label} />
 
 ## The magic trick
 
@@ -100,11 +44,8 @@ let friends = authed.getFriendIds().map(id => api.getUserProfile(id));
 let [me, myFriends] = await Promise.all([profile, friends]);
 ```
 
-<LinkCard
-	title="See how pipelining works"
-	description="A step-by-step tour of promise pipelining, and the record-replay trick behind .map()."
-	href="/start/pipelining-tour/"
-/>
+[See how promise pipelining works &rarr;](/start/pipelining-tour/) — a step-by-step tour, and the
+record-replay trick behind `.map()`.
 
 ## See it running
 
@@ -112,25 +53,19 @@ Both examples run right here in the docs, with the source alongside them. They m
 from opposite ends of the stack: the pipelined version issues one HTTP request where the ordinary
 version issues three.
 
-<CardGrid>
-	{/* Astro's JSX is not React -- a `key` prop would be emitted as a literal
-	    DOM attribute, so it is deliberately absent here. */}
-	{examples.map((example) => (
-		<LinkCard
-			title={example.title}
-			description={example.description}
-			href={example.docsPath}
-		/>
-	))}
-</CardGrid>
+<NavList items={examples.map((example) => ({
+	title: example.title,
+	description: example.description,
+	href: example.docsPath,
+}))} />
 
 ## Get going
 
-<CardGrid>
-	<LinkCard title="Installation" description="npm i capnweb" href="/start/installation/" />
-	<LinkCard title="Quickstart" description="A working client and server in a few minutes." href="/start/quickstart/" />
-	<LinkCard title="Core concepts" description="Stubs, targets, promises, and disposal." href="/concepts/values/" />
-	<LinkCard title="Wire protocol" description="What actually goes over the socket." href="/reference/protocol/" />
-</CardGrid>
+<NavList items={[
+	{ title: "Installation", description: "npm i capnweb", href: "/start/installation/" },
+	{ title: "Quickstart", description: "A working client and server in a few minutes.", href: "/start/quickstart/" },
+	{ title: "Core concepts", description: "Stubs, targets, promises, and disposal.", href: "/concepts/values/" },
+	{ title: "Wire protocol", description: "What actually goes over the socket.", href: "/reference/protocol/" },
+]} />
 
 </Prose>

@@ -184,29 +184,29 @@ const demoSrc = `${example.demoPath}?embed=1`;
 	   block inside is stripped back to transparent, so the active tab and the
 	   code below it are the same fill by construction, which is what makes the
 	   tab look attached rather than stuck on. Everything around it is retinted
-	   to the site's blue-black so the tool still belongs here.
+	   to the site's charcoal so the tool still belongs here.
 
 	   Keyed off `data-theme`, which BaseLayout writes explicitly as light or dark
 	   for exactly this kind of consumer -- the frames read it too. Nimbus's own
 	   `data-mode` is absent in light mode, so a dark default plus one light
 	   override would not be expressible against it. */
 	.capn-stage {
-		--pg-bg: #0d1117;
-		--pg-bar: #05080f;
-		--pg-border: rgba(120, 170, 230, 0.2);
-		--pg-fg-muted: #8299b6;
-		--pg-fg: #dbe7f5;
+		--pg-bg: #12171c;
+		--pg-bar: #0c1014;
+		--pg-border: rgba(232, 238, 244, 0.12);
+		--pg-fg-muted: #9aabba;
+		--pg-fg: #e8eef4;
 		/* The one place the tool is allowed a spark: the active tab's edge. */
-		--pg-accent: #f6821f;
+		--pg-accent: #e85d2c;
 	}
 
 	:root[data-theme='light'] .capn-stage {
-		--pg-bg: #ffffff;
-		--pg-bar: #f2f6fb;
-		--pg-border: rgba(12, 48, 90, 0.18);
-		--pg-fg-muted: #56687f;
-		--pg-fg: #0d1a2b;
-		--pg-accent: #d9700f;
+		--pg-bg: #f7f9fb;
+		--pg-bar: #e4e9ee;
+		--pg-border: rgba(26, 34, 43, 0.12);
+		--pg-fg-muted: #5b6b7a;
+		--pg-fg: #1a222b;
+		--pg-accent: #c4471c;
 	}
 
 	.capn-stage {

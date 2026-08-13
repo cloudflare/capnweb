@@ -101,8 +101,7 @@ Ours, and the reason each exists:
 | --------------------- | ------------------------------------------------------------------------- |
 | `Hero.astro`          | The landing page's headline, tagline and calls to action, over the field. |
 | `NetworkHero.astro`   | The field as the hero's own backdrop, edge to edge.                       |
-| `GraphBackdrop.astro` | The field behind every other page, mounted by `DocsLayout`.               |
-| `Constellation.astro` | The field itself: the markup and the CSS that moves it.                   |
+| `LightTunnel.astro`   | React Bits LightTunnel, ported to vanilla JS + ogl.                       |
 | `Playground.astro`    | The examples' source-and-demo stage.                                      |
 | `Prose.astro`         | The prose container a `mode: custom` page has to bring itself.            |
 
@@ -146,24 +145,12 @@ exists.
 
 ## The theme
 
-`src/styles/globals.css` is the file to edit. The palette is a near-black with a blue undertone
-(never a neutral grey) carrying a deep saturated blue as its structural colour and an electric azure
-for anything interactive.
+`src/styles/globals.css` is the file to edit. The palette is a soft cool grey (`#eef1f4`) with slate
+ink and a restrained tomato CTA. Type is Cal Sans for display (headings + hero), DM Sans for body
+and UI, and Commit Mono for code.
 
-Cloudflare orange appears in exactly three places, and the restraint is the point: a fourth use and
-it stops meaning anything.
-
-1. the pulses travelling the hero network
-2. the primary call to action
-3. the marker on the current sidebar page
-
-Note that `--nb-primary`, which colours links and hover states, is the azure and not the orange. The
-one orange button is set in `Hero.astro`.
-
-Light mode is a genuine second scheme rather than an inversion: a cool near-white with the same two
-accents, darkened to hold contrast on paper. Unlike the Starlight build, the chrome is **not**
-near-black in both schemes; a dark rail against a white document read as a screenshot of two
-different sites, so light mode has light chrome a shade off its own ground.
+Light mode is a genuine second scheme rather than an inversion. The sidebar and the content sheet
+share `--nb-background`: one surface, not a darker rail meeting a lighter document.
 
 ### Two families of token
 
@@ -171,13 +158,12 @@ Nimbus's own tokens are `--nb-*`, and Tailwind utilities like `bg-card` and `bor
 generated from them in the `@theme` block. Ours are `--cw-*`: the raw palette, plus the handful of
 values the page shell and the node field need that have no Nimbus equivalent.
 
-| Token             | Dark      | Light     | Used for                           |
-| ----------------- | --------- | --------- | ---------------------------------- |
-| `--cw-ground`     | `#04070e` | `#e6edf6` | the ground the page sheet rests on |
-| `--nb-background` | `#070b16` | `#ffffff` | the content sheet itself           |
-| `--cw-chrome`     | `#05080f` | `#dfe8f4` | the desktop sidebar rail           |
-| `--nb-primary`    | `#38a5f5` | `#0a5292` | links, hover, focus                |
-| `--cw-orange`     | `#f6821f` | `#f6821f` | the three sparks above             |
+| Token             | Dark      | Light     | Used for                                      |
+| ----------------- | --------- | --------- | --------------------------------------------- |
+| `--cw-ground`     | `#090c10` | `#e2e7ec` | the ground the page sheet rests on            |
+| `--nb-background` | `#0c1014` | `#eef1f4` | the content sheet and the desktop sidebar     |
+| `--nb-primary`    | `#e85d2c` | `#e85d2c` | primary actions                               |
+| `--cw-orange`     | `#e85d2c` | `#e85d2c` | the CTA spark                                 |
 
 The palette is kept as hex rather than converted to oklch, which the scaffold's own comment
 recommends. These are measured, tuned values carried over from the theme this replaced, and a round
@@ -191,13 +177,13 @@ without being visible through the text:
 1. `body` paints `--cw-ground`. `BaseLayout` deliberately leaves `bg-background` off it.
 2. `body::before` adds two fixed radial washes, so the ground is a space rather than a flat fill.
 3. The node field is fixed at `z-index: -1`: above the body's own background, below every element.
-4. `<main data-cw-sheet>` paints `--nb-background`, with a hairline, a radius and a shadow above
-   `64rem`. The sidebar rail is opaque chrome; the table-of-contents rail is left transparent.
+4. `<main data-cw-sheet>` paints `--nb-background`. The sidebar uses Nimbus's own `bg-background`
+   and a single `border-r`; the table-of-contents rail is left transparent.
 
 So the field shows through the right-hand rail and the margins, which are the parts of the page meant
 to be looked through rather than at, and, blurred, through the masthead, which is a translucent
-`bg-card` over a `backdrop-blur`. The TOC rail is transparent and the nav rail is not because the nav
-is dense enough that a field crossing its labels costs legibility, and legibility wins.
+`bg-card` over a `backdrop-blur`. The current page in the sidebar is Nimbus's own `bg-accent`
+highlight, not a second indicator painted on top of it.
 
 The landing page is the exception: it paints its own field edge to edge behind the hero, so the
 ground wash is suppressed under it and the ground is set to the field's own outer colour, which
@@ -227,96 +213,28 @@ direction.
 
 ### Type
 
-The site self-hosts Inter and JetBrains Mono through `@fontsource-variable`, imported in
-`BaseLayout.astro`. A first visit fetches 86.6 kB of font (47.1 kB Inter, 39.5 kB JetBrains Mono,
-latin subsets only, then cached for a year by `public/_headers`).
+The site self-hosts Cal Sans, DM Sans (variable), and Commit Mono through `@fontsource`, imported in
+`BaseLayout.astro`. Latin subsets only, then cached for a year by `public/_headers`.
+
+Cal Sans is the display face, mapped to `--nb-font-display` and used by h1–h3 and the hero title;
+DM Sans (`--nb-font-sans`) carries body and UI; Commit Mono (`--nb-font-mono`) is code. Following the
+Kumo design skill (kumo-ui.com/skill), headings are set at the font's natural tracking rather than
+letter-spaced, sizes are a small set of deliberate steps, and nothing in the chrome is uppercased.
+Cal Sans ships one weight, so display headings stay at 400 instead of faux-bolding.
 
 This is a change from the Starlight build, which used the system stack and shipped no fonts at all.
 It is a deliberate keep: the type is then identical on every OS, and the heading scale in
-`globals.css` was tuned against it. If it ever needs reverting, it is the two imports and the two
+`globals.css` was tuned against it. If it ever needs reverting, it is the imports and the
 `--nb-font-*` tokens, and the site will want a fresh visual review afterwards.
 
 There are no raster images anywhere in the site's own chrome. The only other textures are gradients.
 
-## The node field
+## The homepage field
 
-Two surfaces show a constellation of nodes and edges: the landing page hero
-(`src/components/NetworkHero.astro`) and a backdrop behind every other page
-(`src/components/GraphBackdrop.astro`, mounted in `DocsLayout` for every page that is not
-`mode: custom`, since a custom page paints its own and two would fight). Both render
-`src/components/Constellation.astro`, whose geometry is computed at build time by
-`src/lib/constellation.ts` from a fixed seed, so the field is identical on every build and screenshot
-diffs stay meaningful.
-
-This was a 2D canvas and a WebGL2 field, each driven by a `requestAnimationFrame` loop. They looked
-better than what replaced them and they cost a CPU core to look at, which is not a trade a
-documentation site should make. There is now no script at all: the markup is static and the motion
-is CSS.
-
-**Only `transform` and `opacity` on HTML elements are animated.** That is the whole design
-constraint, because those are the two properties the compositor can animate without waking the main
-thread. Measured on this site, idling for eight seconds:
-
-| Technique                        | Main thread |
-| -------------------------------- | ----------- |
-| `transform` on HTML elements     | 0.1%        |
-| `opacity` on HTML elements       | 0.0%        |
-| `opacity` on SVG children        | 0.6%        |
-| `stroke-dashoffset` on SVG lines | 3.6%        |
-
-That table is why edges are rotated `<div>`s rather than SVG `<line>`s, which would otherwise be
-the obvious choice. A message travelling along a connection is then a child element sliding with
-`translateX`, which is free; as an animated dash it cost several percent of a core on its own.
-
-The result is about 1% of a core on a docs page and a little over that on the landing page, and
-**exactly 0%** under `prefers-reduced-motion`, where the field is still drawn and simply stops
-moving.
-
-### Keeping the lines attached to the dots
-
-Three separate things have to hold, and two of them were got wrong first time round.
-
-**The scale has to be uniform.** `Constellation.astro`'s stage has a fixed `aspect-ratio` and is
-sized to cover its container, so the mapping from authored coordinates to pixels is a single scale
-factor and an angle baked in at build time is still correct at every window size and zoom level.
-Percentages alone would not survive a resize: they resolve against width and height separately, so
-a rotated edge would drift off its endpoints as the window changed shape.
-
-**Everything has to move together.** There used to be three parallax groups drifting at three
-speeds, and 76% of the edges joined nodes that were in two different groups, so most of the field
-was being pulled apart and back together over the drift cycle. It is not a tuning problem: an edge
-is one element, pinned at one end and rotated, so it can only stay attached at both ends if both
-ends share a transform. Since the field is one connected graph, that means the whole field is one
-transform group, and parallax is simply not available. Depth is carried by radius and brightness,
-which is where most of it was coming from anyway.
-
-**The graph has to be connected.** `buildField` guarantees a single connected component. The greedy
-nearest-neighbour pass that gives the field its look caps edge length and node degree, and both
-caps can strand a node; a second pass runs Kruskal over the same sorted pair list and adds back
-whatever is needed to join the pieces, ignoring both caps. `Constellation.astro` asserts the result
-and fails the build otherwise, because a dot sitting on its own is the kind of flaw a reader
-notices, cannot explain, and no screenshot diff will catch.
-
-`scripts/` has no test for this; the check lives in `Constellation.astro` and runs on every build.
-The rendered-geometry check that caught the parallax bug measured, for every edge at ten viewport
-sizes and six zoom levels, whether both of its endpoints landed on a dot. Worth rebuilding if this
-area is touched again: the failure is invisible in code review and obvious on screen.
-
-### There is no hover response
-
-The old field lit up the node nearest the pointer and sent a pulse out and back along each of its
-edges. It has not been reimplemented, and it cannot be in CSS alone.
-
-It was built and measured before being removed: invisible hit circles per node, `pointer-events:
-auto` against a `pointer-events: none` parent, and a generated `:has()` rule per node. It works and
-it is unreachable. The field is painted behind the page, and CSS hit-testing cannot express
-"receive the pointer only where nothing is drawn over me" -- the topmost box wins whether or not it
-painted anything. On a docs page the content panel spans nearly the whole viewport, leaving the
-backdrop as the topmost hit target on **1.3%** of it. Putting the hit layer above the content
-restores the hover and costs the page its text selection and some of its links.
-
-Restoring the behaviour means a `pointermove` listener that finds the nearest node and sets one
-class. That is not a render loop, and the animation would stay on the compositor, but it is script.
+The landing page hero (`src/components/NetworkHero.astro`) mounts a vanilla port of React Bits'
+LightTunnel (`src/components/LightTunnel.astro` + `light-tunnel.client.ts`). It is WebGL2 via
+`ogl`, paused when off-screen or when the tab is hidden, and skipped entirely under
+`prefers-reduced-motion`. Docs pages do not get a field behind them: the content sheet is the page.
 
 ## Social cards
 

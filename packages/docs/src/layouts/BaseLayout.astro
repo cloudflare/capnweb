@@ -1,6 +1,6 @@
 ---
-import "@fontsource-variable/inter";
-import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/dm-sans";
+import "@fontsource/commit-mono";
 import "../styles/globals.css";
 import "../styles/prose.css";
 import { config } from "virtual:nimbus/config";
@@ -9,6 +9,7 @@ import AgentDirective from "@/components/AgentDirective.astro";
 import { SearchDialog } from "@/components/ui/search";
 import NimbusHead from "@cloudflare/nimbus-docs/components/NimbusHead.astro";
 import type { BasePageProps } from "@cloudflare/nimbus-docs/types";
+import { cn } from "@/lib/cn";
 
 type Props = BasePageProps;
 
@@ -25,6 +26,10 @@ const {
 } = Astro.props;
 
 const lang = config.locale ?? "en";
+// The landing page is a fixed dark design (a dark banner hero over dark
+// content), independent of the light/dark toggle that still themes the docs.
+// Forcing the dark token set on `<body>` cascades to everything on the page.
+const isHome = Astro.url.pathname.replace(/\/+$/, "") === "";
 // Per-page agent-index pointer. For pages in non-primary or version
 // collections, this resolves to `/<prefix>/llms.txt` (e.g. `/v0/llms.txt`
 // for a v0 docs page, `/blog/llms.txt` for a blog post). Falls back to
@@ -73,7 +78,11 @@ const llmsUrl = Astro.site
           }
         };
 
-        const resolveMode = () => readPref() ?? (media.matches ? "light" : "dark");
+        // The landing page is a fixed dark design, independent of the toggle
+        // and OS preference; every other page resolves normally.
+        const isHome = () => location.pathname.replace(/\/+$/, "") === "";
+        const resolveMode = () =>
+          isHome() ? "dark" : readPref() ?? (media.matches ? "light" : "dark");
 
         const applyTheme = () => {
           const root = document.documentElement;
@@ -119,7 +128,7 @@ const llmsUrl = Astro.site
   </head>
   <!-- No `bg-background` here: the body paints the ground (see globals.css) and
        the content sheet paints itself, so the node field has somewhere to show. -->
-  <body class="min-h-screen text-foreground antialiased">
+  <body class={cn("min-h-screen text-foreground antialiased", isHome && "cw-home")}>
     <a
       href="#main-content"
       class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-100 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:no-underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"

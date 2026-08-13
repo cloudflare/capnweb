@@ -1,0 +1,88 @@
+---
+/**
+ * A clean, hairline-divided list of links -- the landing's alternative to a
+ * stack of filled cards. Transparent rows, one border around the group, an
+ * immediate hover tint, and an arrow that nudges. Pairs with the bento above.
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+
+interface Item {
+  title: string;
+  description?: string;
+  href: string;
+}
+interface Props {
+  items: Item[];
+}
+const { items } = Astro.props;
+---
+
+<ul class="cw-navlist">
+  {
+    items.map((item) => (
+      <li>
+        <a href={item.href} class="cw-navrow">
+          <span class="cw-navrow-text">
+            <span class="cw-navrow-title">{item.title}</span>
+            {item.description && <span class="cw-navrow-desc">{item.description}</span>}
+          </span>
+          <Icon name="ph:arrow-right" class="cw-navrow-arrow" is:inline />
+        </a>
+      </li>
+    ))
+  }
+</ul>
+
+<style>
+  .cw-navlist {
+    list-style: none;
+    margin: 1.5rem 0;
+    padding: 0;
+    border: 1px solid var(--nb-border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+  }
+  .cw-navlist li + li .cw-navrow {
+    border-top: 1px solid var(--nb-border);
+  }
+
+  .cw-navrow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.85rem 1.1rem;
+    text-decoration: none;
+    color: inherit;
+  }
+  .cw-navrow:hover {
+    background: var(--nb-accent);
+  }
+
+  .cw-navrow-text {
+    display: grid;
+    gap: 0.1rem;
+    min-width: 0;
+  }
+  .cw-navrow-title {
+    font-size: 0.9375rem;
+    font-weight: 500;
+    color: var(--nb-foreground);
+  }
+  .cw-navrow-desc {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: var(--nb-muted-foreground);
+  }
+
+  .cw-navrow-arrow {
+    width: 1rem;
+    height: 1rem;
+    flex-shrink: 0;
+    color: var(--nb-muted-foreground);
+    transition: transform 0.15s ease;
+  }
+  .cw-navrow:hover .cw-navrow-arrow {
+    transform: translateX(2px);
+  }
+</style>

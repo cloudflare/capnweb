@@ -35,34 +35,29 @@ const { title, tagline } = Astro.props;
 */}
 <section class="relative">
 	<NetworkHero />
-	<div class="relative mx-auto w-full max-w-(--cw-landing-max) px-4 pt-16 pb-14 lg:px-6 lg:pt-24 lg:pb-20">
-		<h1
-			class="cw-hero-title max-w-3xl text-5xl leading-[1.05] font-bold tracking-tight text-balance sm:text-6xl lg:text-7xl"
-		>
-			{title}
-		</h1>
-		<p class="mt-6 max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground">
-			{tagline}
-		</p>
-		<div class="mt-9 flex flex-wrap items-center gap-x-5 gap-y-3">
-			{/*
-				The third and last place orange appears. `cn()` merges through
-				tailwind-merge and the consumer class wins, so these override the
-				primary variant's `bg-primary` / `text-primary-foreground` /
-				`hover:bg-primary-hover` without touching the shared variant.
-			*/}
-			<LinkButton
-				href="/start/quickstart/"
-				variant="primary"
-				size="lg"
-				icon
-				class="bg-[var(--cw-orange)] font-[620] text-[#180a02] ring-[6px] ring-[rgba(246,130,31,0)] transition-[background-color,box-shadow] hover:bg-[var(--cw-orange-bright)] hover:text-[#180a02] hover:ring-[rgba(246,130,31,0.14)]"
-			>
+	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-28 pb-16 text-center lg:px-6 lg:pt-36 lg:pb-24">
+		{
+			Astro.slots.has('default') && (
+				<div class="cw-hero-illus mb-12 w-full text-left lg:mb-14">
+					<slot />
+				</div>
+			)
+		}
+		<div class="cw-hero-scrim grid max-w-2xl justify-items-center gap-5">
+			<h1 class="cw-hero-title text-5xl leading-[1.02] text-balance sm:text-6xl lg:text-7xl">
+				{title}
+			</h1>
+			<p class="max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground">
+				{tagline}
+			</p>
+		</div>
+		<div class="mt-10 flex flex-wrap items-center justify-center gap-3">
+			<LinkButton href="/start/quickstart/" variant="primary" size="lg" icon>
 				Get started
 			</LinkButton>
 			<LinkButton
 				href="https://github.com/cloudflare/capnweb"
-				variant="minimal"
+				variant="outline"
 				size="lg"
 				target="_blank"
 				rel="noopener"
@@ -81,11 +76,34 @@ const { title, tagline } = Astro.props;
 	 * per-scheme, so it cannot be reduced to two colour tokens.
 	 */
 	.cw-hero-title {
+		font-family: var(--nb-font-display);
+		font-weight: 600;
+		letter-spacing: -0.01em;
 		background-image: var(--cw-hero-title);
 		-webkit-background-clip: text;
 		background-clip: text;
 		color: transparent;
 		-webkit-text-fill-color: transparent;
+	}
+
+	/* A soft scrim of the page background sits behind the centred copy so it stays
+	   legible over the vortex, without touching the text colour itself. */
+	.cw-hero-scrim {
+		position: relative;
+	}
+
+	.cw-hero-scrim::before {
+		content: "";
+		position: absolute;
+		inset: -14% -20%;
+		z-index: -1;
+		background: radial-gradient(
+			58% 60% at 50% 50%,
+			color-mix(in srgb, var(--nb-background) 70%, transparent) 0%,
+			color-mix(in srgb, var(--nb-background) 40%, transparent) 46%,
+			transparent 74%
+		);
+		pointer-events: none;
 	}
 
 	/* Without `background-clip: text` the fill would leave the headline invisible. */

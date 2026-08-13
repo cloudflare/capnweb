@@ -11,16 +11,14 @@
 
 import type { OGImageOptions } from "astro-og-canvas";
 
-// The site's dark scheme, since a social card has no scheme to follow: the
-// near-black with the blue undertone, the deep blue it sits on, and the orange
-// edge -- which is the only place the spark appears here, and the only thing
-// that makes one of these cards recognisable at thumbnail size.
+// The site's dark scheme, since a social card has no scheme to follow: charcoal
+// paper and the orange edge -- which is the only place the spark appears here.
 export const ogCardConfig = {
   bgGradient: [
-    [4, 7, 14],
-    [7, 32, 65],
+    [12, 16, 20],
+    [44, 54, 65],
   ],
-  border: { color: [246, 130, 31], width: 12, side: "inline-start" },
+  border: { color: [232, 93, 44], width: 12, side: "inline-start" },
   padding: 96,
   // Build-time only, and deliberately not under `public/`, where the starter
   // puts it: this path is resolved from the project root when the cards are

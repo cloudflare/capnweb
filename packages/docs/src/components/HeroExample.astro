@@ -1,0 +1,166 @@
+---
+/**
+ * The landing hero's centrepiece: the call and its answer as a vertical
+ * request/response diagram. The client window sits above the server window with
+ * a connector between them -- the call pulses down, the value pulses back up.
+ * Transform/opacity only; the pulse rests mid-line under reduced-motion.
+ */
+import { Code } from "@/components/ui/code";
+
+const clientCode = `let api = newWebSocketRpcSession(url);
+
+let greeting = await api.hello("World");`;
+
+const serverCode = `class Api extends RpcTarget {
+  hello(name) {
+    return \`Hello, \${name}!\`;
+  }
+}`;
+---
+
+<figure class="cw-ex" aria-label="A client calls a server method and receives the result in a single round trip.">
+  <div class="cw-ex-win">
+    <div class="cw-ex-bar">
+      <span class="cw-ex-file">client.js</span>
+      <span class="cw-ex-role">Browser</span>
+    </div>
+    <div class="cw-ex-code"><Code code={clientCode} lang="js" /></div>
+  </div>
+
+  <div class="cw-ex-wire" aria-hidden="true">
+    <span class="cw-ex-track"><span class="cw-ex-flow"></span></span>
+    <span class="cw-ex-track"><span class="cw-ex-flow cw-ex-flow-back"></span></span>
+  </div>
+
+  <div class="cw-ex-win">
+    <div class="cw-ex-bar">
+      <span class="cw-ex-file">server.js</span>
+      <span class="cw-ex-role">Worker</span>
+    </div>
+    <div class="cw-ex-code"><Code code={serverCode} lang="js" /></div>
+  </div>
+</figure>
+
+<style>
+  .cw-ex {
+    --cw-wire: #e85d2c;
+    margin: 0 auto;
+    width: 100%;
+    max-width: 34rem;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    color: var(--cw-wire);
+  }
+
+  /* Ring (not border) with the shadow, per the Kumo shadow-borders rule. */
+  .cw-ex-win {
+    border-radius: 0.6rem;
+    background: var(--nb-card);
+    box-shadow: 0 0 0 1px var(--nb-border), var(--nb-shadow-md);
+    overflow: hidden;
+    position: relative;
+    z-index: 1;
+  }
+
+  .cw-ex-bar {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.4rem 0.7rem;
+    border-bottom: 1px solid var(--nb-border);
+  }
+  .cw-ex-file {
+    font-family: var(--nb-font-mono);
+    font-size: 0.7rem;
+    color: var(--nb-foreground);
+  }
+  .cw-ex-role {
+    margin-left: auto;
+    font-family: var(--nb-font-mono);
+    font-size: 0.625rem;
+    color: var(--nb-muted-foreground);
+  }
+
+  /* Flatten the code block into the window (no inner card, no scrollbar). */
+  .cw-ex-code :global(.nb-code-figure) {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+  .cw-ex-code :global(.nb-code-figure)::before {
+    content: none;
+  }
+  .cw-ex-code :global(.nb-code-figure) > :global(pre.astro-code) {
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    padding: 0.8rem 0.9rem;
+    font-size: 0.72rem;
+    line-height: 1.6;
+    overflow: hidden !important;
+  }
+
+  /* ---- Vertical connector: two lines with pulses flowing down and back up ---- */
+  .cw-ex-wire {
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    align-items: stretch;
+    gap: 1.4rem;
+    height: 2.75rem;
+  }
+
+  .cw-ex-track {
+    position: relative;
+    width: 2px;
+    border-radius: 2px;
+    overflow: hidden;
+    container-type: size;
+    background: color-mix(in srgb, var(--cw-wire) 22%, transparent);
+  }
+
+  .cw-ex-flow {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 45%;
+    border-radius: 2px;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      var(--cw-wire) 45%,
+      color-mix(in srgb, var(--cw-wire) 60%, white) 55%,
+      transparent
+    );
+    box-shadow: 0 0 8px 1px color-mix(in srgb, var(--cw-wire) 55%, transparent);
+    animation: cw-ex-flow 2.6s linear infinite;
+  }
+  .cw-ex-flow-back {
+    animation-name: cw-ex-flow-back;
+    animation-delay: 1.3s;
+  }
+
+  @keyframes cw-ex-flow {
+    0% { transform: translateY(-120%); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { transform: translateY(100cqh); opacity: 0; }
+  }
+  @keyframes cw-ex-flow-back {
+    0% { transform: translateY(100cqh); opacity: 0; }
+    15% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { transform: translateY(-120%); opacity: 0; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cw-ex-flow {
+      animation: none;
+      opacity: 0.6;
+      transform: translateY(60%);
+    }
+  }
+</style>

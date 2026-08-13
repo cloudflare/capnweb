@@ -21,7 +21,7 @@ const nimbusConfig = defineNimbusConfig({
 	head: [
 		{
 			tag: 'meta',
-			attrs: { name: 'theme-color', content: '#05080f' },
+			attrs: { name: 'theme-color', content: '#0c1014' },
 		},
 	],
 	// Ordering is explicit rather than left to the filesystem. The groups are the shape of the

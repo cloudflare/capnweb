@@ -51,14 +51,14 @@ scripts/
 └── mdast-bundle-size.mjs    # Sätteri plugin: %BUNDLE_SIZE% in .md bodies
 src/
 ├── components.ts            # MDX globals registry -- every component used in .mdx must be listed
-├── components/              # ours: Hero, NetworkHero, Constellation, GraphBackdrop, Playground, Prose
+├── components/              # ours: Hero, NetworkHero, LightTunnel, Playground, Prose
 │   └── ui/<slug>/           # from the Nimbus registry, plus AgentDirective, Header, Render
 ├── content/docs/**.{md,mdx} # the pages, one directory per sidebar group
 ├── content.config.ts        # docsCollection() + partialsCollection() + the %BUNDLE_SIZE% transform
 ├── examples.ts              # the single list of playground examples, read by pages and bundler
 ├── generated/               # bundle-size.json, written by prebuild. Gitignored.
 ├── layouts/                 # BaseLayout (head, theme bootstrap), DocsLayout (three columns)
-├── lib/                     # cn.ts, constellation.ts (node field geometry), source.ts (reads real files)
+├── lib/                     # cn.ts, source.ts (reads real files)
 ├── pages/                   # [...slug].astro, 404, llms.txt, robots.txt, og/
 └── styles/                  # globals.css (tokens + shell), prose.css
 public/                      # favicon, _headers, and the generated playground bundles
@@ -183,5 +183,5 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   Markdown transformations go in `markdown.mdastPlugins` / `hastPlugins`, and a Sätteri plugin is a
   visitor over read-only nodes that writes through `context.setProperty`.
 - Edit `src/components.ts` to bypass registration. If MDX uses a component, register it.
-- Add a fourth use of Cloudflare orange. It appears in three places and the restraint is the point.
+- Add a third use of Cloudflare orange. It appears in two places and the restraint is the point.
 - Remove `<AgentDirective />` unless asked.

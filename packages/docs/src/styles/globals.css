@@ -19,16 +19,9 @@
  * ============================================================ */
 
 /* ---- Palette -------------------------------------------------------------
- * Cap'n Web's own colours. A near-black with a blue undertone -- never a
- * neutral grey -- carrying a deep saturated blue as its structural colour, an
- * electric azure for anything interactive, and Cloudflare orange used only as
- * a spark: the pulses in the hero, the primary call to action, and the marker
- * on the current page. Three places, deliberately. The moment orange appears
- * on a fourth it stops meaning anything.
- *
- * Kept as hex rather than converted to oklch: these are measured, tuned values
- * carried over from the theme this replaced, and a round trip through another
- * colour space would move them for no gain.
+ * Soft cool grey paper, slate ink, and a restrained tomato CTA. The yellow
+ * cream was too loud; this is closer to a quiet product surface that the
+ * homepage waves can sit on without fighting the type.
  *
  * Dark is the scheme the site was designed in; light is a genuine second
  * scheme rather than an inversion. Which one loads is decided by the bootstrap
@@ -36,31 +29,21 @@
  * dark as the answer when the OS expresses no preference.
  */
 :root {
-	/* Neutral spine. Blue-cast blacks, so the interface never looks like it is
-	   sitting on dead grey next to the saturated hero. */
-	--cw-black: #04070e;
-	--cw-ink-900: #070b16;
-	--cw-ink-800: #0a1120;
-	--cw-ink-700: #0e1729;
-	--cw-ink-600: #142238;
-	--cw-ink-500: #1c3050;
-	--cw-ink-400: #2a4166;
+	--cw-black: #0c1014;
+	--cw-ink-900: #12171c;
+	--cw-ink-800: #181e25;
+	--cw-ink-700: #222a33;
+	--cw-ink-600: #2c3641;
+	--cw-ink-500: #3d4a57;
+	--cw-ink-400: #5b6b7a;
 
-	/* Deep saturated blue: the structural hue. */
-	--cw-blue-900: #05203f;
-	--cw-blue-800: #073a6b;
-	--cw-blue-700: #0a5292;
-	--cw-blue-600: #0d6cbd;
-	--cw-blue-500: #1487e0;
-	--cw-blue-400: #38a5f5;
-	--cw-blue-300: #6cc2fb;
-	--cw-blue-200: #a5dbfd;
-	--cw-blue-100: #d4eeff;
+	--cw-paper: #eef1f4;
+	--cw-paper-deep: #e2e7ec;
 
-	/* The spark. Used in three places; see the note above. */
-	--cw-orange: #f6821f;
-	--cw-orange-bright: #ff9a3d;
-	--cw-orange-deep: #b85f14;
+	/* The spark. Homepage waves and the primary CTA. */
+	--cw-orange: #e85d2c;
+	--cw-orange-bright: #f07846;
+	--cw-orange-deep: #c4471c;
 }
 
 /* ---- Light mode ---- */
@@ -68,37 +51,32 @@
 	color-scheme: light;
 
 	/* Surfaces. `--nb-background` is the content sheet; `--cw-ground` is the
-	   darker field it rests on, which is where the node backdrop shows. */
-	--nb-background: #ffffff;
-	--nb-foreground: #0d1a2b;
+	   field it rests on. */
+	--nb-background: var(--cw-paper);
+	--nb-foreground: #1a222b;
 
-	--nb-card: #f4f8fc;
+	--nb-card: #f7f9fb;
 	--nb-card-foreground: var(--nb-foreground);
 
-	--nb-muted: #eaf2fa;
-	--nb-muted-foreground: #56687f;
+	--nb-muted: #e4e9ee;
+	--nb-muted-foreground: #5b6b7a;
 
-	--nb-accent: #eaf2fa;
-	--nb-accent-foreground: #060d18;
+	--nb-accent: #dce3ea;
+	--nb-accent-foreground: #1a222b;
 
-	/* Primary is the interactive azure, not the orange: it colours links and
-	   hover states all over the page, and orange has to stay rare to mean
-	   anything. The one orange button is the hero's, set in Hero.astro. */
-	--nb-primary: var(--cw-blue-700);
-	--nb-primary-foreground: #ffffff;
-	--nb-primary-hover: var(--cw-blue-600);
+	/* Tomato is the action colour. Links stay ink so the spark stays rare. */
+	--nb-primary: var(--cw-orange);
+	--nb-primary-foreground: #fff8f4;
+	--nb-primary-hover: var(--cw-orange-bright);
 
-	--nb-border: rgba(12, 48, 90, 0.2);
-	--nb-border-strong: rgba(12, 48, 90, 0.34);
-	--nb-selected: rgba(12, 48, 90, 0.12);
-	--nb-ring: rgba(10, 82, 146, 0.45);
+	--nb-border: rgba(26, 34, 43, 0.1);
+	--nb-border-strong: rgba(26, 34, 43, 0.2);
+	--nb-selected: rgba(26, 34, 43, 0.07);
+	--nb-ring: rgba(91, 111, 134, 0.45);
 
-	/* Status triples, in the same hues the asides used before. Caution is amber
-	   rather than Cloudflare orange, deliberately: orange means one specific
-	   thing here, and a warning aside is not it. */
-	--nb-info: #0a5292;
-	--nb-info-foreground: #063254;
-	--nb-info-muted: #d8e9f8;
+	--nb-info: #3d5a73;
+	--nb-info-foreground: #24384a;
+	--nb-info-muted: #dce6ee;
 
 	--nb-success: #0d6d5b;
 	--nb-success-foreground: #054034;
@@ -122,56 +100,55 @@
 	 * crush, so it is wider than `--nb-content-max` -- and one value, shared by
 	 * the hero and the prose under it, so both have the same left edge.
 	 */
-	--cw-landing-max: 68rem;
+	--cw-landing-max: 64rem;
 
-	/* Typography — self-hosted via @fontsource-variable in BaseLayout.astro */
+	/* Typography — self-hosted via @fontsource in BaseLayout.astro.
+	 *
+	 * DM Sans carries body, UI, and headings alike -- one neutral grotesque
+	 * throughout instead of a
+	 * separate display face, which reads as intentional rather than decorated.
+	 * Per the Kumo design skill headings keep the font's natural tracking (never
+	 * letter-spaced) and use semibold weight rather than bold. */
 	--nb-font-sans:
-		"Inter Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+		"DM Sans Variable", "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto,
 		sans-serif;
+	--nb-font-display: var(--nb-font-sans);
 	--nb-font-mono:
-		"JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "Cascadia Code",
-		"Source Code Pro", Menlo, Consolas, monospace;
-	--nb-h1-size: 2.1875rem;
-	--nb-h1-weight: 640;
-	--nb-h1-tracking: -0.03em;
-	--nb-h2-size: 1.3rem;
-	--nb-h2-weight: 650;
-	--nb-h2-tracking: -0.015em;
-	--nb-h3-size: 1.1rem;
+		"Commit Mono", ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
+		Consolas, monospace;
+	--nb-h1-size: 2.5rem;
+	--nb-h1-weight: 600;
+	--nb-h1-tracking: normal;
+	--nb-h2-size: 1.5rem;
+	--nb-h2-weight: 600;
+	--nb-h2-tracking: normal;
+	--nb-h3-size: 1.1875rem;
 	--nb-h3-weight: 600;
-	--nb-h3-tracking: -0.01em;
+	--nb-h3-tracking: normal;
 	--nb-h4-weight: 600;
 
-	/* Depth. The page is a sheet lifted off a textured ground. */
-	--nb-shadow-sm: 0 1px 2px rgba(13, 38, 76, 0.08);
-	--nb-shadow: 0 1px 2px rgba(13, 38, 76, 0.07), 0 6px 16px -8px rgba(13, 38, 76, 0.2);
-	--nb-shadow-lg: 0 1px 3px rgba(13, 38, 76, 0.08), 0 18px 38px -22px rgba(13, 38, 76, 0.35);
+	/* Depth. Hairlines do most of the work; shadows stay almost invisible. */
+	--nb-shadow-sm: 0 1px 1px rgba(23, 22, 20, 0.04);
+	--nb-shadow: 0 1px 2px rgba(23, 22, 20, 0.05), 0 10px 24px -18px rgba(23, 22, 20, 0.18);
+	--nb-shadow-lg: 0 1px 2px rgba(23, 22, 20, 0.05), 0 22px 40px -24px rgba(23, 22, 20, 0.28);
 
-	/* --- Ours, read by the page shell and by the constellation --- */
+	/* --- Ours, read by the page shell and by the ring field --- */
 
-	/* The ground the sheet rests on, and the chrome, which is a different
-	   material again: dark chrome over a white document would read as a
-	   screenshot of two different sites. */
-	--cw-ground: #e6edf6;
-	--cw-chrome: #dfe8f4;
+	/* The ground the sheet rests on. Sidebar and content share `--nb-background`. */
+	--cw-ground: var(--cw-paper-deep);
 
-	/* Two soft washes under the node field, so the field has something to sit
-	   on and the page is a sheet resting on a space rather than two flat fills
-	   meeting at a line. */
-	--cw-wash-1: rgba(20, 135, 224, 0.1);
-	--cw-wash-2: rgba(246, 130, 31, 0.05);
+	--cw-wash-1: rgba(91, 111, 134, 0.08);
+	--cw-wash-2: rgba(232, 93, 44, 0.05);
 
-	/* Read by the constellation renderer as well as by its CSS. */
-	--cw-graph-node: var(--cw-blue-700);
-	--cw-graph-edge: var(--cw-blue-600);
-	--cw-graph-edge-alpha: 0.17;
-	--cw-graph-pulse: var(--cw-orange-deep);
-
-	--cw-hero-bg-inner: #d5e8fa;
-	--cw-hero-bg-outer: #eef3f9;
-	--cw-hero-title: linear-gradient(180deg, #0a1628 0%, #0a5292 116%);
-
-	--cw-radius: 0.625rem;
+	/* The hero sits on the page background; the warm waves flow in from the top
+	   right so they never sit under the copy. */
+	/* Light mode: a soft, feathered deep-blue pool behind the vortex. Additive
+	   blue barely shows over bright cream, so it needs something a little darker
+	   and more saturated to glow against -- kept large and feathered so it reads
+	   as a haze, not a hard smudge. */
+	--cw-hero-stage-bg: rgba(30, 60, 130, 0.32);
+	--cw-hero-glow: rgba(59, 130, 246, 0.16);
+	--cw-hero-title: linear-gradient(180deg, #1a222b 0%, #5b6b7a 120%);
 }
 
 /* Wider content area on large displays (e.g. MacBook Pro 16″) */
@@ -181,34 +158,37 @@
 	}
 }
 
-/* ---- Dark mode ---- */
+/* ---- Dark mode ----
+ * The landing page forces this same mode via `data-mode="dark"` on <html>
+ * (set in BaseLayout's pre-paint script), so it shares this one code path
+ * rather than duplicating tokens. */
 [data-mode="dark"] {
 	color-scheme: dark;
 
-	--nb-background: var(--cw-ink-900);
-	--nb-foreground: #dbe7f5;
+	--nb-background: var(--cw-black);
+	--nb-foreground: #e8eef4;
 
 	--nb-card: var(--cw-ink-800);
 	--nb-card-foreground: var(--nb-foreground);
 
-	--nb-muted: var(--cw-black);
-	--nb-muted-foreground: #8299b6;
+	--nb-muted: var(--cw-ink-700);
+	--nb-muted-foreground: #9aabba;
 
-	--nb-accent: var(--cw-ink-700);
-	--nb-accent-foreground: #f2f7fd;
+	--nb-accent: var(--cw-ink-600);
+	--nb-accent-foreground: #f4f7fa;
 
-	--nb-primary: var(--cw-blue-400);
-	--nb-primary-foreground: var(--cw-black);
-	--nb-primary-hover: var(--cw-blue-300);
+	--nb-primary: var(--cw-orange);
+	--nb-primary-foreground: #fff8f4;
+	--nb-primary-hover: var(--cw-orange-bright);
 
-	--nb-border: rgba(120, 170, 230, 0.2);
-	--nb-border-strong: rgba(120, 170, 230, 0.34);
-	--nb-selected: rgba(120, 170, 230, 0.16);
-	--nb-ring: rgba(56, 165, 245, 0.5);
+	--nb-border: rgba(232, 238, 244, 0.1);
+	--nb-border-strong: rgba(232, 238, 244, 0.2);
+	--nb-selected: rgba(232, 238, 244, 0.08);
+	--nb-ring: rgba(154, 171, 186, 0.5);
 
-	--nb-info: #1e6feb;
-	--nb-info-foreground: #8cc2ff;
-	--nb-info-muted: #071d3d;
+	--nb-info: #8aa3b8;
+	--nb-info-foreground: #c5d4e0;
+	--nb-info-muted: #151c24;
 
 	--nb-success: #12866f;
 	--nb-success-foreground: #6ee7c8;
@@ -226,24 +206,16 @@
 	--nb-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 18px -8px rgba(0, 0, 0, 0.7);
 	--nb-shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.6), 0 18px 40px -22px rgba(0, 0, 0, 0.9);
 
-	--cw-ground: var(--cw-black);
-	--cw-chrome: #05080f;
+	--cw-ground: #090c10;
 
-	--cw-wash-1: rgba(20, 135, 224, 0.1);
-	--cw-wash-2: rgba(246, 130, 31, 0.045);
+	--cw-wash-1: rgba(154, 171, 186, 0.06);
+	--cw-wash-2: rgba(232, 93, 44, 0.05);
 
-	--cw-graph-node: var(--cw-blue-300);
-	--cw-graph-edge: var(--cw-blue-500);
-	/* The dark field sits on near-black, where a hairline at the light field's
-	   strength all but disappears, so the lines are drawn considerably harder. */
-	--cw-graph-edge-alpha: 0.46;
-	/* The round-trip pulse, muted well below `--cw-orange`: this is decoration
-	   behind text, and orange is reserved for things to act on. */
-	--cw-graph-pulse: #d9832f;
-
-	--cw-hero-bg-inner: #072041;
-	--cw-hero-bg-outer: var(--cw-black);
-	--cw-hero-title: linear-gradient(180deg, #ffffff 0%, #a5dbfd 108%);
+	/* Dark mode: the page is already dark, so a slightly deeper navy pool lets
+	   the blue pulses bloom. */
+	--cw-hero-stage-bg: #070d1c;
+	--cw-hero-glow: rgba(59, 130, 246, 0.28);
+	--cw-hero-title: linear-gradient(180deg, #f4f7fa 0%, #9aabba 120%);
 }
 
 /* ---- Tailwind theme mapping ----
@@ -335,35 +307,24 @@ body::before {
 }
 
 /*
- * The landing page paints its own field edge to edge behind the hero, so the
- * ground behind it would only muddy that canvas. The ground is set to the
- * field's own outer colour as well, so where the field's veil finishes fading it
- * meets the same value instead of stepping onto a different one.
+ * The landing page paints its own dark stage edge to edge behind the hero, so
+ * the ground wash behind it would only muddy that canvas. The body sits at the
+ * page background, which is exactly where the hero's veil finishes fading, so
+ * the seam below the hero lands on a single value.
  */
 body:has(.cw-hero-field)::before {
 	display: none;
 }
 
 body:has(.cw-hero-field) {
-	background-color: var(--cw-hero-bg-outer);
+	background-color: var(--nb-background);
 }
 
 /*
- * The navigation rail is chrome: opaque, and a shade off the sheet. The table of
- * contents on the other side is left transparent, so the node field shows
- * through it -- but the nav is dense enough that a field behind it crosses the
- * labels, and legibility wins over the effect.
- */
-[data-nb-desktop-sidebar] {
-	background-color: var(--cw-chrome);
-}
-
-/*
- * The content column on a doc page is a sheet lifted off the ground. The two
- * rails stay transparent, which is where the node field shows: it is the one
- * thing on the page that is meant to be seen through the layout rather than in
- * it. Below the sidebar breakpoint there are no rails to speak of, so the sheet
- * is edge to edge and the border would just be a line at the viewport edge.
+ * The content column on a doc page is a sheet over the ground, so the node
+ * field can show through the TOC rail and the page margins. The sidebar keeps
+ * Nimbus's own `bg-background` and `border-r`; we do not add a second border,
+ * radius, or current-page marker on top of those.
  */
 [data-cw-sheet] {
 	background-color: var(--nb-background);
@@ -371,21 +332,8 @@ body:has(.cw-hero-field) {
 
 @media (min-width: 64rem) {
 	[data-cw-sheet] {
-		border-top: 1px solid var(--nb-border);
-		border-inline: 1px solid var(--nb-border);
-		border-start-start-radius: var(--cw-radius);
-		border-start-end-radius: var(--cw-radius);
 		min-height: calc(100vh - 3.5rem);
-		box-shadow: var(--nb-shadow-lg);
 	}
-}
-
-/*
- * Current page in the sidebar. The second of the three places orange appears:
- * a bar in the margin, not a colour on the text, so the label stays readable.
- */
-[data-nb-sidebar-link][aria-current="page"] {
-	box-shadow: inset 2px 0 0 var(--cw-orange);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -464,6 +412,11 @@ pre.astro-code span {
 }
 [data-mode="dark"] pre.astro-code span {
 	color: var(--shiki-dark, inherit);
+}
+
+/* The landing is fixed-dark, so the light/dark toggle would be a no-op there. */
+.cw-home [data-nb-theme-toggle] {
+	display: none;
 }
 
 /* Copy button injected by initCodeCopy. */

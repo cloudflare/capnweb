@@ -62,8 +62,10 @@
   font-size: inherit;
 }
 
-/* Markdown heading typography is token-driven from globals.css. */
+/* Markdown heading typography is token-driven from globals.css. Everything is
+   set in DM Sans at semibold; the display token now resolves to the body face. */
 .docs-content :where(h1:not([class])) {
+  font-family: var(--nb-font-display);
   font-size: var(--nb-h1-size);
   font-weight: var(--nb-h1-weight);
   letter-spacing: var(--nb-h1-tracking);
@@ -71,6 +73,7 @@
 }
 
 .docs-content :where(h2:not([class])) {
+  font-family: var(--nb-font-display);
   font-size: var(--nb-h2-size);
   font-weight: var(--nb-h2-weight);
   letter-spacing: var(--nb-h2-tracking);
@@ -78,6 +81,7 @@
 }
 
 .docs-content :where(h3:not([class])) {
+  font-family: var(--nb-font-display);
   font-size: var(--nb-h3-size);
   font-weight: var(--nb-h3-weight);
   letter-spacing: var(--nb-h3-tracking);
@@ -227,7 +231,7 @@
 .docs-content :where(a:not([class])) {
   color: var(--nb-foreground);
   text-decoration-line: underline;
-  text-decoration-color: var(--nb-border-strong);
+  text-decoration-color: color-mix(in oklch, var(--nb-foreground) 28%, transparent);
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
   font-weight: 500;
