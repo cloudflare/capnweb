@@ -8,29 +8,29 @@
 
 	/* The ground is tinted and the cards are not, so a card is separated by
 	   its own lightness rather than by a hairline alone. */
-	--ground: light-dark(#eef3f9, #070b16);
-	--surface: light-dark(#ffffff, #0f1a2c);
-	--sunken: light-dark(#f2f6fb, #0a1322);
-	--ink: light-dark(#0d1a2b, #dbe7f5);
-	--ink-dim: light-dark(#56687f, #8299b6);
-	--rule: light-dark(#ccd8e6, #22395a);
+	--ground: light-dark(#eef1f4, #070a11);
+	--surface: light-dark(#f7f9fb, #13171f);
+	--sunken: light-dark(#e4e9ee, #1d222d);
+	--ink: light-dark(#1a222b, #e8eef4);
+	--ink-dim: light-dark(#5b6b7a, #9aabba);
+	--rule: light-dark(rgba(26, 34, 43, 0.12), rgba(232, 238, 244, 0.12));
 	/* `light-dark()` takes exactly two arguments, so the scheme switch happens
 	   on the colour and the geometry is written once around it. */
 	--shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
 	--shadow-far: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.42));
 	--shadow-sm: 0 1px 2px var(--shadow-near);
 	--shadow: 0 1px 2px var(--shadow-near), 0 8px 20px var(--shadow-far);
-	--accent: light-dark(#0a5292, #4db4ff);
+	--accent: light-dark(#2f6fd6, #5b9bff);
 	--good: light-dark(#0d6d5b, #34d399);
-	--warn: light-dark(#b26a12, #f6821f);
-	--bad: light-dark(#b3261e, #ff6b6b);
+	--warn: light-dark(#96580c, #f5c37a);
+	--bad: light-dark(#b32a20, #ff9d94);
 	/* The one primary action. Kept apart from `--warn`, which has to darken in
 	   light mode to stay readable as text and is the wrong colour for a filled
 	   button. */
-	--cta: #f6821f;
-	--cta-ink: #180a02;
+	--cta: #e85d2c;
+	--cta-ink: #fff8f4;
 
-	--mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	--mono: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 :root[data-theme='light'] {
@@ -49,7 +49,8 @@ body {
 	background: var(--ground);
 	color: var(--ink);
 	font-family:
-		ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+		'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+		sans-serif;
 	line-height: 1.6;
 }
 
@@ -63,7 +64,7 @@ body {
 
 .site a {
 	color: var(--ink);
-	font-weight: 700;
+	font-weight: 600;
 	font-size: 1.15rem;
 	text-decoration: none;
 	letter-spacing: -0.01em;

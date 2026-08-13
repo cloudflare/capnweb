@@ -7,11 +7,12 @@
  * `styles/prose.css` is scoped to `.docs-content`, so without this the landing page's body text
  * renders unstyled and edge to edge.
  *
- * The width is `--cw-landing-max`, the same token the hero uses, so the two share a left edge; it
- * is wider than a doc page's measure because this page carries two code samples side by side.
+ * Width matches a doc page's text measure: 784px, filled edge to edge. Mobile keeps a small gutter;
+ * from `lg` up the horizontal padding is dropped so the text is the full 784px rather than 784 minus
+ * padding.
  */
 ---
 
-<div class="docs-content mx-auto w-full max-w-2xl px-4 pt-10 pb-20 lg:px-6">
+<div class="docs-content mx-auto w-full max-w-[49rem] px-4 pt-10 pb-20 lg:px-0">
 	<slot />
 </div>

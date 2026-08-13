@@ -29,11 +29,11 @@
  * dark as the answer when the OS expresses no preference.
  */
 :root {
-	--cw-black: #0c1014;
-	--cw-ink-900: #12171c;
-	--cw-ink-800: #181e25;
-	--cw-ink-700: #222a33;
-	--cw-ink-600: #2c3641;
+	--cw-black: #070a11;
+	--cw-ink-900: #0c0f17;
+	--cw-ink-800: #13171f;
+	--cw-ink-700: #1d222d;
+	--cw-ink-600: #272d38;
 	--cw-ink-500: #3d4a57;
 	--cw-ink-400: #5b6b7a;
 
@@ -206,7 +206,7 @@
 	--nb-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 18px -8px rgba(0, 0, 0, 0.7);
 	--nb-shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.6), 0 18px 40px -22px rgba(0, 0, 0, 0.9);
 
-	--cw-ground: #090c10;
+	--cw-ground: #04060b;
 
 	--cw-wash-1: rgba(154, 171, 186, 0.06);
 	--cw-wash-2: rgba(232, 93, 44, 0.05);
@@ -396,7 +396,7 @@ pre.astro-code {
 	padding: 0.75rem 1rem;
 	border-radius: 0.5rem;
 	border: 1px solid var(--nb-border);
-	background-color: transparent;
+	background-color: var(--nb-card);
 	overflow-x: auto;
 	font-family: var(--nb-font-mono);
 	font-size: 0.875rem;
@@ -470,8 +470,15 @@ pre.astro-code span {
 	margin: 1rem 0;
 	border: 1px solid var(--nb-border);
 	border-radius: 0.5rem;
-	background-color: transparent;
+	background-color: var(--nb-card);
 	overflow: hidden;
+}
+
+/* The landing is fixed-dark and reads better with outline-only code blocks;
+   docs pages keep the filled card surface. */
+.cw-home pre.astro-code,
+.cw-home .nb-code-figure {
+	background-color: transparent;
 }
 .nb-code-figure > pre.astro-code {
 	margin: 0;

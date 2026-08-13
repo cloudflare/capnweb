@@ -32,8 +32,13 @@ const { title, tagline } = Astro.props;
 	unit in the positioned layer: the field's `z-index: -1` would then be measured against the
 	section rather than the page, and the whole section, field included, would paint over the prose
 	that follows it.
+
+	`overflow-x: clip` is safe where `overflow-hidden` is not: it stops the scrim's horizontal bleed
+	(`inset: ... -20%`) from pushing past the viewport on narrow screens -- the source of a stray
+	horizontal scroll -- while leaving vertical overflow visible so the taller field still runs on
+	behind the prose, and unlike `hidden`/`isolate` it creates no stacking context.
 */}
-<section class="relative">
+<section class="relative [overflow-x:clip]">
 	<NetworkHero />
 	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-28 pb-16 text-center lg:px-6 lg:pt-36 lg:pb-24">
 		{
@@ -78,7 +83,6 @@ const { title, tagline } = Astro.props;
 	.cw-hero-title {
 		font-family: var(--nb-font-display);
 		font-weight: 600;
-		letter-spacing: -0.01em;
 		background-image: var(--cw-hero-title);
 		-webkit-background-clip: text;
 		background-clip: text;

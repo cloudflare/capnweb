@@ -6,18 +6,18 @@
 :root {
   color-scheme: light dark;
 
-  --theme-orange: #f6821f;
-  --theme-orange-hover: #ff9a3d;
-  --theme-orange-foreground: #180a02;
+  --theme-orange: #e85d2c;
+  --theme-orange-hover: #f07846;
+  --theme-orange-foreground: #fff8f4;
 
   /* The ground is tinted and the cards are not, so a card is separated by its
      own lightness rather than by a hairline alone. */
-  --bg-primary: light-dark(#eef3f9, #070b16);
-  --bg-secondary: light-dark(#ffffff, #0f1a2c);
-  --bg-pre: light-dark(#f2f6fb, #0a1322);
-  --text-primary: light-dark(#0d1a2b, #dbe7f5);
-  --text-secondary: light-dark(#56687f, #8299b6);
-  --border-color: light-dark(#ccd8e6, #22395a);
+  --bg-primary: light-dark(#eef1f4, #070a11);
+  --bg-secondary: light-dark(#f7f9fb, #13171f);
+  --bg-pre: light-dark(#e4e9ee, #1d222d);
+  --text-primary: light-dark(#1a222b, #e8eef4);
+  --text-secondary: light-dark(#5b6b7a, #9aabba);
+  --border-color: light-dark(rgba(26, 34, 43, 0.12), rgba(232, 238, 244, 0.12));
   /* `light-dark()` takes exactly two arguments, so the scheme switch happens
      on the colour and the geometry is written once around it. */
   --shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
@@ -27,12 +27,13 @@
   --button-bg: var(--theme-orange);
   --button-hover: var(--theme-orange-hover);
   --button-foreground: var(--theme-orange-foreground);
-  /* Links are not the accent: orange is spent on the one primary action,
+  /* Links are not the accent: tomato is spent on the one primary action,
      which is what makes it read as the primary action. */
-  --link: light-dark(#0a5292, #4db4ff);
+  --link: light-dark(#2f6fd6, #5b9bff);
 
   font-family:
-    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
 }
 
 :root[data-theme='light'] {
@@ -65,7 +66,7 @@ body {
 
 .site a {
   color: var(--text-primary);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 1.15rem;
   text-decoration: none;
   letter-spacing: -0.01em;
@@ -150,7 +151,7 @@ pre {
   padding: 12px;
   border-radius: 0 0 4px 4px;
   overflow-x: auto;
-  font-family: 'Courier New', monospace;
+  font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 14px;
   margin: 0;
 }
@@ -207,7 +208,7 @@ h2 {
 }
 
 .validation-error {
-  color: light-dark(#b91c1c, #fca5a5);
+  color: light-dark(#b32a20, #ff9d94);
   margin: 0.75rem 0 0;
   white-space: pre-wrap;
   background: var(--bg-pre);
@@ -220,7 +221,7 @@ code {
   background-color: var(--bg-pre);
   padding: 2px 4px;
   border-radius: 3px;
-  font-family: 'Courier New', monospace;
+  font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 14px;
 }
 

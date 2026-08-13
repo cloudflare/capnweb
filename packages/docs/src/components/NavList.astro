@@ -38,30 +38,25 @@ const { items } = Astro.props;
     list-style: none;
     margin: 1.5rem 0;
     padding: 0;
-    border: 1px solid var(--nb-border);
-    border-radius: 0.75rem;
-    overflow: hidden;
-  }
-  .cw-navlist li + li .cw-navrow {
-    border-top: 1px solid var(--nb-border);
+    display: grid;
+    gap: 0.5rem;
   }
 
+  /* Separate outlined cards -- each owns its full border, so hover just
+     lightens that border cleanly (no shared dividers or clipped rings). */
   .cw-navrow {
-    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
     padding: 0.85rem 1.1rem;
+    border: 1px solid var(--nb-border);
+    border-radius: 0.6rem;
     text-decoration: none;
     color: inherit;
   }
-  /* Outset ring (not inset) so it lands on the row's edge, over the group
-     border/dividers, and is clipped round by the list's overflow:hidden --
-     lightens the cell's border with no inner offset. */
   .cw-navrow:hover {
-    z-index: 1;
-    box-shadow: 0 0 0 1px color-mix(in oklch, var(--nb-foreground) 32%, transparent);
+    border-color: color-mix(in oklch, var(--nb-foreground) 30%, transparent);
   }
 
   .cw-navrow-text {
