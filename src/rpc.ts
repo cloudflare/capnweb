@@ -320,19 +320,22 @@ class RpcImportHook extends StubHook {
     }
   }
 
+  // Like getEntry(), but for use in methods that take ownership of args or captures: if the
+  // entry is gone, there is no callee left to consume them, so dispose them before throwing.
+  private getEntryTakingOwnership(disposeOwned: () => void): ImportTableEntry {
+    try {
+      return this.getEntry();
+    } catch (err) {
+      disposeOwned();
+      throw err;
+    }
+  }
+
   // -------------------------------------------------------------------------------------
   // implements StubHook
 
   call(path: PropertyPath, args: RpcPayload): StubHook {
-    let entry: ImportTableEntry;
-    try {
-      entry = this.getEntry();
-    } catch (err) {
-      // We took ownership of `args`, and there is no callee left to consume them.
-      args.dispose();
-      throw err;
-    }
-
+    let entry = this.getEntryTakingOwnership(() => args.dispose());
     if (entry.resolution) {
       return entry.resolution.call(path, args);
     } else {
@@ -341,15 +344,7 @@ class RpcImportHook extends StubHook {
   }
 
   stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
-    let entry: ImportTableEntry;
-    try {
-      entry = this.getEntry();
-    } catch (err) {
-      // We took ownership of `args`, and there is no callee left to consume them.
-      args.dispose();
-      throw err;
-    }
-
+    let entry = this.getEntryTakingOwnership(() => args.dispose());
     if (entry.resolution) {
       return entry.resolution.stream(path, args);
     } else {
@@ -358,16 +353,11 @@ class RpcImportHook extends StubHook {
   }
 
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
-    let entry: ImportTableEntry;
-    try {
-      entry = this.getEntry();
-    } catch (err) {
+    let entry = this.getEntryTakingOwnership(() => {
       for (let cap of captures) {
         cap.dispose();
       }
-      throw err;
-    }
-
+    });
     if (entry.resolution) {
       return entry.resolution.map(path, captures, instructions);
     } else {

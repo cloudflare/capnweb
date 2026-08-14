@@ -1767,17 +1767,8 @@ abstract class ValueStubHook extends StubHook {
 
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
     try {
-      let followResult: FollowPathResult;
-      try {
-        let {value, owner} = this.getValue();
-        followResult = followPath(value, undefined, path, owner);;
-      } catch (err) {
-        // Oops, we need to dispose the captures of which we took ownership.
-        for (let cap of captures) {
-          cap.dispose();
-        }
-        throw err;
-      }
+      let {value, owner} = this.getValue();
+      let followResult = followPath(value, undefined, path, owner);
 
       if (followResult.hook) {
         return followResult.hook.map(followResult.remainingPath, captures, instructions);
@@ -1786,9 +1777,12 @@ abstract class ValueStubHook extends StubHook {
       return mapImpl.applyMap(
           followResult.value, followResult.parent, followResult.owner, captures, instructions);
     } catch (err) {
-      // The inner catch above covers getValue()/followPath(). Past that point, the delegate's
-      // map() and applyMap() take ownership of the captures per the contract, so no disposal is
-      // needed here.
+      // We took ownership of the captures. If the delegate's map() or applyMap() threw, they
+      // already disposed the captures per the contract, but dispose() is idempotent so disposing
+      // again is harmless.
+      for (let cap of captures) {
+        cap.dispose();
+      }
       return new ErrorStubHook(err);
     }
   }

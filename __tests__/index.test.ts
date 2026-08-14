@@ -2278,20 +2278,15 @@ describe("PromiseStubHook", () => {
   // A minimal contract-honoring callee: its call() takes ownership of `args` (disposing them)
   // and then throws synchronously. Used to pin the division of labor: once the backing promise
   // resolves, args ownership lies with the resolved callee, not with PromiseStubHook.
-  class SyncThrowingHook extends StubHook {
+  //
+  // Extends ErrorStubHook only to inherit harmless implementations of the methods these tests
+  // never invoke; note it does not override stream(), so the base StubHook.stream() is used.
+  class SyncThrowingHook extends ErrorStubHook {
+    constructor() { super(new Error("unused")); }
     call(path: PropertyPath, args: RpcPayload): StubHook {
       args.dispose();
       throw new Error("sync failure");
     }
-    map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
-      throw new Error("not implemented");
-    }
-    get(path: PropertyPath): StubHook { throw new Error("not implemented"); }
-    dup(): StubHook { return this; }
-    pull(): RpcPayload | Promise<RpcPayload> { throw new Error("not implemented"); }
-    ignoreUnhandledRejections(): void {}
-    dispose(): void {}
-    onBroken(callback: (error: any) => void): void {}
   }
 
   it("leaves call args ownership with a resolved callee whose call() throws synchronously",
