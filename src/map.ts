@@ -209,12 +209,17 @@ class MapVariableHook extends StubHook {
 
   // Other methods should never be called.
   call(path: PropertyPath, args: RpcPayload): StubHook {
-    // Can't be called; all calls are intercepted.
+    // Can't be called; all calls are intercepted. We still own `args` per the StubHook contract.
+    args.dispose();
     throwMapperBuilderUseError();
   }
 
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
-    // Can't be called; all map()s are intercepted.
+    // Can't be called; all map()s are intercepted. We still own the captures per the StubHook
+    // contract.
+    for (let cap of captures) {
+      cap.dispose();
+    }
     throwMapperBuilderUseError();
   }
 

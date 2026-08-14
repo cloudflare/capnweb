@@ -324,7 +324,15 @@ class RpcImportHook extends StubHook {
   // implements StubHook
 
   call(path: PropertyPath, args: RpcPayload): StubHook {
-    let entry = this.getEntry();
+    let entry: ImportTableEntry;
+    try {
+      entry = this.getEntry();
+    } catch (err) {
+      // We took ownership of `args`, and there is no callee left to consume them.
+      args.dispose();
+      throw err;
+    }
+
     if (entry.resolution) {
       return entry.resolution.call(path, args);
     } else {
@@ -333,7 +341,15 @@ class RpcImportHook extends StubHook {
   }
 
   stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
-    let entry = this.getEntry();
+    let entry: ImportTableEntry;
+    try {
+      entry = this.getEntry();
+    } catch (err) {
+      // We took ownership of `args`, and there is no callee left to consume them.
+      args.dispose();
+      throw err;
+    }
+
     if (entry.resolution) {
       return entry.resolution.stream(path, args);
     } else {
@@ -785,18 +801,29 @@ class RpcSessionImpl implements Importer, Exporter {
   }
 
   sendCall(id: ImportId, path: PropertyPath, args?: RpcPayload): RpcImportHook {
-    if (this.abortReason) throw this.abortReason;
+    if (this.abortReason) {
+      args?.dispose();
+      throw this.abortReason;
+    }
 
     let value: Array<any> = ["pipeline", id, path];
     if (args) {
-      let devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
+      let devalue: unknown;
+      try {
+        devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
+      } catch (err) {
+        args.dispose();
+        throw err;
+      }
 
       // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
       // TODO: Clean this up somehow.
       value.push((<Array<unknown>>devalue)[0]);
 
       // Serializing the payload takes ownership of all stubs within, so the payload itself does
-      // not need to be disposed.
+      // not need to be disposed on success. If serialization threw partway through, disposing
+      // the payload above is safe: any hooks already exported were dups of the payload's hooks,
+      // and the Devaluator rolls back its own export-table entries before rethrowing.
     }
     this.send(["push", value]);
 
@@ -807,10 +834,20 @@ class RpcSessionImpl implements Importer, Exporter {
 
   sendStream(id: ImportId, path: PropertyPath, args: RpcPayload)
       : {promise: Promise<void>, size: number} {
-    if (this.abortReason) throw this.abortReason;
+    if (this.abortReason) {
+      args.dispose();
+      throw this.abortReason;
+    }
 
     let value: Array<any> = ["pipeline", id, path];
-    let devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
+    let devalue: unknown;
+    try {
+      devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
+    } catch (err) {
+      // Disposing the partially-serialized payload is safe for the same reasons as in sendCall().
+      args.dispose();
+      throw err;
+    }
 
     // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
     // TODO: Clean this up somehow.
@@ -852,6 +889,11 @@ class RpcSessionImpl implements Importer, Exporter {
       throw this.abortReason;
     }
 
+    // Note: This loop cannot throw synchronously after the abortReason check above. getImport()
+    // never throws, and exportStub()'s only throw is its own abortReason check — but aborts are
+    // always deferred to a microtask, so abortReason cannot become set partway through this loop.
+    // (Don't add a dispose() rollback here: exportStub() stores the hook itself, not a dup, in
+    // the export table, so disposing exported captures would corrupt the table.)
     let devaluedCaptures = captures.map(hook => {
       let importId = this.getImport(hook);
       if (importId !== undefined) {
