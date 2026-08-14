@@ -63,6 +63,11 @@ npm install capnweb capnweb-validate
 Workers RPC users can install `capnweb-validate` without installing `capnweb`. The root package has
 no runtime dependency on `capnweb`; Cap'n Web-specific helpers live under `capnweb-validate/capnweb`.
 
+There is no TypeScript peer dependency to satisfy. Reading your resolved types needs a compiler with
+the JavaScript API, so the package depends on `typescript` (`>=5.7.0 <7`) directly and uses that
+copy. This is what keeps the transform working in a TypeScript 7 (`tsgo`) workspace, where the
+compiler your editor and `tsc` use no longer exposes that API.
+
 ## Server usage
 
 Decorate the class you expose. Every call that arrives is checked against the method's declared
