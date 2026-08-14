@@ -173,16 +173,7 @@ function mapNotLoaded(): never {
 
 // map() is implemented in `map.ts`. We can't import it here because it would create an import
 // cycle, so instead we define two hook functions that map.ts will overwrite when it is imported.
-export let mapImpl: MapImpl = {
-  applyMap(input, parent, owner, captures, instructions) {
-    // applyMap() takes ownership of `captures` even when it throws.
-    for (let cap of captures) {
-      cap.dispose();
-    }
-    mapNotLoaded();
-  },
-  sendMap: mapNotLoaded
-};
+export let mapImpl: MapImpl = { applyMap: mapNotLoaded, sendMap: mapNotLoaded };
 
 type MapImpl = {
   // Applies a map function to an input value (usually an array).
@@ -1767,8 +1758,17 @@ abstract class ValueStubHook extends StubHook {
 
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
     try {
-      let {value, owner} = this.getValue();
-      let followResult = followPath(value, undefined, path, owner);
+      let followResult: FollowPathResult;
+      try {
+        let {value, owner} = this.getValue();
+        followResult = followPath(value, undefined, path, owner);
+      } catch (err) {
+        // We took ownership of the captures, and there is no callee left to consume them.
+        for (let cap of captures) {
+          cap.dispose();
+        }
+        throw err;
+      }
 
       if (followResult.hook) {
         return followResult.hook.map(followResult.remainingPath, captures, instructions);
@@ -1777,12 +1777,8 @@ abstract class ValueStubHook extends StubHook {
       return mapImpl.applyMap(
           followResult.value, followResult.parent, followResult.owner, captures, instructions);
     } catch (err) {
-      // We took ownership of the captures. If the delegate's map() or applyMap() threw, they
-      // already disposed the captures per the contract, but dispose() is idempotent so disposing
-      // again is harmless.
-      for (let cap of captures) {
-        cap.dispose();
-      }
+      // Past the inner catch, ownership of the captures has been transferred to the delegate's
+      // map() or to applyMap(), so it would be incorrect to dispose them here.
       return new ErrorStubHook(err);
     }
   }
