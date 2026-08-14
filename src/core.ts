@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import type { RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
+import type { OnRpcBrokenOptions, RpcTargetBranded, __RPC_TARGET_BRAND } from "./types.js";
 import { WORKERS_MODULE_SYMBOL } from "./symbols.js"
 
 // Polyfill Symbol.dispose for browsers that don't support it yet
@@ -312,7 +312,13 @@ export abstract class StubHook {
   // a disposed payload) or it may reject. It's safe to call dispose() multiple times.
   abstract dispose(): void;
 
-  abstract onBroken(callback: (error: any) => void): void;
+  // Registers a callback to be invoked if this hook becomes permanently broken, e.g. because the
+  // connection was lost. If the hook is already broken, the callback may be invoked synchronously.
+  //
+  // An implementation that invokes or stores `callback` must honor `options.signal`: skip the
+  // registration entirely if the signal is already aborted, and drop the callback when it aborts.
+  // An implementation that delegates passes `options` through unchanged.
+  abstract onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void;
 }
 
 export class ErrorStubHook extends StubHook {
@@ -325,7 +331,10 @@ export class ErrorStubHook extends StubHook {
   pull(): RpcPayload | Promise<RpcPayload> { return Promise.reject(this.error); }
   ignoreUnhandledRejections(): void {}
   dispose(): void {}
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
+    // The caller already canceled, so stay quiet even though we could report right now.
+    if (options?.signal?.aborted) return;
+
     try {
       callback(this.error);
     } catch (err) {
@@ -519,8 +528,8 @@ export class RpcStub extends RpcTarget {
     }
   }
 
-  onRpcBroken(callback: (error: any) => void) {
-    this[RAW_STUB].hook.onBroken(callback);
+  onRpcBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions) {
+    this[RAW_STUB].hook.onBroken(callback, options);
   }
 
   map(func: (value: RpcPromise) => unknown): RpcPromise {
@@ -1843,13 +1852,13 @@ export class PayloadStubHook extends ValueStubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
     if (this.payload) {
       if (this.payload.value instanceof RpcStub) {
         // Payload is a single stub, we should forward onRpcBroken to it.
         // TODO: Consider prohibiting PayloadStubHook created around a single stub; should always
         //   use the underlying stub's hook instead?
-        this.payload.value.onRpcBroken(callback);
+        this.payload.value.onRpcBroken(callback, options);
       }
 
       // TODO: Should native stubs be able to implement onRpcBroken?
@@ -1964,7 +1973,7 @@ class TargetStubHook extends ValueStubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
     // TODO: Should RpcTargets be able to implement onRpcBroken?
   }
 }
@@ -2067,13 +2076,19 @@ export class PromiseStubHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
+    if (options?.signal?.aborted) return;
+
     if (this.resolution) {
-      this.resolution.onBroken(callback);
+      this.resolution.onBroken(callback, options);
     } else {
       this.promise.then(hook => {
-        hook.onBroken(callback);
-      }, callback);
+        hook.onBroken(callback, options);
+      }, error => {
+        // The signal may have aborted while we were waiting for the promise.
+        if (options?.signal?.aborted) return;
+        callback(error);
+      });
     }
   }
 }

@@ -56,7 +56,10 @@ type WrapSide = "server" | "client";
 
 interface StubBase<T = unknown> extends Disposable {
   dup(): this;
-  onRpcBroken(callback: (error: unknown) => void): void;
+  onRpcBroken(
+    callback: (error: unknown) => void,
+    options?: { signal?: AbortSignal }
+  ): void;
   readonly __RPC_STUB_BRAND: T;
 }
 

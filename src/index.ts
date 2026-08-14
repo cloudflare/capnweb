@@ -7,7 +7,7 @@ import { serialize, deserialize, EncodingLevel } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
 import { RpcTargetBranded, RpcCompatible, Stub, type RpcPromise as RpcPromiseType,
-         __RPC_TARGET_BRAND } from "./types.js";
+         type OnRpcBrokenOptions, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
@@ -23,7 +23,7 @@ forceInitStreams();
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
          nodeHttpBatchRpcResponse, WebSocketTransport, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH };
 export type { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport,
-         RpcSessionOptions, RpcCompatible, EncodingLevel, RpcLimits };
+         RpcSessionOptions, RpcCompatible, EncodingLevel, RpcLimits, OnRpcBrokenOptions };
 
 // Hack the type system to make RpcStub's types work nicely!
 /**

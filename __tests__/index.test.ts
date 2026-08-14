@@ -2175,6 +2175,173 @@ describe("onRpcBroken", () => {
       {which: "hangingCall", error: new Error("test disconnect")},
     ]);
   });
+
+  it("never registers a callback whose signal is already aborted", async () => {
+    class TestBroken extends RpcTarget {
+      makeCounter() { return new Counter(0); }
+      throwError(): Promise<Counter> { throw new Error("test error"); }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let stub = harness.stub;
+
+    let preAborted = new AbortController();
+    preAborted.abort();
+    let aborted = preAborted.signal;
+
+    let errors: string[] = [];
+
+    stub.onRpcBroken(() => { errors.push("stub"); }, {signal: aborted});
+
+    let counterPromise = stub.makeCounter();
+    counterPromise.onRpcBroken(() => { errors.push("counterPromise"); }, {signal: aborted});
+
+    // An already-broken stub normally reports synchronously; the aborted signal suppresses it.
+    let throwingPromise = stub.throwError();
+    await throwingPromise.catch(err => {});
+    throwingPromise.onRpcBroken(() => { errors.push("throwError"); }, {signal: aborted});
+    expect(errors).toStrictEqual([]);
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+
+    expect(errors).toStrictEqual([]);
+  });
+
+  it("deregisters a callback when its signal is aborted", async () => {
+    class TestBroken extends RpcTarget {
+      getValue() { return 42; }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let stub = harness.stub;
+    expect(await stub.getValue()).toBe(42);
+
+    let errors: string[] = [];
+    let canceled = new AbortController();
+
+    stub.onRpcBroken(() => { errors.push("kept1"); });
+    stub.onRpcBroken(() => { errors.push("canceled"); }, {signal: canceled.signal});
+    stub.onRpcBroken(() => { errors.push("kept2"); });
+
+    canceled.abort();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+
+    // The canceled callback is gone; the others still fire in registration order.
+    expect(errors).toStrictEqual(["kept1", "kept2"]);
+  });
+
+  it("honors the signal after the promise it was registered on has resolved", async () => {
+    class TestBroken extends RpcTarget {
+      makeCounter() { return new Counter(0); }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let stub = harness.stub;
+
+    let errors: string[] = [];
+    let canceled = new AbortController();
+
+    // Register while the promise is still unresolved, so that the registration is later migrated
+    // onto the resolution.
+    let counterPromise = stub.makeCounter();
+    counterPromise.onRpcBroken(() => { errors.push("canceled"); }, {signal: canceled.signal});
+    counterPromise.onRpcBroken(() => { errors.push("kept"); });
+
+    await counterPromise;
+
+    // Abort only after the migration has happened.
+    canceled.abort();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+
+    expect(errors).toStrictEqual(["kept"]);
+  });
+
+  it("removes the callback when the stub it was registered on is disposed", async () => {
+    class TestBroken extends RpcTarget {
+      getValue() { return 42; }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let stub = harness.stub;
+    expect(await stub.getValue()).toBe(42);
+
+    let errors: string[] = [];
+
+    // Register on a dup, so that disposing it leaves the underlying import (and the registration
+    // made through `stub` below) alive.
+    let dup = stub.dup();
+    dup.onRpcBroken(() => { errors.push("dup"); });
+    stub.onRpcBroken(() => { errors.push("stub"); });
+
+    dup[Symbol.dispose]();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+
+    // Disposing the dup drops its own callback even though no AbortSignal was involved. The
+    // callback registered on `stub` still fires.
+    expect(errors).toStrictEqual(["stub"]);
+  });
+
+  it("removes the callback when the promise it was registered on is disposed", async () => {
+    class TestBroken extends RpcTarget {
+      getValue() { return 42; }
+      hangingCall(): Promise<Counter> {
+        return new Promise(() => {});  // never resolves
+      }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let stub = harness.stub;
+
+    let errors: string[] = [];
+
+    let hangingPromise = stub.hangingCall();
+    hangingPromise.onRpcBroken(() => { errors.push("hangingCall"); });
+    stub.onRpcBroken(() => { errors.push("stub"); });
+
+    hangingPromise[Symbol.dispose]();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+
+    expect(errors).toStrictEqual(["stub"]);
+  });
+
+  it("honors independent signals on separate dups of the same import", async () => {
+    class TestBroken extends RpcTarget {
+      getValue() { return 42; }
+    }
+
+    let harness = new TestHarness(new TestBroken());
+    let stub = harness.stub;
+    expect(await stub.getValue()).toBe(42);
+
+    let errors: string[] = [];
+
+    // Two dups of the same underlying import, each registering with its own signal. Aborting one
+    // signal must drop only that dup's callback, since each hook composes its own signal with the
+    // shared entry.
+    let dup1 = stub.dup();
+    let dup2 = stub.dup();
+    let canceled = new AbortController();
+    let kept = new AbortController();
+
+    dup1.onRpcBroken(() => { errors.push("dup1"); }, {signal: canceled.signal});
+    dup2.onRpcBroken(() => { errors.push("dup2"); }, {signal: kept.signal});
+
+    canceled.abort();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+
+    expect(errors).toStrictEqual(["dup2"]);
+  });
 });
 
 // =======================================================================================

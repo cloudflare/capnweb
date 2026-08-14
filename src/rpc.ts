@@ -4,6 +4,8 @@
 
 import { StubHook, RpcPayload, RpcStub, PropertyPath, PayloadStubHook, ErrorStubHook, RpcTarget, unwrapStubAndPath, streamImpl } from "./core.js";
 import { Devaluator, Evaluator, ExportId, ImportId, Exporter, Importer, serialize, EncodingLevel, RpcLimits, DEFAULT_LIMITS } from "./serialize.js";
+import type { OnRpcBrokenOptions } from "./types.js";
+import { anySignal } from "./signal.js";
 
 /**
  * Interface for a string-based RPC transport. This is the default transport type — no
@@ -192,9 +194,13 @@ class ImportTableEntry {
   private activePull?: PromiseWithResolvers<void>;
   public resolution?: StubHook;
 
-  // List of integer indexes into session.onBrokenCallbacks which are callbacks registered on
-  // this import. Initialized on first use (so `undefined` is the same as an empty list).
-  private onBrokenRegistrations?: number[];
+  // Lazily initialized abort controller for local deregistration.
+  private abortController?: AbortController;
+
+  // Callbacks registered on this import, as indexes into session.onBrokenCallbacks, paired with the
+  // options they were registered with, so that resolve() can re-register them on the resolution.
+  // Initialized on first use (so `undefined` is the same as an empty list).
+  private onBrokenRegistrations?: {index: number, options?: OnRpcBrokenOptions}[];
 
   resolve(resolution: StubHook) {
     // TODO: Need embargo handling here? PayloadStubHook needs to be wrapped in a
@@ -217,10 +223,14 @@ class ImportTableEntry {
     if (this.onBrokenRegistrations) {
       // Delete all our callback registrations from this session and re-register them on the
       // target stub.
-      for (let i of this.onBrokenRegistrations) {
-        let callback = this.session.onBrokenCallbacks[i];
+      for (let {index, options} of this.onBrokenRegistrations) {
+        let callback = this.session.onBrokenCallbacks[index];
+        if (callback === undefined) {
+          // Already canceled via `options.signal`, so there's nothing to migrate.
+          continue;
+        }
         let endIndex = this.session.onBrokenCallbacks.length;
-        resolution.onBroken(callback);
+        resolution.onBroken(callback, options);
         if (this.session.onBrokenCallbacks[endIndex] === callback) {
           // Oh, calling onBroken() just registered the callback back on this connection again.
           // But when the connection dies, we want all the callbacks to be called in the order in
@@ -230,7 +240,7 @@ class ImportTableEntry {
           delete this.session.onBrokenCallbacks[endIndex];
         } else {
           // The callback is now registered elsewhere, so delete it from our session.
-          delete this.session.onBrokenCallbacks[i];
+          delete this.session.onBrokenCallbacks[index];
         }
       }
       this.onBrokenRegistrations = undefined;
@@ -254,6 +264,7 @@ class ImportTableEntry {
   dispose() {
     if (this.resolution) {
       this.resolution.dispose();
+      this.abortController?.abort();
     } else {
       this.abort(new Error("RPC was canceled because the RpcPromise was disposed."));
       this.sendRelease();
@@ -271,19 +282,32 @@ class ImportTableEntry {
 
       // The RpcSession itself will have called all our callbacks so we don't need to track the
       // registrations anymore.
+      this.abortController?.abort();
+      this.abortController = undefined;
       this.onBrokenRegistrations = undefined;
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
+    // The caller already canceled, so don't register.
+    if (options?.signal?.aborted) return;
+
     if (this.resolution) {
-      this.resolution.onBroken(callback);
+      this.resolution.onBroken(callback, options);
     } else {
       let index = this.session.onBrokenCallbacks.length;
       this.session.onBrokenCallbacks.push(callback);
 
       if (!this.onBrokenRegistrations) this.onBrokenRegistrations = [];
-      this.onBrokenRegistrations.push(index);
+      this.onBrokenRegistrations.push({ index, options });
+
+      let deregister = () => { delete this.session.onBrokenCallbacks[index]; };
+      (this.abortController ??= new AbortController()).signal.addEventListener("abort", deregister);
+      options?.signal?.addEventListener("abort",
+        deregister,
+        // Stop listening once this entry is disposed.
+        { once: true, signal: this.abortController!.signal },
+      );
     }
   }
 
@@ -297,6 +321,11 @@ class ImportTableEntry {
 
 class RpcImportHook extends StubHook {
   public entry?: ImportTableEntry;  // undefined when we're disposed
+
+  // Lazily initialized abort controller for deregistering the onBroken callbacks registered through
+  // this hook. It belongs to the hook rather than the import entry because the entry is shared by
+  // every hook pointing at it (via dup()) and is only disposed once the last of them is.
+  private abortController?: AbortController;
 
   // `pulling` is true if we already expect that this import is going to be resolved later, and
   // null if this import is not allowed to be pulled (i.e. it's a stub not a promise).
@@ -395,6 +424,9 @@ class RpcImportHook extends StubHook {
   dispose(): void {
     let entry = this.entry;
     this.entry = undefined;
+    let controller = this.abortController;
+    this.abortController = undefined;
+    controller?.abort();
     if (entry) {
       if (--entry.localRefcount === 0) {
         entry.dispose();
@@ -402,9 +434,13 @@ class RpcImportHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
     if (this.entry) {
-      this.entry.onBroken(callback);
+      this.abortController ??= new AbortController();
+      let signal = options?.signal
+          ? anySignal([this.abortController.signal, options.signal])
+          : this.abortController.signal;
+      this.entry.onBroken(callback, { signal });
     }
   }
 }

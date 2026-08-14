@@ -433,6 +433,23 @@ If anything happens to the stub that would cause all further method calls and pr
 * The stub's underlying connection is lost.
 * The stub is a promise, and the promise rejects.
 
+To stop listening, pass an `AbortSignal`:
+
+```ts
+let controller = new AbortController();
+
+stub.onRpcBroken((error: any) => {
+  console.error(error);
+}, { signal: controller.signal });
+
+// Later: stop listening.
+controller.abort();
+```
+
+Aborting the signal drops the callback. A signal that is already aborted registers nothing, even if the stub is already broken.
+
+Disposing a stub also drops the callbacks registered on it.
+
 ## Security Considerations
 
 * The WebSocket API in browsers always permits cross-site connections, and does not permit setting headers. Because of this, you generally cannot use cookies nor other headers for authentication. Instead, we highly recommend the pattern shown in the second example above, in which authentication happens in-band via an RPC method that returns the authenticated API.

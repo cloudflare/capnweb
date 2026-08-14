@@ -4,6 +4,7 @@
 
 import { StubHook, PropertyPath, RpcPayload, RpcStub, RpcPromise, withCallInterceptor, ErrorStubHook, mapImpl, PayloadStubHook, unwrapStubAndPath, unwrapStubNoProperties } from "./core.js";
 import { Devaluator, Exporter, Importer, ExportId, ImportId, Evaluator, RpcLimits, DEFAULT_LIMITS } from "./serialize.js";
+import type { OnRpcBrokenOptions } from "./types.js";
 
 let currentMapBuilder: MapBuilder | undefined;
 
@@ -227,7 +228,7 @@ class MapVariableHook extends StubHook {
     // Probably never called but whatever.
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
     throwMapperBuilderUseError();
   }
 }
