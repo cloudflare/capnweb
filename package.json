@@ -1,6 +1,6 @@
 {
   "name": "capnweb",
-  "version": "0.10.0",
+  "version": "0.11.1",
   "description": "JavaScript/TypeScript-native RPC library with Promise Pipelining",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -36,7 +36,7 @@
     "!packages/docs"
   ],
   "scripts": {
-    "build": "tsdown --config-loader native && npm run -w capnweb-validate build",
+    "build": "tsdown --config-loader native && node scripts/check-dist-ascii.mjs && npm run -w capnweb-validate build",
     "build:watch": "tsdown --config-loader native --watch",
     "dev": "npm run build:watch",
     "dev:docs": "npm run build && npm --prefix packages/docs run dev -- --port 4321",

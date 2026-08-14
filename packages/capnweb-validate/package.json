@@ -1,6 +1,6 @@
 {
   "name": "capnweb-validate",
-  "version": "0.2.2",
+  "version": "0.2.4",
   "description": "Build-time TypeScript validation transform for capnweb RPC.",
   "license": "MIT",
   "type": "module",
@@ -75,14 +75,12 @@
     "test": "vitest run --root ../.. --project node packages/capnweb-validate/__tests__"
   },
   "peerDependencies": {
-    "capnweb": ">=0.7.0",
-    "typescript": ">=5.7.0"
+    "capnweb": ">=0.7.0"
   },
   "devDependencies": {
     "@typescript/vfs": "^1.6.4",
-    "capnweb": "^0.10.0",
-    "tsdown": "^0.22.0",
-    "typescript": "^5.9.3"
+    "capnweb": "^0.11.1",
+    "tsdown": "^0.22.0"
   },
   "publishConfig": {
     "access": "public"
@@ -92,6 +90,7 @@
     "url": "https://github.com/cloudflare/capnweb"
   },
   "dependencies": {
+    "typescript": ">=5.7.0 <7",
     "unplugin": "^3.0.0"
   },
   "peerDependenciesMeta": {
