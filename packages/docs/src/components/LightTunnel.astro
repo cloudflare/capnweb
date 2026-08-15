@@ -36,6 +36,14 @@ interface Props {
   opacity?: number;
   mouseInteraction?: boolean;
   mouseStrength?: number;
+  /* Light-mode palette. Without it the tunnel stays emissive in both schemes,
+     which on a light page means invisible. See `uInk` in the client. */
+  cableColorLight?: string;
+  pulseColorLight?: string;
+  tunnelColorLight?: string;
+  glowLight?: number;
+  brightnessLight?: number;
+  grainIntensityLight?: number;
   class?: string;
 }
 
@@ -70,6 +78,12 @@ const {
   opacity = 1,
   mouseInteraction = false,
   mouseStrength = 0.12,
+  cableColorLight,
+  pulseColorLight,
+  tunnelColorLight,
+  glowLight,
+  brightnessLight,
+  grainIntensityLight,
   class: className = "",
 } = Astro.props;
 ---
@@ -106,6 +120,12 @@ const {
   data-opacity={String(opacity)}
   data-mouse-interaction={String(mouseInteraction)}
   data-mouse-strength={String(mouseStrength)}
+  data-cable-color-light={cableColorLight}
+  data-pulse-color-light={pulseColorLight}
+  data-tunnel-color-light={tunnelColorLight}
+  data-glow-light={glowLight === undefined ? undefined : String(glowLight)}
+  data-brightness-light={brightnessLight === undefined ? undefined : String(brightnessLight)}
+  data-grain-intensity-light={grainIntensityLight === undefined ? undefined : String(grainIntensityLight)}
   class:list={["cw-light-tunnel", className]}
   aria-hidden="true"
 ></div>

@@ -158,18 +158,39 @@ code.
 Light mode is a genuine second scheme rather than an inversion. The sidebar and the content sheet
 share `--nb-background`: one surface, not a darker rail meeting a lighter document.
 
+Both schemes are held to WCAG AA at their real sizes, measured on the surface each thing actually
+sits on rather than on the one it nominally belongs to. That distinction is what most of the
+failures turned out to be: `--nb-muted-foreground` cleared AA on the sheet and missed it on the
+ground, and the ground is what shows through the table-of-contents rail and the masthead. The audit
+harness walks every text node on a page, resolves the effective background through however many
+translucent ancestors it has, and reports anything under 4.5:1 (3:1 for large text). It currently
+reports one hit in each scheme, and that hit is the hero title, whose colour is `transparent`
+because the gradient is clipped to the glyphs.
+
 ### Two families of token
 
 Nimbus's own tokens are `--nb-*`, and Tailwind utilities like `bg-card` and `border-border` are
 generated from them in the `@theme` block. Ours are `--cw-*`: the raw palette, plus the handful of
 values the page shell needs that have no Nimbus equivalent.
 
-| Token             | Dark      | Light     | Used for                                  |
-| ----------------- | --------- | --------- | ----------------------------------------- |
-| `--cw-ground`     | `#090c10` | `#e2e7ec` | the ground the page sheet rests on        |
-| `--nb-background` | `#0c1014` | `#eef1f4` | the content sheet and the desktop sidebar |
-| `--nb-primary`    | `#e85d2c` | `#e85d2c` | primary actions                           |
-| `--cw-orange`     | `#e85d2c` | `#e85d2c` | the CTA spark                             |
+| Token              | Dark      | Light     | Used for                                  |
+| ------------------ | --------- | --------- | ----------------------------------------- |
+| `--cw-ground`      | `#090c10` | `#e2e7ec` | the ground the page sheet rests on        |
+| `--nb-background`  | `#0c1014` | `#eef1f4` | the content sheet and the desktop sidebar |
+| `--nb-primary`     | `#e85d2c` | `#e85d2c` | primary actions                           |
+| `--cw-orange`      | `#e85d2c` | `#e85d2c` | the CTA spark                             |
+| `--cw-orange-text` | `#e85d2c` | `#b03f18` | the same spark, when it is text           |
+
+Two of those need saying out loud, because both are places where the obvious value is the wrong one:
+
+- **The label on a tomato button is ink, not white.** White on `#e85d2c` is 3.5:1, and it gets
+  *worse* on hover as the fill brightens, to 2.8:1. Ink is 4.6:1 and gets better, to 5.7:1.
+  cloudflare.com resolves the identical problem the identical way: its orange buttons carry
+  near-black labels.
+- **Orange as text is not the same orange as orange as a fill.** The brand tomato is 3.1:1 on the
+  paper, so anything set in it at body size is below AA before it starts. `--cw-orange-text` is the
+  same hue darkened to 5.2:1, and in dark mode it is just the brand colour, which needs no help
+  there. The one consumer today is the wire in `HeroExample`.
 
 The palette is kept as hex rather than converted to oklch, which the scaffold's own comment
 recommends. These are measured, tuned values carried over from the theme this replaced, and a round
@@ -210,10 +231,14 @@ The bootstrap in `BaseLayout.astro` queries `(prefers-color-scheme: light)` rath
 purpose: the site was designed dark, so a reader whose OS expresses no preference gets dark. A stored
 choice still wins over the OS.
 
-The landing page is outside all of that. It is a fixed dark design, so the bootstrap resolves `/` to
-dark whatever is stored, `BaseLayout` puts `.cw-home` on the body, and `globals.css` hides the theme
-toggle there rather than leaving a control that does nothing. The toggle still themes every docs
-page, and a choice made on one is honoured when the reader leaves the landing page.
+The landing page used to be outside all of that: it was a fixed dark design, the bootstrap resolved
+`/` to dark whatever was stored, and the toggle was hidden there because it would have done nothing.
+It is no longer exempt. `.cw-home` remains on the body, but it now marks the page rather than its
+scheme, and the two rules that still key off it are about the hero, not about being dark.
+
+The two `theme-color` metas are media-scoped, so a first visit gets browser chrome that matches the
+OS before any script runs. A stored choice that disagrees with the OS is reconciled by the bootstrap,
+which drops the media condition from whichever one won.
 
 It also publishes `data-theme="light" | "dark"`, which nothing in Nimbus reads. The example
 playgrounds do: they are same-origin iframes that read the embedding page's theme before their first
@@ -258,6 +283,44 @@ entirely under `prefers-reduced-motion`. It is also the only expensive thing the
 landing page loads 62.7 kB of JavaScript (20.8 kB gzipped) against a docs page's 20.9 kB (9.4 kB),
 nearly all of it `ogl`. That is the trade -- one page pays for the first impression, no other page
 pays anything. Docs pages get nothing behind them at all: the content sheet is the page.
+
+### Light in a room, or ink on paper
+
+The tunnel is drawn twice, by one shader, and the second way is not a recolour.
+
+The original is emissive. Colour is summed light -- a pulse is literally three times the pulse
+colour -- and it composites onto a dark stage the way light behaves. Point that at a white page and
+it disappears, because adding light to paper is a no-op. This is why the usual answer is to keep the
+hero dark on a light site, and it is what cloudflare.com does: a dark hero block with white type at
+the top of an otherwise white page.
+
+The other way keeps every bit of the geometry and changes what the intensity *means*. `uInk` makes
+it coverage rather than emission: the colour never brightens, it saturates, so a pulse is the
+deepest ink on the cable rather than the brightest light on it. The same tunnel reads as drawn
+instead of lit, and the hero can dissolve into a light page the way it already dissolves into a dark
+one, rather than sitting in a hard-edged dark band.
+
+Two things had to be tuned rather than translated, and both are the same asymmetry:
+
+- **`uGlow` means something different in each.** On a lit stage it scales emitted light, which is
+  the rim colour. Ink has no light to scale, so there it scales the weight of the stroke.
+- **The distance fade does not fade on paper.** A cable at 10% alpha over near-black is nothing; the
+  same 10% of ink on white is still a line, so the far field that retires itself on the dark stage
+  stays fully drawn on the light one. Measured, that left light with half again as much visible
+  stroke as dark, spread evenly, which reads as dust rather than as cables. Ink therefore gets a
+  contrast curve *after* the fade, which gives the far field a horizon instead of an asymptote.
+
+The two were matched by measurement, not by eye: the fraction of pixels in the hero that differ from
+the stage by a just-noticeable amount is 2.7% in dark and 3.3% in light, with peak stroke contrast
+10.6:1 and 8.6:1. `density.mjs` in the scratch harnesses is how those were taken.
+
+Ink costs nothing extra to run: measured back to back, the two paths draw at the same frame rate for
+the same CPU, which is what you would expect from one added `smoothstep` in a shader that is already
+fill-bound.
+
+The palette swap is live. `light-tunnel.client.ts` watches `data-theme` on `<html>` and repaints on
+change, including while the loop is parked off-screen -- otherwise a tunnel that was scrolled out of
+view during a toggle would keep the old palette until it came back.
 
 ## Social cards
 

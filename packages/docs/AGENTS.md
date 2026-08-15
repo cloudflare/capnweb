@@ -187,5 +187,11 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
 - Edit `src/components.ts` to bypass registration. If MDX uses a component, register it.
 - Spend the tomato accent (`--cw-orange`, which is also `--nb-primary`) on anything else. It is the
   call to action and almost nothing else -- prose links are ink, not accent -- and that restraint is
-  the point.
+  the point. If you do set text in it, use `--cw-orange-text`: the brand tomato is 3.1:1 on the
+  paper, and the darkened variant exists so light mode has a legal way to say the same thing.
+- Assume the landing page is dark. It was, and is not any more -- it honours the toggle like every
+  other page, and its hero animation has a second palette that draws in ink rather than light.
+  `.cw-home` marks the page, not a scheme.
+- Dim text with `opacity` to make it secondary. `--nb-muted-foreground` is already that, measured;
+  multiplying it by 0.6 is how the figure captions ended up the least readable text on the site.
 - Remove `<AgentDirective />` unless asked.

@@ -18,10 +18,19 @@ const nimbusConfig = defineNimbusConfig({
 	github: REPO,
 	editPattern: `${REPO}/edit/main/packages/docs/{path}`,
 	socialImageAlt: "Cap'n Web documentation",
+	// Browser chrome follows the scheme. The media queries are asked the same way
+	// round as the bootstrap in BaseLayout: light only when the OS asks for it,
+	// dark otherwise, because dark is this site's answer to "no preference". A
+	// stored choice that disagrees with the OS is reconciled by that same script,
+	// which rewrites these once it has resolved the mode.
 	head: [
 		{
 			tag: 'meta',
-			attrs: { name: 'theme-color', content: '#0c1014' },
+			attrs: { name: 'theme-color', content: '#eef1f4', media: '(prefers-color-scheme: light)' },
+		},
+		{
+			tag: 'meta',
+			attrs: { name: 'theme-color', content: '#070a11', media: '(prefers-color-scheme: dark)' },
 		},
 	],
 	// Ordering is explicit rather than left to the filesystem. The groups are the shape of the

@@ -33,6 +33,17 @@ export interface LightTunnelOptions {
   opacity?: number;
   mouseInteraction?: boolean;
   mouseStrength?: number;
+  /*
+   * The light-mode palette. Same tunnel, drawn as ink on paper rather than
+   * light in a room (see `uInk` in the shader). Left undefined, the tunnel is
+   * emissive in both schemes, which on a light page means invisible.
+   */
+  cableColorLight?: string;
+  pulseColorLight?: string;
+  tunnelColorLight?: string;
+  glowLight?: number;
+  brightnessLight?: number;
+  grainIntensityLight?: number;
 }
 
 const hexToRgb = (hex: string): [number, number, number] => {
@@ -84,6 +95,7 @@ uniform vec3 uTunnelColor;
 uniform float uTunnelOpacity;
 uniform float uGrain;
 uniform float uGrainIntensity;
+uniform float uInk;
 out vec4 fragColor;
 
 void mainImage(out vec4 o, in vec2 fragCoord) {
@@ -147,21 +159,74 @@ void mainImage(out vec4 o, in vec2 fragCoord) {
   float aRim = rimGlow;
   float aPulse = clamp(dataPulse * pulseMask, 0.0, 1.0);
 
-  vec3 fiberCol = uTunnelColor * aBody
-    + cableCol * aRim * 1.3 * uGlow
-    + uPulseColor * dataPulse * 3.0 * pulseMask;
-
   float distFade = smoothstep(0.0, uFadeNear, r) * smoothstep(uFadeFar, uFadeFar - 0.9, r);
-  float inten = clamp(aBody + aRim + aPulse, 0.0, 1.0) * distFade;
+  // uGlow scales emitted light on a lit stage, where it multiplies the rim
+  // colour. Ink has no light to scale, so there it scales the weight of the
+  // stroke instead -- the one knob means "how much cable do you see" in both.
+  float rimWeight = uInk > 0.5 ? clamp(aRim * uGlow, 0.0, 1.0) : aRim;
+  float inten = clamp(aBody + rimWeight + aPulse, 0.0, 1.0);
+  /*
+   * Emission and coverage are not perceptually interchangeable, and the gap is
+   * widest exactly where the drawing is supposed to disappear. A cable at 10%
+   * alpha over a near-black stage is nothing; the same 10% of ink on paper is
+   * still a line. So the distance fade, which retires the far field on the dark
+   * stage, does not retire it on the light one -- measured, that left the light
+   * hero with half again as much visible stroke as the dark one, spread evenly,
+   * which reads as dust or moire rather than as cables.
+   *
+   * Ink therefore gets a contrast curve applied *after* the fade: below the
+   * floor is paper, above the ceiling is full ink. That gives the far field a
+   * real horizon instead of an asymptote, and leaves the drawing to the arcs
+   * near the vortex, which is what the dark stage does on its own.
+   */
+  inten *= distFade;
+  if (uInk > 0.5) inten = smoothstep(0.15, 0.42, inten);
 
-  vec3 finalCol = fiberCol * uBrightness;
+  /*
+   * Two ways to draw the same tunnel.
+   *
+   * Emissive (uInk == 0) is the original: colour is summed light, so a bright
+   * pulse is literally three times the pulse colour, and it composites onto a
+   * dark stage the way light behaves. On a light stage it disappears -- adding
+   * light to paper is a no-op, and that is why "just use the dark hero on the
+   * light page" is the usual answer to this problem.
+   *
+   * Ink (uInk == 1) keeps every bit of the geometry above and changes what the
+   * intensity *means*: coverage rather than emission. The colour never
+   * brightens, it saturates, so a pulse is the deepest ink on the cable instead
+   * of the brightest light, and the same tunnel reads as drawn rather than lit.
+   * Alpha is unchanged either way, so the fades, the grain and the veil all
+   * behave identically.
+   */
+  vec3 finalCol;
+  if (uInk > 0.5) {
+    float pulseAmt = clamp(dataPulse * pulseMask, 0.0, 1.0);
+    finalCol = mix(cableCol, uPulseColor, pulseAmt);
+    finalCol = mix(finalCol, uTunnelColor, aBody * uTunnelOpacity);
+    // uBrightness < 1 lightens ink toward the stage instead of dimming light.
+    finalCol = mix(vec3(1.0), finalCol, clamp(uBrightness, 0.0, 1.0));
+  } else {
+    vec3 fiberCol = uTunnelColor * aBody
+      + cableCol * aRim * 1.3 * uGlow
+      + uPulseColor * dataPulse * 3.0 * pulseMask;
+    finalCol = fiberCol * uBrightness;
+  }
+
   float alpha = clamp(inten, 0.0, 1.0) * uOpacity;
   vec3 outRgb = finalCol * alpha;
 
   if (uGrain > 0.5) {
     float gv = (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233)) + iTime) * 43758.5453) - 0.5) * uGrainIntensity;
-    outRgb = clamp(outRgb + gv, 0.0, 1.0);
-    alpha = clamp(alpha + gv, 0.0, 1.0);
+    // Grain is a brightness wobble on a lit stage and a density wobble on an
+    // inked one; on paper, adding to the premultiplied colour would wash the
+    // stroke out, so only the coverage moves.
+    if (uInk > 0.5) {
+      alpha = clamp(alpha + gv * alpha, 0.0, 1.0);
+      outRgb = finalCol * alpha;
+    } else {
+      outRgb = clamp(outRgb + gv, 0.0, 1.0);
+      alpha = clamp(alpha + gv, 0.0, 1.0);
+    }
   }
 
   o = vec4(outRgb, alpha);
@@ -218,6 +283,12 @@ function readOptions(el: HTMLElement): Required<LightTunnelOptions> {
     opacity: num("opacity", 1),
     mouseInteraction: bool("mouseInteraction", false),
     mouseStrength: num("mouseStrength", 0.12),
+    cableColorLight: attr("cableColorLight", ""),
+    pulseColorLight: attr("pulseColorLight", ""),
+    tunnelColorLight: attr("tunnelColorLight", ""),
+    glowLight: num("glowLight", num("glow", 1.6)),
+    brightnessLight: num("brightnessLight", num("brightness", 1)),
+    grainIntensityLight: num("grainIntensityLight", num("grainIntensity", 0.05)),
   };
 }
 
@@ -277,10 +348,57 @@ export function mountLightTunnel(container: HTMLElement) {
       uTunnelOpacity: { value: o.tunnelOpacity },
       uGrain: { value: o.grain ? 1.0 : 0.0 },
       uGrainIntensity: { value: o.grainIntensity },
+      uInk: { value: 0 },
     },
   });
 
   const mesh = new Mesh(gl, { geometry, program });
+
+  /*
+   * Which palette is live follows the page's scheme, and the page's scheme can
+   * change under us: the toggle in the masthead rewrites `data-theme` on
+   * <html> without a navigation. `BaseLayout` publishes that attribute for the
+   * playground iframes; reusing it here means the tunnel and the rest of the
+   * page can never disagree about which mode they are in.
+   */
+  const hasLightPalette = o.cableColorLight !== "" && o.pulseColorLight !== "";
+  const setVec3 = (name: string, hex: string) => {
+    const v = program.uniforms[name].value as Float32Array;
+    const [r, g, b] = hexToRgb(hex);
+    v[0] = r;
+    v[1] = g;
+    v[2] = b;
+  };
+
+  const applyScheme = () => {
+    const light =
+      hasLightPalette && document.documentElement.dataset.theme === "light";
+    program.uniforms.uInk.value = light ? 1 : 0;
+    setVec3("uCableColor", light ? o.cableColorLight : o.cableColor);
+    setVec3("uPulseColor", light ? o.pulseColorLight : o.pulseColor);
+    setVec3(
+      "uTunnelColor",
+      light && o.tunnelColorLight !== "" ? o.tunnelColorLight : o.tunnelColor,
+    );
+    program.uniforms.uGlow.value = light ? o.glowLight : o.glow;
+    program.uniforms.uBrightness.value = light ? o.brightnessLight : o.brightness;
+    program.uniforms.uGrainIntensity.value = light
+      ? o.grainIntensityLight
+      : o.grainIntensity;
+  };
+  applyScheme();
+
+  // Repaint on a scheme change even while the loop is parked, or a tunnel that
+  // is off-screen (or in a hidden tab) keeps the old palette until it is
+  // scrolled back into view.
+  const schemeObserver = new MutationObserver(() => {
+    applyScheme();
+    renderer.render({ scene: mesh });
+  });
+  schemeObserver.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme"],
+  });
 
   const setSize = () => {
     const rect = container.getBoundingClientRect();
@@ -361,6 +479,7 @@ export function mountLightTunnel(container: HTMLElement) {
     tryStop();
     ro.disconnect();
     io.disconnect();
+    schemeObserver.disconnect();
     document.removeEventListener("visibilitychange", onVisibility);
     window.removeEventListener("pointermove", onPointerMove);
     window.removeEventListener("pointerleave", onPointerLeave);

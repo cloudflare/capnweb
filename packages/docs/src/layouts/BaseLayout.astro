@@ -26,9 +26,9 @@ const {
 } = Astro.props;
 
 const lang = config.locale ?? "en";
-// The landing page is a fixed dark design (a dark banner hero over dark
-// content), independent of the light/dark toggle that still themes the docs.
-// Forcing the dark token set on `<body>` cascades to everything on the page.
+// `cw-home` marks the landing page for the handful of rules that only apply
+// there (the hero's ground, the outline-only code blocks in dark). It no longer
+// forces a colour scheme: the landing honours the toggle like every other page.
 const isHome = Astro.url.pathname.replace(/\/+$/, "") === "";
 // Per-page agent-index pointer. For pages in non-primary or version
 // collections, this resolves to `/<prefix>/llms.txt` (e.g. `/v0/llms.txt`
@@ -78,11 +78,7 @@ const llmsUrl = Astro.site
           }
         };
 
-        // The landing page is a fixed dark design, independent of the toggle
-        // and OS preference; every other page resolves normally.
-        const isHome = () => location.pathname.replace(/\/+$/, "") === "";
-        const resolveMode = () =>
-          isHome() ? "dark" : readPref() ?? (media.matches ? "light" : "dark");
+        const resolveMode = () => readPref() ?? (media.matches ? "light" : "dark");
 
         const applyTheme = () => {
           const root = document.documentElement;
@@ -97,6 +93,15 @@ const llmsUrl = Astro.site
           // positively by a document that may load either way round.
           root.dataset.theme = mode;
           root.style.colorScheme = mode;
+          // The two theme-color metas are media-scoped, which answers the OS
+          // but not a stored choice that disagrees with it. Drop the media
+          // condition on the one that won and neuter the other, so the browser
+          // chrome matches the page a reader actually gets.
+          document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+            const wants = m.dataset.mode || (m.media.includes("light") ? "light" : "dark");
+            m.dataset.mode = wants;
+            m.media = wants === mode ? "" : "not all";
+          });
           document.querySelectorAll("[data-nb-theme-toggle]").forEach((b) => {
             b.setAttribute("data-nb-state", mode);
           });
@@ -127,7 +132,7 @@ const llmsUrl = Astro.site
     />
   </head>
   <!-- No `bg-background` here: the body paints the ground (see globals.css) and
-       the content sheet paints itself, so the node field has somewhere to show. -->
+       the content sheet paints itself, so the ground has somewhere to show. -->
   <body class={cn("min-h-screen text-foreground antialiased", isHome && "cw-home")}>
     <a
       href="#main-content"

@@ -179,16 +179,22 @@ const figures = [
     border-top: 1px solid var(--nb-border);
     border-left: 1px solid var(--nb-border);
   }
+  /*
+   * No opacity here. Dimming the muted token to 0.6 was what made these
+   * captions the least readable text on the site -- 3.6:1 in dark and 2.3:1 in
+   * light, against a 4.5 requirement. The token is already the "quieter than
+   * body" colour; dimming it again was saying the same thing twice and only the
+   * second one was measured.
+   */
   .cw-bento .cw-fig {
     font-family: var(--nb-font-mono);
     font-size: 0.6875rem;
     color: var(--nb-muted-foreground);
-    opacity: 0.6;
   }
   .cw-bento .cw-art {
     height: 132px;
     margin: 0.25rem 0 1rem;
-    color: #8fb0ec;
+    color: var(--cw-art-stroke);
   }
   .cw-bento .cw-svg {
     width: 100%;
@@ -197,14 +203,14 @@ const figures = [
   }
 
   /* ---- Faint base layer (duotone) ---- */
-  .cw-bento .cw-top { stroke-opacity: 0.42; fill: rgba(255, 255, 255, 0.025); }
+  .cw-bento .cw-top { stroke-opacity: 0.42; fill: rgb(var(--cw-art-fill-rgb) / 0.025); }
   .cw-bento .cw-side { stroke-opacity: 0.16; fill: none; }
   .cw-bento .cw-faint { stroke-opacity: 0.13; fill: none; }
   .cw-bento .cw-halo { stroke-opacity: 0.12; fill: none; }
   .cw-bento .cw-orbitline { stroke-opacity: 0.14; fill: none; }
 
   /* ---- Bright animated layer ---- */
-  .cw-bento .cw-hi { stroke-opacity: 0.85; fill: rgba(255, 255, 255, 0.08); }
+  .cw-bento .cw-hi { stroke-opacity: 0.85; fill: rgb(var(--cw-art-fill-rgb) / 0.08); }
   .cw-bento .cw-arrow { stroke-opacity: 0.7; fill: none; stroke-linecap: round; }
   .cw-bento .cw-lit { stroke-opacity: 0.55; fill: none; }
 
@@ -229,7 +235,7 @@ const figures = [
   @keyframes cw-flow-rev { to { stroke-dashoffset: 27; } }
 
   /* Pass by reference: nucleus (the object) with references orbiting it. */
-  .cw-bento .cw-nucleus { stroke-opacity: 0.9; fill: rgba(255, 255, 255, 0.14); }
+  .cw-bento .cw-nucleus { stroke-opacity: 0.9; fill: rgb(var(--cw-art-fill-rgb) / 0.14); }
   .cw-bento .cw-ring1 { transform: rotate(-16deg); transform-box: view-box; transform-origin: 100px 75px; }
   .cw-bento .cw-electron {
     fill: currentColor;
@@ -307,12 +313,12 @@ const figures = [
   .cw-bento .cw-fill { animation: cw-fill 3.8s ease-in-out infinite; }
   .cw-bento .cw-fill2 { animation: cw-fill2 3.8s ease-in-out infinite; }
   @keyframes cw-fill {
-    0%, 100% { fill: rgba(255, 255, 255, 0); stroke-opacity: 0.3; }
-    18%, 75% { fill: rgba(255, 255, 255, 0.24); stroke-opacity: 0.9; }
+    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.3; }
+    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.24); stroke-opacity: 0.9; }
   }
   @keyframes cw-fill2 {
-    0%, 100% { fill: rgba(255, 255, 255, 0); stroke-opacity: 0.25; }
-    18%, 75% { fill: rgba(255, 255, 255, 0.1); stroke-opacity: 0.65; }
+    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.25; }
+    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.1); stroke-opacity: 0.65; }
   }
 
   .cw-bento .cw-obj {

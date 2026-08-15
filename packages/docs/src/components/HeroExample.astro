@@ -43,7 +43,10 @@ const serverCode = `class Api extends RpcTarget {
 
 <style>
   .cw-ex {
-    --cw-wire: #e85d2c;
+    /* The wire is the one place the tomato is drawn as a line rather than a
+       fill, so on paper it takes the darkened text variant -- the brand orange
+       is 3.1:1 there and the label beside it is unreadable at that weight. */
+    --cw-wire: var(--cw-orange-text);
     margin: 0 auto;
     width: 100%;
     max-width: 34rem;
@@ -132,7 +135,7 @@ const serverCode = `class Api extends RpcTarget {
       180deg,
       transparent,
       var(--cw-wire) 45%,
-      color-mix(in srgb, var(--cw-wire) 60%, white) 55%,
+      color-mix(in srgb, var(--cw-wire) 60%, var(--cw-wire-spark)) 55%,
       transparent
     );
     box-shadow: 0 0 8px 1px color-mix(in srgb, var(--cw-wire) 55%, transparent);

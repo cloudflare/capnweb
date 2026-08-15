@@ -5,9 +5,16 @@
  * React Bits' LightTunnel, ported to vanilla JS + ogl. The tunnel is centred in
  * its own canvas so it reads as concentric rings / a loop, and that canvas is
  * parked in the top-right of the hero so the cables sweep in from the corner
- * while the copy on the left stays on the page background. A dark navy corner
- * backs it so the blue pulses glow. Decorative only: the canvas is aria-hidden,
- * pointer-events stay off, and reduced-motion visitors get the static corner.
+ * while the copy on the left stays on the page background.
+ *
+ * Both schemes get the same tunnel, drawn two different ways. Dark is emissive:
+ * a navy pool with light pulses blooming out of it. Light is ink: the same
+ * cables and pulses drawn as strokes on paper, because added light does nothing
+ * to a white page. The palette swap happens in the shader (`uInk`), live, when
+ * the toggle rewrites `data-theme`.
+ *
+ * Decorative only: the canvas is aria-hidden, pointer-events stay off, and
+ * reduced-motion visitors get the static stage with no canvas at all.
  */
 import LightTunnel from "./LightTunnel.astro";
 ---
@@ -18,6 +25,11 @@ import LightTunnel from "./LightTunnel.astro";
       cableColor="#112039"
       pulseColor="#3B82F6"
       tunnelColor="#5227FF"
+      cableColorLight="#3f5a8c"
+      pulseColorLight="#0a2bb5"
+      glowLight={1.3}
+      brightnessLight={1}
+      grainIntensityLight={0.02}
       tunnelOpacity={0}
       speed={0.1}
       flowDirection="inward"

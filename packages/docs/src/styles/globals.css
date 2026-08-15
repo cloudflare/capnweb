@@ -59,15 +59,36 @@
 	--nb-card-foreground: var(--nb-foreground);
 
 	--nb-muted: #e4e9ee;
-	--nb-muted-foreground: #5b6b7a;
+	/*
+	 * Secondary text: sidebar links, page descriptions, captions, the TOC. The
+	 * binding constraint is the darkest surface it ever sits on, which is the
+	 * ground (`--cw-ground`) showing through the TOC rail and the masthead, not
+	 * the sheet. At the old #5b6b7a that was 4.41:1 -- under AA -- so this is
+	 * solved for the ground: 5.7:1 there, 6.2:1 on the sheet, still well clear
+	 * of the 14:1 body ink so the hierarchy survives.
+	 */
+	--nb-muted-foreground: #4c5a6a;
 
 	--nb-accent: #dce3ea;
 	--nb-accent-foreground: #1a222b;
 
-	/* Tomato is the action colour. Links stay ink so the spark stays rare. */
+	/* Tomato is the action colour. Links stay ink so the spark stays rare.
+	 *
+	 * The label on a tomato button is ink, not white. White on this orange is
+	 * 3.5:1 and gets worse on hover as the fill brightens (2.8:1); ink is 4.6:1
+	 * and gets better (5.7:1). cloudflare.com resolves the same problem the same
+	 * way -- its orange buttons carry near-black labels. */
 	--nb-primary: var(--cw-orange);
-	--nb-primary-foreground: #fff8f4;
+	--nb-primary-foreground: #1a222b;
 	--nb-primary-hover: var(--cw-orange-bright);
+
+	/*
+	 * Tomato as *text* rather than as a fill. The brand orange is 3.1:1 on the
+	 * sheet, so anything set in it at body size needs to be darkened; this is
+	 * the same hue at 5.2:1. Dark mode has no such problem and uses the orange
+	 * itself.
+	 */
+	--cw-orange-text: #b03f18;
 
 	--nb-border: rgba(26, 34, 43, 0.1);
 	--nb-border-strong: rgba(26, 34, 43, 0.2);
@@ -142,13 +163,22 @@
 
 	/* The hero sits on the page background; the warm waves flow in from the top
 	   right so they never sit under the copy. */
-	/* Light mode: a soft, feathered deep-blue pool behind the vortex. Additive
-	   blue barely shows over bright cream, so it needs something a little darker
-	   and more saturated to glow against -- kept large and feathered so it reads
-	   as a haze, not a hard smudge. */
-	--cw-hero-stage-bg: rgba(30, 60, 130, 0.32);
-	--cw-hero-glow: rgba(59, 130, 246, 0.16);
-	--cw-hero-title: linear-gradient(180deg, #1a222b 0%, #5b6b7a 120%);
+	/* Light mode: the stage stays paper. The tunnel is drawn in ink rather than
+	   light here (see NetworkHero), so it needs a pale surface to be drawn on,
+	   not a pool to glow against -- just enough cool tint to separate the hero
+	   from the prose below it. */
+	--cw-hero-stage-bg: rgba(96, 128, 196, 0.13);
+	--cw-hero-glow: rgba(59, 130, 246, 0.1);
+	--cw-hero-title: linear-gradient(180deg, #1a222b 0%, #4c5a6a 120%);
+
+	/* The crest of the wire pulse in HeroExample: a highlight on a lit page, a
+	   deepening on an inked one. */
+	--cw-wire-spark: #07143d;
+
+	/* The bento diagrams in Features. Line art needs to be dark on paper and
+	   light on ink, and its fills follow the same flip. */
+	--cw-art-stroke: #2f4d86;
+	--cw-art-fill-rgb: 20 44 96;
 }
 
 /* Wider content area on large displays (e.g. MacBook Pro 16″) */
@@ -172,14 +202,20 @@
 	--nb-card-foreground: var(--nb-foreground);
 
 	--nb-muted: var(--cw-ink-700);
-	--nb-muted-foreground: #9aabba;
+	/* See the light-mode note. Dark was never below AA, but the sidebar and the
+	   captions read thin against near-black at 13px, so this lifts them from
+	   8.4:1 to 10.2:1 on the page and 6.8:1 to 8.2:1 on the accent surface. */
+	--nb-muted-foreground: #adbccb;
 
 	--nb-accent: var(--cw-ink-600);
 	--nb-accent-foreground: #f4f7fa;
 
 	--nb-primary: var(--cw-orange);
-	--nb-primary-foreground: #fff8f4;
+	--nb-primary-foreground: #1a222b;
 	--nb-primary-hover: var(--cw-orange-bright);
+
+	/* On a dark page the brand orange clears AA as text on its own. */
+	--cw-orange-text: var(--cw-orange);
 
 	--nb-border: rgba(232, 238, 244, 0.1);
 	--nb-border-strong: rgba(232, 238, 244, 0.2);
@@ -215,7 +251,12 @@
 	   the blue pulses bloom. */
 	--cw-hero-stage-bg: #070d1c;
 	--cw-hero-glow: rgba(59, 130, 246, 0.28);
-	--cw-hero-title: linear-gradient(180deg, #f4f7fa 0%, #9aabba 120%);
+	--cw-hero-title: linear-gradient(180deg, #f4f7fa 0%, #adbccb 120%);
+
+	--cw-wire-spark: #ffffff;
+
+	--cw-art-stroke: #8fb0ec;
+	--cw-art-fill-rgb: 255 255 255;
 }
 
 /* ---- Tailwind theme mapping ----
@@ -407,17 +448,30 @@ pre.astro-code > code {
 	background: transparent;
 }
 
-/* Classed Shiki tokens set --shiki-light/--shiki-dark once in _nimbus/shiki.css. */
+/*
+ * Classed Shiki tokens set --shiki-light/--shiki-dark once in _nimbus/shiki.css:
+ * eight classes, 546 bytes, instead of an inline style on every span. Keeping
+ * that contract is why the themes below are adjusted here rather than swapped
+ * in `astro.config.ts` -- Nimbus only classes tokens while the themes are its
+ * own default pair, and switching to GitHub's high-contrast variants put the
+ * styles back inline and added 4.6 kB to every page.
+ *
+ * The adjustment: github-light and github-dark both ship tokens that miss WCAG
+ * AA on our surfaces -- comments at 4.25:1 in light and 3.73:1 in dark (they
+ * are the same grey in both themes, which is the flaw), keywords at 4.03:1 in
+ * light. Pushing every token a fixed step away from its own background lifts
+ * those without touching the hue relationships that make the theme legible as
+ * a theme, and it applies to tokens we have not enumerated. Light needs a
+ * slightly smaller step than dark because github-dark's comment grey is the
+ * same grey as github-light's, which on a near-black card is the worst token in
+ * either theme. Measured after: every token on a quickstart code block is
+ * >= 4.9:1 in light and >= 5.2:1 in dark, from 3.1 and 3.7.
+ */
 pre.astro-code span {
-	color: var(--shiki-light, inherit);
+	color: color-mix(in oklab, var(--shiki-light, currentColor) 85%, #000);
 }
 [data-mode="dark"] pre.astro-code span {
-	color: var(--shiki-dark, inherit);
-}
-
-/* The landing is fixed-dark, so the light/dark toggle would be a no-op there. */
-.cw-home [data-nb-theme-toggle] {
-	display: none;
+	color: color-mix(in oklab, var(--shiki-dark, currentColor) 82%, #fff);
 }
 
 /* Copy button injected by initCodeCopy. */
@@ -475,10 +529,16 @@ pre.astro-code span {
 	overflow: hidden;
 }
 
-/* The landing is fixed-dark and reads better with outline-only code blocks;
-   docs pages keep the filled card surface. */
-.cw-home pre.astro-code,
-.cw-home .nb-code-figure {
+/*
+ * On the dark landing the code samples read better as outlines: the page is
+ * nearly black already, so a filled card is a lighter rectangle floating in it.
+ * In light mode the opposite is true -- an unfilled block loses its edges
+ * against the paper, and its comments lose half a point of contrast -- so the
+ * landing keeps the card there, like the docs pages and like the white cards
+ * cloudflare.com stacks on its own light background.
+ */
+[data-mode="dark"] .cw-home pre.astro-code,
+[data-mode="dark"] .cw-home .nb-code-figure {
 	background-color: transparent;
 }
 .nb-code-figure > pre.astro-code {
