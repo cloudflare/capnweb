@@ -126,6 +126,14 @@ Ten starter files are modified here, so `diff --apply` wants review rather than 
 two layouts, `[...slug].astro`, `404.astro`, `components.ts`, `content.config.ts`, `globals.css`,
 the OG config, `tsconfig.json`, and `index.mdx`. `README.md` says why for each.
 
+Two registry components are modified too, both for the same reason, so `add --overwrite` will
+silently undo them: `breadcrumbs/Breadcrumbs.astro` and `page-actions/PageActions.astro` shipped
+their separators as `text-muted-foreground/50` and `/40`. The alpha modifier is the `opacity` sin by
+another name -- the breadcrumb `/` measured 2.19:1 in light -- so the breadcrumb separators inherit
+`text-muted-foreground` from the `<ol>` (6.22:1 light) and the page-action divider sits at `/70`,
+which is 3.21:1 light and 5.38:1 dark: past the 3:1 line for a graphical object, still visibly
+quieter than the buttons it separates.
+
 ## Audit this site
 
 Start with `npx nimbus-docs check --json`. It runs the environment, structural, authoring, and type
@@ -194,4 +202,6 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   `.cw-home` marks the page, not a scheme.
 - Dim text with `opacity` to make it secondary. `--nb-muted-foreground` is already that, measured;
   multiplying it by 0.6 is how the figure captions ended up the least readable text on the site.
+  Tailwind's alpha modifier is the same sin with better manners: `text-muted-foreground/50` is not a
+  colour choice, it is 2.19:1.
 - Remove `<AgentDirective />` unless asked.

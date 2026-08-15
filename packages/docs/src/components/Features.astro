@@ -149,7 +149,7 @@ const figures = [
           {i === 4 && <div class="cw-globe-scene" set:html={f.art} />}
           {i !== 4 && (
             <svg class="cw-svg" viewBox="0 0 200 150" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-              <g class={`cw-obj cw-obj-${i}`} stroke="currentColor" stroke-width="1" stroke-linejoin="round" set:html={f.art} />
+              <g class={`cw-obj cw-obj-${i}`} stroke="currentColor" stroke-width="1.15" stroke-linejoin="round" set:html={f.art} />
             </svg>
           )}
         </div>
@@ -203,29 +203,29 @@ const figures = [
   }
 
   /* ---- Faint base layer (duotone) ---- */
-  .cw-bento .cw-top { stroke-opacity: 0.42; fill: rgb(var(--cw-art-fill-rgb) / 0.025); }
-  .cw-bento .cw-side { stroke-opacity: 0.16; fill: none; }
-  .cw-bento .cw-faint { stroke-opacity: 0.13; fill: none; }
-  .cw-bento .cw-halo { stroke-opacity: 0.12; fill: none; }
-  .cw-bento .cw-orbitline { stroke-opacity: 0.14; fill: none; }
+  .cw-bento .cw-top { stroke-opacity: 0.54; fill: rgb(var(--cw-art-fill-rgb) / 0.025); }
+  .cw-bento .cw-side { stroke-opacity: 0.28; fill: none; }
+  .cw-bento .cw-faint { stroke-opacity: 0.24; fill: none; }
+  .cw-bento .cw-halo { stroke-opacity: 0.22; fill: none; }
+  .cw-bento .cw-orbitline { stroke-opacity: 0.26; fill: none; }
 
   /* ---- Bright animated layer ---- */
-  .cw-bento .cw-hi { stroke-opacity: 0.85; fill: rgb(var(--cw-art-fill-rgb) / 0.08); }
-  .cw-bento .cw-arrow { stroke-opacity: 0.7; fill: none; stroke-linecap: round; }
-  .cw-bento .cw-lit { stroke-opacity: 0.55; fill: none; }
+  .cw-bento .cw-hi { stroke-opacity: 0.95; fill: rgb(var(--cw-art-fill-rgb) / 0.08); }
+  .cw-bento .cw-arrow { stroke-opacity: 0.85; fill: none; stroke-linecap: round; }
+  .cw-bento .cw-lit { stroke-opacity: 0.72; fill: none; }
 
   .cw-bento .cw-ring {
     fill: none;
-    stroke-opacity: 0.12;
+    stroke-opacity: 0.22;
     animation: cw-ring 2.4s ease-in-out infinite;
   }
   @keyframes cw-ring {
-    0%, 42%, 100% { stroke-opacity: 0.12; }
-    14% { stroke-opacity: 0.85; }
+    0%, 42%, 100% { stroke-opacity: 0.22; }
+    14% { stroke-opacity: 0.95; }
   }
 
   .cw-bento .cw-flow {
-    stroke-opacity: 0.6;
+    stroke-opacity: 0.78;
     fill: none;
     stroke-dasharray: 4 5;
     animation: cw-flow 1.4s linear infinite;
@@ -235,7 +235,7 @@ const figures = [
   @keyframes cw-flow-rev { to { stroke-dashoffset: 27; } }
 
   /* Pass by reference: nucleus (the object) with references orbiting it. */
-  .cw-bento .cw-nucleus { stroke-opacity: 0.9; fill: rgb(var(--cw-art-fill-rgb) / 0.14); }
+  .cw-bento .cw-nucleus { stroke-opacity: 1; fill: rgb(var(--cw-art-fill-rgb) / 0.14); }
   .cw-bento .cw-ring1 { transform: rotate(-16deg); transform-box: view-box; transform-origin: 100px 75px; }
   .cw-bento .cw-electron {
     fill: currentColor;
@@ -247,7 +247,7 @@ const figures = [
   @keyframes cw-orbit { to { offset-distance: 100%; } }
 
   .cw-bento .cw-write {
-    stroke-opacity: 0.45;
+    stroke-opacity: 0.6;
     fill: none;
     stroke-linecap: round;
     stroke-dasharray: 1;
@@ -281,8 +281,8 @@ const figures = [
     height: 94px;
     transform: translate(-50%, -50%);
     border-radius: 50%;
-    background: rgba(143, 176, 236, 0.03);
-    box-shadow: inset 0 0 0 1px rgba(143, 176, 236, 0.32);
+    background: rgb(var(--cw-art-stroke-rgb) / 0.05);
+    box-shadow: inset 0 0 0 1px rgb(var(--cw-art-stroke-rgb) / 0.46);
   }
   .cw-bento .cw-globe {
     position: relative;
@@ -298,10 +298,10 @@ const figures = [
     inset: 0;
     border-radius: 50%;
   }
-  .cw-bento .cw-gmer { border: 1px solid rgba(143, 176, 236, 0.18); }
-  .cw-bento .cw-glat { border: 1px solid rgba(143, 176, 236, 0.16); }
+  .cw-bento .cw-gmer { border: 1px solid rgb(var(--cw-art-stroke-rgb) / 0.32); }
+  .cw-bento .cw-glat { border: 1px solid rgb(var(--cw-art-stroke-rgb) / 0.3); }
   .cw-bento .cw-geq {
-    border: 1px solid rgba(143, 176, 236, 0.34);
+    border: 1px solid rgb(var(--cw-art-stroke-rgb) / 0.52);
     transform: rotateX(90deg);
   }
   @keyframes cw-globe-spin {
@@ -313,12 +313,12 @@ const figures = [
   .cw-bento .cw-fill { animation: cw-fill 3.8s ease-in-out infinite; }
   .cw-bento .cw-fill2 { animation: cw-fill2 3.8s ease-in-out infinite; }
   @keyframes cw-fill {
-    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.3; }
-    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.24); stroke-opacity: 0.9; }
+    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.42; }
+    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.24); stroke-opacity: 1; }
   }
   @keyframes cw-fill2 {
-    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.25; }
-    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.1); stroke-opacity: 0.65; }
+    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.36; }
+    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.1); stroke-opacity: 0.82; }
   }
 
   .cw-bento .cw-obj {
@@ -365,7 +365,7 @@ const figures = [
     .cw-bento .cw-fill2 {
       animation: none;
     }
-    .cw-bento .cw-ring { stroke-opacity: 0.3; }
+    .cw-bento .cw-ring { stroke-opacity: 0.42; }
     .cw-bento .cw-write { stroke-dashoffset: 0; }
   }
 </style>

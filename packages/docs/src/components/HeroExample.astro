@@ -21,7 +21,7 @@ const serverCode = `class Api extends RpcTarget {
 <figure class="cw-ex" aria-label="A client calls a server method and receives the result in a single round trip.">
   <div class="cw-ex-win">
     <div class="cw-ex-bar">
-      <span class="cw-ex-file">client.js</span>
+      <span class="cw-ex-file">client</span>
       <span class="cw-ex-role">Browser</span>
     </div>
     <div class="cw-ex-code"><Code code={clientCode} lang="js" /></div>
@@ -34,8 +34,8 @@ const serverCode = `class Api extends RpcTarget {
 
   <div class="cw-ex-win">
     <div class="cw-ex-bar">
-      <span class="cw-ex-file">server.js</span>
-      <span class="cw-ex-role">Worker</span>
+      <span class="cw-ex-file">server</span>
+      <span class="cw-ex-role">Edge Function</span>
     </div>
     <div class="cw-ex-code"><Code code={serverCode} lang="js" /></div>
   </div>
@@ -56,10 +56,16 @@ const serverCode = `class Api extends RpcTarget {
     color: var(--cw-wire);
   }
 
-  /* Ring (not border) with the shadow, per the Kumo shadow-borders rule. */
+  /* Ring (not border) with the shadow, per the Kumo shadow-borders rule.
+   *
+   * Mostly-opaque rather than transparent: the tunnel runs behind these windows,
+   * and its arcs crossing the code was legible-but-noisy in dark and worse in
+   * light, where the strokes are darker than the panel. A little of the backdrop
+   * still reads through, which keeps the windows sitting *in* the hero rather
+   * than on top of it. */
   .cw-ex-win {
     border-radius: 0.6rem;
-    background: transparent;
+    background: color-mix(in srgb, var(--nb-background) 88%, transparent);
     box-shadow: 0 0 0 1px var(--nb-border);
     overflow: hidden;
     position: relative;

@@ -167,6 +167,14 @@ translucent ancestors it has, and reports anything under 4.5:1 (3:1 for large te
 reports one hit in each scheme, and that hit is the hero title, whose colour is `transparent`
 because the gradient is clipped to the glyphs.
 
+The harness reads colours by painting them into a 1x1 canvas rather than by matching `rgb(...)`.
+That is not fussiness: `color-mix()` and Tailwind's `/40` alpha modifier make
+`getComputedStyle().color` come back as `color(srgb ...)` or `oklab(...)`, and a regex parser
+silently *skips* what it cannot read, so the nodes most likely to be too faint are exactly the ones
+that vanish from the report. Switching to canvas surfaced 41 more per scheme on the first run. It
+also scopes to WCAG's own definition of text and reports anything inside an `aria-hidden` subtree
+separately, since decoration is held to 3:1 as a graphical object, not 4.5:1 as prose.
+
 ### Two families of token
 
 Nimbus's own tokens are `--nb-*`, and Tailwind utilities like `bg-card` and `border-border` are
@@ -321,6 +329,27 @@ fill-bound.
 The palette swap is live. `light-tunnel.client.ts` watches `data-theme` on `<html>` and repaints on
 change, including while the loop is parked off-screen -- otherwise a tunnel that was scrolled out of
 view during a toggle would keep the old palette until it came back.
+
+### What sits on top of it
+
+`HeroExample.astro` floats a pair of code windows over the tunnel. They used to be fully
+transparent, which was the point when the tunnel was faint light on near-black; once ink mode drew
+the same arcs *darker* than the panel, cables crossing the code stopped being atmosphere and started
+being noise. The windows are now `color-mix(in srgb, var(--nb-background) 88%, transparent)`: enough
+backdrop still reads through that they sit in the hero rather than on it, and none of it lands on a
+glyph. Their labels say `client` and `server` rather than `client.js` and `server.js`, and the
+right-hand window is a generic `Edge Function` -- the library is not a Cloudflare-only library, and
+the hero is the worst place to imply otherwise.
+
+`Features.astro` draws the bento figures as SVG line art in `--cw-art-stroke`, at a dozen different
+stroke opacities, which is a technique that assumes a dark stage: a 0.13-alpha stroke over near-black
+is a visible hairline, and the same stroke over `#eef1f4` is nothing. Measured per figure, the light
+scheme was running at 1.12--1.76:1 mean contrast, and the globe -- whose wires were hardcoded blues
+rather than tokens -- peaked at **1.37:1**, which is invisible. Every opacity went up, the base
+stroke went from 1 to 1.15, the globe's colours became `--cw-art-stroke-rgb`, and the light stroke
+deepened to `#253c6d`. That puts the figures at 1.26--2.17:1 mean and 4.98--9.64:1 peak. Mean stays
+low on purpose: these are line drawings on a large empty field, so most of the box is background and
+what matters is the contrast of the strokes themselves.
 
 ## Social cards
 

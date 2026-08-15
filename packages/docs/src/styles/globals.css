@@ -176,8 +176,10 @@
 	--cw-wire-spark: #07143d;
 
 	/* The bento diagrams in Features. Line art needs to be dark on paper and
-	   light on ink, and its fills follow the same flip. */
-	--cw-art-stroke: #2f4d86;
+	   light on ink, and its fills follow the same flip. The `-rgb` pair exists
+	   because the art draws the same two colours at a dozen different alphas. */
+	--cw-art-stroke: #253c6d;
+	--cw-art-stroke-rgb: 37 60 109;
 	--cw-art-fill-rgb: 20 44 96;
 }
 
@@ -256,6 +258,7 @@
 	--cw-wire-spark: #ffffff;
 
 	--cw-art-stroke: #8fb0ec;
+	--cw-art-stroke-rgb: 143 176 236;
 	--cw-art-fill-rgb: 255 255 255;
 }
 

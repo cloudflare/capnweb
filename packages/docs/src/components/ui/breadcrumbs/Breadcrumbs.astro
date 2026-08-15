@@ -26,7 +26,7 @@ const tailItems = shouldCollapse ? items.slice(items.length - tailCount) : [];
     <ol class="flex flex-wrap items-center gap-y-0.5 text-muted-foreground">
       {headItems.map((crumb, i) => (
         <li class="flex items-center">
-          {i > 0 && <span class="mx-1.5 text-muted-foreground/50">/</span>}
+          {i > 0 && <span class="mx-1.5">/</span>}
           {(!shouldCollapse && i === items.length - 1) || !crumb.href ? (
             <span class="text-foreground truncate max-w-[12rem]">{crumb.label}</span>
           ) : (
@@ -39,7 +39,7 @@ const tailItems = shouldCollapse ? items.slice(items.length - tailCount) : [];
 
       {shouldCollapse && collapsedItems.length > 0 && (
         <li class="flex items-center">
-          <span class="mx-1.5 text-muted-foreground/50">/</span>
+          <span class="mx-1.5">/</span>
           <details class="relative group">
             <summary
               class="list-none cursor-pointer select-none rounded px-1 py-0.5 transition-colors hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden group-open:before:fixed group-open:before:inset-0 group-open:before:z-[39] group-open:before:cursor-default group-open:before:content-['']"
@@ -69,7 +69,7 @@ const tailItems = shouldCollapse ? items.slice(items.length - tailCount) : [];
 
       {shouldCollapse && tailItems.map((crumb, i) => (
         <li class="flex items-center">
-          <span class="mx-1.5 text-muted-foreground/50">/</span>
+          <span class="mx-1.5">/</span>
           {i === tailItems.length - 1 || !crumb.href ? (
             <span class="text-foreground truncate max-w-[12rem]">{crumb.label}</span>
           ) : (
