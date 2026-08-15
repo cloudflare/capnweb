@@ -47,13 +47,17 @@ const tube = (() => {
   return s;
 })();
 
-// 2) two level cubes exchanging over two flowing arrows
+// 2) two level cubes exchanging over two flowing arrows.
+// Both lines animate with the same keyframe: dashes travel along a path in the
+// path's own direction, and the return line is already authored right to left
+// (M116 -> L86), so reversing the animation too would cancel out and send its
+// dashes back the way its arrowhead points.
 const bidi =
   cubeStr(cube(58, 82, 20, 26)) +
   cubeStr(cube(142, 82, 20, 26)) +
   p("cw-flow", "M84 84 L114 84") +
   p("cw-arrow", "M114 84 l-6 -3 M114 84 l-6 3") +
-  p("cw-flow cw-flow-rev", "M116 98 L86 98") +
+  p("cw-flow", "M116 98 L86 98") +
   p("cw-arrow", "M86 98 l6 -3 M86 98 l6 3");
 
 // 3) a reference orbiting the object it points at (pass by reference)
@@ -230,9 +234,7 @@ const figures = [
     stroke-dasharray: 4 5;
     animation: cw-flow 1.4s linear infinite;
   }
-  .cw-bento .cw-flow-rev { animation-name: cw-flow-rev; }
   @keyframes cw-flow { to { stroke-dashoffset: -27; } }
-  @keyframes cw-flow-rev { to { stroke-dashoffset: 27; } }
 
   /* Pass by reference: nucleus (the object) with references orbiting it. */
   .cw-bento .cw-nucleus { stroke-opacity: 1; fill: rgb(var(--cw-art-fill-rgb) / 0.14); }
