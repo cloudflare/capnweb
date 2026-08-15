@@ -1,5 +1,6 @@
 ---
 import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { config } from "virtual:nimbus/config";
 import { cn } from "@/lib/cn";
 import type { HTMLAttributes } from "astro/types";
 
@@ -13,8 +14,15 @@ const { markdownUrl, lastUpdated, class: className, ...attrs } = Astro.props;
 const baseBtn =
   "inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-transparent px-2 py-1 text-muted-foreground no-underline transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2";
 
+// The site is static, so this runs once at build time on whatever machine did
+// the build. An `undefined` locale would resolve to *that* machine's default,
+// which is neither the reader's locale nor a stable build output. Pin it to the
+// locale the document declares in `<html lang>`, which is this same value.
+const locale = config.locale ?? "en";
 const formattedDate = lastUpdated
-  ? new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short", day: "numeric" }).format(lastUpdated)
+  ? new Intl.DateTimeFormat(locale, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" }).format(
+      lastUpdated,
+    )
   : null;
 ---
 

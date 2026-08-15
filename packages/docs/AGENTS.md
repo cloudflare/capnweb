@@ -126,13 +126,19 @@ Ten starter files are modified here, so `diff --apply` wants review rather than 
 two layouts, `[...slug].astro`, `404.astro`, `components.ts`, `content.config.ts`, `globals.css`,
 the OG config, `tsconfig.json`, and `index.mdx`. `README.md` says why for each.
 
-Two registry components are modified too, both for the same reason, so `add --overwrite` will
-silently undo them: `breadcrumbs/Breadcrumbs.astro` and `page-actions/PageActions.astro` shipped
-their separators as `text-muted-foreground/50` and `/40`. The alpha modifier is the `opacity` sin by
-another name -- the breadcrumb `/` measured 2.19:1 in light -- so the breadcrumb separators inherit
+Two registry components are modified too, so `add --overwrite` will silently undo the changes.
+`breadcrumbs/Breadcrumbs.astro` and `page-actions/PageActions.astro` shipped their separators as
+`text-muted-foreground/50` and `/40`. The alpha modifier is the `opacity` sin by another name -- the
+breadcrumb `/` measured 2.19:1 in light -- so the breadcrumb separators inherit
 `text-muted-foreground` from the `<ol>` (6.22:1 light) and the page-action divider sits at `/70`,
 which is 3.21:1 light and 5.38:1 dark: past the 3:1 line for a graphical object, still visibly
 quieter than the buttons it separates.
+
+`PageActions.astro` also pins the "Updated" date to `config.locale` and `timeZone: "UTC"`. It
+formatted with an `undefined` locale in the build machine's zone, and this is a static site, so the
+string was whatever the builder's environment happened to be: the same commit renders `Aug 11, 2026`
+here, `12. Aug. 2026` under `de_DE`/`Asia/Tokyo`, and `2026年8月12日` under `ja_JP`. Note the day
+moves too, because the timestamp is a real instant from `git log %at`.
 
 ## Audit this site
 
