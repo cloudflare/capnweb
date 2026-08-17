@@ -177,6 +177,9 @@ export let mapImpl: MapImpl = { applyMap: mapNotLoaded, sendMap: mapNotLoaded };
 
 type MapImpl = {
   // Applies a map function to an input value (usually an array).
+  //
+  // Takes ownership of `captures`, including when it throws synchronously, per the contract of
+  // StubHook.map().
   applyMap(input: unknown, parent: object | undefined, owner: RpcPayload | null,
            captures: StubHook[], instructions: unknown[])
           : StubHook;
@@ -221,6 +224,12 @@ export type StreamImpl = {
 export abstract class StubHook {
   // Call a function at the given property path with the given arguments. Returns a hook for the
   // promise for the result.
+  //
+  // call() takes ownership of `args`, including when it throws synchronously. Every
+  // implementation must arrange for `args` to be disposed on all failure paths as well as on
+  // success. Correspondingly, callers must never dispose `args` after invoking call(), even if
+  // it threw. Note that RpcPayload.dispose() is idempotent, so an implementation that delegates
+  // to another hook's call() may still dispose `args` defensively in its own catch block.
   abstract call(path: PropertyPath, args: RpcPayload): StubHook;
 
   // Like call(), but designed for streaming calls (e.g. WritableStream writes). Returns:
@@ -228,11 +237,19 @@ export abstract class StubHook {
   // - size: If the call was remote, the byte size of the serialized message. For local calls,
   //   undefined is returned, indicating the caller should await the promise to serialize writes
   //   (no overlapping).
+  //
+  // stream() takes ownership of `args` under the same rules as call().
   stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
     // Default implementation: delegate to call() + pull(). No size is returned, so the caller
     // knows this is a local call and should await the promise directly.
     let hook = this.call(path, args);
-    let pulled = hook.pull();
+    let pulled: RpcPayload | Promise<RpcPayload>;
+    try {
+      pulled = hook.pull();
+    } catch (err) {
+      hook.dispose();
+      throw err;
+    }
     let promise: Promise<void>;
     if (pulled instanceof Promise) {
       promise = pulled.then(p => { p.dispose(); });
@@ -246,7 +263,10 @@ export abstract class StubHook {
   // Apply a map operation.
   //
   // `captures` is a list of external stubs which are used as part of the mapper function.
-  // NOTE: The callee takes ownership of `captures`.
+  // NOTE: The callee takes ownership of `captures`, including when map() throws synchronously;
+  // callers must not dispose them afterwards. StubHook.dispose() is safe to call multiple times,
+  // so an implementation that delegates to another hook's map() may still dispose the captures
+  // defensively.
   //
   // `instructions` is a JSON-serializable value describing the mapper function as a series of
   // steps. Each step is an expression to evaluate, in the usual RPC expression format. The last
@@ -318,8 +338,15 @@ export abstract class StubHook {
 export class ErrorStubHook extends StubHook {
   constructor(private error: any) { super(); }
 
-  call(path: PropertyPath, args: RpcPayload): StubHook { return this; }
-  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook { return this; }
+  // Per the StubHook contract, call() and map() take ownership of `args` / `captures` even on
+  // failure. No callee sits behind this hook to consume them, so dispose them immediately.
+  call(path: PropertyPath, args: RpcPayload): StubHook { args.dispose(); return this; }
+  map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
+    for (let cap of captures) {
+      cap.dispose();
+    }
+    return this;
+  }
   get(path: PropertyPath): StubHook { return this; }
   dup(): StubHook { return this; }
   pull(): RpcPayload | Promise<RpcPayload> { return Promise.reject(this.error); }
@@ -1700,25 +1727,33 @@ abstract class ValueStubHook extends StubHook {
   protected abstract getValue(): {value: unknown, owner: RpcPayload | null};
 
   call(path: PropertyPath, args: RpcPayload): StubHook {
+    let followResult: FollowPathResult;
     try {
       let {value, owner} = this.getValue();
-      let followResult = followPath(value, undefined, path, owner);
-
-      if (followResult.hook) {
-        return followResult.hook.call(followResult.remainingPath, args);
-      }
-
-      // It's a local function.
-      if (typeof followResult.value != "function") {
-        throw new TypeError(`'${path.join('.')}' is not a function.`);
-      }
-      let promise = args.deliverCall(followResult.value, followResult.parent);
-      return new PromiseStubHook(promise.then(payload => {
-        return new PayloadStubHook(payload);
-      }));
+      followResult = followPath(value, undefined, path, owner);
     } catch (err) {
+      // We took ownership of `args`, and there is no callee left to consume them.
+      args.dispose();
       return new ErrorStubHook(err);
     }
+
+    if (followResult.hook) {
+      // The delegate's call() takes ownership of `args`, per the StubHook contract.
+      return followResult.hook.call(followResult.remainingPath, args);
+    }
+
+    // It's a local function.
+    if (typeof followResult.value != "function") {
+      args.dispose();
+      return new ErrorStubHook(new TypeError(`'${path.join('.')}' is not a function.`));
+    }
+
+    // deliverCall() is async and disposes `args` itself when the call completes, so it never
+    // needs a guard here.
+    let promise = args.deliverCall(followResult.value, followResult.parent);
+    return new PromiseStubHook(promise.then(payload => {
+      return new PayloadStubHook(payload);
+    }));
   }
 
   map(path: PropertyPath, captures: StubHook[], instructions: unknown[]): StubHook {
@@ -1726,9 +1761,9 @@ abstract class ValueStubHook extends StubHook {
       let followResult: FollowPathResult;
       try {
         let {value, owner} = this.getValue();
-        followResult = followPath(value, undefined, path, owner);;
+        followResult = followPath(value, undefined, path, owner);
       } catch (err) {
-        // Oops, we need to dispose the captures of which we took ownership.
+        // We took ownership of the captures, and there is no callee left to consume them.
         for (let cap of captures) {
           cap.dispose();
         }
@@ -1742,6 +1777,8 @@ abstract class ValueStubHook extends StubHook {
       return mapImpl.applyMap(
           followResult.value, followResult.parent, followResult.owner, captures, instructions);
     } catch (err) {
+      // Past the inner catch, ownership of the captures has been transferred to the delegate's
+      // map() or to applyMap(), so it would be incorrect to dispose them here.
       return new ErrorStubHook(err);
     }
   }
@@ -1992,7 +2029,13 @@ export class PromiseStubHook extends StubHook {
     // can't serialize them yet, we have to deep-copy them now.
     args.ensureDeepCopied();
 
-    return new PromiseStubHook(this.promise.then(hook => hook.call(path, args)));
+    return new PromiseStubHook(this.promise.then(
+        hook => hook.call(path, args),
+        err => {
+          // The backing promise rejected, so no callee ever existed to take ownership of `args`.
+          args.dispose();
+          throw err;
+        }));
   }
 
   stream(path: PropertyPath, args: RpcPayload): {promise: Promise<void>, size?: number} {
@@ -2000,10 +2043,13 @@ export class PromiseStubHook extends StubHook {
     // No size is returned because we can't know yet; this means the caller will await the promise,
     // which is the safe default (serialized writes).
     args.ensureDeepCopied();
-    let promise = this.promise.then(hook => {
-      let result = hook.stream(path, args);
-      return result.promise;
-    });
+    let promise = this.promise.then(
+        hook => hook.stream(path, args).promise,
+        err => {
+          // The backing promise rejected, so no callee ever existed to take ownership of `args`.
+          args.dispose();
+          throw err;
+        });
     return { promise };
   }
 
@@ -2011,6 +2057,8 @@ export class PromiseStubHook extends StubHook {
     return new PromiseStubHook(this.promise.then(
         hook => hook.map(path, captures, instructions),
         err => {
+          // The backing promise rejected, so no callee ever existed to take ownership of the
+          // captures.
           for (let cap of captures) {
             cap.dispose();
           }
@@ -2056,15 +2104,11 @@ export class PromiseStubHook extends StubHook {
   }
 
   dispose(): void {
-    if (this.resolution) {
-      this.resolution.dispose();
-    } else {
-      this.promise.then(hook => {
-        hook.dispose();
-      }, err => {
-        // nothing to dispose
-      });
-    }
+    // We can't take the fast path here when this.resolution is available because if the resolution
+    // was just recently delivered, promise waiters may not have had a chance to consume it yet,
+    // and disposing it would preempt them. If we always wait on `this.promise` then we'll
+    // run after anything that was queued before us.
+    this.promise.then(hook => hook.dispose(), () => {});
   }
 
   onBroken(callback: (error: any) => void): void {

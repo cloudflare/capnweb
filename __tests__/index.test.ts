@@ -9,7 +9,8 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
-import { PromiseStubHook, RpcPayload, streamImpl } from "../src/core.js"
+import { ErrorStubHook, PayloadStubHook, PromiseStubHook, RpcPayload, RpcStub as RawRpcStub,
+         StubHook, streamImpl, unwrapStubTakingOwnership, type PropertyPath } from "../src/core.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
@@ -2174,6 +2175,204 @@ describe("onRpcBroken", () => {
       {which: "counter1", error: new Error("test disconnect")},
       {which: "hangingCall", error: new Error("test disconnect")},
     ]);
+  });
+});
+
+// =======================================================================================
+
+// Creates an RpcTarget that records whether its disposer has run, for verifying that a payload
+// containing (a copy of) it was properly disposed.
+function disposalSpy() {
+  let disposed = false;
+  class Disposable extends RpcTarget {
+    [Symbol.dispose]() { disposed = true; }
+  }
+  return { target: new Disposable(), wasDisposed: () => disposed };
+}
+
+describe("PromiseStubHook", () => {
+  it("disposes copied call arguments when the backing promise rejects", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.reject(new Error("nope")));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("nope");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("disposes copied stream arguments when the backing promise rejects", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.reject(new Error("nope")));
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("nope");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("delivers a call initiated before disposal", async () => {
+    let disposed = false;
+    class DisposableCounter extends Counter {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let inner = new RpcStub(new DisposableCounter(1));
+    let hook = new PromiseStubHook(Promise.resolve(unwrapStubTakingOwnership(<any>inner)));
+    await pumpMicrotasks();
+
+    let stub: RpcStub<Counter> = <any>new RawRpcStub(hook);
+    let result = stub.increment(2);
+    stub[Symbol.dispose]();
+
+    expect(disposed).toBe(false);
+    expect(await result).toBe(3);
+    expect(disposed).toBe(true);
+  });
+
+  it("disposes copied call arguments when the destination hook is broken", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new ErrorStubHook(new Error("broken"))));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("broken");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("disposes copied stream arguments when the destination hook is broken", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new ErrorStubHook(new Error("broken"))));
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("broken");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("disposes copied call arguments when the local call path fails", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(
+        Promise.resolve(new PayloadStubHook(RpcPayload.fromAppReturn({}))));
+    let result = hook.call(["nope"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("'nope' is not a function");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+    hook.dispose();
+  });
+
+  it("disposes map captures when the destination hook is broken", () => {
+    let spy = disposalSpy();
+    let capture = unwrapStubTakingOwnership(<any>new RpcStub(spy.target));
+    let hook = new ErrorStubHook(new Error("broken"));
+    hook.map([], [capture], []);
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  // A minimal contract-honoring callee: its call() takes ownership of `args` (disposing them)
+  // and then throws synchronously. Used to pin the division of labor: once the backing promise
+  // resolves, args ownership lies with the resolved callee, not with PromiseStubHook.
+  //
+  // Extends ErrorStubHook only to inherit harmless implementations of the methods these tests
+  // never invoke; note it does not override stream(), so the base StubHook.stream() is used.
+  class SyncThrowingHook extends ErrorStubHook {
+    constructor() { super(new Error("unused")); }
+    call(path: PropertyPath, args: RpcPayload): StubHook {
+      args.dispose();
+      throw new Error("sync failure");
+    }
+  }
+
+  it("leaves call args ownership with a resolved callee whose call() throws synchronously",
+      async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new SyncThrowingHook()));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("sync failure");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("leaves stream args ownership with a resolved callee whose call() throws synchronously",
+      async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new SyncThrowingHook()));
+    // SyncThrowingHook inherits the default stream(), which delegates to call().
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("sync failure");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("default stream() disposes the result hook when pull() throws synchronously", () => {
+    let resultHookDisposed = false;
+
+    class ThrowingPullHook extends SyncThrowingHook {
+      pull(): RpcPayload | Promise<RpcPayload> { throw new Error("pull failed"); }
+      dispose(): void { resultHookDisposed = true; }
+    }
+
+    class LocalCallHook extends SyncThrowingHook {
+      // Inherits the base StubHook.stream(), which delegates to call() + pull().
+      call(path: PropertyPath, args: RpcPayload): StubHook {
+        args.dispose();
+        return new ThrowingPullHook();
+      }
+    }
+
+    expect(() => new LocalCallHook().stream(["write"], RpcPayload.fromAppParams([])))
+        .toThrow("pull failed");
+    expect(resultHookDisposed).toBe(true);
+  });
+});
+
+describe("RpcImportHook argument disposal", () => {
+  it("call() disposes owned args when argument serialization fails", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+
+    let hook = unwrapStubTakingOwnership(<any>harness.stub.dup());
+
+    // The stub is serialized (and exported) before the Symbol makes devaluation fail, so this
+    // exercises both the Devaluator's export rollback and the disposal of the owned payload.
+    let payload = RpcPayload.fromAppParams([argument, Symbol("unserializable")]);
+    payload.ensureDeepCopied();
+
+    expect(() => hook.call(["square"], payload)).toThrow("Cannot serialize value");
+
+    hook.dispose();
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("stream() disposes owned args when argument serialization fails", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+
+    let hook = unwrapStubTakingOwnership(<any>harness.stub.dup());
+
+    let payload = RpcPayload.fromAppParams([argument, Symbol("unserializable")]);
+    payload.ensureDeepCopied();
+
+    expect(() => hook.stream(["square"], payload)).toThrow("Cannot serialize value");
+
+    hook.dispose();
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
   });
 });
 
