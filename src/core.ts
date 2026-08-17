@@ -566,20 +566,35 @@ export class RpcPromise extends RpcStub {
   // settles are queued and delivered, in order, once it does.
   constructor(hook: StubHook | PromiseLike<unknown>, pathIfPromise?: PropertyPath) {
     if (hook instanceof StubHook) {
-      super(hook, pathIfPromise!);
+      super(hook, pathIfPromise ?? []);
     } else {
       if (pathIfPromise !== undefined) {
         throw new TypeError("RpcPromise constructor expected one argument, received two.");
       }
 
-      if (typeForRpc(hook) === "rpc-promise") {
-        // Adopt an existing `RpcPromise` directly, transferring ownership of its hook. In
-        // particular, this keeps the adopted promise lazy -- assimilating it as a thenable would
-        // instead force its resolution to be pulled -- and preserves hook-local behavior such as
-        // brokenness. This applies only to promises, not bare stubs: a non-promise hook may not
-        // implement pull(), so a bare stub takes the generic path below, which adopts the stub
-        // into the resolution payload.
-        super(unwrapStubTakingOwnership(<RpcStub><unknown>hook), []);
+      let kind = typeForRpc(hook);
+      if (kind === "rpc-promise") {
+        // Adopt an existing `RpcPromise` directly, transferring ownership of its hook: the source
+        // promise is neutered, as if disposed, and must not be used afterwards. In particular,
+        // adoption keeps the promise lazy -- assimilating it as a thenable would instead force its
+        // resolution to be pulled -- and preserves hook-local behavior such as brokenness. This
+        // applies only to promises, not bare stubs: a non-promise hook may not implement pull(),
+        // so a bare stub takes the generic path below, which adopts the stub into the resolution
+        // payload.
+        let raw = unwrapStubAndPath(<RpcStub><unknown>hook);
+        if (raw.pathIfPromise!.length > 0) {
+          // Property promise: get() returns an independent hook, and properties have no
+          // disposer, so there is nothing to neuter.
+          super(raw.hook.get(raw.pathIfPromise!), []);
+        } else {
+          let adopted = raw.hook;
+          raw.hook = DISPOSED_HOOK;
+          super(adopted, []);
+        }
+      } else if (kind === "rpc-thenable") {
+        // Workerd-native RpcPromise/RpcProperty: wrap in a TargetStubHook, which pipelines calls
+        // directly on the thenable and awaits it only on pull().
+        super(TargetStubHook.create(<RpcTarget><unknown>hook, undefined), []);
       } else {
         // `Promise.resolve()` natively handles the hazards of assimilating an arbitrary thenable
         // (`then` getters with side effects, self-resolution, cross-realm thenables), so the

@@ -2510,6 +2510,40 @@ describe("constructing RpcPromise from a promise", () => {
     expect(sent.filter(msg => msg.startsWith('["pull"'))).toHaveLength(1);
   });
 
+  it("consumes the source when adopting an existing RpcPromise", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let source = harness.stub.makeCounter(1);
+    using wrapper = new RpcPromise<Counter>(source);
+
+    // The source was neutered: using it now reports the standard disposed error, and disposing
+    // it is a harmless no-op that doesn't affect the wrapper.
+    await expect(source.increment(1)).rejects.toThrow(
+        "Attempted to use RPC stub after it has been disposed.");
+    source[Symbol.dispose]();
+
+    expect(await wrapper.increment(2)).toBe(3);
+  });
+
+  it("stays lazy when a deferred promise is resolved with dup()", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    using counter = harness.stub.makeCounter(1);
+
+    // Resolving with the RpcPromise itself would let the native promise machinery assimilate it
+    // as a thenable, pulling the resolution. dup() returns a non-thenable stub, which the
+    // resolution adopts, keeping calls pipelined.
+    let {promise, resolve} = Promise.withResolvers<RpcStub<Counter>>();
+    using stub = new RpcPromise<Counter>(promise);
+
+    let result = stub.increment(2);
+    resolve(counter.dup());
+    expect(await result).toBe(3);
+
+    let sent = harness.clientTransport.sentLog;
+    expect(sent.filter(msg => msg.startsWith('["pull"'))).toHaveLength(1);
+  });
+
   it("preserves brokenness of a bare stub it was constructed from", async () => {
     await using harness = new TestHarness(new TestTarget());
     using stub = new RpcPromise<TestTarget>(<any>harness.stub.dup());

@@ -5,7 +5,7 @@
 /// <reference types="@cloudflare/workers-types" />
 import { expect, it, describe } from "vitest";
 import { RpcStub as NativeRpcStub, RpcTarget as NativeRpcTarget, env, DurableObject } from "cloudflare:workers";
-import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcTarget } from "../src/index-workers.js";
+import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcPromise, RpcTarget } from "../src/index-workers.js";
 import { v, wrapServerTarget, type ServiceValidator } from "../packages/capnweb-validate/src/internal/core.js";
 import { Counter, TestTarget } from "./test-util.js";
 
@@ -124,6 +124,17 @@ describe("workerd compatibility", () => {
 
       expect(await stub.value).toBe(2);
     }
+  })
+
+  it("can wrap a native promise in a userspace promise", async () => {
+    // Wrapping in RpcPromise (rather than RpcStub) exercises the rpc-thenable adoption path,
+    // which pipelines calls on the native thenable without eagerly awaiting it.
+    let factory = new NativeRpcStub(new CounterFactory());
+    let stub = new RpcPromise(factory.getNative());
+    expect(await stub.increment()).toBe(1);
+    expect(await stub.increment()).toBe(2);
+
+    expect(await stub.value).toBe(2);
   })
 
   it("can pipeline on a native stub returned from a userspace call", async () => {

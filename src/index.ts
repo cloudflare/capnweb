@@ -67,6 +67,15 @@ export const RpcStub: {
  * allow code to start queuing calls on it immediately. Note that the `RpcPromise` takes
  * ownership of the resolution: disposing it disposes the resolution, so resolve the promise
  * with a `dup()` if you also intend to keep the stub.
+ *
+ * Passing an existing `RpcPromise` to the constructor adopts it directly, transferring ownership:
+ * the original promise is consumed (as if disposed) and the wrapper must be used in its place.
+ *
+ * Note that if a regular `Promise` resolves to an `RpcPromise`, JavaScript's promise machinery
+ * assimilates the thenable, which forces its resolution to be pulled. To keep a deferred
+ * capability lazy, resolve the promise with `rpcPromise.dup()` instead: `dup()` returns a
+ * non-thenable stub, which is adopted into the resolution and forwards pipelined calls without
+ * pulling.
  */
 export type RpcPromise<T extends RpcCompatible<T>> = RpcPromiseType<T>;
 export const RpcPromise: {
