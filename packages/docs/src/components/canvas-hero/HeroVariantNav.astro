@@ -9,7 +9,8 @@
 import { sceneMeta, VARIANTS, type SceneKey } from "./scenes";
 
 interface Props {
-  current: number;
+  /** The current route slug, so the switcher can mark itself. */
+  current: string;
   scene: SceneKey;
 }
 
@@ -20,15 +21,15 @@ const meta = sceneMeta[scene];
 <nav class="cw-variant-nav" aria-label="Hero backdrop variants">
   <a href="/" class="cw-variant-link">webgl</a>
   {
-    VARIANTS.map(({ scene: key }, i) => (
+    VARIANTS.map(({ slug, scene: key }) => (
       <a
-        href={`/${i + 1}`}
-        class:list={["cw-variant-link", current === i + 1 && "cw-variant-current"]}
-        aria-current={current === i + 1 ? "page" : undefined}
+        href={`/${slug}`}
+        class:list={["cw-variant-link", current === slug && "cw-variant-current"]}
+        aria-current={current === slug ? "page" : undefined}
         title={sceneMeta[key].title}
-        aria-label={`${i + 1}. ${sceneMeta[key].title}`}
+        aria-label={`${slug}. ${sceneMeta[key].title}`}
       >
-        {i + 1}
+        {slug}
       </a>
     ))
   }

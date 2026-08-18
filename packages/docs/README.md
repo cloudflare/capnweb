@@ -351,30 +351,53 @@ deepened to `#253c6d`. That puts the figures at 1.26--2.17:1 mean and 4.98--9.64
 low on purpose: these are line drawings on a large empty field, so most of the box is background and
 what matters is the contrast of the strokes themselves.
 
-## The five canvas heroes at `/1` to `/5`
+## The canvas heroes at `/1` to `/8`
 
-`/1` through `/5` are the landing page with a different backdrop each: same headline, same code
-windows, same calls to action, only the art swapped. They exist to be compared side by side before
-one is picked, so they are deliberately temporary. Each carries `<meta name="robots"
-content="noindex">`, and `astro.config.ts` drops them from the sitemap in `sitemap.serialize`, which
-is why the sitemap has 33 locs and the build reports 39 pages.
+These routes are the landing page with a different backdrop each: same headline, same code windows,
+same calls to action, only the art swapped. They exist to be compared side by side before one is
+picked, so they are deliberately temporary. Each carries `<meta name="robots" content="noindex">`,
+and `astro.config.ts` drops them from the sitemap in `sitemap.serialize`, which is why the sitemap
+has 33 locs while the build reports 47 pages.
+
+`/1` was chosen out of the first five, so the `1x` routes are variations on it: the same drifting
+node field, each saying something different on top of it. `/6` to `/8` are about promise pipelining
+specifically. Everything after `/5` is **wholly abstract and draws no text at all** -- nodes, links,
+lanes, marks and motion only.
 
 The backdrops are Canvas 2D rather than WebGL, and each one draws something the protocol actually
-does, with the wire messages taken from real traces rather than invented:
+does, with the wire messages in `/2` to `/5` taken from real traces rather than invented:
 
 | Route | Scene              | What it draws                                                                           |
 | ----- | ------------------ | --------------------------------------------------------------------------------------- |
 | `/1`  | `round-trip-field` | A drifting node field; one path carries a train of pushes out and a single answer back. |
+| `/1a` | `relay`            | A capability granted, relayed onward, then used directly by a third party.              |
+| `/1b` | `reverse`          | One route, called from one end and then from the other. No client, no server.           |
+| `/1c` | `session-loss`     | Every stub on one connection breaking in the same frame, then regrowing elsewhere.      |
+| `/1d` | `amplify`          | One small call in, one small value out, and a detonation between them.                  |
+| `/1e` | `streams`          | Three continuous ribbons sharing one trunk, each running at its own rate.               |
 | `/2`  | `pipeline-ladder`  | Four dependent calls awaited one at a time against the same four pipelined.             |
 | `/3`  | `batch-body`       | One body of newline-delimited JSON written, sent once, and answered.                    |
 | `/4`  | `id-tables`        | IDs allocated by sign, a call going back the other way, and a release.                  |
 | `/5`  | `map-replay`       | `.map()` recorded once into `remap` instructions, then replayed per element.            |
+| `/6`  | `depth`            | The same four calls raced: eight crossings against two, and the idle time after.        |
+| `/7`  | `substitute`       | Three calls shipped with holes, filled at the far end by each other's results.          |
+| `/8`  | `unpulled`         | Five calls run at the far end; two answers come back and three never move.              |
+
+`routes.ts` is the one list of these routes, and it deliberately has no imports: the sitemap filter
+in `astro.config.ts` and `BaseLayout`'s `cw-home` test both need it, and the config is evaluated
+outside the app's module graph, so importing the scene registry there would drag every scene factory
+in to read a list of strings. `scenes/index.ts` is type-checked against it, so a route without a
+variant fails `astro check` naming the missing slug rather than throwing at build.
 
 `canvas-hero.client.ts` is the harness and owns everything that is not drawing: the device pixel
 ratio (capped at 2), an accumulated clock so a pause cannot fast-forward the animation, `Resize`- and
 `IntersectionObserver`, `visibilitychange`, and a `MutationObserver` on `data-theme` that repaints
-even while parked so a scheme flip is never stale. Five scenes sharing one harness is the point;
-five scenes each with their own lifecycle would be five sets of the same bugs.
+even while parked so a scheme flip is never stale. Thirteen scenes sharing one harness is the point;
+thirteen scenes each with their own lifecycle would be thirteen sets of the same bugs.
+
+The six field scenes share `scenes/field.ts`, which owns the drift, the edge wrap, the link
+threshold, the BFS routing and the masking. The three lane scenes share `scenes/stage.ts`, which
+divides `keepOut.bandTop` into lanes. Neither picks a coordinate of its own.
 
 Two things are worth knowing before editing a scene.
 
@@ -414,28 +437,45 @@ rather than shrink past legible or clip, and the harness substitutes the ambient
 so a desktop visitor never pays for a field they will not see. Without that, four of the five routes
 rendered an empty canvas on the commonest class of viewport.
 
-Verified across 12 widths from 360 to 1920 and 26 samples per scene per scheme: every route paints at
-every width, nothing lands on bare text in any of the 260 sampled frames, and there is no horizontal
-overflow anywhere. Reduced motion gets one composed still per scene, and a still is a composition
-rather than a moment: `id-tables` forces its "never reused" counter on, because that frame is the only
-one such a visitor sees.
+The lane scenes hide on the same principle but for a different reason: they need `keepOut.bandTop` to
+be tall enough to separate their lanes. Measured, the band is 128px down to 1024px and 96px below
+that, so a five-lane scene has a 21.3px or 16px pitch and clears the 13px floor everywhere down to
+360px. They are never actually substituted -- but `painted > 0` cannot tell a lane scene from the
+fallback field, so that was checked by recomputing the stage rather than by looking at pixels.
 
-Two things in `round-trip-field` are worth not undoing, because neither is visible in a screenshot.
-A `Trip` holds node *indices* and reads their positions live, so a route bends as the field drifts,
-which is the effect worth having. It also means a node wrapping from one edge to the other mid-trip
-turns one segment into a canvas-width line and throws the travelling dot across the hero: driving the
-scene headlessly for 90 simulated seconds, that produced a **1452px** segment within 15 seconds of
-starting. Nodes carry a `gen` that the wrap bumps, trips snapshot it, and a trip whose route changed
-generation retires instead. With the check the longest segment is ~211px, which is drift and correct.
+Verified across 12 widths from 360 to 1920 and 34 samples per scene per scheme: every route paints at
+every width, nothing lands on bare text in any sampled frame, and there is no horizontal overflow
+anywhere. Reduced motion gets one composed still per scene, and a still is a composition rather than
+a moment: `id-tables` forces its "never reused" counter on, and `substitute` is caught on its second
+handoff with one ring filled, one filling and one still open, because that frame is the only one such
+a visitor sees.
+
+Two things in the field scenes are worth not undoing, because neither is visible in a screenshot.
+A route holds node *indices* and reads their positions live, so it bends as the field drifts, which
+is the effect worth having. It also means a node wrapping from one edge to the other mid-flight turns
+one segment into a canvas-width line and throws whatever is travelling across the hero: driving
+`round-trip-field` headlessly for 90 simulated seconds, that produced a **1452px** segment within 15
+seconds of starting. Nodes carry a `gen` that the wrap bumps, routes snapshot it via `gensOf`, and
+anything whose route changed generation retires instead. With the check the longest segment across all
+six field scenes is ~370px, which is drift and correct.
+
+`session-loss` originally exempted its collapse from that check, so as not to interrupt the one moment
+the scene exists for. That exemption drew a **1179px** spoke at 80 seconds. Cutting the collapse short
+and going dark is the lesser fault, and it lands on a frame that is already emptying out. This is the
+kind of thing `all.mjs` exists to catch: it drives every scene for 90 simulated seconds against a stub
+context and asserts no scene strokes a canvas-width segment, no scene's actors ever stop drawing, and
+**no scene calls `fillText`** -- which is the only mechanical guarantee that these heroes stay
+textless.
 Separately, `layout` rescales the field in place rather than re-seeding it, because it runs on every
 `ResizeObserver` tick *and* once when the webfonts land, which is always after first paint: re-seeding
 there made the whole field visibly reshuffle a few hundred milliseconds into every visit and
 re-randomise on every frame of a window drag.
 
-Canvas is also the cheaper hero. All five scenes plus the harness are one 21.1 kB chunk, 8.1 kB
-gzipped, against 56.4 kB and 17.2 kB for the `ogl` LightTunnel. Note that a variant page currently
-ships all five scenes, because `scenes/index.ts` imports the registry: that is fine for throwaway
-comparison pages and would want a dynamic `import()` per scene if these ever became permanent.
+Canvas is also the cheaper hero. All thirteen scenes plus the harness are one 39.1 kB chunk, 13.8 kB
+gzipped, against 56.4 kB and 17.2 kB for the `ogl` LightTunnel, and the chunk is on the thirteen
+comparison pages only -- the landing ships none of it. Note that a variant page ships all thirteen
+scenes, because `scenes/index.ts` imports the registry: that is fine for throwaway comparison pages
+and would want a dynamic `import()` per scene if these ever became permanent.
 
 ## Social cards
 

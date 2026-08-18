@@ -212,6 +212,14 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   on purpose so collisions stay visible to the harness in `/tmp`-style sweeps; only `ambient` scenes
   get clipped. If a scene has no room, return `fits() === false` and let the harness substitute the
   field rather than shipping a clipped diagram or a dead canvas. README has the measured numbers.
+- Re-implement the node field or the lane stage in a new scene. Six scenes share `scenes/field.ts`
+  and three share `scenes/stage.ts`; a scene that rolls its own drift loop will also roll its own
+  edge-wrap teleport, which is invisible in a screenshot and takes 90 simulated seconds to surface.
+- Draw text in a scene numbered `/1a` or later. Those heroes are abstract on purpose. `all.mjs`
+  fails the moment any of them calls `fillText`, and that assertion is the guarantee, not a comment.
+- Judge a scene by its painted percentage. `painted > 0` cannot tell a scene from the fallback field,
+  and a cast that fails to build leaves the phase clock running over a bare field that still measures
+  as painted. Check the stage geometry or the scene's own draw calls, not the pixel count.
 - Dim text with `opacity` to make it secondary. `--nb-muted-foreground` is already that, measured;
   multiplying it by 0.6 is how the figure captions ended up the least readable text on the site.
   Tailwind's alpha modifier is the same sin with better manners: `text-muted-foreground/50` is not a

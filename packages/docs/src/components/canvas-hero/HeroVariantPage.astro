@@ -2,9 +2,9 @@
 /**
  * The body of a hero backdrop comparison page.
  *
- * Five routes want the identical page with one prop different, so the page files
- * under `src/pages/` are five thin wrappers around this and there is only one
- * copy of the layout to keep correct. The hero itself comes from `Hero.astro`
+ * Every variant route wants the identical page with one prop different, so the
+ * page files under `src/pages/` are thin wrappers around this and there is only
+ * one copy of the layout to keep correct. The hero itself comes from `Hero.astro`
  * with its `backdrop` slot filled and the copy imported from `lib/hero-copy.ts`,
  * so the headline, tagline, buttons and example windows are all the real landing
  * ones rather than a lookalike. That matters more than tidiness here: the
@@ -18,31 +18,31 @@ import bundleSize from "@/generated/bundle-size.json";
 import { HERO_TITLE, heroTagline } from "@/lib/hero-copy";
 import CanvasHero from "./CanvasHero.astro";
 import HeroVariantNav from "./HeroVariantNav.astro";
-import { sceneMeta, VARIANTS } from "./scenes";
+import { sceneMeta, variantBySlug } from "./scenes";
 
 interface Props {
-  /** 1-based route number. The scene and its opacity come from `VARIANTS`, so a
-      page cannot pass a number and a scene that disagree. */
-  n: number;
+  /** The route slug, e.g. `"1"` or `"1a"`. The scene and its opacity come from
+      `VARIANTS`, so a page cannot pass a slug and a scene that disagree. */
+  slug: string;
 }
 
-const { n } = Astro.props;
-const variant = VARIANTS[n - 1];
-if (!variant) throw new Error(`HeroVariantPage: no variant ${n}`);
+const { slug } = Astro.props;
+const variant = variantBySlug(slug);
+if (!variant) throw new Error(`HeroVariantPage: no variant "${slug}"`);
 const { scene, opacity } = variant;
 const meta = sceneMeta[scene];
 ---
 
-{/* `noindex`: five near-duplicates of the landing copy are exactly what a search
-    engine should not be offered. They are for looking at, not for ranking. */}
+{/* `noindex`: a dozen near-duplicates of the landing copy are exactly what a
+    search engine should not be offered. They are for looking at, not ranking. */}
 <BaseLayout
-  title={`${n}. ${meta.title} \u00b7 hero backdrop`}
+  title={`${slug}. ${meta.title} \u00b7 hero backdrop`}
   description={meta.blurb}
   noindex
 >
   <Header />
   <main id="main-content">
-    <HeroVariantNav current={n} scene={scene} />
+    <HeroVariantNav current={slug} scene={scene} />
     <Hero title={HERO_TITLE} tagline={heroTagline(bundleSize.label)}>
       <CanvasHero slot="backdrop" scene={scene} opacity={opacity} />
       <HeroExample />
