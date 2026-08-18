@@ -206,6 +206,12 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
 - Assume the landing page is dark. It was, and is not any more -- it honours the toggle like every
   other page, and its hero animation has a second palette that draws in ink rather than light.
   `.cw-home` marks the page, not a scheme.
+- Place a canvas hero scene by eye, or in fractions of the viewport. The harness measures the hero's
+  real boxes and hands the scene a `KeepOut`; a scene that picks its own coordinates ends up drawing
+  under the headline at some breakpoint. Diagram scenes lay out in `sideBands` and are left unclipped
+  on purpose so collisions stay visible to the harness in `/tmp`-style sweeps; only `ambient` scenes
+  get clipped. If a scene has no room, return `fits() === false` and let the harness substitute the
+  field rather than shipping a clipped diagram or a dead canvas. README has the measured numbers.
 - Dim text with `opacity` to make it secondary. `--nb-muted-foreground` is already that, measured;
   multiplying it by 0.6 is how the figure captions ended up the least readable text on the site.
   Tailwind's alpha modifier is the same sin with better manners: `text-muted-foreground/50` is not a

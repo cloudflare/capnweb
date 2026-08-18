@@ -9,10 +9,11 @@ import bundleSize from '../../generated/bundle-size.json';
 import HeroExample from '../../components/HeroExample.astro';
 import Features from '../../components/Features.astro';
 import NavList from '../../components/NavList.astro';
+import { HERO_TITLE, heroTagline } from '../../lib/hero-copy.ts';
 
 <Hero
-	title="One round trip"
-	tagline={`A JavaScript-native, object-capability RPC system. Chain dependent calls and the whole chain resolves in a single trip. No schemas, no boilerplate, ${bundleSize.label}.`}
+	title={HERO_TITLE}
+	tagline={heroTagline(bundleSize.label)}
 >
 	<HeroExample />
 </Hero>

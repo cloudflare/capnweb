@@ -84,6 +84,15 @@ export default defineConfig({
 				// Substitutes %BUNDLE_SIZE% in the body. See scripts/mdast-bundle-size.mjs.
 				mdastPlugins: [mdastBundleSize()],
 			},
+			sitemap: {
+				// `/1`../`/5` are the hero backdrop comparison pages. They carry the landing's
+				// copy five times over and are served `noindex`, so listing them in the sitemap
+				// would be asking a crawler to index what the page itself tells it not to.
+				// Anchored at the start: unanchored, this would also drop any future page
+				// whose last segment happens to be a single digit, like `/blog/2/`.
+				// Returning null drops the URL. Astro already omits `/404`.
+				serialize: (item) => (/^\/[1-5]\/?$/.test(new URL(item.url).pathname) ? null : item),
+			},
 		}),
 	],
 });

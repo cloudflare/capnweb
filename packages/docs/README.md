@@ -351,6 +351,92 @@ deepened to `#253c6d`. That puts the figures at 1.26--2.17:1 mean and 4.98--9.64
 low on purpose: these are line drawings on a large empty field, so most of the box is background and
 what matters is the contrast of the strokes themselves.
 
+## The five canvas heroes at `/1` to `/5`
+
+`/1` through `/5` are the landing page with a different backdrop each: same headline, same code
+windows, same calls to action, only the art swapped. They exist to be compared side by side before
+one is picked, so they are deliberately temporary. Each carries `<meta name="robots"
+content="noindex">`, and `astro.config.ts` drops them from the sitemap in `sitemap.serialize`, which
+is why the sitemap has 33 locs and the build reports 39 pages.
+
+The backdrops are Canvas 2D rather than WebGL, and each one draws something the protocol actually
+does, with the wire messages taken from real traces rather than invented:
+
+| Route | Scene              | What it draws                                                                           |
+| ----- | ------------------ | --------------------------------------------------------------------------------------- |
+| `/1`  | `round-trip-field` | A drifting node field; one path carries a train of pushes out and a single answer back. |
+| `/2`  | `pipeline-ladder`  | Four dependent calls awaited one at a time against the same four pipelined.             |
+| `/3`  | `batch-body`       | One body of newline-delimited JSON written, sent once, and answered.                    |
+| `/4`  | `id-tables`        | IDs allocated by sign, a call going back the other way, and a release.                  |
+| `/5`  | `map-replay`       | `.map()` recorded once into `remap` instructions, then replayed per element.            |
+
+`canvas-hero.client.ts` is the harness and owns everything that is not drawing: the device pixel
+ratio (capped at 2), an accumulated clock so a pause cannot fast-forward the animation, `Resize`- and
+`IntersectionObserver`, `visibilitychange`, and a `MutationObserver` on `data-theme` that repaints
+even while parked so a scheme flip is never stale. Five scenes sharing one harness is the point;
+five scenes each with their own lifecycle would be five sets of the same bugs.
+
+Two things are worth knowing before editing a scene.
+
+### A backdrop that draws under the headline is a collision
+
+The harness measures the hero's real boxes once per resize and hands scenes a `KeepOut`. It measures
+rather than guessing viewport fractions because the content is a centred column capped in `rem`, so
+it moves against the viewport at every breakpoint and every root font size.
+
+The clear space is deliberately not one pair of gutters beside the union of those boxes. At 1440px
+the union is 976px wide and leaves 213px a side, but that width belongs only to the illustration in
+the top third: below it the copy narrows to 576px and the real clear column is **413px**. Taking the
+union would throw away half the usable canvas, and at 1024px it would report 8px and every scene
+would hide. So scenes call `sideBands(y, height)` for the clear columns beside a specific horizontal
+band, and `scenes/space.ts` is the one place that decides the diagram scenes put their columns below
+the illustration and their message lanes in the full-width strip above it.
+
+Only bare text counts. Ink behind the code windows is invisible, because the windows are a
+near-opaque panel, so `.cw-ex` is excluded from what `clarity()` protects; the headline, tagline and
+buttons have nothing behind them, so ink there competes with the words.
+
+The two kinds of scene are treated differently, and `Scene.ambient` is the switch:
+
+- A **diagram** scene lays itself out in the clear columns and is **not** clipped, so a label
+  drifting onto the copy shows up as a collision to be fixed rather than being silently truncated.
+- An **ambient** scene is a texture over the whole canvas and cannot be confined to a column, so it
+  fades out over a 56px feather as it approaches bare text *and* the harness clips the text boxes out
+  of it. The feather is for looks and the clip is the guarantee: a 4px node square whose centre is
+  3px outside the headline still puts a column of pixels inside it, which is exactly the 0.105%
+  collision the feather alone left at 768px.
+
+### A hero should never have a dead backdrop
+
+The diagram scenes are monospace text sized from the clear column, and below about 1280px there is no
+width at which 68 characters of JSON and the hero copy both fit. They report `fits() === false`
+rather than shrink past legible or clip, and the harness substitutes the ambient field, built lazily
+so a desktop visitor never pays for a field they will not see. Without that, four of the five routes
+rendered an empty canvas on the commonest class of viewport.
+
+Verified across 12 widths from 360 to 1920 and 26 samples per scene per scheme: every route paints at
+every width, nothing lands on bare text in any of the 260 sampled frames, and there is no horizontal
+overflow anywhere. Reduced motion gets one composed still per scene, and a still is a composition
+rather than a moment: `id-tables` forces its "never reused" counter on, because that frame is the only
+one such a visitor sees.
+
+Two things in `round-trip-field` are worth not undoing, because neither is visible in a screenshot.
+A `Trip` holds node *indices* and reads their positions live, so a route bends as the field drifts,
+which is the effect worth having. It also means a node wrapping from one edge to the other mid-trip
+turns one segment into a canvas-width line and throws the travelling dot across the hero: driving the
+scene headlessly for 90 simulated seconds, that produced a **1452px** segment within 15 seconds of
+starting. Nodes carry a `gen` that the wrap bumps, trips snapshot it, and a trip whose route changed
+generation retires instead. With the check the longest segment is ~211px, which is drift and correct.
+Separately, `layout` rescales the field in place rather than re-seeding it, because it runs on every
+`ResizeObserver` tick *and* once when the webfonts land, which is always after first paint: re-seeding
+there made the whole field visibly reshuffle a few hundred milliseconds into every visit and
+re-randomise on every frame of a window drag.
+
+Canvas is also the cheaper hero. All five scenes plus the harness are one 21.1 kB chunk, 8.1 kB
+gzipped, against 56.4 kB and 17.2 kB for the `ogl` LightTunnel. Note that a variant page currently
+ships all five scenes, because `scenes/index.ts` imports the registry: that is fine for throwaway
+comparison pages and would want a dynamic `import()` per scene if these ever became permanent.
+
 ## Social cards
 
 Every page gets its own Open Graph image at `/og/<slug>.png`, generated at build time by

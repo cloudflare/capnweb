@@ -1,0 +1,118 @@
+---
+/**
+ * Canvas 2D backdrop for a hero, in place of `NetworkHero`'s WebGL tunnel.
+ *
+ * The field, stage and veil geometry are deliberately identical to
+ * `NetworkHero.astro`: same height, same radial pool, same veil that dissolves
+ * the edges into the page and fades harder at the bottom so the backdrop meets
+ * the copy cleanly. Only the thing doing the drawing changes, so the five
+ * variants differ by their animation and nothing else.
+ *
+ * Decorative only: the canvas is aria-hidden and pointer-events stay off. Unlike
+ * the WebGL hero, reduced motion still gets a canvas here, holding a single
+ * composed frame, because a still diagram is not a motion problem and an empty
+ * hero is worse.
+ */
+import type { SceneKey } from "./scenes";
+
+interface Props {
+  scene: SceneKey;
+  /**
+   * Scene opacity. The reference field this is modelled on sits at 0.42; the
+   * text-carrying scenes need more presence than that to stay readable through
+   * the veil, so each page can tune it.
+   */
+  opacity?: number;
+}
+
+const { scene, opacity = 0.72 } = Astro.props;
+---
+
+<div class="cw-hero-field" aria-hidden="true">
+  <div class="cw-hero-stage" style={`--cw-canvas-opacity: ${opacity};`}>
+    <div class="cw-canvas-hero" data-cw-canvas-hero data-scene={scene}></div>
+  </div>
+  <div class="cw-hero-veil"></div>
+</div>
+
+<script>
+  import { mount } from "@cloudflare/nimbus-docs/client";
+  import { mountCanvasHero } from "./canvas-hero.client";
+  import { scenes, type SceneKey } from "./scenes";
+
+  mount("[data-cw-canvas-hero]", (root) => {
+    if (!(root instanceof HTMLElement)) return () => {};
+    const key = root.dataset.scene as SceneKey | undefined;
+    const factory = key ? scenes[key] : undefined;
+    if (!factory) return () => {};
+    return mountCanvasHero(root, factory);
+  });
+</script>
+
+<style>
+  .cw-hero-field {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: -1;
+    height: min(48rem, 112vh);
+    overflow: hidden;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        60rem 52rem at 50% 42%,
+        var(--cw-hero-stage-bg) 0%,
+        color-mix(in srgb, var(--cw-hero-stage-bg) 40%, transparent) 40%,
+        transparent 68%
+      ),
+      var(--nb-background);
+  }
+
+  .cw-hero-stage {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    animation: cw-hero-in 1s ease forwards;
+  }
+
+  @keyframes cw-hero-in {
+    to {
+      opacity: 1;
+    }
+  }
+
+  .cw-canvas-hero {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+    opacity: var(--cw-canvas-opacity, 0.72);
+  }
+
+  .cw-hero-veil {
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(
+        78% 86% at 50% 42%,
+        transparent 0%,
+        transparent 46%,
+        color-mix(in srgb, var(--nb-background) 50%, transparent) 72%,
+        var(--nb-background) 96%
+      ),
+      linear-gradient(
+        180deg,
+        transparent 0%,
+        transparent 64%,
+        color-mix(in srgb, var(--nb-background) 60%, transparent) 84%,
+        var(--nb-background) 100%
+      );
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cw-hero-stage {
+      animation: none;
+      opacity: 1;
+    }
+  }
+</style>

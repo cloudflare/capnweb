@@ -26,10 +26,13 @@ const {
 } = Astro.props;
 
 const lang = config.locale ?? "en";
-// `cw-home` marks the landing page for the handful of rules that only apply
-// there (the hero's ground, the outline-only code blocks in dark). It no longer
-// forces a colour scheme: the landing honours the toggle like every other page.
-const isHome = Astro.url.pathname.replace(/\/+$/, "") === "";
+// `cw-home` marks a page built around the landing hero, for the handful of rules
+// that only apply there (the hero's ground, the outline-only code blocks in
+// dark). It no longer forces a colour scheme: the landing honours the toggle like
+// every other page. `/1`../`/5` are the canvas-backdrop comparison pages, which
+// carry the same hero and so need the same rules.
+const path = Astro.url.pathname.replace(/\/+$/, "");
+const isHome = path === "" || /^\/[1-5]$/.test(path);
 // Per-page agent-index pointer. For pages in non-primary or version
 // collections, this resolves to `/<prefix>/llms.txt` (e.g. `/v0/llms.txt`
 // for a v0 docs page, `/blog/llms.txt` for a blog post). Falls back to

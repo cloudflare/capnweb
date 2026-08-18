@@ -9,6 +9,10 @@
  * frontmatter block that only one page can use.
  *
  * The node field goes behind it, absolutely positioned against this section.
+ *
+ * The backdrop is a slot with `NetworkHero` as its fallback, so the landing keeps
+ * the WebGL tunnel while the `/1`../`/5` comparison pages can swap in a Canvas 2D
+ * scene without duplicating the hero's copy, buttons or layout notes below.
  */
 import { LinkButton } from '@/components/ui/link-button';
 import NetworkHero from './NetworkHero.astro';
@@ -39,7 +43,7 @@ const { title, tagline } = Astro.props;
 	behind the prose, and unlike `hidden`/`isolate` it creates no stacking context.
 */}
 <section class="relative [overflow-x:clip]">
-	<NetworkHero />
+	<slot name="backdrop"><NetworkHero /></slot>
 	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-28 pb-16 text-center lg:px-6 lg:pt-36 lg:pb-24">
 		{
 			Astro.slots.has('default') && (
@@ -56,7 +60,10 @@ const { title, tagline } = Astro.props;
 				{tagline}
 			</p>
 		</div>
-		<div class="mt-10 flex flex-wrap items-center justify-center gap-3">
+		{/* `cw-hero-actions` is a hook, not a style: the canvas backdrops measure the
+			hero's content boxes so their scenes can lay out in the clear space beside
+			it, and the buttons are part of what they must not draw over. */}
+		<div class="cw-hero-actions mt-10 flex flex-wrap items-center justify-center gap-3">
 			<LinkButton href="/start/quickstart/" variant="primary" size="lg" icon>
 				Get started
 			</LinkButton>

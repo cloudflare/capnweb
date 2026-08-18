@@ -1,0 +1,102 @@
+---
+/**
+ * Switcher for the hero backdrop comparison pages.
+ *
+ * These pages exist to be looked at side by side, so getting between them has to
+ * cost nothing. Real links rather than a client-side swap, because each variant
+ * should be reachable, shareable and reloadable on its own.
+ */
+import { sceneMeta, VARIANTS, type SceneKey } from "./scenes";
+
+interface Props {
+  current: number;
+  scene: SceneKey;
+}
+
+const { current, scene } = Astro.props;
+const meta = sceneMeta[scene];
+---
+
+<nav class="cw-variant-nav" aria-label="Hero backdrop variants">
+  <a href="/" class="cw-variant-link">webgl</a>
+  {
+    VARIANTS.map(({ scene: key }, i) => (
+      <a
+        href={`/${i + 1}`}
+        class:list={["cw-variant-link", current === i + 1 && "cw-variant-current"]}
+        aria-current={current === i + 1 ? "page" : undefined}
+        title={sceneMeta[key].title}
+        aria-label={`${i + 1}. ${sceneMeta[key].title}`}
+      >
+        {i + 1}
+      </a>
+    ))
+  }
+  <span class="cw-variant-name">
+    <strong>{meta.title}</strong>
+    <span>{meta.blurb}</span>
+  </span>
+</nav>
+
+<style>
+  .cw-variant-nav {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    max-width: var(--cw-landing-max);
+    margin: 0 auto;
+    padding: 1rem 1rem 0;
+    font-family: var(--nb-font-mono);
+    font-size: 0.75rem;
+  }
+
+  @media (min-width: 1024px) {
+    .cw-variant-nav {
+      padding-inline: 1.5rem;
+    }
+  }
+
+  .cw-variant-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.75rem;
+    height: 1.75rem;
+    padding-inline: 0.5rem;
+    border: 1px solid var(--nb-border);
+    border-radius: 0.375rem;
+    color: var(--nb-muted-foreground);
+    text-decoration: none;
+    transition:
+      color 0.15s,
+      border-color 0.15s,
+      background-color 0.15s;
+  }
+
+  .cw-variant-link:hover {
+    color: var(--nb-foreground);
+    border-color: var(--nb-border-strong, var(--nb-border));
+    background: color-mix(in srgb, var(--nb-muted) 50%, transparent);
+  }
+
+  .cw-variant-current {
+    color: var(--nb-foreground);
+    border-color: var(--nb-foreground);
+  }
+
+  .cw-variant-name {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-inline-start: 0.5rem;
+    color: var(--nb-muted-foreground);
+  }
+
+  .cw-variant-name strong {
+    color: var(--nb-foreground);
+    font-weight: 600;
+  }
+</style>
