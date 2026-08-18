@@ -289,10 +289,6 @@ In other words, this means:
 * If the promise rejects, the rejection propagates to all pipelined calls.
 * etc.
 
-Two special cases to be aware of:
-* Passing an existing `RpcPromise` (rather than a regular `Promise`) to the constructor adopts it directly, transferring ownership: the original promise is consumed and must not be used afterwards — use the wrapper in its place.
-* If a regular `Promise` resolves to an `RpcPromise`, JavaScript's promise machinery assimilates the thenable, which forces its resolution to be pulled. To keep a deferred capability lazy, resolve the promise with `rpcPromise.dup()` instead: `dup()` returns a non-thenable stub, which is adopted into the resolution and forwards pipelined calls without pulling.
-
 ### The magic `map()` method
 
 Every RPC promise has a special method `.map()` which can be used to remotely transform a value, without pulling it back locally. Here's an example:
