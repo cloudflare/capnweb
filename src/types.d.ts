@@ -272,13 +272,16 @@ type TupleProvider<T extends ReadonlyArray<unknown>> = {
 
 // Base type for all other types providing RPC-like interfaces.
 // Rewrites all methods/properties to be `MethodOrProperty`s, while preserving callable types.
+// `__RPC_TARGET_BRAND` deliberately flows through the key mapping (as a `never` property) so
+// stubs of branded targets stay assignable to workers-types' `Stubable`. Such stubs match our
+// `Stubable` too — harmless, since all machinery checks `StubBase` before `Stubable`.
 export type Provider<T> = MaybeCallableProvider<T> &
   (T extends ReadonlyArray<unknown>
     ? number extends T["length"] ? ArrayProvider<T[number]> : TupleProvider<T>
     : {
         [K in Exclude<
           keyof T,
-          symbol | typeof __RPC_TARGET_BRAND | keyof StubBase<never>
+          symbol | keyof StubBase<never>
         >]: MethodOrProperty<T[K]>;
       } & {
         map<V>(

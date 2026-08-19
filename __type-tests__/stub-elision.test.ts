@@ -39,11 +39,10 @@ interface ElisionApi {
   consumeMaybe(counter: RpcStub<Counter> | null): Promise<number>
 }
 
-// The brand-leak fix: a stub of a branded target no longer matches `Stubable` structurally
-// (the string-keyed brand is excluded from the stub's surface), which is the root cause of
-// double-stubification. Callable stubs remain `Stubable` — they are genuinely callable —
-// which is why `Stubify` checks `StubBase` before `Stubable`.
-type _BrandedStubIsNotStubable = Expect<Equal<RpcStub<Counter> extends Stubable ? true : false, false>>
+// Stubs keep the string-keyed brand on their surface (for workers-types interop), so they
+// match `Stubable` — harmless, because `Stubify`/`Result` check `StubBase` before `Stubable`.
+// That ordering is the actual double-stubification fix; it protects callable stubs too.
+type _BrandedStubIsStubable = Expect<Equal<RpcStub<Counter> extends Stubable ? true : false, true>>
 type _CallableStubIsStillStubable = Expect<Equal<RpcStub<Formatter> extends Stubable ? true : false, true>>
 
 declare const api: RpcStub<ElisionApi>
