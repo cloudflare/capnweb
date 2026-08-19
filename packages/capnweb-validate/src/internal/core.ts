@@ -98,12 +98,17 @@ type BaseType =
   | Response
   | Headers;
 
-type Stubify<T> = T extends Stubable
-  ? ValidatedStub<T>
-  : T extends Promise<infer U>
-    ? Stubify<U>
-    : T extends StubBase<unknown>
-      ? T
+// Arm ordering matters (mirrors the main package's `Stubify`):
+// - `Promise` before `StubBase`: promise-backed stubs match both and must resolve through the
+//   Promise arm.
+// - `StubBase` before `Stubable`: a stub of a callable `T` is itself callable, so it matches
+//   `Stubable`; checking `StubBase` first avoids double-wrapping existing stubs.
+type Stubify<T> = T extends Promise<infer U>
+  ? Stubify<U>
+  : T extends StubBase<unknown>
+    ? T
+    : T extends Stubable
+      ? ValidatedStub<T>
     : T extends Map<infer K, infer V>
       ? Map<Stubify<K>, Stubify<V>>
       : T extends Set<infer V>
@@ -157,10 +162,29 @@ type Unstubify<T> =
 type UnstubifyAll<T extends readonly unknown[]> = {
   [K in keyof T]: Unstubify<T[K]>;
 };
-type StubResult<T> = Promise<Stubify<T>> & ValidatedStub<T> & StubBase<T>;
+type IsAny<T> = 0 extends 1 & T ? true : false;
+type StubResultInner<T> = Promise<Stubify<T>> & ValidatedStub<T> & StubBase<T>;
+// Mirrors the main package's `Result` stub elision: a declared stub return/property collapses
+// to the same type as returning the payload directly — but only for `Stubable` payloads, since
+// only those await back to a stub. Distributes over unions, like the main package's `Result`,
+// so e.g. `ValidatedStub<T> | null` elides (this also makes `never` stay `never` instead of
+// matching the promise arm with `U = unknown`).
+// `any` needs explicit guards: `[any] extends [X]` is true for any `X`, so without them a
+// `Promise<any>` or `ValidatedStub<any>` return would recurse through the eliding arms and
+// collapse to `Promise<unknown> & StubBase<unknown>` instead of keeping the full stub surface.
+type StubResult<T> =
+  IsAny<T> extends true ? StubResultInner<T>
+  : T extends PromiseLike<unknown> & StubBase<infer U> ? StubResult<U>
+  : T extends StubBase<infer U>
+    ? (IsAny<U> extends true ? StubResultInner<T>
+       : [U] extends [Stubable] ? StubResult<U> : StubResultInner<T>)
+  : StubResultInner<T>;
 type StubMethodOrProperty<T> = T extends (...args: infer P) => infer R
   ? (...args: UnstubifyAll<P>) => StubResult<Awaited<R>>
   : StubResult<Awaited<T>>;
+// Deliberately repeats `StubMethodOrProperty`'s function arm instead of delegating to it:
+// the extra conditional layer of a delegation tips `ValidatedStub`'s recursive instantiation
+// over TypeScript's depth limit (TS2589).
 type MaybeCallableStub<T> = T extends (...args: infer P) => infer R
   ? (...args: UnstubifyAll<P>) => StubResult<Awaited<R>>
   : unknown;
@@ -196,9 +220,14 @@ type MapCallbackReturn<V> =
 export type ValidatedStub<T> = MaybeCallableStub<T> &
   (T extends object
     ? {
-        [K in Exclude<keyof T, symbol | keyof StubBase<never>>]: StubMethodOrProperty<
-          T[K]
-        >;
+        [K in Exclude<
+          keyof T,
+          | symbol
+          | "__RPC_TARGET_BRAND"
+          | "__WORKER_ENTRYPOINT_BRAND"
+          | "__DURABLE_OBJECT_BRAND"
+          | keyof StubBase<never>
+        >]: StubMethodOrProperty<T[K]>;
       } & {
         map<V>(callback: (value: MapCallbackValue<NonNullable<T>>) => MapCallbackReturn<V>): StubResult<
           Array<V>

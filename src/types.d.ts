@@ -21,7 +21,8 @@ export interface RpcTargetBranded {
 // `any` into inference.
 export type Stubable = RpcTargetBranded | ((...args: never[]) => unknown);
 
-type IsUnknown<T> = unknown extends T ? ([T] extends [unknown] ? true : false) : false;
+// Note: also true for `any` (call sites that care check `IsAny` first).
+type IsUnknown<T> = unknown extends T ? true : false;
 
 // Types that can be passed over RPC
 // The reason for using a generic type here is to build the serializable subset of RPC-compatible
@@ -95,11 +96,17 @@ type BaseType =
   | Response
   | Headers;
 // Recursively rewrite all `Stubable` types with `Stub`s, and resolve promises.
+// Arm ordering matters here:
+// - `Promise` must come before `StubBase`: `RpcPromise<T>` matches both, and must resolve
+//   through the Promise arm rather than pass through as-is.
+// - `StubBase` must come before `Stubable`: `Stub<T>` of a callable `T` is itself callable, so
+//   it matches `Stubable`. Checking `StubBase` first keeps existing stubs as-is instead of
+//   double-wrapping them as `Stub<Stub<T>>`.
 // prettier-ignore
 export type Stubify<T> =
-  T extends Stubable ? Stub<T>
-  : T extends Promise<infer U> ? Stubify<U>
+  T extends Promise<infer U> ? Stubify<U>
   : T extends StubBase<any> ? T
+  : T extends Stubable ? Stub<T>
   : T extends Map<infer K, infer V> ? Map<Stubify<K>, Stubify<V>>
   : T extends Set<infer V> ? Set<Stubify<V>>
   : T extends [] ? []
@@ -169,6 +176,19 @@ export type RpcPromise<T> =
   T extends Stubable ? Promise<Stub<T>> & Provider<T> & StubBase<T>
   : Promise<Stubify<T> & MaybeDisposable<T>> & Provider<T> & StubBase<T>;
 
+// The elision `Result` applies to a bare stub type: unwrap `Stub<T>` back to `T` when the
+// payload is `Stubable`. Such stubs await back to a stub either way, so eliding keeps a
+// declared `Promise<RpcStub<T>>` return interchangeable with a `Promise<T>` return.
+// Plain-interface stubs are NOT elided: `RpcPromise<U>` only awaits to `Stub<U>` when
+// `U extends Stubable`, so eliding those would change the awaited type from a stub to a
+// stubified record. The payload check is deliberately non-distributive (`[U] extends [...]`).
+// `Stub<any>` is not elided either: `[any] extends [Stubable]` is true, so without the `IsAny`
+// guard an `any`-payload stub would lose its stub surface.
+export type ElideStub<T> =
+  T extends StubBase<infer U>
+    ? (IsAny<U> extends true ? T : [U] extends [Stubable] ? U : T)
+    : T;
+
 // Type for method return or property on an RPC interface.
 // - Stubable types are replaced by stubs.
 // - RpcCompatible types are passed by value, with stubable types replaced by stubs
@@ -178,14 +198,20 @@ export type RpcPromise<T> =
 // Intersecting with `(Maybe)Provider` allows pipelining.
 // prettier-ignore
 type Result<R> =
-  IsAny<R> extends true ? UnknownResult
-  : IsUnknown<R> extends true ? UnknownResult
-  : R extends Stubable ? RpcPromise<R>
+  IsAny<R> extends true ? RpcPromise<unknown>
+  // `RpcPromise<U>`: always safe to normalize — `Result` is idempotent — so a declared
+  // `RpcPromise<U>` return produces the same type as a `Promise<U>` return.
+  : R extends PromiseLike<unknown> & StubBase<infer U> ? Result<U>
+  // Bare stubs: elide per `ElideStub` above. Note there is no `RpcCompatible<R>` re-check
+  // here: anything matching our `StubBase` was produced by machinery that already enforced
+  // the constraint, and re-evaluating `RpcCompatible<R>` in this arm recurses through its
+  // `Stub<Stubable>` member back into `Result`, tripping TS2615 circularity errors in mapped
+  // types.
+  : R extends StubBase<any> ? RpcPromise<ElideStub<R>>
   : R extends RpcCompatible<R> ? RpcPromise<R>
   : never;
 
 type IsAny<T> = 0 extends (1 & T) ? true : false;
-type UnknownResult = Promise<unknown> & Provider<unknown> & StubBase<unknown>;
 
 // Type for method or property on an RPC interface.
 // For methods, unwrap `Stub`s in parameters, and rewrite returns to be `Result`s.
@@ -193,7 +219,7 @@ type UnknownResult = Promise<unknown> & Provider<unknown> & StubBase<unknown>;
 // For properties, rewrite types to be `Result`s.
 // In each case, unwrap `Promise`s.
 type MethodOrProperty<V> = V extends (...args: infer P) => infer R
-  ? (...args: UnstubifyAll<P>) => IsAny<R> extends true ? UnknownResult : Result<Awaited<R>>
+  ? (...args: UnstubifyAll<P>) => Result<Awaited<R>>
   : Result<Awaited<V>>;
 
 // Type for the callable part of an `Provider` if `T` is callable.
@@ -246,6 +272,9 @@ type TupleProvider<T extends ReadonlyArray<unknown>> = {
 
 // Base type for all other types providing RPC-like interfaces.
 // Rewrites all methods/properties to be `MethodOrProperty`s, while preserving callable types.
+// `__RPC_TARGET_BRAND` deliberately flows through the key mapping (as a `never` property) so
+// stubs of branded targets stay assignable to workers-types' `Stubable`. Such stubs match our
+// `Stubable` too — harmless, since all machinery checks `StubBase` before `Stubable`.
 export type Provider<T> = MaybeCallableProvider<T> &
   (T extends ReadonlyArray<unknown>
     ? number extends T["length"] ? ArrayProvider<T[number]> : TupleProvider<T>
