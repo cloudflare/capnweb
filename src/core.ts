@@ -583,9 +583,10 @@ export class RpcPromise extends RpcStub {
         // payload.
         let raw = unwrapStubAndPath(<RpcStub><unknown>hook);
         if (raw.pathIfPromise!.length > 0) {
-          // Property promise: get() returns an independent hook, and properties have no
-          // disposer, so there is nothing to neuter.
-          super(raw.hook.get(raw.pathIfPromise!), []);
+          // Property promise: share the source's hook and path, exactly like the source promise.
+          // The get() producing an independent hook happens lazily on first use, and properties
+          // have no disposer, so there is nothing to neuter.
+          super(raw.hook, raw.pathIfPromise);
         } else {
           let adopted = raw.hook;
           raw.hook = DISPOSED_HOOK;
@@ -1842,10 +1843,16 @@ abstract class ValueStubHook extends StubHook {
       let {value, owner} = this.getValue();
 
       if (path.length === 0 && owner === null) {
+        if (value instanceof Object && "then" in value) {
+          // The hook wraps a thenable (e.g. a workerd-native RpcPromise or RpcProperty), so it
+          // really does back a promise. get([]) asks for an independent hook aliasing the same
+          // promise, which is exactly dup().
+          return this.dup();
+        }
+
         // The only way this happens is if someone sends "pipeline" and references a
-        // TargetStubHook, but they shouldn't do that, because TargetStubHook never backs a
-        // promise, and a non-promise cannot be converted to a promise.
-        // TODO: Is this still correct for rpc-thenable?
+        // TargetStubHook wrapping a non-thenable, but they shouldn't do that, because such a
+        // hook never backs a promise, and a non-promise cannot be converted to a promise.
         throw new Error("Can't dup an RpcTarget stub as a promise.");
       }
 
@@ -2056,7 +2063,13 @@ class TargetStubHook extends ValueStubHook {
   }
 
   onBroken(callback: (error: any) => void): void {
-    // TODO: Should RpcTargets be able to implement onRpcBroken?
+    let target = this.target;
+    if (target && "then" in target) {
+      // The target is thenable (e.g. a workerd-native RpcPromise), so it backs a promise, which
+      // becomes broken if it rejects.
+      Promise.resolve(target).then(() => {}, callback);
+    }
+    // TODO: Should non-thenable RpcTargets be able to implement onRpcBroken?
   }
 }
 

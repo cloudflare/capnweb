@@ -2510,6 +2510,44 @@ describe("constructing RpcPromise from a promise", () => {
     expect(sent.filter(msg => msg.startsWith('["pull"'))).toHaveLength(1);
   });
 
+  it("transmits nothing when constructed from a remote property promise", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    using counter = harness.stub.makeCounter(5);
+    await pumpMicrotasks();  // let the makeCounter push flush
+
+    let source = counter.value;
+    let wrapped = new RpcPromise<number>(source);
+
+    // Construction shares the source's hook and path; the get() producing an independent hook
+    // happens lazily on first await, so nothing goes over the wire yet.
+    let sentBefore = harness.clientTransport.sentLog.length;
+    await pumpMicrotasks();
+    expect(harness.clientTransport.sentLog.length).toBe(sentBefore);
+
+    expect(await wrapped).toBe(5);
+
+    // The source property promise remains usable.
+    expect(await source).toBe(5);
+  });
+
+  it("does not invoke a local getter when constructed from a property promise", async () => {
+    let reads = 0;
+    class Gettable extends RpcTarget {
+      get prop() { ++reads; return 42; }
+    }
+
+    using stub = new RpcStub(new Gettable());
+    let source = stub.prop;
+    let wrapped = new RpcPromise<number>(source);
+
+    await pumpMicrotasks();
+    expect(reads).toBe(0);
+
+    expect(await wrapped).toBe(42);
+    expect(await source).toBe(42);
+  });
+
   it("consumes the source when adopting an existing RpcPromise", async () => {
     await using harness = new TestHarness(new TestTarget());
 
