@@ -147,7 +147,9 @@ describe("workerd compatibility", () => {
   })
 
   it("can wrap a userspace stub in a native stub", async () => {
-    let stub = new NativeRpcStub(new RpcStub(new JsCounter()));
+    // Cast: now that the `__RPC_TARGET_BRAND` no longer leaks onto stub surfaces, a userspace
+    // stub doesn't statically match workers-types' `Stubable` (runtime interop still works).
+    let stub = new NativeRpcStub(<any>new RpcStub(new JsCounter()));
     expect(await stub.increment()).toBe(1);
     expect(await stub.increment()).toBe(2);
 
@@ -180,7 +182,7 @@ describe("workerd compatibility", () => {
     // Wrap a userspace RpcPromise in a native stub.
     {
       let factory = new RpcStub(new CounterFactory());
-      let stub = new NativeRpcStub(factory.getJs());
+      let stub = new NativeRpcStub(<any>factory.getJs());  // cast: see "userspace stub" above
       expect(await stub.increment()).toBe(1);
       expect(await stub.increment()).toBe(2);
 
@@ -190,7 +192,7 @@ describe("workerd compatibility", () => {
     // Wrap a userspace property (which is actually also an RpcPromise) in a native stub.
     {
       let factory = new RpcStub(new CounterFactory());
-      let stub = new NativeRpcStub(factory.getJsEmbedded().stub);
+      let stub = new NativeRpcStub(<any>factory.getJsEmbedded().stub);  // cast: see above
       expect(await stub.increment()).toBe(1);
       expect(await stub.increment()).toBe(2);
 
