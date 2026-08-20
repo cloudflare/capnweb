@@ -10,12 +10,25 @@
  * ones rather than a lookalike. That matters more than tidiness here: the
  * tagline's length decides the height of the box the scenes lay out against.
  *
+ * There is deliberately no variant switcher on the page. One used to sit above
+ * the hero, and it was useful while there were five of these to flick between,
+ * but it is a strip of chrome the real landing page will never have, sitting in
+ * the one position most likely to change how the hero below it reads. These are
+ * judged by eye, so the page has to be the thing being judged and nothing else.
+ * The routes are `/1` to `/9`; type them.
+ *
  * `figure` mode is the exception, and it is a different page rather than a
  * different colour. The code windows come out, because the point of that variant
  * is that the animation carries the argument and two competing explanations of
- * the same idea stacked on top of each other is one too many. The scene moves
- * into the flow where they were, and the backdrop keeps only its stage and veil
- * so the hero still has a floor to stand on.
+ * the same idea stacked on top of each other is one too many. The backdrop keeps
+ * only its stage and veil so the hero still has a floor to stand on.
+ *
+ * It also flips the hero's order to put the copy first. The landing leads with
+ * the code windows and treats the headline as their caption, which works because
+ * a static block of code is taken in at a glance. An animation is not: it has a
+ * running time, and starting the page on one asks the reader to work out what
+ * they are watching before they have been told why. Headline, then claim, then
+ * the demonstration.
  */
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import Header from "@/components/Header.astro";
@@ -25,7 +38,6 @@ import bundleSize from "@/generated/bundle-size.json";
 import { HERO_TITLE, heroTagline } from "@/lib/hero-copy";
 import CanvasFigure from "./CanvasFigure.astro";
 import CanvasHero from "./CanvasHero.astro";
-import HeroVariantNav from "./HeroVariantNav.astro";
 import { sceneMeta, variantBySlug } from "./scenes";
 
 interface Props {
@@ -55,8 +67,11 @@ if (isFigure && !caption) throw new Error(`HeroVariantPage: "${slug}" is a figur
 >
   <Header />
   <main id="main-content">
-    <HeroVariantNav current={slug} scene={scene} />
-    <Hero title={HERO_TITLE} tagline={heroTagline(bundleSize.label)}>
+    <Hero
+      title={HERO_TITLE}
+      tagline={heroTagline(bundleSize.label)}
+      illustration={isFigure ? "below" : "above"}
+    >
       {
         isFigure ? (
           <CanvasHero slot="backdrop" />

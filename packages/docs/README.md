@@ -359,6 +359,11 @@ picked, so they are deliberately temporary. Each carries `<meta name="robots" co
 and `astro.config.ts` drops them from the sitemap in `sitemap.serialize`, which is why the sitemap
 has 33 locs while the build reports 48 pages.
 
+There is no switcher between them, by design. One used to sit above the hero and it was genuinely
+convenient, but it was a strip of chrome the real page will never have, in the position most likely
+to change how the hero below it reads. A page being judged by eye has to be the only thing on the
+screen. Type the route.
+
 `/9` is the exception to "only the art swapped", and is described on its own below.
 
 `/1` was chosen out of the first five, so the `1x` routes are variations on it: the same drifting
@@ -509,11 +514,36 @@ That makes it content, not texture, and three rules invert:
   diff would have flagged that, so `still-text.mjs` asserts on the draw calls instead -- both verdicts
   visible at every width, the saved band wherever it fits, and nothing painted at alpha 0.
 
+It also flips the hero's own order. The landing leads with the code windows and treats the headline
+as their caption, which works because a static block of code is taken in at a glance. An animation
+is not: it has a running time, and opening on one asks the reader to work out what they are watching
+before being told why. `Hero.astro` takes an `illustration` prop for this and figure mode passes
+`below` -- headline, claim, then the demonstration, with the buttons under it.
+
+The time axis stands **between** the two diagrams rather than to the left of both. That is not where
+a y-axis normally goes, and it is the whole point: this axis is not either panel's scale, it is the
+single shared clock that makes the two readable against each other, so it belongs between them. It
+also fixes the composition. With the axis on the left it was the outermost ink on the figure with
+nothing answering it on the right, and the whole thing leaned; no amount of centring the panels
+among themselves corrects for an element that exists on only one side. The ticks cross the line
+instead of stopping at it, for the same reason -- a tick reaching only one panel would imply the
+scale belonged to that one.
+
+Getting there also deleted a pile of arithmetic. There is no panel box any more: each diagram is
+placed `AXIS_HALF` from the axis and `RAIL_HALF * 2` wide, so the pair is a mirror about the centre
+at every width and the outer margins come out equal without being computed. The two earlier attempts
+at balance -- tiling the width into panels and then pulling them together, then mirroring the axis
+column as right-hand margin -- were both corrections for a layout that was asymmetric by
+construction, and both went away with it.
+
 The figure sheds detail as it narrows, and the order is chosen so the argument is the last thing to
-go: the method names drop below 1024px, the axis ticks and the "300 ms saved" band below 600px, and
-both verdicts survive to 360px. `compact` is decided from the *measured* label budget rather than a
-panel-width guess -- the first cut keyed off `panelW < 240` and ran the call labels straight through
-the axis tick at 900px.
+go: the method names drop below 900px, the axis and the "300 ms saved" band below 600px, and both
+verdicts survive to 360px. `compact` is decided from the *measured* label budget rather than a
+width guess -- the first cut keyed off `panelW < 240` and ran the call labels straight through the
+`200` tick at 900px. The two margins are budgeted separately, because they are different sizes doing
+different jobs: the call names hang into the figure's outer margin, the batch note into the narrower
+space between the axis and the fast panel's rail. One combined threshold would drop both sets on
+account of a string that is not even in that margin.
 
 Mechanically, figure mode is a `mode` field on the variant plus a second mount point. Both
 `CanvasHero.astro` and `CanvasFigure.astro` include a byte-identical `<script>` importing

@@ -45,9 +45,20 @@ const BATCH_NOTE = "one message";
 /** Mono advance per character at 1em, the same approximation `space.ts` uses. */
 const MONO_ADV = 0.6;
 const LABEL_PX = 11;
-/** How wide the widest margin label needs to be, plus a little air. */
-const LABEL_NEED =
-  Math.max(...CALLS.map((t) => t.length), BATCH_NOTE.length) * LABEL_PX * MONO_ADV + 6;
+/** Width of a margin label, plus a little air. */
+const needFor = (text: string) => text.length * LABEL_PX * MONO_ADV + 6;
+/**
+ * The two margins have different jobs and are measured separately.
+ *
+ * The call names hang off the slow panel's client rail, in the figure's outer
+ * margin. The batch note hangs off the fast panel's client rail, in the narrower
+ * space between the shared axis and that rail. Sizing both to the longer of the
+ * two used to be merely conservative; with the axis in the middle the fast side
+ * is genuinely tighter, and one combined threshold would drop both sets of labels
+ * on account of a string that is not even in that margin.
+ */
+const CALL_NEED = Math.max(...CALLS.map(needFor));
+const NOTE_NEED = needFor(BATCH_NOTE);
 /** Gap between a margin label and the rail it hangs off. */
 const LABEL_GAP = 9;
 /**
@@ -60,10 +71,25 @@ const LABEL_GAP = 9;
  * rails are still 200px apart, which is more than the diagram needs.
  */
 const RAIL_HALF = 100;
+/**
+ * Distance from the shared axis to the nearest rail of each panel.
+ *
+ * The axis stands between the two diagrams rather than to the left of both, so
+ * this is the width of the column it lives in, per side. It has to clear three
+ * things: the tick numbers, which hang to the left of the axis line; the slow
+ * panel's "server" rail label, which is centred on the rail the numbers approach;
+ * and the fast panel's batch note, which hangs into the space on the right. 104
+ * is the smallest value that leaves the note its measured width at 900px.
+ */
+const AXIS_HALF = 104;
+/** The same column when there is no axis in it, so the panels merely separate. */
+const BARE_HALF = 24;
+/** Clear space between the axis line and anything hanging off the fast rail. */
+const AXIS_PAD = 8;
+/** Half the width of a centred rail label, the outermost ink when labels are off. */
+const RAIL_LABEL_HALF = 22;
 
 interface Panel {
-  x: number;
-  width: number;
   cx: number;
   clientX: number;
   serverX: number;
@@ -98,48 +124,66 @@ export function versus(): Scene {
     const padX = 12;
     const padTop = 10;
     const padBottom = 14;
-    // The axis earns its width only when there is width to spare; below that the
+    // The axis earns its column only when there is width to spare; below that the
     // panels need every pixel and the verdicts still carry the numbers.
     const showAxis = s.width >= 520;
-    const axisW = showAxis ? 46 : 0;
-    const gap = s.width < 560 ? 14 : 30;
-    const usable = s.width - padX * 2 - axisW - gap;
-    const panelW = usable / 2;
-    const x0 = padX + axisW;
-    const mk = (x: number): Panel => {
-      const cx = x + panelW / 2;
-      // Rails sit in from the panel edges, leaving room for the call labels that
-      // hang off the client rail and the verdict centred under both.
-      const half = Math.min(RAIL_HALF, panelW * 0.3);
-      return { x, width: panelW, cx, clientX: cx - half, serverX: cx + half };
-    };
+    /*
+     * The axis is the middle of the figure, and the two diagrams are placed
+     * symmetrically either side of it.
+     *
+     * It used to hang off the left edge with both panels to the right of it, which
+     * is the conventional place for a y-axis and the wrong one here. This axis is
+     * not one panel's scale, it is the single shared clock that makes the two
+     * readable against each other, and standing it between them says so. It also
+     * fixes the composition: the axis was the leftmost ink on the figure with
+     * nothing answering it on the right, so the whole thing leaned, and no amount
+     * of centring the panels among themselves could correct for an element that
+     * only existed on one side.
+     *
+     * Placing the diagrams by construction rather than by tiling the width is what
+     * makes this symmetric for free. There is no panel box any more: each diagram
+     * is `inner` from the axis and `half * 2` wide, so the pair is a mirror about
+     * the centre at every width, and the margins outside them are equal without
+     * being computed.
+     */
+    const cx = s.width / 2;
+    const inner = showAxis ? AXIS_HALF : BARE_HALF;
+    // What is left over once the axis column and the outer rail labels are paid
+    // for, split between the two diagrams. The cap is the real width; the formula
+    // only binds on narrow figures.
+    const spare = (s.width - padX * 2 - inner * 2 - RAIL_LABEL_HALF * 2) / 4;
+    const half = Math.max(28, Math.min(RAIL_HALF, spare));
+    const panels: [Panel, Panel] = [
+      { cx: cx - inner - half, clientX: cx - inner - half * 2, serverX: cx - inner },
+      { cx: cx + inner + half, clientX: cx + inner, serverX: cx + inner + half * 2 },
+    ];
     // Headers, then the rail labels, then the diagram. The verdict lives in the
     // bottom padding under the axis.
     const headerY = padTop;
     const top = padTop + 44;
     const bottom = s.height - padBottom - 26;
-    const panels: [Panel, Panel] = [mk(x0), mk(x0 + panelW + gap)];
-    const axisX = padX + axisW - 12;
+    const axisX = cx;
     /*
      * Whether the margin labels fit, measured rather than guessed.
      *
-     * A panel-width threshold cannot see what is to the left of each client rail,
-     * and that is the only space these labels have. The slow panel's margin is
-     * bounded by the time axis, and at 900px a `panelW < 240` test said there was
-     * room while "getUserProfile" was in fact running into the `200` tick. The
-     * fast panel's margin runs into the gap, so it is bounded by the slow panel's
-     * server rail instead.
+     * A width threshold cannot see what is to the left of each client rail, and
+     * that is the only space these labels have. The slow panel's runs out to the
+     * edge of the figure; the fast panel's is bounded by the axis line. At 900px a
+     * `panelW < 240` test once said there was room while "getUserProfile" was in
+     * fact running into the `200` tick, which is why these are subtractions of
+     * real coordinates rather than a breakpoint.
      */
-    const budget0 = panels[0].clientX - LABEL_GAP - (showAxis ? axisX + 10 : padX);
-    const budget1 = panels[1].clientX - LABEL_GAP - (panels[0].serverX + 10);
+    const budget0 = panels[0].clientX - LABEL_GAP - padX;
+    const budget1 =
+      panels[1].clientX - LABEL_GAP - (showAxis ? axisX + AXIS_PAD : panels[0].serverX + 10);
     L = {
       panels,
       top,
       bottom,
       axisX,
       showAxis,
-      compact: Math.min(budget0, budget1) < LABEL_NEED,
-      showSaved: panelW >= 170,
+      compact: budget0 < CALL_NEED || budget1 < NOTE_NEED,
+      showSaved: half * 2 >= 120,
       headerY,
     };
   };
@@ -267,18 +311,21 @@ export function versus(): Scene {
     ctx.font = `400 ${LABEL_PX}px ${p.mono}`;
     ctx.textAlign = "right";
     // The unit, once, at the head of the axis, so the ticks can stay bare numbers
-    // and the column stays narrow.
+    // and the column between the panels stays narrow.
     ctx.textBaseline = "bottom";
     ctx.fillStyle = p.muted;
     ctx.fillText("ms", l.axisX - 6, l.top - 7);
     ctx.textBaseline = "middle";
-    // A tick per round trip, which is every two legs, which is every 100ms.
+    // A tick per round trip, which is every two legs, which is every 100ms. The
+    // ticks cross the line rather than stopping at it, because the axis now has a
+    // diagram on both sides and a tick that only reaches one of them would imply
+    // the scale belongs to that one.
     for (let legs = 0; legs <= TOTAL_LEGS; legs += 2) {
       const y = yAt(l, legs);
       ctx.strokeStyle = `rgb(${p.strokeRgb} / 0.35)`;
       ctx.beginPath();
       ctx.moveTo(l.axisX - 3, y);
-      ctx.lineTo(l.axisX, y);
+      ctx.lineTo(l.axisX + 3, y);
       ctx.stroke();
       ctx.fillStyle = p.muted;
       ctx.fillText(`${legs * MS_PER_LEG}`, l.axisX - 6, y);

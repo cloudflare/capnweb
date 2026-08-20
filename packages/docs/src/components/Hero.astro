@@ -20,9 +20,21 @@ import NetworkHero from './NetworkHero.astro';
 interface Props {
 	title: string;
 	tagline: string;
+	/**
+	 * Where the default slot sits relative to the headline.
+	 *
+	 * `above` is the landing page's own order and the default: the code windows
+	 * lead, because they are the argument and the headline is the caption on it.
+	 * That only works while the illustration is a static thing the eye can take in
+	 * at a glance. An animated figure is read rather than glanced at, so it wants
+	 * to be introduced first -- hence `below`, where the headline and tagline come
+	 * first and the figure follows as the demonstration of what they claim.
+	 */
+	illustration?: 'above' | 'below';
 }
 
-const { title, tagline } = Astro.props;
+const { title, tagline, illustration = 'above' } = Astro.props;
+const hasIllus = Astro.slots.has('default');
 ---
 
 {/*
@@ -45,8 +57,11 @@ const { title, tagline } = Astro.props;
 <section class="relative [overflow-x:clip]">
 	<slot name="backdrop"><NetworkHero /></slot>
 	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-28 pb-16 text-center lg:px-6 lg:pt-36 lg:pb-24">
+		{/* Only ever one of these two renders, so the slot is consumed once. The
+			`cw-hero-illus` hook and its spacing are the same either way -- only the
+			side the margin is on changes, since it is always the gap to the copy. */}
 		{
-			Astro.slots.has('default') && (
+			hasIllus && illustration === 'above' && (
 				<div class="cw-hero-illus mb-12 w-full text-left lg:mb-14">
 					<slot />
 				</div>
@@ -60,6 +75,13 @@ const { title, tagline } = Astro.props;
 				{tagline}
 			</p>
 		</div>
+		{
+			hasIllus && illustration === 'below' && (
+				<div class="cw-hero-illus mt-12 w-full text-left lg:mt-14">
+					<slot />
+				</div>
+			)
+		}
 		{/* `cw-hero-actions` is a hook, not a style: the canvas backdrops measure the
 			hero's content boxes so their scenes can lay out in the clear space beside
 			it, and the buttons are part of what they must not draw over. */}
