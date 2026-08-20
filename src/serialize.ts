@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook, defineMapPromiseSlots, mapPromiseSlotProperties } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -317,6 +317,18 @@ export class Devaluator {
         }
         // Wrap literal arrays in an outer one-element array, to "escape" them.
         return [result];
+      }
+
+      case "map": {
+        let map = <Map<unknown, unknown>>value;
+        let entries: unknown[] = [];
+        for (let [key, val] of map) {
+          entries.push([
+            this.devaluateImpl(key, map, depth + 1),
+            this.devaluateImpl(val, map, depth + 1),
+          ]);
+        }
+        return ["map", entries];
       }
 
       case "bigint":
@@ -843,6 +855,25 @@ export class Evaluator {
           }
           if (typeof value[1] == "number") {
             return new Date(value[1]);
+          }
+          break;
+        case "map":
+          if (value.length === 2 && value[1] instanceof Array) {
+            let map = new Map();
+            let entries: [unknown, unknown][] = [];
+            for (let entry of value[1]) {
+              if (!(entry instanceof Array) || entry.length !== 2) {
+                throw new TypeError("Map entries must be serialized as key/value pairs.");
+              }
+              let index = entries.length;
+              let properties = mapPromiseSlotProperties(index);
+              let key = this.evaluateImpl(entry[0], map, properties.key, depth + 1);
+              let val = this.evaluateImpl(entry[1], map, properties.value, depth + 1);
+              entries.push([key, val]);
+              defineMapPromiseSlots(map, entries, index);
+              map.set(key, val);
+            }
+            return map;
           }
           break;
         case "bytes": {

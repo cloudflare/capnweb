@@ -37,7 +37,7 @@ export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 
 export type PropertyPath = (string | number)[];
 
-type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
+type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" | "map" |
     "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
     "error" | "undefined" | "writable" | "readable" | "url" | "headers" | "request" | "response";
 
@@ -92,6 +92,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case Date.prototype:
       return "date";
+
+    case Map.prototype:
+      return "map";
 
     case Uint8Array.prototype:
     case BUFFER_PROTOTYPE:
@@ -656,6 +659,47 @@ export function unwrapStubAndPath(stub: RpcStub): {hook: StubHook, pathIfPromise
   return stub[RAW_STUB];
 }
 
+// The property names used to address the key and the value of the `Map` entry at `index`.
+//
+// Delivery writes `parent[property] = resolved`, so every slot in the map needs its own name;
+// sharing one would make two writes target the same slot, losing all but the last.
+export function mapPromiseSlotProperties(index: number): {key: string, value: string} {
+  return {key: `${index}:key`, value: `${index}:value`};
+}
+
+// RpcPromise keys and values are set using property access on the parent.
+//
+// To make this work for `Map`, this function defines one-time-use setters that write the
+// resolution back into `entries` and rebuild the map from it. `entries` -- not the map -- is the
+// source of truth, so a key and its value can resolve in either order, and a key that resolves to
+// a duplicate collapses under normal `Map` semantics.
+//
+// `entries[index]` must be the entry that was inserted into `map` at position `index`.
+export function defineMapPromiseSlots(
+    map: Map<unknown, unknown>, entries: [unknown, unknown][], index: number) {
+  let entry = entries[index]!;
+  if (!(entry[0] instanceof RpcPromise) && !(entry[1] instanceof RpcPromise)) return;
+
+  let properties = mapPromiseSlotProperties(index);
+
+  let defineSlot = (property: string, slot: 0 | 1) => {
+    Object.defineProperty(map, property, {
+      configurable: true, enumerable: false,
+      set(resolved: unknown) {
+        delete (map as any)[property];
+        entries[index]![slot] = resolved;
+        map.clear();
+        for (let [key, value] of entries) {
+          map.set(key, value);
+        }
+      }
+    });
+  };
+
+  if (entry[0] instanceof RpcPromise) defineSlot(properties.key, 0);
+  if (entry[1] instanceof RpcPromise) defineSlot(properties.value, 1);
+}
+
 // Given a promise stub (still wrapped in a Proxy), pull the remote promise and deliver the
 // payload. This is a helper used to implement the then/catch/finally methods of RpcPromise.
 async function pullPromise(promise: RpcPromise): Promise<unknown> {
@@ -1008,6 +1052,24 @@ export class RpcPayload {
         let result = new Array(len);
         for (let i = 0; i < len; i++) {
           result[i] = this.deepCopy(array[i], array, i, result, dupStubs, owner);
+        }
+        return result;
+      }
+
+      case "map": {
+        // We have to construct the new map first, then fill it in, so we can pass it as the
+        // parent.
+        let map = <Map<unknown, unknown>>value;
+        let result = new Map();
+        let entries: [unknown, unknown][] = [];
+        for (let [key, val] of map) {
+          let index = entries.length;
+          let properties = mapPromiseSlotProperties(index);
+          let keyCopy = this.deepCopy(key, map, properties.key, result, dupStubs, owner);
+          let valCopy = this.deepCopy(val, map, properties.value, result, dupStubs, owner);
+          entries.push([keyCopy, valCopy]);
+          defineMapPromiseSlots(result, entries, index);
+          result.set(keyCopy, valCopy);
         }
         return result;
       }
@@ -1389,6 +1451,15 @@ export class RpcPayload {
         return;
       }
 
+      case "map": {
+        let map = <Map<unknown, unknown>>value;
+        for (let [key, val] of map) {
+          this.disposeImpl(key, map);
+          this.disposeImpl(val, map);
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1536,6 +1607,15 @@ export class RpcPayload {
         return;
       }
 
+      case "map": {
+        let map = <Map<unknown, unknown>>value;
+        for (let [key, val] of map) {
+          this.ignoreUnhandledRejectionsImpl(key);
+          this.ignoreUnhandledRejectionsImpl(val);
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1674,6 +1754,7 @@ function followPath(value: unknown, parent: object | undefined,
       case "bytes":
       case "blob":
       case "date":
+      case "map":
       case "error":
       case "url":
       case "headers":

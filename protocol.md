@@ -191,6 +191,10 @@ bound parsing cost.
 
 A JavaScript `Date` value. The number represents milliseconds since the Unix epoch.
 
+`["map", entries]`
+
+A JavaScript `Map` value. `entries` is an array of `[key, value]` pairs, in insertion order.
+
 `["error", type, message, stack?, props?]`
 
 A JavaScript `Error` value. `type` is the name of the specific well-known `Error` subclass, e.g. "TypeError". `message` is a string containing the error message. `stack` may optionally contain the stack trace, though by default stacks will be redacted for security reasons.
