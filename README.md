@@ -267,6 +267,28 @@ let profile = await api.getUserProfile(user.id);
 
 Whenever an `RpcPromise` is passed in the parameters to an RPC, or returned as part of the result, the promise will be replaced with its resolution before delivery to the receiving application. So, you can use an `RpcPromise<T>` anywhere where a `T` is required!
 
+#### Constructing `RpcPromise` from a `Promise`
+
+You can construct an `RpcPromise<T>` directly from a regular `Promise<T>`, allowing you to perform promise pipelining on a regular local promise. Pipelined calls will wait until the inner promise resolves, then will be delivered, in-order, to the resolution. This is useful when you plan to obtain some stub in the future, but you want to allow code to start queuing calls on it immediately.
+
+Wrapping a `Promise<T>` in this way is semantically identical to creating a local-loopback RPC and then invoking it. That is:
+
+```ts
+// this...
+let rpcPromise = new RpcPromise(myPromise);
+
+// is semantically the same as this...
+let rpcFunc = new RpcStub(() => myPromise);
+let rpcPromise = rpcFunc();
+```
+
+In other words, this means:
+* The result of the promise must be serializable.
+* If the promise resolution contains `RpcTarget`s or `Function`s, the `RpcPromise`'s resolution will replace them with stubs.
+* Ownership of any stubs in the Promise result is transferred away. If you want to keep your own copies, you need to `dup()` them.
+* If the promise rejects, the rejection propagates to all pipelined calls.
+* etc.
+
 ### The magic `map()` method
 
 Every RPC promise has a special method `.map()` which can be used to remotely transform a value, without pulling it back locally. Here's an example:

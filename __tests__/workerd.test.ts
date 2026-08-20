@@ -5,7 +5,7 @@
 /// <reference types="@cloudflare/workers-types" />
 import { expect, it, describe } from "vitest";
 import { RpcStub as NativeRpcStub, RpcTarget as NativeRpcTarget, env, DurableObject } from "cloudflare:workers";
-import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcTarget } from "../src/index-workers.js";
+import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcPromise, RpcTarget } from "../src/index-workers.js";
 import { v, wrapServerTarget, type ServiceValidator } from "../packages/capnweb-validate/src/internal/core.js";
 import { Counter, TestTarget } from "./test-util.js";
 
@@ -44,6 +44,10 @@ class CounterFactory extends RpcTarget {
     return new NativeRpcStub(new NativeCounter());
   }
 
+  getBroken(): NativeRpcStub<NativeCounter> {
+    throw new RangeError("test error");
+  }
+
   getNativeEmbedded() {
     return {stub: new NativeRpcStub(new NativeCounter())};
   }
@@ -54,6 +58,12 @@ class CounterFactory extends RpcTarget {
 
   getJsEmbedded() {
     return {stub: new RpcStub(new JsCounter())};
+  }
+}
+
+async function pumpMicrotasks() {
+  for (let i = 0; i < 16; i++) {
+    await Promise.resolve();
   }
 }
 
@@ -124,6 +134,54 @@ describe("workerd compatibility", () => {
 
       expect(await stub.value).toBe(2);
     }
+  })
+
+  it("can wrap a native promise in a userspace promise", async () => {
+    // Wrapping in RpcPromise (rather than RpcStub) exercises the rpc-thenable adoption path,
+    // which pipelines calls on the native thenable without eagerly awaiting it.
+    let factory = new NativeRpcStub(new CounterFactory());
+    let stub = new RpcPromise(factory.getNative());
+    expect(await stub.increment()).toBe(1);
+    expect(await stub.increment()).toBe(2);
+
+    expect(await stub.value).toBe(2);
+  })
+
+  it("can dup a userspace promise wrapping a native promise", async () => {
+    let factory = new NativeRpcStub(new CounterFactory());
+    let promise = new RpcPromise(factory.getNative());
+
+    // dup() routes through get([]), which must produce an independent hook aliasing the same
+    // underlying native promise.
+    let dup = promise.dup();
+    expect(await dup.increment()).toBe(1);
+    expect(await promise.increment()).toBe(2);
+  })
+
+  it("can pass a wrapped native promise as an RPC argument", async () => {
+    class CounterUser extends RpcTarget {
+      useCounter(counter: RpcStub<NativeCounter>) {
+        return counter.increment(5);
+      }
+    }
+
+    let factory = new NativeRpcStub(new CounterFactory());
+    let user = new RpcStub(new CounterUser());
+    let arg = new RpcPromise(factory.getNative());
+    expect(await user.useCounter(<any>arg)).toBe(5);
+  })
+
+  it("reports brokenness when a wrapped native promise rejects", async () => {
+    let factory = new NativeRpcStub(new CounterFactory());
+    let promise = new RpcPromise(<any>factory.getBroken());
+
+    let errors: any[] = [];
+    promise.onRpcBroken(err => { errors.push(err); });
+
+    await expect(Promise.resolve(promise)).rejects.toThrow("test error");
+    await pumpMicrotasks();
+    expect(errors.length).toBe(1);
+    expect(errors[0].message).toBe("test error");
   })
 
   it("can pipeline on a native stub returned from a userspace call", async () => {

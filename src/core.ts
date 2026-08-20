@@ -561,9 +561,63 @@ export class RpcStub extends RpcTarget {
 }
 
 export class RpcPromise extends RpcStub {
-  // TODO: Support passing target value or promise to constructor.
-  constructor(hook: StubHook, pathIfPromise: PropertyPath) {
-    super(hook, pathIfPromise);
+  // Internally, an `RpcPromise` is constructed from a `StubHook` plus a property path. The
+  // application may instead pass a promise for the eventual resolution; calls made before it
+  // settles are queued and delivered, in order, once it does.
+  constructor(hook: StubHook | PromiseLike<unknown>, pathIfPromise?: PropertyPath) {
+    if (hook instanceof StubHook) {
+      super(hook, pathIfPromise ?? []);
+    } else {
+      if (pathIfPromise !== undefined) {
+        throw new TypeError("RpcPromise constructor expected one argument, received two.");
+      }
+
+      let kind = typeForRpc(hook);
+      if (kind === "rpc-promise") {
+        // Adopt an existing `RpcPromise` directly, transferring ownership of its hook: the source
+        // promise is neutered, as if disposed, and must not be used afterwards. In particular,
+        // adoption keeps the promise lazy -- assimilating it as a thenable would instead force its
+        // resolution to be pulled -- and preserves hook-local behavior such as brokenness. This
+        // applies only to promises, not bare stubs: a non-promise hook may not implement pull(),
+        // so a bare stub takes the generic path below, which adopts the stub into the resolution
+        // payload.
+        let raw = unwrapStubAndPath(<RpcStub><unknown>hook);
+        if (raw.pathIfPromise!.length > 0) {
+          // Property promise: share the source's hook and path, exactly like the source promise.
+          // The get() producing an independent hook happens lazily on first use, and properties
+          // have no disposer, so there is nothing to neuter.
+          super(raw.hook, raw.pathIfPromise);
+        } else {
+          let adopted = raw.hook;
+          raw.hook = DISPOSED_HOOK;
+          super(adopted, []);
+        }
+      } else if (kind === "rpc-thenable") {
+        // Workerd-native RpcPromise/RpcProperty: wrap in a TargetStubHook, which pipelines calls
+        // directly on the thenable and awaits it only on pull().
+        super(TargetStubHook.create(<RpcTarget><unknown>hook, undefined), []);
+      } else {
+        // `Promise.resolve()` natively handles the hazards of assimilating an arbitrary thenable
+        // (`then` getters with side effects, self-resolution, cross-realm thenables), so the
+        // resolution callback below only ever sees settled, non-thenable values.
+        //
+        // The resolution is adopted with "return" semantics, taking ownership of any stubs
+        // within (including a stub as the root value). This is the same representation used for
+        // the resolution of a local async call: pull() delivers the value, pipelined calls
+        // forward through the payload without forcing a pull, and a single-stub payload forwards
+        // onBroken(), preserving brokenness.
+        //
+        // A rejection is left on the backing promise, like the rejection of a local async call:
+        // PromiseStubHook disposes the arguments of queued calls and surfaces the error through
+        // pull() and onBroken(). The ignoreUnhandledRejections() call keeps a never-used promise
+        // from firing an unhandled rejection event; a pipelined call whose result is neither
+        // awaited nor disposed still fires one, matching local async calls.
+        let promiseHook = new PromiseStubHook(Promise.resolve(hook).then(
+            value => new PayloadStubHook(RpcPayload.fromAppReturn(value))));
+        promiseHook.ignoreUnhandledRejections();
+        super(promiseHook, []);
+      }
+    }
   }
 
   then(onfulfilled?: ((value: unknown) => unknown) | undefined | null,
@@ -1788,10 +1842,16 @@ abstract class ValueStubHook extends StubHook {
       let {value, owner} = this.getValue();
 
       if (path.length === 0 && owner === null) {
+        if (value instanceof Object && "then" in value) {
+          // The hook wraps a thenable (e.g. a workerd-native RpcPromise or RpcProperty), so it
+          // really does back a promise. get([]) asks for an independent hook aliasing the same
+          // promise, which is exactly dup().
+          return this.dup();
+        }
+
         // The only way this happens is if someone sends "pipeline" and references a
-        // TargetStubHook, but they shouldn't do that, because TargetStubHook never backs a
-        // promise, and a non-promise cannot be converted to a promise.
-        // TODO: Is this still correct for rpc-thenable?
+        // TargetStubHook wrapping a non-thenable, but they shouldn't do that, because such a
+        // hook never backs a promise, and a non-promise cannot be converted to a promise.
         throw new Error("Can't dup an RpcTarget stub as a promise.");
       }
 
@@ -2002,7 +2062,13 @@ class TargetStubHook extends ValueStubHook {
   }
 
   onBroken(callback: (error: any) => void): void {
-    // TODO: Should RpcTargets be able to implement onRpcBroken?
+    let target = this.target;
+    if (target && "then" in target) {
+      // The target is thenable (e.g. a workerd-native RpcPromise), so it backs a promise, which
+      // becomes broken if it rejects.
+      Promise.resolve(target).then(() => {}, callback);
+    }
+    // TODO: Should non-thenable RpcTargets be able to implement onRpcBroken?
   }
 }
 
