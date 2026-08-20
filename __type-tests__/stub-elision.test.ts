@@ -82,28 +82,24 @@ declare const counterStub: RpcStub<Counter>
 const constructed = new RpcPromise(Promise.resolve(counterStub))
 type _ConstructorMatchesMethodReturn = Expect<Equal<typeof constructed, typeof viaStub>>
 
-// 7b. Explicitly annotating the payload type still compiles.
-const explicit: RpcPromise<Counter> = new RpcPromise<Counter>(Promise.resolve(counterStub))
-void explicit
-
-// 7c. Callable stubs elide in the constructor too.
+// 7b. Callable stubs elide in the constructor too. (An explicit type argument with a stub
+// payload is covered in rpc-base-cases.test.ts.)
 declare const formatterStub: RpcStub<Formatter>
 const constructedFn = new RpcPromise(Promise.resolve(formatterStub))
 type _CallableCtorMatchesMethodReturn = Expect<Equal<typeof constructedFn, typeof fnViaStub>>
 
-// 7d. Plain-interface stubs are not elided in either form, and the two forms agree.
+// 7c. Plain-interface stubs are not elided in either form, and the two forms agree.
 declare const plainStub: RpcStub<PlainApi>
 const constructedPlain = new RpcPromise(Promise.resolve(plainStub))
 const plainViaMethod = api.getApi()
 type _PlainCtorMatchesMethodReturn = Expect<Equal<typeof constructedPlain, typeof plainViaMethod>>
 
-// 7e. Union payloads distribute identically in both forms.
+// 7d. Union payloads distribute identically in both forms.
 declare const maybePromise: Promise<RpcStub<Counter> | null>
 const constructedMaybe = new RpcPromise(maybePromise)
 const maybeViaMethod = api.maybeStub()
 type _UnionCtorMatchesMethodReturn = Expect<Equal<typeof constructedMaybe, typeof maybeViaMethod>>
 api.consumeMaybe(maybeViaMethod)
-api.consumeMaybe(constructedMaybe)
 
 // 8. map() over a declared `RpcStub<T>[]` return: the callback placeholder is `T`-shaped,
 // so pipelined calls on elements typecheck.
