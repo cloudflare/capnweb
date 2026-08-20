@@ -6,8 +6,8 @@ import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPr
 import { serialize, deserialize, EncodingLevel } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
-import { RpcTargetBranded, RpcCompatible, Stub, type RpcPromise as RpcPromiseType,
-         __RPC_TARGET_BRAND } from "./types.js";
+import { RpcTargetBranded, RpcCompatible, Stub, ElideStub, PayloadOrStub,
+         type RpcPromise as RpcPromiseType, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
@@ -70,7 +70,19 @@ export const RpcStub: {
  */
 export type RpcPromise<T extends RpcCompatible<T>> = RpcPromiseType<T>;
 export const RpcPromise: {
-  new <T extends RpcCompatible<T>>(value: Promise<T | Stub<T>>): RpcPromise<T>;
+  // The return type applies `ElideStub` — the same transformation `Result` applies to a
+  // declared stub return — so constructing from a promised stub produces exactly the type a
+  // method returning that stub would. See `PayloadOrStub` for what the promise may resolve to.
+  //
+  // Two overloads, for inference reasons. A context-sensitive argument — e.g.
+  // `Promise.resolve({f() { ... }})`, where the method's return type must be inferred — is
+  // contextually typed against the first overload only, and a contextual type containing a
+  // `Stub` arm collapses such an argument's inference. The first overload therefore keeps its
+  // parameter a plain `Promise<T>`. Since `PayloadOrStub`'s stub arm is `NoInfer` anyway, both
+  // overloads infer identically; the second one matters only when `T` is explicitly annotated
+  // and the payload is a stub, e.g. `new RpcPromise<Counter>(promiseOfStub)`.
+  new <T extends RpcCompatible<T>>(value: Promise<T>): RpcPromiseType<ElideStub<T>>;
+  new <T extends RpcCompatible<T>>(value: Promise<PayloadOrStub<T>>): RpcPromiseType<ElideStub<T>>;
 } = <any>RpcPromiseImpl;
 
 /**

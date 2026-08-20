@@ -184,10 +184,20 @@ export type RpcPromise<T> =
 // stubified record. The payload check is deliberately non-distributive (`[U] extends [...]`).
 // `Stub<any>` is not elided either: `[any] extends [Stubable]` is true, so without the `IsAny`
 // guard an `any`-payload stub would lose its stub surface.
+// Also used by the `RpcPromise` constructor signature (index.ts), which applies exactly this
+// transformation so constructing from a promised stub matches the method-return type.
 export type ElideStub<T> =
   T extends StubBase<infer U>
     ? (IsAny<U> extends true ? T : [U] extends [Stubable] ? U : T)
     : T;
+
+// What the promise given to `new RpcPromise<T>(...)` may resolve to: the payload itself, or —
+// for stubable payloads — a stub of it. `NoInfer` keeps the stub arm out of inference, so an
+// inferred `T` is always the promise's own resolution type; the arm only matters when `T` is
+// explicitly annotated (`new RpcPromise<Counter>(promiseOfStub)`). Stubs of non-stubable
+// payloads are deliberately rejected: `ElideStub` wouldn't elide those, so accepting one would
+// claim the promise awaits to a stubified record while the runtime resolves to a stub.
+export type PayloadOrStub<T> = T | NoInfer<Stub<Extract<T, Stubable>>>;
 
 // Type for method return or property on an RPC interface.
 // - Stubable types are replaced by stubs.

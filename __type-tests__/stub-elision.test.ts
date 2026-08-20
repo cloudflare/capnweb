@@ -1,7 +1,7 @@
 // Declared stub returns/properties (`Promise<RpcStub<T>>`, `RpcStub<T>`) must produce the same
-// `RpcPromise<T>` as returning the payload directly (`Promise<T>`). Plain-interface stubs are
-// the exception: they are NOT elided, because `RpcPromise<U>` only awaits back to a stub when
-// `U` is Stubable.
+// `RpcPromise<T>` as returning the payload directly (`Promise<T>`), matching what
+// `new RpcPromise(Promise.resolve(stub))` produces. Plain-interface stubs are the exception:
+// they are NOT elided, because `RpcPromise<U>` only awaits back to a stub when `U` is Stubable.
 import { RpcPromise, RpcStub, RpcTarget } from "../src/index.js"
 import type { Stubable } from "../src/types.js"
 import { expectAssignable, expectType, type Equal, type Expect } from "./helpers.js"
@@ -76,8 +76,29 @@ type _CallableStubElides = Expect<Equal<typeof fnViaStub, typeof fnViaTarget>>
 type _AwaitedFnStub = Expect<Equal<Awaited<typeof fnViaStub>, RpcStub<Formatter>>>
 expectAssignable<Promise<string>>(fnViaStub(4))
 
-// 7. Union payloads distribute: `Promise<RpcStub<T> | null>` returns elide the stub arm.
+// 7. Constructor/method equivalence: wrapping a promised stub yourself produces exactly the
+// same type as a method declared to return the stub, for every payload shape.
+declare const counterStub: RpcStub<Counter>
+const constructed = new RpcPromise(Promise.resolve(counterStub))
+type _ConstructorMatchesMethodReturn = Expect<Equal<typeof constructed, typeof viaStub>>
+
+// 7b. Callable stubs elide in the constructor too. (An explicit type argument with a stub
+// payload is covered in rpc-base-cases.test.ts.)
+declare const formatterStub: RpcStub<Formatter>
+const constructedFn = new RpcPromise(Promise.resolve(formatterStub))
+type _CallableCtorMatchesMethodReturn = Expect<Equal<typeof constructedFn, typeof fnViaStub>>
+
+// 7c. Plain-interface stubs are not elided in either form, and the two forms agree.
+declare const plainStub: RpcStub<PlainApi>
+const constructedPlain = new RpcPromise(Promise.resolve(plainStub))
+const plainViaMethod = api.getApi()
+type _PlainCtorMatchesMethodReturn = Expect<Equal<typeof constructedPlain, typeof plainViaMethod>>
+
+// 7d. Union payloads distribute identically in both forms.
+declare const maybePromise: Promise<RpcStub<Counter> | null>
+const constructedMaybe = new RpcPromise(maybePromise)
 const maybeViaMethod = api.maybeStub()
+type _UnionCtorMatchesMethodReturn = Expect<Equal<typeof constructedMaybe, typeof maybeViaMethod>>
 api.consumeMaybe(maybeViaMethod)
 
 // 8. map() over a declared `RpcStub<T>[]` return: the callback placeholder is `T`-shaped,

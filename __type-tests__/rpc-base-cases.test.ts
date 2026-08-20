@@ -161,6 +161,26 @@ expectType<RpcPromise<PointTarget>>(new RpcPromise<PointTarget>(Promise.reject(n
 const promisedFromStub = new RpcPromise(Promise.resolve(pointStub))
 type _PromisedFromStubInfersTarget = Expect<Equal<typeof promisedFromStub, RpcPromise<PointTarget>>>
 
+// An inline object literal with a method is context-sensitive (the method's return type must be
+// inferred), which is only compatible with the constructor's plain-promise overload; it must
+// infer without an explicit type argument. Its methods' return types stay un-widened (`1`, not
+// `number`), hence assignable-to rather than exactly-equal-to the widened shape.
+const promisedFromInline = new RpcPromise(Promise.resolve({ value: 1, next() { return 1 } }))
+expectAssignable<RpcPromise<{ value: number, next(): number }>>(promisedFromInline)
+
+// The same shape predeclared widens normally and infers exactly.
+const predeclaredShape = { value: 1, next() { return 1 } }
+expectType<RpcPromise<{ value: number, next(): number }>>(
+    new RpcPromise(Promise.resolve(predeclaredShape)))
+
+// An explicit type argument combines with a stub payload (the constructor's fallback overload).
+expectType<RpcPromise<PointTarget>>(new RpcPromise<PointTarget>(Promise.resolve(pointStub)))
+
+// A promise for a union of the target and its stub still infers the target type.
+declare const targetOrStubPromise: Promise<PointTarget | RpcStub<PointTarget>>
+const promisedFromUnion = new RpcPromise(targetOrStubPromise)
+type _PromisedFromUnionInfersTarget = Expect<Equal<typeof promisedFromUnion, RpcPromise<PointTarget>>>
+
 async function assertAwaitedConstructedPromiseShapes() {
   const target = await new RpcPromise(Promise.resolve(new PointTarget()))
   expectType<RpcStub<PointTarget>>(target)
