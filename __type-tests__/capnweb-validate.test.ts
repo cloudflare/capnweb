@@ -1,4 +1,4 @@
-import { RpcTarget, type RpcCompatible } from "../src/index.js"
+import { RpcPromise, RpcTarget, type RpcCompatible } from "../src/index.js"
 import { validateStub, type ValidatedStub } from "../packages/capnweb-validate/src/index.js"
 import { expectAssignable, expectType, type Equal, type Expect } from "./helpers.js"
 
@@ -88,6 +88,18 @@ interface ChainApi {
 let chainApi = validateStub<ChainApi>(rawStub)
 const chained = chainApi.chain()
 type _RpcPromiseNormalizes = Expect<Equal<typeof chained, typeof viaTarget>>
+
+// The RpcPromise constructor applies the same elision to ValidatedStub payloads. This holds
+// because ValidatedStub structurally matches capnweb's StubBase, which ElideStub keys on —
+// pin it so drift in either package's stub shape can't silently change the constructor's type.
+declare const validatedCounter: ValidatedStub<Counter>
+const ctorFromValidated = new RpcPromise(Promise.resolve(validatedCounter))
+type _CtorElidesValidatedStub = Expect<Equal<typeof ctorFromValidated, RpcPromise<Counter>>>
+
+declare const validatedPlain: ValidatedStub<Api>
+const ctorFromValidatedPlain = new RpcPromise(Promise.resolve(validatedPlain))
+type _CtorKeepsValidatedPlainStub =
+  Expect<Equal<typeof ctorFromValidatedPlain, RpcPromise<ValidatedStub<Api>>>>
 
 const plainStubPromise = stubApi.getPlain()
 
