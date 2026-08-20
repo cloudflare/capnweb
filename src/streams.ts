@@ -5,6 +5,7 @@
 import {
   StubHook, RpcPayload, PropertyPath, ErrorStubHook, PayloadStubHook, PromiseStubHook, streamImpl
 } from "./core.js";
+import type { OnRpcBrokenOptions } from "./types.js";
 
 // =======================================================================================
 // WritableStreamStubHook - wraps a local WritableStream for export
@@ -116,9 +117,10 @@ class WritableStreamStubHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
     // WritableStream stubs don't really have a "broken" state in the same way.
-    // The caller would notice when write/close/abort fails.
+    // The caller would notice when write/close/abort fails. We never store `callback`, so
+    // `options.signal` has nothing to cancel.
   }
 }
 
@@ -518,8 +520,8 @@ class ReadableStreamStubHook extends StubHook {
     }
   }
 
-  onBroken(callback: (error: any) => void): void {
-    // ReadableStream stubs don't have a "broken" state.
+  onBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void {
+    // ReadableStream stubs don't have a "broken" state, so `options.signal` has nothing to cancel.
   }
 }
 

@@ -50,12 +50,19 @@ export type RpcCompatible<T> =
   // Serialized as stubs, see `Stubify`
   | Stubable;
 
+// Options for `onRpcBroken()`.
+export interface OnRpcBrokenOptions {
+  // If given, aborting the signal drops the callback. A signal that is already aborted registers
+  // nothing, even if the stub is already broken.
+  signal?: AbortSignal;
+}
+
 // Base type for all RPC stubs, including common memory management methods.
 // `T` is used as a marker type for unwrapping `Stub`s later.
 interface StubBase<T = unknown> extends Disposable {
   [__RPC_STUB_BRAND]: T;
   dup(): this;
-  onRpcBroken(callback: (error: any) => void): void;
+  onRpcBroken(callback: (error: any) => void, options?: OnRpcBrokenOptions): void;
 }
 export type Stub<T extends RpcCompatible<T>> =
     T extends object ? Provider<T> & StubBase<T> : StubBase<T>;

@@ -67,6 +67,11 @@ userPromise.onRpcBroken((_error) => {})
 counterPromise.onRpcBroken((_error) => {})
 idPromise.onRpcBroken((_error) => {})
 
+// The options bag is optional and takes an AbortSignal.
+userPromise.onRpcBroken((_error) => {}, {})
+counterPromise.onRpcBroken((_error) => {}, { signal: new AbortController().signal })
+idPromise.onRpcBroken((_error) => {}, { signal: undefined })
+
 expectAssignable<Promise<number>>(counterPromise.increment(3))
 expectAssignable<Promise<number>>(counterPromise.value)
 expectAssignable<Promise<string>>(userPromise.getName())
