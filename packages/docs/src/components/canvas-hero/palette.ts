@@ -58,7 +58,9 @@ export function readPalette(): Palette {
     request: light ? "#0a2bb5" : "#7aa2ff",
     response: light ? "#0e6b52" : "#4fd6a8",
     muted: readVar(styles, "--nb-muted-foreground", light ? "#4c5a6a" : "#adbccb"),
+    foreground: readVar(styles, "--nb-foreground", light ? "#1a222b" : "#e8eef4"),
     fade: light ? "#8792a3" : "#59677a",
     mono: readVar(styles, "--nb-font-mono", "ui-monospace, monospace"),
+    sans: readVar(styles, "--nb-font-sans", "system-ui, sans-serif"),
   };
 }

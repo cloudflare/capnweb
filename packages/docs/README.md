@@ -351,13 +351,15 @@ deepened to `#253c6d`. That puts the figures at 1.26--2.17:1 mean and 4.98--9.64
 low on purpose: these are line drawings on a large empty field, so most of the box is background and
 what matters is the contrast of the strokes themselves.
 
-## The canvas heroes at `/1` to `/8`
+## The canvas heroes at `/1` to `/9`
 
 These routes are the landing page with a different backdrop each: same headline, same code windows,
 same calls to action, only the art swapped. They exist to be compared side by side before one is
 picked, so they are deliberately temporary. Each carries `<meta name="robots" content="noindex">`,
 and `astro.config.ts` drops them from the sitemap in `sitemap.serialize`, which is why the sitemap
-has 33 locs while the build reports 47 pages.
+has 33 locs while the build reports 48 pages.
+
+`/9` is the exception to "only the art swapped", and is described on its own below.
 
 `/1` was chosen out of the first five, so the `1x` routes are variations on it: the same drifting
 node field, each saying something different on top of it. `/6` to `/8` are about promise pipelining
@@ -382,6 +384,7 @@ does, with the wire messages in `/2` to `/5` taken from real traces rather than 
 | `/6`  | `depth`            | The same four calls raced: eight crossings against two, and the idle time after.        |
 | `/7`  | `substitute`       | Three calls shipped with holes, filled at the far end by each other's results.          |
 | `/8`  | `unpulled`         | Five calls run at the far end; two answers come back and three never move.              |
+| `/9`  | `versus`           | The `/2` comparison promoted to the foreground: two sequence diagrams, one time axis.   |
 
 `routes.ts` is the one list of these routes, and it deliberately has no imports: the sitemap filter
 in `astro.config.ts` and `BaseLayout`'s `cw-home` test both need it, and the config is evaluated
@@ -392,8 +395,8 @@ variant fails `astro check` naming the missing slug rather than throwing at buil
 `canvas-hero.client.ts` is the harness and owns everything that is not drawing: the device pixel
 ratio (capped at 2), an accumulated clock so a pause cannot fast-forward the animation, `Resize`- and
 `IntersectionObserver`, `visibilitychange`, and a `MutationObserver` on `data-theme` that repaints
-even while parked so a scheme flip is never stale. Thirteen scenes sharing one harness is the point;
-thirteen scenes each with their own lifecycle would be thirteen sets of the same bugs.
+even while parked so a scheme flip is never stale. Fourteen scenes sharing one harness is the point;
+fourteen scenes each with their own lifecycle would be fourteen sets of the same bugs.
 
 The six field scenes share `scenes/field.ts`, which owns the drift, the edge wrap, the link
 threshold, the BFS routing and the masking. The three lane scenes share `scenes/stage.ts`, which
@@ -465,17 +468,58 @@ and going dark is the lesser fault, and it lands on a frame that is already empt
 kind of thing `all.mjs` exists to catch: it drives every scene for 90 simulated seconds against a stub
 context and asserts no scene strokes a canvas-width segment, no scene's actors ever stop drawing, and
 **no scene calls `fillText`** -- which is the only mechanical guarantee that these heroes stay
-textless.
+textless. `versus` is listed as the one exception and is asserted the other way round, so the rule
+stays mechanical instead of becoming "unless you meant it".
 Separately, `layout` rescales the field in place rather than re-seeding it, because it runs on every
 `ResizeObserver` tick *and* once when the webfonts land, which is always after first paint: re-seeding
 there made the whole field visibly reshuffle a few hundred milliseconds into every visit and
 re-randomise on every frame of a window drag.
 
-Canvas is also the cheaper hero. All thirteen scenes plus the harness are one 39.1 kB chunk, 13.8 kB
-gzipped, against 56.4 kB and 17.2 kB for the `ogl` LightTunnel, and the chunk is on the thirteen
-comparison pages only -- the landing ships none of it. Note that a variant page ships all thirteen
-scenes, because `scenes/index.ts` imports the registry: that is fine for throwaway comparison pages
-and would want a dynamic `import()` per scene if these ever became permanent.
+Canvas is also the cheaper hero. All fourteen scenes plus the harness are one chunk, well under the
+56.4 kB and 17.2 kB of the `ogl` LightTunnel, and the chunk is on the fourteen comparison pages only
+-- the landing ships none of it. Note that a variant page ships all fourteen scenes, because
+`scenes/index.ts` imports the registry: that is fine for throwaway comparison pages and would want a
+dynamic `import()` per scene if these ever became permanent.
+
+### `/9` moves the picture into the foreground
+
+Every other variant treats the art as decoration behind unchanged copy. `/9` asks a different
+question: what if the comparison *is* the hero? It drops the code windows entirely and puts the `/2`
+pipelining contrast where they were, as two sequence diagrams on one shared 0-400ms axis, labelled
+**Without Cap'n Web** and **With Cap'n Web** rather than "await each" and "pipelined", because the
+audience for a landing page does not yet know what pipelining is.
+
+That makes it content, not texture, and three rules invert:
+
+- **It draws text, and the text is the point.** The verdicts carry the numbers the docs use -- four
+  dependent calls costing four round trips and 400ms against one round trip and 100ms -- so they are
+  measured for contrast like any other type. They are set in `--nb-foreground` and
+  `--nb-muted-foreground` at 11-14px with **no `globalAlpha` dimming at all**. The first pass did dim
+  them, and `fig-contrast.mjs` caught four label classes at 3.48-4.36:1 in light mode: exactly the
+  `opacity`-as-hierarchy sin, committed against text that had already been chosen for its contrast.
+  Remaining alpha in the scene is on strokes and fills only, where the 3:1 rule applies.
+- **It is a `<figure>`, so it needs a text alternative.** `CanvasFigure.astro` wraps the canvas with
+  an `sr-only` `<figcaption>`, and `HeroVariantPage.astro` throws at build time if a figure-mode
+  variant has no caption. A canvas is an empty element to a screen reader, and the contrast harness
+  cannot see into one either -- which is why the hero title on `/` still reports `rgba(0,0,0,0)`.
+- **The reduced-motion still has to carry the whole argument**, not a representative moment. It
+  freezes at the middle of the hold rather than the instant the last leg lands, because the verdicts
+  fade in over half a leg: frozen at `TOTAL_LEGS` exactly, the slow lane's "4 round trips · 400 ms"
+  was painted at `globalAlpha` 0 and the still lost the one number it exists to show. No screenshot
+  diff would have flagged that, so `still-text.mjs` asserts on the draw calls instead -- both verdicts
+  visible at every width, the saved band wherever it fits, and nothing painted at alpha 0.
+
+The figure sheds detail as it narrows, and the order is chosen so the argument is the last thing to
+go: the method names drop below 1024px, the axis ticks and the "300 ms saved" band below 600px, and
+both verdicts survive to 360px. `compact` is decided from the *measured* label budget rather than a
+panel-width guess -- the first cut keyed off `panelW < 240` and ran the call labels straight through
+the axis tick at 900px.
+
+Mechanically, figure mode is a `mode` field on the variant plus a second mount point. Both
+`CanvasHero.astro` and `CanvasFigure.astro` include a byte-identical `<script>` importing
+`mount-scenes.ts`, so Astro dedupes them to one module; `mountCanvasHero` refuses a second mount on
+a container it has already claimed. Without that guard the figure mounted twice and drew itself over
+itself, which is invisible on an opaque scene and obvious the moment anything is translucent.
 
 ## Social cards
 

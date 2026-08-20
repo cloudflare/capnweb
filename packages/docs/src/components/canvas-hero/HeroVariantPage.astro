@@ -9,6 +9,13 @@
  * so the headline, tagline, buttons and example windows are all the real landing
  * ones rather than a lookalike. That matters more than tidiness here: the
  * tagline's length decides the height of the box the scenes lay out against.
+ *
+ * `figure` mode is the exception, and it is a different page rather than a
+ * different colour. The code windows come out, because the point of that variant
+ * is that the animation carries the argument and two competing explanations of
+ * the same idea stacked on top of each other is one too many. The scene moves
+ * into the flow where they were, and the backdrop keeps only its stage and veil
+ * so the hero still has a floor to stand on.
  */
 import BaseLayout from "@/layouts/BaseLayout.astro";
 import Header from "@/components/Header.astro";
@@ -16,6 +23,7 @@ import Hero from "@/components/Hero.astro";
 import HeroExample from "@/components/HeroExample.astro";
 import bundleSize from "@/generated/bundle-size.json";
 import { HERO_TITLE, heroTagline } from "@/lib/hero-copy";
+import CanvasFigure from "./CanvasFigure.astro";
 import CanvasHero from "./CanvasHero.astro";
 import HeroVariantNav from "./HeroVariantNav.astro";
 import { sceneMeta, variantBySlug } from "./scenes";
@@ -29,8 +37,13 @@ interface Props {
 const { slug } = Astro.props;
 const variant = variantBySlug(slug);
 if (!variant) throw new Error(`HeroVariantPage: no variant "${slug}"`);
-const { scene, opacity } = variant;
+const { scene, opacity, mode = "backdrop", caption } = variant;
 const meta = sceneMeta[scene];
+const isFigure = mode === "figure";
+// A figure with no caption is a picture with no alternative, so fail the build
+// rather than ship one. `Variant` cannot express "caption required when mode is
+// figure" without splitting the type, and this reads better than that would.
+if (isFigure && !caption) throw new Error(`HeroVariantPage: "${slug}" is a figure with no caption`);
 ---
 
 {/* `noindex`: a dozen near-duplicates of the landing copy are exactly what a
@@ -44,8 +57,14 @@ const meta = sceneMeta[scene];
   <main id="main-content">
     <HeroVariantNav current={slug} scene={scene} />
     <Hero title={HERO_TITLE} tagline={heroTagline(bundleSize.label)}>
-      <CanvasHero slot="backdrop" scene={scene} opacity={opacity} />
-      <HeroExample />
+      {
+        isFigure ? (
+          <CanvasHero slot="backdrop" />
+        ) : (
+          <CanvasHero slot="backdrop" scene={scene} opacity={opacity} />
+        )
+      }
+      {isFigure ? <CanvasFigure scene={scene} caption={caption!} /> : <HeroExample />}
     </Hero>
   </main>
 </BaseLayout>

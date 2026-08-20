@@ -27,10 +27,22 @@ export interface Palette {
   response: string;
   /** Quiet text: annotations, counts. */
   muted: string;
+  /**
+   * Full-strength body text.
+   *
+   * Only the foreground figure needs this. A backdrop scene has no business
+   * drawing at full contrast -- it sits behind the copy and under a veil -- but
+   * `/9` puts its diagram in the flow as real content, where a label rendered in
+   * `muted` on the page background is a legibility problem rather than a
+   * tasteful one.
+   */
+  foreground: string;
   /** Something being retired: a release, a disposal, a dropped reply. */
   fade: string;
   /** `--nb-font-mono`, for the scenes that draw real wire messages. */
   mono: string;
+  /** `--nb-font-sans`, for the figure's headings and its verdicts. */
+  sans: string;
 }
 
 export interface SceneSize {

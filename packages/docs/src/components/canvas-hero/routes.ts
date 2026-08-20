@@ -26,6 +26,7 @@ export const VARIANT_SLUGS = [
   "6",
   "7",
   "8",
+  "9",
 ] as const;
 
 export type VariantSlug = (typeof VARIANT_SLUGS)[number];

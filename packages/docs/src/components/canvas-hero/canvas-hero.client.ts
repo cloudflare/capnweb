@@ -141,6 +141,12 @@ function buildKeepOut(boxes: Rect[], bare: Rect[], size: SceneSize): KeepOut {
 }
 
 export function mountCanvasHero(container: HTMLElement, factory: SceneFactory): () => void {
+  // One canvas per container, always. Mounting twice appends a second canvas and
+  // runs a second animation loop over it, which is how `/9` briefly shipped its
+  // comparison figure drawn twice, one copy below the other.
+  if (container.dataset.cwCanvasMounted === "1") return () => {};
+  container.dataset.cwCanvasMounted = "1";
+
   const canvas = document.createElement("canvas");
   canvas.setAttribute("aria-hidden", "true");
   canvas.style.width = "100%";
@@ -352,6 +358,7 @@ export function mountCanvasHero(container: HTMLElement, factory: SceneFactory): 
 
   return () => {
     disposed = true;
+    delete container.dataset.cwCanvasMounted;
     tryStop();
     ro.disconnect();
     io.disconnect();

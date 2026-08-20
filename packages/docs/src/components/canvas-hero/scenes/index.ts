@@ -23,6 +23,7 @@ import { mapReplay } from "./map-replay";
 import { depth } from "./depth";
 import { substitute } from "./substitute";
 import { unpulled } from "./unpulled";
+import { versus } from "./versus";
 
 export const scenes = {
   "round-trip-field": roundTripField,
@@ -38,6 +39,7 @@ export const scenes = {
   depth,
   substitute,
   unpulled,
+  versus,
 } satisfies Record<string, SceneFactory>;
 
 export type SceneKey = keyof typeof scenes;
@@ -96,6 +98,10 @@ export const sceneMeta: Record<SceneKey, { title: string; blurb: string }> = {
     title: "Only what was pulled",
     blurb: "Five calls run at the far end. Two answers come back, and three never move.",
   },
+  versus: {
+    title: "With and without",
+    blurb: "The same four calls both ways, side by side on one time axis. A foreground figure.",
+  },
 };
 
 /**
@@ -120,6 +126,17 @@ export interface Variant {
   slug: VariantSlug;
   scene: SceneKey;
   opacity: number;
+  /**
+   * Where the scene is mounted.
+   *
+   * `backdrop` is the default and is what every route up to `/8` does: the scene
+   * is decoration behind the hero's own copy and code windows. `figure` mounts it
+   * in the flow instead, at full contrast, in place of the code windows -- the
+   * scene stops being art and becomes the thing the page is arguing with.
+   */
+  mode?: "backdrop" | "figure";
+  /** Required for `figure` mode: the accessible description of the animation. */
+  caption?: string;
 }
 
 export const VARIANTS = [
@@ -136,6 +153,20 @@ export const VARIANTS = [
   { slug: "6", scene: "depth", opacity: 0.78 },
   { slug: "7", scene: "substitute", opacity: 0.78 },
   { slug: "8", scene: "unpulled", opacity: 0.78 },
+  {
+    slug: "9",
+    scene: "versus",
+    // Unused in figure mode: the figure is content and is never dimmed. Kept so
+    // every variant has the same shape and `opacity` never has to be optional.
+    opacity: 1,
+    mode: "figure",
+    caption:
+      "Two sequence diagrams side by side on one time axis. Without Cap'n Web, four dependent " +
+      "calls are awaited one at a time, so each pays for its own round trip: eight crossings and " +
+      "400 milliseconds on a 100 millisecond link. With Cap'n Web, all four are sent in one " +
+      "message and the far end answers once: two crossings and 100 milliseconds, leaving the " +
+      "remaining 300 milliseconds unspent.",
+  },
 ] as const satisfies readonly Variant[];
 
 /**

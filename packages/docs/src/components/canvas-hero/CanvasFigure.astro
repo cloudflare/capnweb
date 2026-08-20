@@ -1,0 +1,70 @@
+---
+/**
+ * A canvas scene mounted as foreground content, rather than as a backdrop.
+ *
+ * `CanvasHero.astro` is decoration: absolutely positioned, `z-index: -1`,
+ * `aria-hidden`, dimmed by an opacity token and softened by a veil. This is the
+ * opposite in every one of those respects. The scene is in the flow, at full
+ * contrast, with nothing over it, and it carries the hero's argument instead of
+ * decorating it -- so it is a `<figure>` with a real caption for anyone who
+ * cannot see it, and the numbers in that caption are the same ones the scene
+ * draws.
+ *
+ * The canvas stays `aria-hidden`, because a canvas exposes nothing useful to a
+ * screen reader; the visually hidden `<figcaption>` is what actually conveys it.
+ * That split is deliberate: a `role="img"` with an `aria-label` would work too,
+ * but a caption can carry the full comparison rather than one attribute's worth.
+ */
+import type { SceneKey } from "./scenes";
+
+interface Props {
+  scene: SceneKey;
+  /** The accessible description. Says what the animation says, in words. */
+  caption: string;
+}
+
+const { scene, caption } = Astro.props;
+---
+
+<figure class="cw-canvas-figure">
+  <div class="cw-canvas-figure-box" data-cw-canvas-hero data-scene={scene} aria-hidden="true"></div>
+  <figcaption class="sr-only">{caption}</figcaption>
+</figure>
+
+<script>
+  import "./mount-scenes";
+</script>
+
+<style>
+  .cw-canvas-figure {
+    margin: 0;
+    width: 100%;
+  }
+
+  /*
+   * A fixed height rather than an aspect ratio.
+   *
+   * The scene lays out two sequence diagrams against a shared vertical time axis,
+   * so its height is what the axis is measured in and its width only decides how
+   * much room the labels get. An aspect ratio would make the axis short and wide
+   * on a desktop, which is the one shape this diagram cannot use.
+   */
+  .cw-canvas-figure-box {
+    position: relative;
+    width: 100%;
+    height: 300px;
+    pointer-events: none;
+  }
+
+  @media (min-width: 640px) {
+    .cw-canvas-figure-box {
+      height: 360px;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .cw-canvas-figure-box {
+      height: 400px;
+    }
+  }
+</style>

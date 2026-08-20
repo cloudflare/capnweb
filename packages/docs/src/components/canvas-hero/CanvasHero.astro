@@ -12,11 +12,18 @@
  * the WebGL hero, reduced motion still gets a canvas here, holding a single
  * composed frame, because a still diagram is not a motion problem and an empty
  * hero is worse.
+ *
+ * `scene` is optional, and omitting it renders the field and veil with no canvas
+ * and no script at all. That is for `/9`, where the animation has moved into the
+ * flow as a foreground figure: the hero still wants its radial stage and its veil,
+ * because without them the section is flat page background, but a second
+ * animation running behind the figure would be competing with it.
  */
 import type { SceneKey } from "./scenes";
 
 interface Props {
-  scene: SceneKey;
+  /** Omit for the stage and veil alone, with nothing drawing on them. */
+  scene?: SceneKey;
   /**
    * Scene opacity. The reference field this is modelled on sits at 0.42; the
    * text-carrying scenes need more presence than that to stay readable through
@@ -29,24 +36,18 @@ const { scene, opacity = 0.72 } = Astro.props;
 ---
 
 <div class="cw-hero-field" aria-hidden="true">
-  <div class="cw-hero-stage" style={`--cw-canvas-opacity: ${opacity};`}>
-    <div class="cw-canvas-hero" data-cw-canvas-hero data-scene={scene}></div>
-  </div>
+  {
+    scene && (
+      <div class="cw-hero-stage" style={`--cw-canvas-opacity: ${opacity};`}>
+        <div class="cw-canvas-hero" data-cw-canvas-hero data-scene={scene} />
+      </div>
+    )
+  }
   <div class="cw-hero-veil"></div>
 </div>
 
 <script>
-  import { mount } from "@cloudflare/nimbus-docs/client";
-  import { mountCanvasHero } from "./canvas-hero.client";
-  import { scenes, type SceneKey } from "./scenes";
-
-  mount("[data-cw-canvas-hero]", (root) => {
-    if (!(root instanceof HTMLElement)) return () => {};
-    const key = root.dataset.scene as SceneKey | undefined;
-    const factory = key ? scenes[key] : undefined;
-    if (!factory) return () => {};
-    return mountCanvasHero(root, factory);
-  });
+  import "./mount-scenes";
 </script>
 
 <style>

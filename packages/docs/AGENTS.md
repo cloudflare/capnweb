@@ -217,6 +217,15 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   edge-wrap teleport, which is invisible in a screenshot and takes 90 simulated seconds to surface.
 - Draw text in a scene numbered `/1a` or later. Those heroes are abstract on purpose. `all.mjs`
   fails the moment any of them calls `fillText`, and that assertion is the guarantee, not a comment.
+  `versus` (`/9`) is the single exception, listed by name in `all.mjs` and asserted the other way
+  round: it is a foreground figure rather than a backdrop, so it *must* draw text. Add a scene to
+  that list only if it is content, and then treat its text as type -- contrast-measured, undimmed,
+  and with an `sr-only` `<figcaption>`, which `HeroVariantPage.astro` requires at build time.
+- Freeze a reduced-motion still on a moment rather than composing one. A still is the only frame
+  some visitors ever see, so it has to carry the whole argument. Watch for fades in particular:
+  `versus` froze at the exact instant its slow verdict began fading in, so the number the figure
+  exists to show was painted at `globalAlpha` 0. Pixel and screenshot checks cannot see that --
+  `still-text.mjs` asserts on the draw calls, and anything drawn at alpha 0 in a still is a bug.
 - Judge a scene by its painted percentage. `painted > 0` cannot tell a scene from the fallback field,
   and a cast that fails to build leaves the phase clock running over a bare field that still measures
   as painted. Check the stage geometry or the scene's own draw calls, not the pixel count.
