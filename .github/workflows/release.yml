@@ -82,8 +82,9 @@ jobs:
           cache: "npm"
 
       - run: npm ci
+      - run: npm run build
 
       - name: Modify package.json version
         run: npx tsx .github/version-script.ts
 
-      - run: npm publish --tag beta
+      - run: npm publish --workspaces --include-workspace-root --tag beta
