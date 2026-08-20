@@ -199,6 +199,7 @@ The following types can be passed over RPC (in arguments or return values), and 
 * Arrays
 * `bigint`
 * `Date`
+* `Set`, except that an element may not be a promise, stub, or `Blob` (see below)
 * `ArrayBuffer`, `DataView`, and typed arrays
 * `Error` and its well-known subclasses
 * `Blob`
@@ -207,12 +208,13 @@ The following types can be passed over RPC (in arguments or return values), and 
 * `Headers`, `Request`, and `Response` from the Fetch API.
 
 The following types are not supported as of this writing, but may be added in the future:
-* `Map` and `Set`
+* `Map`
 * `RegExp`
 
 The following are intentionally NOT supported:
 * Application-defined classes that do not extend `RpcTarget`.
 * Cyclic values. Messages are serialized strictly as trees (like JSON).
+* Promises, stubs, and `Blob`s as elements of a `Set`.
 
 ### `RpcTarget`
 
