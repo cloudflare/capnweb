@@ -607,14 +607,13 @@ export class RpcPromise extends RpcStub {
         // forward through the payload without forcing a pull, and a single-stub payload forwards
         // onBroken(), preserving brokenness.
         //
-        // A rejection is adopted as an ErrorStubHook rather than left to reject the backing
-        // promise. This way the promise chains backing queued calls never reject -- the calls
-        // land on the ErrorStubHook, which disposes their arguments -- and the error only
-        // surfaces through pull(), so a discarded pipelined call can't produce an unhandled
-        // rejection event.
+        // A rejection is left on the backing promise, like the rejection of a local async call:
+        // PromiseStubHook disposes the arguments of queued calls and surfaces the error through
+        // pull() and onBroken(). The ignoreUnhandledRejections() call keeps a never-used promise
+        // from firing an unhandled rejection event; a pipelined call whose result is neither
+        // awaited nor disposed still fires one, matching local async calls.
         let promiseHook = new PromiseStubHook(Promise.resolve(hook).then(
-            value => new PayloadStubHook(RpcPayload.fromAppReturn(value)),
-            err => new ErrorStubHook(err)));
+            value => new PayloadStubHook(RpcPayload.fromAppReturn(value))));
         promiseHook.ignoreUnhandledRejections();
         super(promiseHook, []);
       }

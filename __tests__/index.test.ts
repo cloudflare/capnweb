@@ -2456,15 +2456,15 @@ describe("constructing RpcPromise from a promise", () => {
     await pumpMicrotasks();
   });
 
-  it("does not report an unhandled rejection for a discarded queued call", async () => {
+  it("does not report an unhandled rejection for a disposed, unawaited queued call", async () => {
     using stub = new RpcPromise<Counter>(Promise.reject(new Error("ignored")));
-    stub.increment();  // result intentionally discarded
+    using result = stub.increment();  // never awaited; disposal alone must observe the error
     await pumpMicrotasks();
   });
 
-  it("does not report an unhandled rejection for a discarded map() result", async () => {
+  it("does not report an unhandled rejection for a disposed, unawaited map() result", async () => {
     using stub = new RpcPromise<number>(Promise.reject(new Error("ignored")));
-    stub.map(i => i);  // result intentionally discarded
+    using result = stub.map(i => i);  // never awaited; disposal alone must observe the error
     await pumpMicrotasks();
   });
 
