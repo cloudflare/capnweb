@@ -1,5 +1,21 @@
 # capnweb
 
+## 0.12.0
+
+### Minor Changes
+
+- [#253](https://github.com/cloudflare/capnweb/pull/253) [`46de5a7`](https://github.com/cloudflare/capnweb/commit/46de5a7503e09242755c1bc59e67bdac37a5e8ab) Thanks [@ndisidore](https://github.com/ndisidore)! - Fixed methods declared to return `Promise<RpcStub<T>>` producing broken stub-of-stub result types; they now type the same as `Promise<T>`. If you annotated such a result as `RpcPromise<RpcStub<T>>`, write `RpcPromise<T>` instead.
+
+- [#242](https://github.com/cloudflare/capnweb/pull/242) [`9751a4e`](https://github.com/cloudflare/capnweb/commit/9751a4eb7422712c92b8a5c2100bc3a562e0a433) Thanks [@ndisidore](https://github.com/ndisidore)! - `RpcPromise` can now be constructed from a `Promise`: pipelined calls queue in order until it settles, so you can publish a capability that doesn't exist yet.
+
+### Patch Changes
+
+- [#241](https://github.com/cloudflare/capnweb/pull/241) [`2de5871`](https://github.com/cloudflare/capnweb/commit/2de5871421d852c8d5a3db241ce6f5648db3104a) Thanks [@ndisidore](https://github.com/ndisidore)! - Fix RPC argument and capture leaks on failure paths: call arguments are now reliably disposed when a call is rejected, delivered to a broken or disposed stub, or fails to serialize.
+
+- [#251](https://github.com/cloudflare/capnweb/pull/251) [`7a6e5da`](https://github.com/cloudflare/capnweb/commit/7a6e5da8cf9d14f766e35dd9b07aab5637803e11) Thanks [@ndisidore](https://github.com/ndisidore)! - The `RpcPromise` constructor now applies the same stub elision as method result types: wrapping a `Promise<RpcStub<T>>` produces the same `RpcPromise<T>` a method declared to return that stub would, plain-interface stub payloads keep their stub type, and promises resolving to inline object literals with methods now infer correctly.
+
+- [#243](https://github.com/cloudflare/capnweb/pull/243) [`7e864a8`](https://github.com/cloudflare/capnweb/commit/7e864a872bab9f810f24f43c478af64c6c773b00) Thanks [@ndisidore](https://github.com/ndisidore)! - Fix WritableStream stubs leaking call arguments when the stub was already disposed or the call path was invalid. All failure paths in `WritableStreamStubHook.call()` now dispose the copied arguments, matching ReadableStream behavior.
+
 ## 0.11.1
 
 ### Patch Changes
