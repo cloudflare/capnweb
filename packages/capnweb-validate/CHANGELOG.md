@@ -1,5 +1,11 @@
 # capnweb-validate
 
+## 0.3.0
+
+### Minor Changes
+
+- [#253](https://github.com/cloudflare/capnweb/pull/253) [`46de5a7`](https://github.com/cloudflare/capnweb/commit/46de5a7503e09242755c1bc59e67bdac37a5e8ab) Thanks [@ndisidore](https://github.com/ndisidore)! - Fixed methods declared to return `Promise<RpcStub<T>>` producing broken stub-of-stub result types; they now type the same as `Promise<T>`. If you annotated such a result as `RpcPromise<RpcStub<T>>`, write `RpcPromise<T>` instead.
+
 ## 0.2.4
 
 ### Patch Changes

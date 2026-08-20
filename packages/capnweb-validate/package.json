@@ -1,6 +1,6 @@
 {
   "name": "capnweb-validate",
-  "version": "0.2.4",
+  "version": "0.3.0",
   "description": "Build-time TypeScript validation transform for capnweb RPC.",
   "license": "MIT",
   "type": "module",
@@ -79,7 +79,7 @@
   },
   "devDependencies": {
     "@typescript/vfs": "^1.6.4",
-    "capnweb": "^0.11.1",
+    "capnweb": "^0.12.0",
     "tsdown": "^0.22.0"
   },
   "publishConfig": {
