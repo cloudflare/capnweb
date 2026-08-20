@@ -6,8 +6,8 @@ import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPr
 import { serialize, deserialize, EncodingLevel } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
-import { RpcTargetBranded, RpcCompatible, Stub, type RpcPromise as RpcPromiseType,
-         __RPC_TARGET_BRAND } from "./types.js";
+import { RpcTargetBranded, RpcCompatible, Stub, ElideStub, PayloadOrStub,
+         type RpcPromise as RpcPromiseType, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
@@ -70,7 +70,10 @@ export const RpcStub: {
  */
 export type RpcPromise<T extends RpcCompatible<T>> = RpcPromiseType<T>;
 export const RpcPromise: {
-  new <T extends RpcCompatible<T>>(value: Promise<T | Stub<T>>): RpcPromise<T>;
+  // The return type applies `ElideStub` — the same transformation `Result` applies to a
+  // declared stub return — so constructing from a promised stub produces exactly the type a
+  // method returning that stub would. See `PayloadOrStub` for what the promise may resolve to.
+  new <T extends RpcCompatible<T>>(value: Promise<PayloadOrStub<T>>): RpcPromiseType<ElideStub<T>>;
 } = <any>RpcPromiseImpl;
 
 /**
