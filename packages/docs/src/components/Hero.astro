@@ -8,14 +8,18 @@
  * the top of `index.mdx`, and its copy lives with the rest of the page's prose instead of in a
  * frontmatter block that only one page can use.
  *
- * The node field goes behind it, absolutely positioned against this section.
+ * The backdrop -- a radial pool of stage colour, dissolved back into the page by
+ * a veil -- is drawn here rather than slotted in. It was a slot while a dozen
+ * comparison routes were swapping animations behind this same copy; with one
+ * landing page left, the slot was indirection around a caller that never varied,
+ * and its default (`NetworkHero`'s WebGL tunnel) was still being pulled into the
+ * bundle by the static import even once nothing rendered it.
  *
- * The backdrop is a slot with `NetworkHero` as its fallback, so the landing keeps
- * the WebGL tunnel while the `/1`../`/5` comparison pages can swap in a Canvas 2D
- * scene without duplicating the hero's copy, buttons or layout notes below.
+ * There is no canvas back here any more. The hero's animation is foreground
+ * content now -- see `canvas-hero/CanvasFigure.astro` -- and a second animation
+ * running behind it would only compete with it.
  */
 import { LinkButton } from '@/components/ui/link-button';
-import NetworkHero from './NetworkHero.astro';
 
 interface Props {
 	title: string;
@@ -55,7 +59,9 @@ const hasIllus = Astro.slots.has('default');
 	behind the prose, and unlike `hidden`/`isolate` it creates no stacking context.
 */}
 <section class="relative [overflow-x:clip]">
-	<slot name="backdrop"><NetworkHero /></slot>
+	<div class="cw-hero-field" aria-hidden="true">
+		<div class="cw-hero-veil"></div>
+	</div>
 	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-28 pb-16 text-center lg:px-6 lg:pt-36 lg:pb-24">
 		{/* Only ever one of these two renders, so the slot is consumed once. The
 			`cw-hero-illus` hook and its spacing are the same either way -- only the
@@ -103,6 +109,53 @@ const hasIllus = Astro.slots.has('default');
 </section>
 
 <style>
+	/*
+	 * The stage the hero sits on: a wide radial pool of `--cw-hero-stage-bg` over
+	 * the page background, taller than the hero itself so it runs on behind the
+	 * first band of prose rather than ending in a seam. `globals.css` suppresses
+	 * the page's own top decoration for any page containing this element.
+	 */
+	.cw-hero-field {
+		position: absolute;
+		inset: 0 0 auto 0;
+		z-index: -1;
+		height: min(48rem, 112vh);
+		overflow: hidden;
+		pointer-events: none;
+		background:
+			radial-gradient(
+				60rem 52rem at 50% 42%,
+				var(--cw-hero-stage-bg) 0%,
+				color-mix(in srgb, var(--cw-hero-stage-bg) 40%, transparent) 40%,
+				transparent 68%
+			),
+			var(--nb-background);
+	}
+
+	/*
+	 * Dissolves the pool's edges into the page, and harder at the bottom, so the
+	 * backdrop meets the copy below it without a visible boundary.
+	 */
+	.cw-hero-veil {
+		position: absolute;
+		inset: 0;
+		background:
+			radial-gradient(
+				78% 86% at 50% 42%,
+				transparent 0%,
+				transparent 46%,
+				color-mix(in srgb, var(--nb-background) 50%, transparent) 72%,
+				var(--nb-background) 96%
+			),
+			linear-gradient(
+				180deg,
+				transparent 0%,
+				transparent 64%,
+				color-mix(in srgb, var(--nb-background) 60%, transparent) 84%,
+				var(--nb-background) 100%
+			);
+	}
+
 	/*
 	 * A vertical wash from the foreground into the accent, which is what makes the headline read as
 	 * the brightest thing on the page without simply being the largest. The whole gradient is one

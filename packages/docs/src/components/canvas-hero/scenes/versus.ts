@@ -40,8 +40,18 @@ const CYCLE = LEG * TOTAL_LEGS + HOLD;
 const STILL_AT = TOTAL_LEGS + HOLD / LEG / 2;
 
 const CALLS = ["authenticate", "getUserId", "getUserProfile", "getFriendIds"];
-/** The fast panel's note. Kept within the same budget as the call labels. */
-const BATCH_NOTE = "one message";
+/** What the client sends: one pipeline, not four separate awaited calls. */
+const BATCH_NOTE = "pipeline";
+/**
+ * What lands at the far end.
+ *
+ * Four, not one, and that is not a contradiction of the verdict below it. A
+ * pipelined batch is four `push` messages in one body; what there is only one of
+ * is the round trip. Saying "one message" at the client was the simplification --
+ * this labels the wire honestly at both ends and lets "1 round trip" carry the
+ * claim it actually makes.
+ */
+const ARRIVAL_NOTE = "four messages";
 /** Mono advance per character at 1em, the same approximation `space.ts` uses. */
 const MONO_ADV = 0.6;
 const LABEL_PX = 11;
@@ -59,6 +69,15 @@ const needFor = (text: string) => text.length * LABEL_PX * MONO_ADV + 6;
  */
 const CALL_NEED = Math.max(...CALLS.map(needFor));
 const NOTE_NEED = needFor(BATCH_NOTE);
+/**
+ * The outer margins are equal by construction, so they share one budget.
+ *
+ * The call names sit in the left one and the arrival note in the right one; the
+ * layout mirrors about the axis, so whichever is longer decides whether either
+ * can be shown. Taking the max rather than assuming the call names always win
+ * keeps that true if the strings change.
+ */
+const OUTER_NEED = Math.max(CALL_NEED, needFor(ARRIVAL_NOTE));
 /** Gap between a margin label and the rail it hangs off. */
 const LABEL_GAP = 9;
 /**
@@ -78,10 +97,14 @@ const RAIL_HALF = 100;
  * this is the width of the column it lives in, per side. It has to clear three
  * things: the tick numbers, which hang to the left of the axis line; the slow
  * panel's "server" rail label, which is centred on the rail the numbers approach;
- * and the fast panel's batch note, which hangs into the space on the right. 104
- * is the smallest value that leaves the note its measured width at 900px.
+ * and the fast panel's batch note, which hangs into the space on the right.
+ *
+ * 88 rather than the 104 it needed while that note read "one message": the note
+ * is the binding constraint, and shortening it to "pipeline" bought 16px back
+ * from the middle of the figure, which is 32px less dead space between the two
+ * diagrams. Sized from the measured note, so it moves when the string does.
  */
-const AXIS_HALF = 104;
+const AXIS_HALF = 88;
 /** The same column when there is no axis in it, so the panels merely separate. */
 const BARE_HALF = 24;
 /** Clear space between the axis line and anything hanging off the fast rail. */
@@ -173,6 +196,7 @@ export function versus(): Scene {
      * fact running into the `200` tick, which is why these are subtractions of
      * real coordinates rather than a breakpoint.
      */
+    // Equal to the right-hand margin by the mirror, so it stands for both.
     const budget0 = panels[0].clientX - LABEL_GAP - padX;
     const budget1 =
       panels[1].clientX - LABEL_GAP - (showAxis ? axisX + AXIS_PAD : panels[0].serverX + 10);
@@ -182,7 +206,7 @@ export function versus(): Scene {
       bottom,
       axisX,
       showAxis,
-      compact: budget0 < CALL_NEED || budget1 < NOTE_NEED,
+      compact: budget0 < OUTER_NEED || budget1 < NOTE_NEED,
       showSaved: half * 2 >= 120,
       headerY,
     };
@@ -445,9 +469,23 @@ export function versus(): Scene {
         ctx.globalAlpha = Math.min(1, (now - 0.4) / 0.5);
         ctx.fillStyle = p.muted;
         ctx.font = `400 ${LABEL_PX}px ${p.mono}`;
-        ctx.textAlign = "right";
         ctx.textBaseline = "middle";
+        // What leaves, against the client rail the pushes depart from.
+        ctx.textAlign = "right";
         ctx.fillText(BATCH_NOTE, fast.clientX - LABEL_GAP, yAt(l, 0.1));
+        ctx.globalAlpha = 1;
+      }
+      // What arrives, against the server rail, level with the cluster of marks
+      // the four pushes land in. Held back until they have actually landed --
+      // labelling an arrival before anything has arrived is a lie the eye
+      // notices, and the last push lands at `0.18 + 1`.
+      if (!l.compact && now > 1.18) {
+        ctx.globalAlpha = Math.min(1, (now - 1.18) / 0.5);
+        ctx.fillStyle = p.muted;
+        ctx.font = `400 ${LABEL_PX}px ${p.mono}`;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.fillText(ARRIVAL_NOTE, fast.serverX + LABEL_GAP, yAt(l, 1.09));
         ctx.globalAlpha = 1;
       }
       leg(ctx, p, l, fast.serverX, fast.clientX, 1.05, now, p.response);

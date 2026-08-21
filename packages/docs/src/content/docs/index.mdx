@@ -6,16 +6,17 @@ mode: custom
 
 import { examples } from '../../examples.ts';
 import bundleSize from '../../generated/bundle-size.json';
-import HeroExample from '../../components/HeroExample.astro';
+import CanvasFigure from '../../components/canvas-hero/CanvasFigure.astro';
 import Features from '../../components/Features.astro';
 import NavList from '../../components/NavList.astro';
-import { HERO_TITLE, heroTagline } from '../../lib/hero-copy.ts';
+import { HERO_TITLE, HERO_FIGURE_CAPTION, heroTagline } from '../../lib/hero-copy.ts';
 
 <Hero
 	title={HERO_TITLE}
 	tagline={heroTagline(bundleSize.label)}
+	illustration="below"
 >
-	<HeroExample />
+	<CanvasFigure caption={HERO_FIGURE_CAPTION} />
 </Hero>
 
 <Prose>

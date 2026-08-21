@@ -97,16 +97,14 @@ with it.
 
 Ours, and the reason each exists:
 
-| Component           | Role                                                                                |
-| ------------------- | ----------------------------------------------------------------------------------- |
-| `Hero.astro`        | The landing page's headline, tagline and calls to action, over the stage.           |
-| `NetworkHero.astro` | The stage behind the hero, edge to edge.                                            |
-| `LightTunnel.astro` | React Bits' LightTunnel, ported to vanilla JS + ogl, with `light-tunnel.client.ts`. |
-| `HeroExample.astro` | The paired client/server sample floating in the hero.                               |
-| `Features.astro`    | The landing page's bento figures.                                                   |
-| `NavList.astro`     | The landing page's link lists, built from `examples.ts` and a literal.              |
-| `Playground.astro`  | The examples' source-and-demo stage.                                                |
-| `Prose.astro`       | The prose container a `mode: custom` page has to bring itself.                      |
+| Component            | Role                                                                      |
+| -------------------- | ------------------------------------------------------------------------- |
+| `Hero.astro`         | The landing page's headline, tagline and calls to action, over the stage. |
+| `CanvasFigure.astro` | The hero's animated comparison, with the harness in `canvas-hero/`.       |
+| `Features.astro`     | The landing page's bento figures.                                         |
+| `NavList.astro`      | The landing page's link lists, built from `examples.ts` and a literal.    |
+| `Playground.astro`   | The examples' source-and-demo stage.                                      |
+| `Prose.astro`        | The prose container a `mode: custom` page has to bring itself.            |
 
 Only `Hero`, `Playground` and `Prose` are registered as MDX globals; the other three are imported by
 `index.mdx` directly, which is the other way a component can reach an MDX page.
@@ -198,7 +196,8 @@ Two of those need saying out loud, because both are places where the obvious val
 - **Orange as text is not the same orange as orange as a fill.** The brand tomato is 3.1:1 on the
   paper, so anything set in it at body size is below AA before it starts. `--cw-orange-text` is the
   same hue darkened to 5.2:1, and in dark mode it is just the brand colour, which needs no help
-  there. The one consumer today is the wire in `HeroExample`.
+  there. Nothing sets body text in it today; it exists so that the next thing to try cannot quietly
+  use the 3.1:1 one.
 
 The palette is kept as hex rather than converted to oklch, which the scaffold's own comment
 recommends. These are measured, tuned values carried over from the theme this replaced, and a round
@@ -222,7 +221,7 @@ Nimbus's own `bg-accent` highlight, not a second indicator painted on top of it.
 
 There used to be a fourth layer between the washes and the sheet: a CSS constellation of nodes and
 edges, fixed at `z-index: -1`, drawn behind every page. The landing redesign replaced it with the
-WebGL hero below and dropped it from docs pages entirely, which is why those pages now idle at 0.0%
+hero's own stage and dropped it from docs pages entirely, which is why those pages now idle at 0.0%
 of a core. `git log -- src/lib/constellation.ts` has the whole thing if it is ever wanted back.
 
 The landing page is the exception to the layering: it paints its own dark stage edge to edge behind
@@ -280,66 +279,127 @@ It is a deliberate keep: the type is then identical on every OS, and the heading
 `--nb-font-*` tokens, and the site will want a fresh visual review afterwards.
 
 There are no raster images anywhere in the site's own chrome: the favicon is SVG, and apart from the
-hero's shader every texture is a gradient.
+hero's canvas figure every texture is a gradient.
 
 ## The homepage hero
 
-The landing page hero (`src/components/NetworkHero.astro`) mounts a vanilla port of React Bits'
-LightTunnel (`src/components/LightTunnel.astro` + `light-tunnel.client.ts`). It is WebGL2 via `ogl`,
-paused when off-screen or when the tab is hidden, its device pixel ratio capped at 2, and skipped
-entirely under `prefers-reduced-motion`. It is also the only expensive thing the site ships: the
-landing page loads 62.7 kB of JavaScript (20.8 kB gzipped) against a docs page's 20.9 kB (9.4 kB),
-nearly all of it `ogl`. That is the trade -- one page pays for the first impression, no other page
-pays anything. Docs pages get nothing behind them at all: the content sheet is the page.
+The hero is a headline, a tagline, an animated figure and two buttons, in that order, over a stage
+that is pure CSS. `Hero.astro` owns all of it. There is no canvas behind the copy and no WebGL
+anywhere on the site.
 
-### Light in a room, or ink on paper
+The stage is a wide radial pool of `--cw-hero-stage-bg` over the page background, taller than the
+hero so it runs on behind the first band of prose rather than ending in a seam, with a veil over it
+that dissolves the edges back into the page and harder at the bottom. `globals.css` suppresses the
+page's own top decoration for any page containing `.cw-hero-field`, so the two never stack.
 
-The tunnel is drawn twice, by one shader, and the second way is not a recolour.
+The order matters and is a prop. `illustration="below"` puts the copy first; the default puts it
+after. The landing used to lead with a pair of code windows and treat the headline as their caption,
+which works because a static block of code is taken in at a glance. An animation is not: it has a
+running time, and opening on one asks the reader to work out what they are watching before being
+told why.
 
-The original is emissive. Colour is summed light -- a pulse is literally three times the pulse
-colour -- and it composites onto a dark stage the way light behaves. Point that at a white page and
-it disappears, because adding light to paper is a no-op. This is why the usual answer is to keep the
-hero dark on a light site, and it is what cloudflare.com does: a dark hero block with white type at
-the top of an otherwise white page.
+### The figure is content, not decoration
 
-The other way keeps every bit of the geometry and changes what the intensity *means*. `uInk` makes
-it coverage rather than emission: the colour never brightens, it saturates, so a pulse is the
-deepest ink on the cable rather than the brightest light on it. The same tunnel reads as drawn
-instead of lit, and the hero can dissolve into a light page the way it already dissolves into a dark
-one, rather than sitting in a hard-edged dark band.
+`CanvasFigure.astro` mounts the `versus` scene in the flow, at full contrast, with nothing over it.
+It draws two sequence diagrams on one shared 0-400ms axis: on the left four dependent calls awaited
+one at a time, each paying for its own round trip, and on the right the same four pipelined into one
+trip, with the 300ms nobody spends shaded in.
 
-Two things had to be tuned rather than translated, and both are the same asymmetry:
+Three rules follow from it being content rather than texture, and all three are the opposite of what
+a backdrop wants.
 
-- **`uGlow` means something different in each.** On a lit stage it scales emitted light, which is
-  the rim colour. Ink has no light to scale, so there it scales the weight of the stroke.
-- **The distance fade does not fade on paper.** A cable at 10% alpha over near-black is nothing; the
-  same 10% of ink on white is still a line, so the far field that retires itself on the dark stage
-  stays fully drawn on the light one. Measured, that left light with half again as much visible
-  stroke as dark, spread evenly, which reads as dust rather than as cables. Ink therefore gets a
-  contrast curve *after* the fade, which gives the far field a horizon instead of an asymptote.
+- **The text is type, so it is measured like type.** The verdicts carry the numbers the docs use --
+  four dependent calls costing four round trips and 400ms against one round trip and 100ms -- set in
+  `--nb-foreground` and `--nb-muted-foreground` at 11-14px with **no `globalAlpha` dimming at all**.
+  The first pass did dim them, and `fig-contrast.mjs` caught four label classes at 3.48-4.36:1 in
+  light: the `opacity`-as-hierarchy sin, committed against text already chosen for its contrast.
+  Everything now clears 4.5:1 in both schemes. Remaining alpha in the scene is on strokes and fills,
+  where the 3:1 rule applies.
+- **A canvas needs words.** The figure is a `<figure>` with an `sr-only` `<figcaption>`, and
+  `CanvasFigure` requires the caption as a prop. The text lives in `lib/hero-copy.ts` beside the
+  headline, because the numbers in it are the numbers the scene draws and nothing checks that they
+  still agree. A canvas is an empty element to a screen reader, and the DOM contrast harness cannot
+  see into one either, which is why the hero title reports `rgba(0,0,0,0)`.
+- **The reduced-motion still has to carry the whole argument**, not a representative moment. It
+  freezes mid-hold rather than at the instant the last leg lands, because the verdicts fade in over
+  half a leg: frozen at `TOTAL_LEGS` exactly, the slow lane's "4 round trips" was painted at
+  `globalAlpha` 0 and the still lost the one number it exists to show. No screenshot diff would
+  catch that, so `still-text.mjs` asserts on draw calls -- both verdicts visible at every width, the
+  saved band wherever it fits, and nothing painted at alpha 0.
 
-The two were matched by measurement, not by eye: the fraction of pixels in the hero that differ from
-the stage by a just-noticeable amount is 2.7% in dark and 3.3% in light, with peak stroke contrast
-10.6:1 and 8.6:1. `density.mjs` in the scratch harnesses is how those were taken.
+The two wire labels are deliberately not the same count. The client sends a `pipeline`; `four
+messages` arrive at the far end. That is not a contradiction of "1 round trip" underneath it: a
+pipelined batch really is four `push` messages in one body, and what there is only one of is the
+trip. Saying "one message" at the client, as this first did, was the simplification.
 
-Ink costs nothing extra to run: measured back to back, the two paths draw at the same frame rate for
-the same CPU, which is what you would expect from one added `smoothstep` in a shader that is already
-fill-bound.
+### Laying it out
 
-The palette swap is live. `light-tunnel.client.ts` watches `data-theme` on `<html>` and repaints on
-change, including while the loop is parked off-screen -- otherwise a tunnel that was scrolled out of
-view during a toggle would keep the old palette until it came back.
+The time axis stands **between** the two diagrams rather than to the left of both. That is not where
+a y-axis normally goes, and it is the point: this axis is not either panel's scale, it is the single
+shared clock that makes the two readable against each other. It also fixes the composition, because
+an axis on the left is the outermost ink on the figure with nothing answering it on the right, and
+no amount of centring the panels among themselves corrects for an element that exists on one side
+only. The ticks cross the line rather than stopping at it, for the same reason.
 
-### What sits on top of it
+That choice deleted more arithmetic than it added. There is no panel box: each diagram is placed
+`AXIS_HALF` from the axis and `RAIL_HALF * 2` wide, so the pair is a mirror about the centre at
+every width and the outer margins come out equal without being computed. Measured skew between them
+is 0px from 360 to 1920. Two earlier attempts at balance -- tiling the width into panels and pulling
+them together, then mirroring the axis column as right-hand margin -- were both corrections for a
+layout that was asymmetric by construction, and both went away with it.
 
-`HeroExample.astro` floats a pair of code windows over the tunnel. They used to be fully
-transparent, which was the point when the tunnel was faint light on near-black; once ink mode drew
-the same arcs *darker* than the panel, cables crossing the code stopped being atmosphere and started
-being noise. The windows are now `color-mix(in srgb, var(--nb-background) 88%, transparent)`: enough
-backdrop still reads through that they sit in the hero rather than on it, and none of it lands on a
-glyph. Their labels say `client` and `server` rather than `client.js` and `server.js`, and the
-right-hand window is a generic `Edge Function` -- the library is not a Cloudflare-only library, and
-the hero is the worst place to imply otherwise.
+Detail sheds in the order that keeps the argument last: the method names go below 900px, the axis
+and the "300 ms saved" band below 600px, and both verdicts survive to 360px. What is shown is
+decided from measured label budgets, not width breakpoints -- the first cut keyed off `panelW < 240`
+and ran the call labels straight through the `200` tick at 900px. The two margins are budgeted
+separately, because they are different sizes doing different jobs: the call names hang into the
+figure's outer margin, the batch note into the narrower space between the axis and the fast panel's
+rail. One combined threshold would drop both sets on account of a string that is not in either.
+
+Sizes are derived from the strings, so they move when the copy does. Shortening the client label
+from "one message" to "pipeline" is what let `AXIS_HALF` come down from 104 to 88, which is 32px
+less dead space in the middle of the figure.
+
+### The harness
+
+`canvas-hero.client.ts` owns everything that is not drawing: the device pixel ratio, capped at 2 so
+a 3x phone does not rasterize nine times the pixels for no visible gain; an accumulated clock, so
+parking the loop pauses the story instead of fast-forwarding it; `Resize`- and
+`IntersectionObserver`; `visibilitychange`; and a `MutationObserver` on `data-theme` that repaints
+even while parked, so a scheme flip is never stale. It repaints once more when the webfonts land,
+because canvas text is rasterized at draw time with no reflow behind it, so a frame painted before
+the swap keeps its fallback font for as long as it is on screen -- and under reduced motion that is
+one frame, forever.
+
+It also refuses to mount twice on a container it has already claimed. The figure once shipped drawn
+twice, one copy over the other, which is invisible on an opaque scene and obvious the moment
+anything is translucent.
+
+Unlike the WebGL hero it replaced, reduced motion still gets a canvas here, holding one composed
+frame. A still diagram is not a motion problem, and an empty hero is worse.
+
+### What used to be here
+
+This hero was picked by building fourteen of them. Routes `/1` to `/9` were the landing page with a
+different animation each, judged side by side and then deleted: thirteen scenes, a shared node
+field, a lane stage, a text-fitting helper, a scene registry, and the `KeepOut` system that measured
+the hero's real content boxes so a backdrop could lay itself out in the clear space beside the copy.
+`git log` has all of it. None of it survives, because a foreground figure in its own box has nothing
+to avoid, and the one scene left ignored every coordinate that machinery produced.
+
+The WebGL hero went the same way. `NetworkHero.astro`, `LightTunnel.astro` and
+`light-tunnel.client.ts` were a vanilla port of React Bits' LightTunnel drawn twice by one shader,
+once emissive for the dark stage and once as ink so it could dissolve into a light page instead of
+sitting in a hard-edged dark band. It was also the only expensive thing the site shipped: 56.4 kB of
+`ogl`, on the page that gets the most first-time traffic. Once the figure moved to the foreground it
+was a second animation competing with the thing the page is actually arguing, and `Hero.astro`'s
+static import kept pulling it into the bundle even after nothing rendered it. The dependency is
+gone.
+
+The result is a landing page that ships **19.0 kB of JavaScript uncompressed**, 7.1 kB of which is
+the figure and its harness, against 62.7 kB before.
+
+### The bento figures
 
 `Features.astro` draws the bento figures as SVG line art in `--cw-art-stroke`, at a dozen different
 stroke opacities, which is a technique that assumes a dark stage: a 0.13-alpha stroke over near-black
@@ -350,206 +410,6 @@ stroke went from 1 to 1.15, the globe's colours became `--cw-art-stroke-rgb`, an
 deepened to `#253c6d`. That puts the figures at 1.26--2.17:1 mean and 4.98--9.64:1 peak. Mean stays
 low on purpose: these are line drawings on a large empty field, so most of the box is background and
 what matters is the contrast of the strokes themselves.
-
-## The canvas heroes at `/1` to `/9`
-
-These routes are the landing page with a different backdrop each: same headline, same code windows,
-same calls to action, only the art swapped. They exist to be compared side by side before one is
-picked, so they are deliberately temporary. Each carries `<meta name="robots" content="noindex">`,
-and `astro.config.ts` drops them from the sitemap in `sitemap.serialize`, which is why the sitemap
-has 33 locs while the build reports 48 pages.
-
-There is no switcher between them, by design. One used to sit above the hero and it was genuinely
-convenient, but it was a strip of chrome the real page will never have, in the position most likely
-to change how the hero below it reads. A page being judged by eye has to be the only thing on the
-screen. Type the route.
-
-`/9` is the exception to "only the art swapped", and is described on its own below.
-
-`/1` was chosen out of the first five, so the `1x` routes are variations on it: the same drifting
-node field, each saying something different on top of it. `/6` to `/8` are about promise pipelining
-specifically. Everything after `/5` is **wholly abstract and draws no text at all** -- nodes, links,
-lanes, marks and motion only.
-
-The backdrops are Canvas 2D rather than WebGL, and each one draws something the protocol actually
-does, with the wire messages in `/2` to `/5` taken from real traces rather than invented:
-
-| Route | Scene              | What it draws                                                                           |
-| ----- | ------------------ | --------------------------------------------------------------------------------------- |
-| `/1`  | `round-trip-field` | A drifting node field; one path carries a train of pushes out and a single answer back. |
-| `/1a` | `relay`            | A capability granted, relayed onward, then used directly by a third party.              |
-| `/1b` | `reverse`          | One route, called from one end and then from the other. No client, no server.           |
-| `/1c` | `session-loss`     | Every stub on one connection breaking in the same frame, then regrowing elsewhere.      |
-| `/1d` | `amplify`          | One small call in, one small value out, and a detonation between them.                  |
-| `/1e` | `streams`          | Three continuous ribbons sharing one trunk, each running at its own rate.               |
-| `/2`  | `pipeline-ladder`  | Four dependent calls awaited one at a time against the same four pipelined.             |
-| `/3`  | `batch-body`       | One body of newline-delimited JSON written, sent once, and answered.                    |
-| `/4`  | `id-tables`        | IDs allocated by sign, a call going back the other way, and a release.                  |
-| `/5`  | `map-replay`       | `.map()` recorded once into `remap` instructions, then replayed per element.            |
-| `/6`  | `depth`            | The same four calls raced: eight crossings against two, and the idle time after.        |
-| `/7`  | `substitute`       | Three calls shipped with holes, filled at the far end by each other's results.          |
-| `/8`  | `unpulled`         | Five calls run at the far end; two answers come back and three never move.              |
-| `/9`  | `versus`           | The `/2` comparison promoted to the foreground: two sequence diagrams, one time axis.   |
-
-`routes.ts` is the one list of these routes, and it deliberately has no imports: the sitemap filter
-in `astro.config.ts` and `BaseLayout`'s `cw-home` test both need it, and the config is evaluated
-outside the app's module graph, so importing the scene registry there would drag every scene factory
-in to read a list of strings. `scenes/index.ts` is type-checked against it, so a route without a
-variant fails `astro check` naming the missing slug rather than throwing at build.
-
-`canvas-hero.client.ts` is the harness and owns everything that is not drawing: the device pixel
-ratio (capped at 2), an accumulated clock so a pause cannot fast-forward the animation, `Resize`- and
-`IntersectionObserver`, `visibilitychange`, and a `MutationObserver` on `data-theme` that repaints
-even while parked so a scheme flip is never stale. Fourteen scenes sharing one harness is the point;
-fourteen scenes each with their own lifecycle would be fourteen sets of the same bugs.
-
-The six field scenes share `scenes/field.ts`, which owns the drift, the edge wrap, the link
-threshold, the BFS routing and the masking. The three lane scenes share `scenes/stage.ts`, which
-divides `keepOut.bandTop` into lanes. Neither picks a coordinate of its own.
-
-Two things are worth knowing before editing a scene.
-
-### A backdrop that draws under the headline is a collision
-
-The harness measures the hero's real boxes once per resize and hands scenes a `KeepOut`. It measures
-rather than guessing viewport fractions because the content is a centred column capped in `rem`, so
-it moves against the viewport at every breakpoint and every root font size.
-
-The clear space is deliberately not one pair of gutters beside the union of those boxes. At 1440px
-the union is 976px wide and leaves 213px a side, but that width belongs only to the illustration in
-the top third: below it the copy narrows to 576px and the real clear column is **413px**. Taking the
-union would throw away half the usable canvas, and at 1024px it would report 8px and every scene
-would hide. So scenes call `sideBands(y, height)` for the clear columns beside a specific horizontal
-band, and `scenes/space.ts` is the one place that decides the diagram scenes put their columns below
-the illustration and their message lanes in the full-width strip above it.
-
-Only bare text counts. Ink behind the code windows is invisible, because the windows are a
-near-opaque panel, so `.cw-ex` is excluded from what `clarity()` protects; the headline, tagline and
-buttons have nothing behind them, so ink there competes with the words.
-
-The two kinds of scene are treated differently, and `Scene.ambient` is the switch:
-
-- A **diagram** scene lays itself out in the clear columns and is **not** clipped, so a label
-  drifting onto the copy shows up as a collision to be fixed rather than being silently truncated.
-- An **ambient** scene is a texture over the whole canvas and cannot be confined to a column, so it
-  fades out over a 56px feather as it approaches bare text *and* the harness clips the text boxes out
-  of it. The feather is for looks and the clip is the guarantee: a 4px node square whose centre is
-  3px outside the headline still puts a column of pixels inside it, which is exactly the 0.105%
-  collision the feather alone left at 768px.
-
-### A hero should never have a dead backdrop
-
-The diagram scenes are monospace text sized from the clear column, and below about 1280px there is no
-width at which 68 characters of JSON and the hero copy both fit. They report `fits() === false`
-rather than shrink past legible or clip, and the harness substitutes the ambient field, built lazily
-so a desktop visitor never pays for a field they will not see. Without that, four of the five routes
-rendered an empty canvas on the commonest class of viewport.
-
-The lane scenes hide on the same principle but for a different reason: they need `keepOut.bandTop` to
-be tall enough to separate their lanes. Measured, the band is 128px down to 1024px and 96px below
-that, so a five-lane scene has a 21.3px or 16px pitch and clears the 13px floor everywhere down to
-360px. They are never actually substituted -- but `painted > 0` cannot tell a lane scene from the
-fallback field, so that was checked by recomputing the stage rather than by looking at pixels.
-
-Verified across 12 widths from 360 to 1920 and 34 samples per scene per scheme: every route paints at
-every width, nothing lands on bare text in any sampled frame, and there is no horizontal overflow
-anywhere. Reduced motion gets one composed still per scene, and a still is a composition rather than
-a moment: `id-tables` forces its "never reused" counter on, and `substitute` is caught on its second
-handoff with one ring filled, one filling and one still open, because that frame is the only one such
-a visitor sees.
-
-Two things in the field scenes are worth not undoing, because neither is visible in a screenshot.
-A route holds node *indices* and reads their positions live, so it bends as the field drifts, which
-is the effect worth having. It also means a node wrapping from one edge to the other mid-flight turns
-one segment into a canvas-width line and throws whatever is travelling across the hero: driving
-`round-trip-field` headlessly for 90 simulated seconds, that produced a **1452px** segment within 15
-seconds of starting. Nodes carry a `gen` that the wrap bumps, routes snapshot it via `gensOf`, and
-anything whose route changed generation retires instead. With the check the longest segment across all
-six field scenes is ~370px, which is drift and correct.
-
-`session-loss` originally exempted its collapse from that check, so as not to interrupt the one moment
-the scene exists for. That exemption drew a **1179px** spoke at 80 seconds. Cutting the collapse short
-and going dark is the lesser fault, and it lands on a frame that is already emptying out. This is the
-kind of thing `all.mjs` exists to catch: it drives every scene for 90 simulated seconds against a stub
-context and asserts no scene strokes a canvas-width segment, no scene's actors ever stop drawing, and
-**no scene calls `fillText`** -- which is the only mechanical guarantee that these heroes stay
-textless. `versus` is listed as the one exception and is asserted the other way round, so the rule
-stays mechanical instead of becoming "unless you meant it".
-Separately, `layout` rescales the field in place rather than re-seeding it, because it runs on every
-`ResizeObserver` tick *and* once when the webfonts land, which is always after first paint: re-seeding
-there made the whole field visibly reshuffle a few hundred milliseconds into every visit and
-re-randomise on every frame of a window drag.
-
-Canvas is also the cheaper hero. All fourteen scenes plus the harness are one chunk, well under the
-56.4 kB and 17.2 kB of the `ogl` LightTunnel, and the chunk is on the fourteen comparison pages only
--- the landing ships none of it. Note that a variant page ships all fourteen scenes, because
-`scenes/index.ts` imports the registry: that is fine for throwaway comparison pages and would want a
-dynamic `import()` per scene if these ever became permanent.
-
-### `/9` moves the picture into the foreground
-
-Every other variant treats the art as decoration behind unchanged copy. `/9` asks a different
-question: what if the comparison *is* the hero? It drops the code windows entirely and puts the `/2`
-pipelining contrast where they were, as two sequence diagrams on one shared 0-400ms axis, labelled
-**Without Cap'n Web** and **With Cap'n Web** rather than "await each" and "pipelined", because the
-audience for a landing page does not yet know what pipelining is.
-
-That makes it content, not texture, and three rules invert:
-
-- **It draws text, and the text is the point.** The verdicts carry the numbers the docs use -- four
-  dependent calls costing four round trips and 400ms against one round trip and 100ms -- so they are
-  measured for contrast like any other type. They are set in `--nb-foreground` and
-  `--nb-muted-foreground` at 11-14px with **no `globalAlpha` dimming at all**. The first pass did dim
-  them, and `fig-contrast.mjs` caught four label classes at 3.48-4.36:1 in light mode: exactly the
-  `opacity`-as-hierarchy sin, committed against text that had already been chosen for its contrast.
-  Remaining alpha in the scene is on strokes and fills only, where the 3:1 rule applies.
-- **It is a `<figure>`, so it needs a text alternative.** `CanvasFigure.astro` wraps the canvas with
-  an `sr-only` `<figcaption>`, and `HeroVariantPage.astro` throws at build time if a figure-mode
-  variant has no caption. A canvas is an empty element to a screen reader, and the contrast harness
-  cannot see into one either -- which is why the hero title on `/` still reports `rgba(0,0,0,0)`.
-- **The reduced-motion still has to carry the whole argument**, not a representative moment. It
-  freezes at the middle of the hold rather than the instant the last leg lands, because the verdicts
-  fade in over half a leg: frozen at `TOTAL_LEGS` exactly, the slow lane's "4 round trips · 400 ms"
-  was painted at `globalAlpha` 0 and the still lost the one number it exists to show. No screenshot
-  diff would have flagged that, so `still-text.mjs` asserts on the draw calls instead -- both verdicts
-  visible at every width, the saved band wherever it fits, and nothing painted at alpha 0.
-
-It also flips the hero's own order. The landing leads with the code windows and treats the headline
-as their caption, which works because a static block of code is taken in at a glance. An animation
-is not: it has a running time, and opening on one asks the reader to work out what they are watching
-before being told why. `Hero.astro` takes an `illustration` prop for this and figure mode passes
-`below` -- headline, claim, then the demonstration, with the buttons under it.
-
-The time axis stands **between** the two diagrams rather than to the left of both. That is not where
-a y-axis normally goes, and it is the whole point: this axis is not either panel's scale, it is the
-single shared clock that makes the two readable against each other, so it belongs between them. It
-also fixes the composition. With the axis on the left it was the outermost ink on the figure with
-nothing answering it on the right, and the whole thing leaned; no amount of centring the panels
-among themselves corrects for an element that exists on only one side. The ticks cross the line
-instead of stopping at it, for the same reason -- a tick reaching only one panel would imply the
-scale belonged to that one.
-
-Getting there also deleted a pile of arithmetic. There is no panel box any more: each diagram is
-placed `AXIS_HALF` from the axis and `RAIL_HALF * 2` wide, so the pair is a mirror about the centre
-at every width and the outer margins come out equal without being computed. The two earlier attempts
-at balance -- tiling the width into panels and then pulling them together, then mirroring the axis
-column as right-hand margin -- were both corrections for a layout that was asymmetric by
-construction, and both went away with it.
-
-The figure sheds detail as it narrows, and the order is chosen so the argument is the last thing to
-go: the method names drop below 900px, the axis and the "300 ms saved" band below 600px, and both
-verdicts survive to 360px. `compact` is decided from the *measured* label budget rather than a
-width guess -- the first cut keyed off `panelW < 240` and ran the call labels straight through the
-`200` tick at 900px. The two margins are budgeted separately, because they are different sizes doing
-different jobs: the call names hang into the figure's outer margin, the batch note into the narrower
-space between the axis and the fast panel's rail. One combined threshold would drop both sets on
-account of a string that is not even in that margin.
-
-Mechanically, figure mode is a `mode` field on the variant plus a second mount point. Both
-`CanvasHero.astro` and `CanvasFigure.astro` include a byte-identical `<script>` importing
-`mount-scenes.ts`, so Astro dedupes them to one module; `mountCanvasHero` refuses a second mount on
-a container it has already claimed. Without that guard the figure mounted twice and drew itself over
-itself, which is invisible on an opaque scene and obvious the moment anything is translucent.
 
 ## Social cards
 

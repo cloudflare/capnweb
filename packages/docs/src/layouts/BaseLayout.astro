@@ -10,7 +10,6 @@ import { SearchDialog } from "@/components/ui/search";
 import NimbusHead from "@cloudflare/nimbus-docs/components/NimbusHead.astro";
 import type { BasePageProps } from "@cloudflare/nimbus-docs/types";
 import { cn } from "@/lib/cn";
-import { isVariantPath } from "@/components/canvas-hero/routes";
 
 type Props = BasePageProps;
 
@@ -27,14 +26,13 @@ const {
 } = Astro.props;
 
 const lang = config.locale ?? "en";
-// `cw-home` marks a page built around the landing hero, for the handful of rules
-// that only apply there (the hero's ground, the outline-only code blocks in
-// dark). It no longer forces a colour scheme: the landing honours the toggle like
-// every other page. The canvas-backdrop comparison routes carry the same hero and
-// so need the same rules; they come from the one declared list rather than a
-// pattern, so adding a variant cannot leave its page missing the hero's styling.
+// `cw-home` marks the landing page, for the one rule that only applies there:
+// code blocks go outline-only in dark, where the page is nearly black already and
+// a filled card reads as a lighter rectangle floating in it. It does not force a
+// colour scheme -- the landing honours the toggle like every other page. The
+// trailing-slash strip is what makes `/` match as the empty string.
 const path = Astro.url.pathname.replace(/\/+$/, "");
-const isHome = path === "" || isVariantPath(path);
+const isHome = path === "";
 // Per-page agent-index pointer. For pages in non-primary or version
 // collections, this resolves to `/<prefix>/llms.txt` (e.g. `/v0/llms.txt`
 // for a v0 docs page, `/blog/llms.txt` for a blog post). Falls back to

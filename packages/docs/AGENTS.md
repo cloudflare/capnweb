@@ -52,8 +52,8 @@ scripts/
 └── mdast-bundle-size.mjs    # Sätteri plugin: %BUNDLE_SIZE% in .md bodies
 src/
 ├── components.ts            # MDX globals registry -- every component used in .mdx must be listed
-├── components/              # ours: Hero, NetworkHero, LightTunnel, HeroExample, Features, NavList,
-│                            #       Playground, Prose
+├── components/              # ours: Hero, Features, NavList, Playground, Prose, and
+│                            #       canvas-hero/ (the landing figure and its harness)
 │   └── ui/<slug>/           # from the Nimbus registry, plus AgentDirective, Header, Render
 ├── content/docs/**.{md,mdx} # the pages, one directory per sidebar group
 ├── content.config.ts        # docsCollection() + partialsCollection() + the %BUNDLE_SIZE% transform
@@ -204,31 +204,23 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   the point. If you do set text in it, use `--cw-orange-text`: the brand tomato is 3.1:1 on the
   paper, and the darkened variant exists so light mode has a legal way to say the same thing.
 - Assume the landing page is dark. It was, and is not any more -- it honours the toggle like every
-  other page, and its hero animation has a second palette that draws in ink rather than light.
+  other page, and the hero figure reads its colours from the same tokens as the prose.
   `.cw-home` marks the page, not a scheme.
-- Place a canvas hero scene by eye, or in fractions of the viewport. The harness measures the hero's
-  real boxes and hands the scene a `KeepOut`; a scene that picks its own coordinates ends up drawing
-  under the headline at some breakpoint. Diagram scenes lay out in `sideBands` and are left unclipped
-  on purpose so collisions stay visible to the harness in `/tmp`-style sweeps; only `ambient` scenes
-  get clipped. If a scene has no room, return `fits() === false` and let the harness substitute the
-  field rather than shipping a clipped diagram or a dead canvas. README has the measured numbers.
-- Re-implement the node field or the lane stage in a new scene. Six scenes share `scenes/field.ts`
-  and three share `scenes/stage.ts`; a scene that rolls its own drift loop will also roll its own
-  edge-wrap teleport, which is invisible in a screenshot and takes 90 simulated seconds to surface.
-- Draw text in a scene numbered `/1a` or later. Those heroes are abstract on purpose. `all.mjs`
-  fails the moment any of them calls `fillText`, and that assertion is the guarantee, not a comment.
-  `versus` (`/9`) is the single exception, listed by name in `all.mjs` and asserted the other way
-  round: it is a foreground figure rather than a backdrop, so it *must* draw text. Add a scene to
-  that list only if it is content, and then treat its text as type -- contrast-measured, undimmed,
-  and with an `sr-only` `<figcaption>`, which `HeroVariantPage.astro` requires at build time.
+- Treat the hero figure as decoration. It is the page's argument, in the flow, at full contrast, so
+  its text is type: contrast-measured in both schemes, never dimmed with `globalAlpha`, and carried
+  in words by the `sr-only` `<figcaption>` that `CanvasFigure.astro` requires as a prop. Any number
+  the scene draws has to match the caption in `lib/hero-copy.ts`, and nothing checks that for you.
 - Freeze a reduced-motion still on a moment rather than composing one. A still is the only frame
-  some visitors ever see, so it has to carry the whole argument. Watch for fades in particular:
-  `versus` froze at the exact instant its slow verdict began fading in, so the number the figure
-  exists to show was painted at `globalAlpha` 0. Pixel and screenshot checks cannot see that --
-  `still-text.mjs` asserts on the draw calls, and anything drawn at alpha 0 in a still is a bug.
-- Judge a scene by its painted percentage. `painted > 0` cannot tell a scene from the fallback field,
-  and a cast that fails to build leaves the phase clock running over a bare field that still measures
-  as painted. Check the stage geometry or the scene's own draw calls, not the pixel count.
+  some visitors ever see, so it has to carry the whole argument. Watch for fades in particular: the
+  figure once froze at the exact instant its slow verdict began fading in, so the number it exists
+  to show was painted at `globalAlpha` 0. Pixel and screenshot checks cannot see that -- assert on
+  the draw calls, and treat anything drawn at alpha 0 in a still as a bug.
+- Size the figure's layout in breakpoints. Its margins are budgeted from the measured width of the
+  strings that go in them, which is why shortening one label narrowed the whole middle of the
+  figure. A width threshold cannot see what is beside a rail: the first cut used one and ran the
+  call labels straight through an axis tick at 900px.
+- Judge the figure by its painted percentage. `painted > 0` says nothing about whether the thing
+  drew what it meant to. Check the scene's own draw calls.
 - Dim text with `opacity` to make it secondary. `--nb-muted-foreground` is already that, measured;
   multiplying it by 0.6 is how the figure captions ended up the least readable text on the site.
   Tailwind's alpha modifier is the same sin with better manners: `text-muted-foreground/50` is not a

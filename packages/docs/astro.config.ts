@@ -4,7 +4,6 @@ import nimbus, { defineConfig as defineNimbusConfig } from '@cloudflare/nimbus-d
 import { tableScroll } from '@cloudflare/nimbus-docs/markdown';
 import { mdastBundleSize } from './scripts/mdast-bundle-size.mjs';
 import bundleSize from './src/generated/bundle-size.json' with { type: 'json' };
-import { isVariantPath } from "./src/components/canvas-hero/routes";
 
 const REPO = 'https://github.com/cloudflare/capnweb';
 
@@ -84,15 +83,6 @@ export default defineConfig({
 				hastPlugins: [tableScroll()],
 				// Substitutes %BUNDLE_SIZE% in the body. See scripts/mdast-bundle-size.mjs.
 				mdastPlugins: [mdastBundleSize()],
-			},
-			sitemap: {
-				// The hero backdrop comparison pages carry the landing's copy a dozen times
-				// over and are served `noindex`, so listing them in the sitemap would be
-				// asking a crawler to index what the page itself tells it not to.
-				// `isVariantPath` matches the whole path against the declared route list
-				// rather than a shape: matching a shape is how `/blog/2/` would have been
-				// dropped too. Returning null drops the URL. Astro already omits `/404`.
-				serialize: (item) => (isVariantPath(new URL(item.url).pathname) ? null : item),
 			},
 		}),
 	],

@@ -163,17 +163,10 @@
 
 	/* The hero sits on the page background; the warm waves flow in from the top
 	   right so they never sit under the copy. */
-	/* Light mode: the stage stays paper. The tunnel is drawn in ink rather than
-	   light here (see NetworkHero), so it needs a pale surface to be drawn on,
-	   not a pool to glow against -- just enough cool tint to separate the hero
-	   from the prose below it. */
+	/* Light mode: the stage stays paper. Just enough cool tint to separate the
+	   hero from the prose below it, without becoming a band. */
 	--cw-hero-stage-bg: rgba(96, 128, 196, 0.13);
-	--cw-hero-glow: rgba(59, 130, 246, 0.1);
 	--cw-hero-title: linear-gradient(180deg, #1a222b 0%, #4c5a6a 120%);
-
-	/* The crest of the wire pulse in HeroExample: a highlight on a lit page, a
-	   deepening on an inked one. */
-	--cw-wire-spark: #07143d;
 
 	/* The bento diagrams in Features. Line art needs to be dark on paper and
 	   light on ink, and its fills follow the same flip. The `-rgb` pair exists
@@ -249,13 +242,10 @@
 	--cw-wash-1: rgba(154, 171, 186, 0.06);
 	--cw-wash-2: rgba(232, 93, 44, 0.05);
 
-	/* Dark mode: the page is already dark, so a slightly deeper navy pool lets
-	   the blue pulses bloom. */
+	/* Dark mode: the page is already dark, so a slightly deeper navy pool gives
+	   the hero a floor to sit on. */
 	--cw-hero-stage-bg: #070d1c;
-	--cw-hero-glow: rgba(59, 130, 246, 0.28);
 	--cw-hero-title: linear-gradient(180deg, #f4f7fa 0%, #adbccb 120%);
-
-	--cw-wire-spark: #ffffff;
 
 	--cw-art-stroke: #8fb0ec;
 	--cw-art-stroke-rgb: 143 176 236;

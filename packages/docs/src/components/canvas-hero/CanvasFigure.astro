@@ -2,37 +2,44 @@
 /**
  * A canvas scene mounted as foreground content, rather than as a backdrop.
  *
- * `CanvasHero.astro` is decoration: absolutely positioned, `z-index: -1`,
- * `aria-hidden`, dimmed by an opacity token and softened by a veil. This is the
- * opposite in every one of those respects. The scene is in the flow, at full
- * contrast, with nothing over it, and it carries the hero's argument instead of
- * decorating it -- so it is a `<figure>` with a real caption for anyone who
- * cannot see it, and the numbers in that caption are the same ones the scene
- * draws.
+ * The hero's backdrop is decoration: absolutely positioned, `z-index: -1`,
+ * `aria-hidden`, and softened by a veil. This is the opposite in every one of
+ * those respects. The scene is in the flow, at full contrast, with nothing over
+ * it, and it carries the hero's argument instead of decorating it -- so it is a
+ * `<figure>` with a real caption for anyone who cannot see it, and the numbers in
+ * that caption are the same ones the scene draws.
  *
  * The canvas stays `aria-hidden`, because a canvas exposes nothing useful to a
  * screen reader; the visually hidden `<figcaption>` is what actually conveys it.
  * That split is deliberate: a `role="img"` with an `aria-label` would work too,
  * but a caption can carry the full comparison rather than one attribute's worth.
  */
-import type { SceneKey } from "./scenes";
-
 interface Props {
-  scene: SceneKey;
   /** The accessible description. Says what the animation says, in words. */
   caption: string;
 }
 
-const { scene, caption } = Astro.props;
+const { caption } = Astro.props;
 ---
 
 <figure class="cw-canvas-figure">
-  <div class="cw-canvas-figure-box" data-cw-canvas-hero data-scene={scene} aria-hidden="true"></div>
+  <div class="cw-canvas-figure-box" data-cw-canvas-figure aria-hidden="true"></div>
   <figcaption class="sr-only">{caption}</figcaption>
 </figure>
 
 <script>
-  import "./mount-scenes";
+  // Mounted directly rather than through a scene registry keyed by a data
+  // attribute. That registry existed so the backdrop and the figure could share
+  // one script without registering the same selector twice; there is one mount
+  // point on the site now, and a lookup table with a single entry is a way to
+  // turn a missing scene into a silent no-op instead of a build error.
+  import { mount } from "@cloudflare/nimbus-docs/client";
+  import { mountCanvasHero } from "./canvas-hero.client";
+  import { versus } from "./scenes/versus";
+
+  mount("[data-cw-canvas-figure]", (root) =>
+    root instanceof HTMLElement ? mountCanvasHero(root, versus) : () => {},
+  );
 </script>
 
 <style>
