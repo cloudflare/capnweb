@@ -28,25 +28,16 @@ const { collection, showSidebar = true } = Astro.props;
 // Normalize trailing slash so isActive matches sidebar hrefs.
 const currentSlug = Astro.url.pathname.replace(/\/$/, "") || "/";
 const sections = await getSidebarSections(currentSlug, { collection });
-import { ONELINE_PATH, ONELINE_VIEWBOX } from './logo-paths.ts';
 const showSections = sections.length >= 2;
 ---
 
 <header class="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-lg">
   <div class="mx-auto flex items-center justify-between h-14 px-4 lg:px-6">
     <div class="flex items-center gap-3">
-      <a href="/" class="group cw-nav-mark" aria-label={config.title}>
-        {/*
-          One arched line, not the two-line hero lockup scaled down: at 22px the
-          stacked version turns to mush and "WEB" is unreadable. Same letterforms
-          and the same accent keyline, so it still reads as the same mark.
-        */}
-        <svg viewBox={ONELINE_VIEWBOX} role="presentation" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
-          <g stroke-linejoin="round">
-            <path class="cw-nav-mark-edge" d={ONELINE_PATH} fill="none" stroke-width="46"></path>
-            <path class="cw-nav-mark-face" d={ONELINE_PATH} stroke="none"></path>
-          </g>
-        </svg>
+      <a href="/" class="group">
+        <span class="text-lg text-foreground group-hover:text-muted-foreground" style="font-family: var(--nb-font-display)">
+          {config.title}
+        </span>
       </a>
 
       {showSections && (
@@ -100,22 +91,3 @@ const showSections = sections.length >= 2;
     </div>
   </div>
 </header>
-
-<style>
-	.cw-nav-mark svg {
-		display: block;
-		height: 1.55rem;
-		width: auto;
-		overflow: visible;
-	}
-	.cw-nav-mark-edge {
-		stroke: var(--cw-orange);
-	}
-	.cw-nav-mark-face {
-		fill: var(--nb-foreground);
-		transition: fill 150ms;
-	}
-	.cw-nav-mark:hover .cw-nav-mark-face {
-		fill: var(--nb-muted-foreground);
-	}
-</style>

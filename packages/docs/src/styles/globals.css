@@ -166,6 +166,7 @@
 	/* Light mode: the stage stays paper. Just enough cool tint to separate the
 	   hero from the prose below it, without becoming a band. */
 	--cw-hero-stage-bg: rgba(96, 128, 196, 0.13);
+	--cw-hero-title: linear-gradient(180deg, #1a222b 0%, #4c5a6a 120%);
 
 	/* The bento diagrams in Features. Line art needs to be dark on paper and
 	   light on ink, and its fills follow the same flip. The `-rgb` pair exists
@@ -244,6 +245,7 @@
 	/* Dark mode: the page is already dark, so a slightly deeper navy pool gives
 	   the hero a floor to sit on. */
 	--cw-hero-stage-bg: #070d1c;
+	--cw-hero-title: linear-gradient(180deg, #f4f7fa 0%, #adbccb 120%);
 
 	--cw-art-stroke: #8fb0ec;
 	--cw-art-stroke-rgb: 143 176 236;
