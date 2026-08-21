@@ -82,6 +82,45 @@ If you need to do something for each element of a result, use
 let names = await api.listUserIds().map(id => [id, api.getUserName(id)]);
 ```
 
+## Making one from a local `Promise`
+
+Normally an `RpcPromise` comes back from a call. You can also build one yourself, out of an
+ordinary `Promise`, with `new RpcPromise(promise)`. Pipelined calls then queue up in order and are
+delivered once the inner promise settles.
+
+```ts
+// You don't have the stub yet, but callers can start using it now.
+let session = new RpcPromise(connectWhenReady());
+
+// No await, no round trip, and nothing to wait for locally either.
+let profile = session.getUserProfile();
+```
+
+This is for publishing a capability that does not exist yet. Without it, everything downstream of
+`connectWhenReady()` has to be written inside a `.then()` or after an `await`, which is exactly the
+sequencing that pipelining exists to avoid.
+
+It is not a new mechanism. Wrapping a promise is semantically identical to making a local-loopback
+call that returns it:
+
+```ts
+// This...
+let rpcPromise = new RpcPromise(myPromise);
+
+// ...means the same as this.
+let rpcFunc = new RpcStub(() => myPromise);
+let rpcPromise = rpcFunc();
+```
+
+Which is a useful thing to remember, because it tells you what the rules are without having to
+learn a second set. The resolution goes over RPC, so:
+
+- It has to be [serializable](/concepts/values/).
+- `RpcTarget`s and functions in it come out the other side as stubs.
+- Ownership of any stubs in the resolution transfers to the `RpcPromise`. Disposing the promise
+  disposes them. **If you also want to keep one, resolve with a `.dup()`.**
+- A rejection propagates to every pipelined call.
+
 ## Disposal
 
 `RpcPromise` participates in [disposal](/concepts/disposal/) just like a stub:

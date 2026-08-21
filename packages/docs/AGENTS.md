@@ -110,6 +110,7 @@ what it is first.
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
 | New doc page              | `src/content/docs/<group>/<slug>.md`, with `sidebar.order`. The group autogenerates.                                   |
 | New sidebar group         | A directory under `src/content/docs/` and an `autogenerate` entry in `astro.config.ts`.                                |
+| Off-site sidebar link     | Give the group an `items:` array: `{ autogenerate }` first, then `{ label, link }`. Nimbus adds `target="_blank"`.     |
 | New partial               | `src/content/partials/<slug>.mdx` (the collection is registered; there are none yet), then `<Render file="<slug>" />`. |
 | UI from the registry      | `npx nimbus-docs add <slug>`, then register it in `src/components.ts` if MDX uses it.                                  |
 | New playground example    | An entry in `src/examples.ts` (`files` and `build`), and a page under `src/content/docs/examples/`.                    |

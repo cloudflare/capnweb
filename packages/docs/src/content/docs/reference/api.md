@@ -62,7 +62,8 @@ A thenable that is *also* a stub for its own eventual result.
 | `.dup()`                 | Duplicate, usable immediately.                       |
 | `[Symbol.dispose]()`     | Release; disposes the future result too.             |
 
-[Docs](/concepts/promises/)
+`new RpcPromise(promise)` wraps a local `Promise` so callers can pipeline on it before it settles.
+It takes ownership of the resolution. [Docs](/concepts/promises/)
 
 ### `RpcTransport`
 

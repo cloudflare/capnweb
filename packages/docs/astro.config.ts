@@ -45,7 +45,16 @@ const nimbusConfig = defineNimbusConfig({
 			{ label: 'Server Runtimes', autogenerate: { directory: 'servers' } },
 			{ label: 'Guides', autogenerate: { directory: 'guides' } },
 			{ label: 'Examples', autogenerate: { directory: 'examples' } },
-			{ label: 'Reference', autogenerate: { directory: 'reference' } },
+			{
+				label: 'Reference',
+				items: [
+					{ autogenerate: { directory: 'reference' } },
+					// Off-site on purpose. Release notes are generated from changesets on every
+					// publish, so a page here would be a copy that goes stale the next time
+					// anyone ships.
+					{ label: 'Changelog', link: 'https://github.com/cloudflare/capnweb/releases' },
+				],
+			},
 		],
 	},
 });
