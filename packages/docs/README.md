@@ -337,10 +337,13 @@ a backdrop wants.
   catch that, so `still-text.mjs` asserts on draw calls -- both verdicts visible at every width, the
   saved band wherever it fits, and nothing painted at alpha 0.
 
-The two wire labels name the two ends of the same claim. The client writes a `pipeline`; what
-crosses the wire is one `batched request`; the far end therefore runs all four handlers before it
-answers at all. That is not a contradiction of "1 round trip" underneath it -- a pipelined batch
-really is four `push` messages in one body, and what there is only one of is the trip.
+One wire label, at the far end: `batched request`. There was a second one, `pipeline`, against the
+client rail the pushes leave from, and it was saying what the column header, the four converging
+lines and the verdict underneath already said. The arrival is the half of the claim that is not
+obvious from the picture -- that one thing crossed and the far end had everything it needed -- so
+that is the half that gets words. Dropping it is not a contradiction of "1 round trip" either: a
+pipelined batch really is four `push` messages in one body, and what there is only one of is the
+trip.
 
 The scene's clock is in milliseconds of story, and used to be in "legs", where a leg was one
 crossing and everything else was a fraction of one. That was fine while the far end answered
@@ -367,14 +370,15 @@ layout that was asymmetric by construction, and both went away with it.
 Detail sheds in the order that keeps the argument last: the method names go below 900px, the axis
 and the "300 ms saved" band below 600px, and both verdicts survive to 360px. What is shown is
 decided from measured label budgets, not width breakpoints -- the first cut keyed off `panelW < 240`
-and ran the call labels straight through the `200` tick at 900px. The two margins are budgeted
-separately, because they are different sizes doing different jobs: the call names hang into the
-figure's outer margin, the batch note into the narrower space between the axis and the fast panel's
-rail. One combined threshold would drop both sets on account of a string that is not in either.
+and ran the call labels straight through the `200` tick at 900px.
 
-Sizes are derived from the strings, so they move when the copy does. Shortening the client label
-from "one message" to "pipeline" is what let `AXIS_HALF` come down from 104 to 88, which is 32px
-less dead space in the middle of the figure.
+Sizes are derived from the strings, so they move when the copy does, and `AXIS_HALF` is the one that
+keeps proving it. It was 104 while the fast panel's client rail read "one message", 88 when that was
+shortened to "pipeline", and 56 now the label is gone and the binding constraint is the other side
+of the column: the slow panel's "server" rail label with the tick numbers reaching back towards it.
+That last step took another 64px of dead space out of the middle of the figure. It is computed from
+those two measurements rather than typed, because all three of the earlier values were numbers
+somebody measured once and then left behind.
 
 ### The harness
 

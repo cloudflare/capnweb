@@ -74,8 +74,6 @@ const FADE_MS = 25;
 const STILL_AT = TOTAL_MS + HOLD / SEC_PER_MS / 2;
 
 const CALLS = ["authenticate", "getUserId", "getUserProfile", "getFriendIds"];
-/** What the client sends: one pipeline, not four separate awaited calls. */
-const BATCH_NOTE = "pipeline";
 /**
  * What lands at the far end: one request carrying all four calls.
  *
@@ -90,18 +88,7 @@ const MONO_ADV = 0.6;
 const LABEL_PX = 11;
 /** Width of a margin label, plus a little air. */
 const needFor = (text: string) => text.length * LABEL_PX * MONO_ADV + 6;
-/**
- * The two margins have different jobs and are measured separately.
- *
- * The call names hang off the slow panel's client rail, in the figure's outer
- * margin. The batch note hangs off the fast panel's client rail, in the narrower
- * space between the shared axis and that rail. Sizing both to the longer of the
- * two used to be merely conservative; with the axis in the middle the fast side
- * is genuinely tighter, and one combined threshold would drop both sets of labels
- * on account of a string that is not even in that margin.
- */
 const CALL_NEED = Math.max(...CALLS.map(needFor));
-const NOTE_NEED = needFor(BATCH_NOTE);
 /**
  * The outer margins are equal by construction, so they share one budget.
  *
@@ -123,27 +110,36 @@ const LABEL_GAP = 9;
  * rails are still 200px apart, which is more than the diagram needs.
  */
 const RAIL_HALF = 100;
+/** Clear space between the axis column and the nearest ink either side of it. */
+const AXIS_PAD = 8;
+/** Half the width of a centred rail label, the outermost ink when labels are off. */
+const RAIL_LABEL_HALF = 22;
+/** The widest thing hanging left of the axis line: a tick number, plus its gap. */
+const TICK_NEED = 6 + Math.ceil(String(TOTAL_MS - (TOTAL_MS % 100)).length * LABEL_PX * MONO_ADV);
 /**
  * Distance from the shared axis to the nearest rail of each panel.
  *
  * The axis stands between the two diagrams rather than to the left of both, so
- * this is the width of the column it lives in, per side. It has to clear three
- * things: the tick numbers, which hang to the left of the axis line; the slow
- * panel's "server" rail label, which is centred on the rail the numbers approach;
- * and the fast panel's batch note, which hangs into the space on the right.
+ * this is the width of the column it lives in, per side, and the two sides do not
+ * need the same thing. Computed rather than typed, because every previous value
+ * here was a number someone had measured once and then left behind: it was 104
+ * while the fast panel's client rail carried a "one message" note, then 88 when
+ * that note was shortened to "pipeline".
  *
- * 88 rather than the 104 it needed while that note read "one message": the note
- * is the binding constraint, and shortening it to "pipeline" bought 16px back
- * from the middle of the figure, which is 32px less dead space between the two
- * diagrams. Sized from the measured note, so it moves when the string does.
+ * The note is now gone entirely, so the right side has nothing in it but the fast
+ * panel's "client" rail label and the left side is the binding one: the slow
+ * panel's "server" label, then the tick numbers reaching back towards it. That is
+ * 56, which takes another 64px of dead space out of the middle of the figure.
  */
-const AXIS_HALF = 88;
+const AXIS_HALF =
+  Math.max(
+    // Left: the "server" rail label, then the tick numbers approaching it.
+    RAIL_LABEL_HALF + TICK_NEED,
+    // Right: the "client" rail label, and nothing else any more.
+    RAIL_LABEL_HALF,
+  ) + AXIS_PAD;
 /** The same column when there is no axis in it, so the panels merely separate. */
 const BARE_HALF = 24;
-/** Clear space between the axis line and anything hanging off the fast rail. */
-const AXIS_PAD = 8;
-/** Half the width of a centred rail label, the outermost ink when labels are off. */
-const RAIL_LABEL_HALF = 22;
 
 interface Panel {
   cx: number;
@@ -222,24 +218,25 @@ export function versus(): Scene {
     /*
      * Whether the margin labels fit, measured rather than guessed.
      *
-     * A width threshold cannot see what is to the left of each client rail, and
-     * that is the only space these labels have. The slow panel's runs out to the
-     * edge of the figure; the fast panel's is bounded by the axis line. At 900px a
-     * `panelW < 240` test once said there was room while "getUserProfile" was in
-     * fact running into the `200` tick, which is why these are subtractions of
-     * real coordinates rather than a breakpoint.
+     * Both remaining labels -- the call names off the slow panel's client rail and
+     * the arrival note off the fast panel's server rail -- now live in the figure's
+     * outer margins, which are equal by the mirror, so one budget stands for both.
+     * There used to be a second budget for the space between the axis and the fast
+     * client rail; nothing hangs there any more.
+     *
+     * A width threshold cannot see what is beside a rail. At 900px a `panelW < 240`
+     * test once said there was room while "getUserProfile" was in fact running into
+     * the `200` tick, which is why this is a subtraction of real coordinates rather
+     * than a breakpoint.
      */
-    // Equal to the right-hand margin by the mirror, so it stands for both.
-    const budget0 = panels[0].clientX - LABEL_GAP - padX;
-    const budget1 =
-      panels[1].clientX - LABEL_GAP - (showAxis ? axisX + AXIS_PAD : panels[0].serverX + 10);
+    const budget = panels[0].clientX - LABEL_GAP - padX;
     L = {
       panels,
       top,
       bottom,
       axisX,
       showAxis,
-      compact: budget0 < OUTER_NEED || budget1 < NOTE_NEED,
+      compact: budget < OUTER_NEED,
       showSaved: half * 2 >= 120,
       headerY,
     };
@@ -536,16 +533,6 @@ export function versus(): Scene {
         ctx.globalAlpha = 1;
         ctx.fillStyle = p.request;
         ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
-      }
-      if (!l.compact && now > 20) {
-        ctx.globalAlpha = Math.min(1, (now - 20) / FADE_MS);
-        ctx.fillStyle = p.muted;
-        ctx.font = `400 ${LABEL_PX}px ${p.mono}`;
-        ctx.textBaseline = "middle";
-        // What leaves, against the client rail the pushes depart from.
-        ctx.textAlign = "right";
-        ctx.fillText(BATCH_NOTE, fast.clientX - LABEL_GAP, yAt(l, 5));
-        ctx.globalAlpha = 1;
       }
       // All four handlers run back to back before anything goes back, which is
       // the same 40ms of work the other column spends in four separate visits.
