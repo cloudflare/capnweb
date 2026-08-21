@@ -4,12 +4,13 @@
 
 import { expect, it, describe, inject } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
-         type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, newWebSocketRpcSession,
+         type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, RpcPromise, newWebSocketRpcSession,
          newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
-import { PromiseStubHook, RpcPayload, streamImpl } from "../src/core.js"
+import { ErrorStubHook, PayloadStubHook, PromiseStubHook, RpcPayload, RpcStub as RawRpcStub,
+         StubHook, streamImpl, unwrapStubTakingOwnership, type PropertyPath } from "../src/core.js"
 import { Counter, TestTarget } from "./test-util.js";
 
 type CustomEncodingLevel = RpcTransportWithCustomEncoding["encodingLevel"];
@@ -548,6 +549,7 @@ class TestTransport implements RpcTransport {
   private waiter?: () => void;
   private aborter?: (err: any) => void;
   public log = false;
+  public sentLog: string[] = [];
   private fenced = false;
 
   send(message: string): void {
@@ -556,6 +558,7 @@ class TestTransport implements RpcTransport {
     message = message.replaceAll("$remove$", "");
 
     if (this.log) console.log(`${this.name}: ${message}`);
+    this.sentLog.push(message);
     this.partner!.queue.push(message);
     if (this.partner!.waiter && !this.partner!.fenced) {
       this.partner!.waiter();
@@ -2174,6 +2177,447 @@ describe("onRpcBroken", () => {
       {which: "counter1", error: new Error("test disconnect")},
       {which: "hangingCall", error: new Error("test disconnect")},
     ]);
+  });
+});
+
+// =======================================================================================
+
+// Creates an RpcTarget that records whether its disposer has run, for verifying that a payload
+// containing (a copy of) it was properly disposed.
+function disposalSpy() {
+  let disposed = false;
+  class Disposable extends RpcTarget {
+    [Symbol.dispose]() { disposed = true; }
+  }
+  return { target: new Disposable(), wasDisposed: () => disposed };
+}
+
+describe("PromiseStubHook", () => {
+  it("disposes copied call arguments when the backing promise rejects", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.reject(new Error("nope")));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("nope");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("disposes copied stream arguments when the backing promise rejects", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.reject(new Error("nope")));
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("nope");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("delivers a call initiated before disposal", async () => {
+    let disposed = false;
+    class DisposableCounter extends Counter {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let inner = new RpcStub(new DisposableCounter(1));
+    let hook = new PromiseStubHook(Promise.resolve(unwrapStubTakingOwnership(<any>inner)));
+    await pumpMicrotasks();
+
+    let stub: RpcStub<Counter> = <any>new RawRpcStub(hook);
+    let result = stub.increment(2);
+    stub[Symbol.dispose]();
+
+    expect(disposed).toBe(false);
+    expect(await result).toBe(3);
+    expect(disposed).toBe(true);
+  });
+
+  it("disposes copied call arguments when the destination hook is broken", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new ErrorStubHook(new Error("broken"))));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("broken");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("disposes copied stream arguments when the destination hook is broken", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new ErrorStubHook(new Error("broken"))));
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("broken");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("disposes copied call arguments when the local call path fails", async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(
+        Promise.resolve(new PayloadStubHook(RpcPayload.fromAppReturn({}))));
+    let result = hook.call(["nope"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("'nope' is not a function");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+    hook.dispose();
+  });
+
+  it("disposes map captures when the destination hook is broken", () => {
+    let spy = disposalSpy();
+    let capture = unwrapStubTakingOwnership(<any>new RpcStub(spy.target));
+    let hook = new ErrorStubHook(new Error("broken"));
+    hook.map([], [capture], []);
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  // A minimal contract-honoring callee: its call() takes ownership of `args` (disposing them)
+  // and then throws synchronously. Used to pin the division of labor: once the backing promise
+  // resolves, args ownership lies with the resolved callee, not with PromiseStubHook.
+  //
+  // Extends ErrorStubHook only to inherit harmless implementations of the methods these tests
+  // never invoke; note it does not override stream(), so the base StubHook.stream() is used.
+  class SyncThrowingHook extends ErrorStubHook {
+    constructor() { super(new Error("unused")); }
+    call(path: PropertyPath, args: RpcPayload): StubHook {
+      args.dispose();
+      throw new Error("sync failure");
+    }
+  }
+
+  it("leaves call args ownership with a resolved callee whose call() throws synchronously",
+      async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new SyncThrowingHook()));
+    let result = hook.call([], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.pull()).rejects.toThrow("sync failure");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("leaves stream args ownership with a resolved callee whose call() throws synchronously",
+      async () => {
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+    let hook = new PromiseStubHook(Promise.resolve(new SyncThrowingHook()));
+    // SyncThrowingHook inherits the default stream(), which delegates to call().
+    let result = hook.stream(["write"], RpcPayload.fromAppParams([argument]));
+
+    await expect(result.promise).rejects.toThrow("sync failure");
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("default stream() disposes the result hook when pull() throws synchronously", () => {
+    let resultHookDisposed = false;
+
+    class ThrowingPullHook extends SyncThrowingHook {
+      pull(): RpcPayload | Promise<RpcPayload> { throw new Error("pull failed"); }
+      dispose(): void { resultHookDisposed = true; }
+    }
+
+    class LocalCallHook extends SyncThrowingHook {
+      // Inherits the base StubHook.stream(), which delegates to call() + pull().
+      call(path: PropertyPath, args: RpcPayload): StubHook {
+        args.dispose();
+        return new ThrowingPullHook();
+      }
+    }
+
+    expect(() => new LocalCallHook().stream(["write"], RpcPayload.fromAppParams([])))
+        .toThrow("pull failed");
+    expect(resultHookDisposed).toBe(true);
+  });
+});
+
+describe("RpcImportHook argument disposal", () => {
+  it("call() disposes owned args when argument serialization fails", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+
+    let hook = unwrapStubTakingOwnership(<any>harness.stub.dup());
+
+    // The stub is serialized (and exported) before the Symbol makes devaluation fail, so this
+    // exercises both the Devaluator's export rollback and the disposal of the owned payload.
+    let payload = RpcPayload.fromAppParams([argument, Symbol("unserializable")]);
+    payload.ensureDeepCopied();
+
+    expect(() => hook.call(["square"], payload)).toThrow("Cannot serialize value");
+
+    hook.dispose();
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+
+  it("stream() disposes owned args when argument serialization fails", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let spy = disposalSpy();
+    let argument = new RpcStub(spy.target);
+
+    let hook = unwrapStubTakingOwnership(<any>harness.stub.dup());
+
+    let payload = RpcPayload.fromAppParams([argument, Symbol("unserializable")]);
+    payload.ensureDeepCopied();
+
+    expect(() => hook.stream(["square"], payload)).toThrow("Cannot serialize value");
+
+    hook.dispose();
+    argument[Symbol.dispose]();
+    expect(spy.wasDisposed()).toBe(true);
+  });
+});
+
+// =======================================================================================
+
+describe("constructing RpcPromise from a promise", () => {
+  it("pipelines through a pending promise without pulling the resolution", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let {promise, resolve} = Promise.withResolvers<RpcStub<TestTarget>>();
+    using stub = new RpcPromise<TestTarget>(promise);
+
+    using counter = stub.makeCounter(1);
+    let result = counter.increment(2);
+    resolve(harness.stub.dup());
+    expect(await result).toBe(3);
+
+    // Only the final result was pulled: neither the promise's resolution nor the intermediate
+    // counter was transmitted.
+    let sent = harness.clientTransport.sentLog;
+    expect(sent.some(msg => msg.startsWith('["push"'))).toBe(true);
+    expect(sent.filter(msg => msg.startsWith('["pull"'))).toHaveLength(1);
+  });
+
+  it("queues calls made before resolution and delivers them in order", async () => {
+    let calls: number[] = [];
+    class Recorder extends RpcTarget {
+      record(i: number) { calls.push(i); return i; }
+    }
+
+    let {promise, resolve} = Promise.withResolvers<Recorder>();
+    using stub = new RpcPromise<Recorder>(promise);
+
+    let results = [stub.record(1), stub.record(2), stub.record(3)];
+    expect(calls).toStrictEqual([]);
+
+    resolve(new Recorder());
+    expect(await Promise.all(results)).toStrictEqual([1, 2, 3]);
+    expect(calls).toStrictEqual([1, 2, 3]);
+  });
+
+  it("accepts a promise for a target, a remote stub, or a plain value", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    using target = new RpcPromise<Counter>(Promise.resolve(new Counter(1)));
+    expect(await target.increment()).toBe(2);
+
+    using remote = new RpcPromise<TestTarget>(Promise.resolve(harness.stub.dup()));
+    expect(await remote.square(3)).toBe(9);
+
+    using value = new RpcPromise<{foo: number}>(Promise.resolve({foo: 123}));
+    expect(await value.foo).toBe(123);
+  });
+
+  it("awaiting the RpcPromise yields the resolution", async () => {
+    using plain = new RpcPromise<{foo: number}>(Promise.resolve({foo: 123}));
+    expect(await plain).toStrictEqual({foo: 123});
+
+    await using harness = new TestHarness(new TestTarget());
+    using remote = new RpcPromise<TestTarget>(Promise.resolve(harness.stub.dup()));
+    let resolved = await remote;
+    expect(await resolved.square(4)).toBe(16);
+  });
+
+  it("reports rejection to queued calls, await, and onRpcBroken", async () => {
+    let error = new Error("nope");
+    using stub = new RpcPromise<Counter>(Promise.reject(error));
+
+    let broken: any[] = [];
+    stub.onRpcBroken(err => { broken.push(err); });
+
+    await expect(() => stub.increment()).rejects.toThrow("nope");
+    await expect(Promise.resolve(stub)).rejects.toThrow("nope");
+    expect(broken).toStrictEqual([error]);
+  });
+
+  it("does not report an unhandled rejection for an unused promise", async () => {
+    new RpcPromise<Counter>(Promise.reject(new Error("ignored")));
+    await pumpMicrotasks();
+  });
+
+  it("does not report an unhandled rejection for a disposed, unawaited queued call", async () => {
+    using stub = new RpcPromise<Counter>(Promise.reject(new Error("ignored")));
+    using result = stub.increment();  // never awaited; disposal alone must observe the error
+    await pumpMicrotasks();
+  });
+
+  it("does not report an unhandled rejection for a disposed, unawaited map() result", async () => {
+    using stub = new RpcPromise<number>(Promise.reject(new Error("ignored")));
+    using result = stub.map(i => i);  // never awaited; disposal alone must observe the error
+    await pumpMicrotasks();
+  });
+
+  it("disposes the eventual target when disposed before resolution", async () => {
+    let disposed = false;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let {promise, resolve} = Promise.withResolvers<Disposable>();
+    let stub = new RpcPromise<Disposable>(promise);
+    stub[Symbol.dispose]();
+
+    resolve(new Disposable());
+    await pumpMicrotasks();
+    expect(disposed).toBe(true);
+  });
+
+  it("delivers a call initiated before disposal", async () => {
+    let disposed = false;
+    class DisposableCounter extends Counter {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    let stub = new RpcPromise<DisposableCounter>(Promise.resolve(new DisposableCounter(1)));
+    await pumpMicrotasks();
+
+    let result = stub.increment(2);
+    stub[Symbol.dispose]();
+
+    expect(disposed).toBe(false);
+    expect(await result).toBe(3);
+    expect(disposed).toBe(true);
+  });
+
+  it("keeps an adopted RpcPromise lazy", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    using counter = new RpcPromise<Counter>(harness.stub.makeCounter(1));
+    expect(await counter.increment(2)).toBe(3);
+
+    let sent = harness.clientTransport.sentLog;
+    expect(sent.filter(msg => msg.startsWith('["pull"'))).toHaveLength(1);
+  });
+
+  it("transmits nothing when constructed from a remote property promise", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    using counter = harness.stub.makeCounter(5);
+    await pumpMicrotasks();  // let the makeCounter push flush
+
+    let source = counter.value;
+    let wrapped = new RpcPromise<number>(source);
+
+    // Construction shares the source's hook and path; the get() producing an independent hook
+    // happens lazily on first await, so nothing goes over the wire yet.
+    let sentBefore = harness.clientTransport.sentLog.length;
+    await pumpMicrotasks();
+    expect(harness.clientTransport.sentLog.length).toBe(sentBefore);
+
+    expect(await wrapped).toBe(5);
+
+    // The source property promise remains usable.
+    expect(await source).toBe(5);
+  });
+
+  it("does not invoke a local getter when constructed from a property promise", async () => {
+    let reads = 0;
+    class Gettable extends RpcTarget {
+      get prop() { ++reads; return 42; }
+    }
+
+    using stub = new RpcStub(new Gettable());
+    let source = stub.prop;
+    let wrapped = new RpcPromise<number>(source);
+
+    await pumpMicrotasks();
+    expect(reads).toBe(0);
+
+    expect(await wrapped).toBe(42);
+    expect(await source).toBe(42);
+  });
+
+  it("consumes the source when adopting an existing RpcPromise", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let source = harness.stub.makeCounter(1);
+    using wrapper = new RpcPromise<Counter>(source);
+
+    // The source was neutered: using it now reports the standard disposed error, and disposing
+    // it is a harmless no-op that doesn't affect the wrapper.
+    await expect(source.increment(1)).rejects.toThrow(
+        "Attempted to use RPC stub after it has been disposed.");
+    source[Symbol.dispose]();
+
+    expect(await wrapper.increment(2)).toBe(3);
+  });
+
+  it("stays lazy when a deferred promise is resolved with dup()", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    using counter = harness.stub.makeCounter(1);
+
+    // Resolving with the RpcPromise itself would let the native promise machinery assimilate it
+    // as a thenable, pulling the resolution. dup() returns a non-thenable stub, which the
+    // resolution adopts, keeping calls pipelined.
+    let {promise, resolve} = Promise.withResolvers<RpcStub<Counter>>();
+    using stub = new RpcPromise<Counter>(promise);
+
+    let result = stub.increment(2);
+    resolve(counter.dup());
+    expect(await result).toBe(3);
+
+    let sent = harness.clientTransport.sentLog;
+    expect(sent.filter(msg => msg.startsWith('["pull"'))).toHaveLength(1);
+  });
+
+  it("preserves brokenness of a bare stub it was constructed from", async () => {
+    await using harness = new TestHarness(new TestTarget());
+    using stub = new RpcPromise<TestTarget>(<any>harness.stub.dup());
+
+    let errors: any[] = [];
+    stub.onRpcBroken(error => { errors.push(error); });
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(errors).toStrictEqual([new Error("test disconnect")]);
+  });
+
+  it("keeps disposal idempotent when constructed from a bare stub", async () => {
+    let disposals = 0;
+    class Disposable extends RpcTarget {
+      [Symbol.dispose]() { ++disposals; }
+    }
+
+    let inner = new RpcStub(new Disposable());
+    let outer = new RpcPromise<Disposable>(<any>inner);
+    inner[Symbol.dispose]();
+    outer[Symbol.dispose]();
+
+    await pumpMicrotasks();
+    expect(disposals).toBe(1);
+  });
+
+  it("resolves when awaited after construction from a bare local stub", async () => {
+    // Regression test: the constructor previously adopted a bare stub's hook directly, producing
+    // a promise whose pipelined calls worked but whose await rejected, because non-promise hooks
+    // don't implement pull().
+    using stub = new RpcPromise<Counter>(<any>new RpcStub(new Counter(1)));
+
+    expect(await stub.increment(2)).toBe(3);
+    let resolved = await stub;
+    expect(await resolved.increment(3)).toBe(6);
   });
 });
 

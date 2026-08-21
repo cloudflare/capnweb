@@ -6,8 +6,8 @@ import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPr
 import { serialize, deserialize, EncodingLevel } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
-import { RpcTargetBranded, RpcCompatible, Stub, type RpcPromise as RpcPromiseType,
-         __RPC_TARGET_BRAND } from "./types.js";
+import { RpcTargetBranded, RpcCompatible, Stub, ElideStub, PayloadOrStub,
+         type RpcPromise as RpcPromiseType, __RPC_TARGET_BRAND } from "./types.js";
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
@@ -58,10 +58,31 @@ export const RpcStub: {
  * until you actually `await` the promise (or call `then()`, etc. on it). This is an optimization:
  * if you only intend to use the promise for pipelining and you never await it, then there's no
  * need to transmit the resolution!
+ *
+ * You may also construct an `RpcPromise` yourself from a regular `Promise`, using
+ * `new RpcPromise(promise)`, allowing you to perform promise pipelining on a local promise. This
+ * is semantically identical to creating a local-loopback RPC that returns the promise, and then
+ * invoking it: pipelined calls wait until the promise resolves, then are delivered, in order, to
+ * the resolution. This is useful when you plan to obtain some stub in the future, but want to
+ * allow code to start queuing calls on it immediately. Note that the `RpcPromise` takes
+ * ownership of the resolution: disposing it disposes the resolution, so resolve the promise
+ * with a `dup()` if you also intend to keep the stub.
  */
 export type RpcPromise<T extends RpcCompatible<T>> = RpcPromiseType<T>;
 export const RpcPromise: {
-  // Note: Cannot construct directly!
+  // The return type applies `ElideStub` — the same transformation `Result` applies to a
+  // declared stub return — so constructing from a promised stub produces exactly the type a
+  // method returning that stub would. See `PayloadOrStub` for what the promise may resolve to.
+  //
+  // Two overloads, for inference reasons. A context-sensitive argument — e.g.
+  // `Promise.resolve({f() { ... }})`, where the method's return type must be inferred — is
+  // contextually typed against the first overload only, and a contextual type containing a
+  // `Stub` arm collapses such an argument's inference. The first overload therefore keeps its
+  // parameter a plain `Promise<T>`. Since `PayloadOrStub`'s stub arm is `NoInfer` anyway, both
+  // overloads infer identically; the second one matters only when `T` is explicitly annotated
+  // and the payload is a stub, e.g. `new RpcPromise<Counter>(promiseOfStub)`.
+  new <T extends RpcCompatible<T>>(value: Promise<T>): RpcPromiseType<ElideStub<T>>;
+  new <T extends RpcCompatible<T>>(value: Promise<PayloadOrStub<T>>): RpcPromiseType<ElideStub<T>>;
 } = <any>RpcPromiseImpl;
 
 /**

@@ -150,3 +150,49 @@ api.invoke((name: string, attempt: number) => {
 
 // @ts-expect-error headers argument must be Headers
 api.roundTripHeaders(new Map([["x-id", "1"]]))
+
+// An RpcPromise can be constructed from a promise for a plain value, an RpcTarget, or a stub,
+// keeping the resolution's type in each case.
+expectType<RpcPromise<number>>(new RpcPromise(Promise.resolve(42)))
+expectType<RpcPromise<PointTarget>>(new RpcPromise(Promise.resolve(new PointTarget())))
+expectType<RpcPromise<PointTarget>>(new RpcPromise<PointTarget>(Promise.reject(new Error("x"))))
+
+// The target type is inferred exactly from a promise for a stub -- no explicit type argument.
+const promisedFromStub = new RpcPromise(Promise.resolve(pointStub))
+type _PromisedFromStubInfersTarget = Expect<Equal<typeof promisedFromStub, RpcPromise<PointTarget>>>
+
+// An inline object literal with a method is context-sensitive (the method's return type must be
+// inferred), which is only compatible with the constructor's plain-promise overload; it must
+// infer without an explicit type argument. Its methods' return types stay un-widened (`1`, not
+// `number`), hence assignable-to rather than exactly-equal-to the widened shape.
+const promisedFromInline = new RpcPromise(Promise.resolve({ value: 1, next() { return 1 } }))
+expectAssignable<RpcPromise<{ value: number, next(): number }>>(promisedFromInline)
+
+// The same shape predeclared widens normally and infers exactly.
+const predeclaredShape = { value: 1, next() { return 1 } }
+expectType<RpcPromise<{ value: number, next(): number }>>(
+    new RpcPromise(Promise.resolve(predeclaredShape)))
+
+// An explicit type argument combines with a stub payload (the constructor's fallback overload).
+expectType<RpcPromise<PointTarget>>(new RpcPromise<PointTarget>(Promise.resolve(pointStub)))
+
+// A promise for a union of the target and its stub still infers the target type.
+declare const targetOrStubPromise: Promise<PointTarget | RpcStub<PointTarget>>
+const promisedFromUnion = new RpcPromise(targetOrStubPromise)
+type _PromisedFromUnionInfersTarget = Expect<Equal<typeof promisedFromUnion, RpcPromise<PointTarget>>>
+
+async function assertAwaitedConstructedPromiseShapes() {
+  const target = await new RpcPromise(Promise.resolve(new PointTarget()))
+  expectType<RpcStub<PointTarget>>(target)
+
+  const value = await new RpcPromise(Promise.resolve(42))
+  expectType<number>(value)
+}
+
+void assertAwaitedConstructedPromiseShapes
+
+// @ts-expect-error a non-thenable value cannot back an RpcPromise
+void new RpcPromise(42)
+
+// @ts-expect-error a bare stub cannot back an RpcPromise; pass a promise for the stub instead
+void new RpcPromise(pointStub)
