@@ -226,4 +226,11 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   multiplying it by 0.6 is how the figure captions ended up the least readable text on the site.
   Tailwind's alpha modifier is the same sin with better manners: `text-muted-foreground/50` is not a
   colour choice, it is 2.19:1.
+- Set the wordmark as live `<text>`, or re-render `logo-paths.ts` by hand. It is generated from
+  Alfa Slab One outlines by `/tmp/opencode/logo/build.mjs`; change the arc, size or tracking there
+  and regenerate. A logo that falls back to Georgia is not the logo.
+- Theme the seal. The mark follows the colour scheme; the seal is fixed tomato with `--cw-black`
+  lettering in both, measured at 5.69:1, because it is a stamped object rather than page furniture.
+- Take the seal's invisible `background` off `.cw-star-text`. It is the same tomato it sits on, and
+  it exists so contrast tools measure the real pair instead of walking past the SVG to the page.
 - Remove `<AgentDirective />` unless asked.

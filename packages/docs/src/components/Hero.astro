@@ -20,6 +20,8 @@
  * running behind it would only compete with it.
  */
 import { LinkButton } from '@/components/ui/link-button';
+import Wordmark from './Wordmark.astro';
+import StarBadge from './StarBadge.astro';
 
 interface Props {
 	title: string;
@@ -93,10 +95,32 @@ const hasIllus = Astro.slots.has('default');
 				</div>
 			)
 		}
-		<div class="cw-hero-scrim grid max-w-2xl justify-items-center gap-5">
-			<h1 class="cw-hero-title text-5xl leading-[1.02] text-balance sm:text-6xl lg:text-7xl">
-				{title}
-			</h1>
+		{/*
+			The lockup, with the seal hung off its bottom-right corner the way
+			capnproto.org hangs "infinitely faster!" off its banner.
+
+			The seal is positioned rather than laid out, because it is supposed to
+			look stuck on after the fact. Below `sm` it comes out of the corner and
+			sits under the mark instead: overlapping a 3-letter wordmark at phone
+			widths covers the B.
+		*/}
+		<div class="cw-hero-lockup">
+			<span class="sr-only">Cap'n Web</span>
+			<Wordmark label="" class="cw-hero-mark" />
+			{/*
+				The seal is wrapped rather than positioned directly. A scoped style
+				here cannot reach a child component's own root element -- Astro gives
+				that element the child's scope id, not this one -- so `.cw-hero-seal`
+				on `<StarBadge>` silently matched nothing and the seal sat in the
+				flow. Positioning a wrapper this file owns avoids reaching for
+				`:global`, and `--cw-star-size` still reaches the child because
+				custom properties inherit.
+			*/}
+			<div class="cw-hero-seal">
+				<StarBadge as="h1">{title}</StarBadge>
+			</div>
+		</div>
+		<div class="cw-hero-scrim grid max-w-2xl justify-items-center">
 			<p class="max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground">
 				{tagline}
 			</p>
@@ -136,6 +160,59 @@ const hasIllus = Astro.slots.has('default');
 </section>
 
 <style>
+	/*
+	 * The wordmark and its seal.
+	 *
+	 * The mark is capped in `rem` rather than given a percentage, because it is a
+	 * logo: past a certain size it stops reading as a mark and starts reading as
+	 * a wall. The cap is what holds it at large viewports; the percentage is what
+	 * lets it shrink on small ones.
+	 */
+	.cw-hero-lockup {
+		position: relative;
+		width: 100%;
+		max-width: 38rem;
+		margin-inline: auto;
+		/* Room for the seal, which hangs below the mark and is out of the flow. */
+		padding-bottom: 3.25rem;
+	}
+
+	.cw-hero-mark {
+		width: 100%;
+	}
+
+	/*
+	 * Hung off the bottom-right corner, tilted the other way from the mark so the
+	 * two tilts read as separate objects rather than as one crooked thing.
+	 */
+	.cw-hero-seal {
+		position: absolute;
+		/* Clear of the mark, kissing its corner. Further in and the seal lands on
+		   the B; the reference hangs its badge off the banner, not over the word. */
+		right: -5.25rem;
+		bottom: -0.5rem;
+		--cw-star-size: 9.5rem;
+		--cw-star-tilt: -11deg;
+	}
+
+	@media (max-width: 40rem) {
+		/*
+		 * Out of the corner and under the mark. "WEB" is three letters wide, so a
+		 * corner seal at phone widths lands on top of the B rather than beside it.
+		 */
+		.cw-hero-lockup {
+			padding-bottom: 0;
+		}
+
+		.cw-hero-seal {
+			position: static;
+			display: grid;
+			justify-items: center;
+			margin-top: 0.75rem;
+			--cw-star-size: 8.5rem;
+		}
+	}
+
 	/*
 	 * The stage the hero sits on: a wide radial pool of `--cw-hero-stage-bg` over
 	 * the page background, taller than the hero itself so it runs on behind the
@@ -183,22 +260,6 @@ const hasIllus = Astro.slots.has('default');
 			);
 	}
 
-	/*
-	 * A vertical wash from the foreground into the accent, which is what makes the headline read as
-	 * the brightest thing on the page without simply being the largest. The whole gradient is one
-	 * token because its final stop sits past 100% -- the box ends part-way along it -- and that is
-	 * per-scheme, so it cannot be reduced to two colour tokens.
-	 */
-	.cw-hero-title {
-		font-family: var(--nb-font-display);
-		font-weight: 600;
-		background-image: var(--cw-hero-title);
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
-		-webkit-text-fill-color: transparent;
-	}
-
 	/* A soft scrim of the page background sits behind the centred copy so it stays
 	   legible over the vortex, without touching the text colour itself. */
 	.cw-hero-scrim {
@@ -219,11 +280,4 @@ const hasIllus = Astro.slots.has('default');
 		pointer-events: none;
 	}
 
-	/* Without `background-clip: text` the fill would leave the headline invisible. */
-	@supports not ((background-clip: text) or (-webkit-background-clip: text)) {
-		.cw-hero-title {
-			color: var(--nb-foreground);
-			-webkit-text-fill-color: currentColor;
-		}
-	}
 </style>

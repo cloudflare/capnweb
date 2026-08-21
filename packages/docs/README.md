@@ -311,6 +311,44 @@ Compensating here rather than tightening the scene is the cheaper side of the tr
 the bottom space would move `bottom`, and that moves every vertical position in the figure and every
 region in the contrast harness with it.
 
+### The wordmark
+
+The landing page is set the way [capnproto.org](https://capnproto.org) is set: a chunky arched slab
+serif in the 1960s cereal-box genre, with a seal stuck in the corner. Cap'n Proto's site is a Cap'n
+Crunch parody written by the same author as this library, so the lineage is the joke and this is the
+third link in the chain.
+
+Three decisions inside it are worth knowing about.
+
+- **The mark is geometry, not text.** `logo-paths.ts` holds Alfa Slab One (SIL OFL 1.1) outlines,
+  converted at authoring time by `/tmp/opencode/logo/build.mjs`, which lays each glyph along an arc
+  and emits one merged path per line. Setting it as live `<text>` would be a tenth of the bytes and
+  would mean the mark rendered in Georgia for anyone whose webfont was slow or blocked. For body
+  copy that is a degraded state; for a logo it is the wrong logo. Coordinate precision is chosen per
+  use: integers for the nav mark, where a unit is a ninth of a pixel, one decimal for the hero,
+  where a unit is 0.8px and integers show on the curves.
+- **The mark is themed; the seal is not.** The reference can use flat white-on-red because that page
+  has one colour scheme. This one honours the toggle, so a fixed white fill would disappear against
+  the light background: the fill is `--nb-foreground` and the heavy keyline is the tomato accent,
+  doing the job Cap'n Crunch gives its blue. The seal goes the other way and is deliberately fixed
+  in both schemes, because a seal is a stamped object. Tomato with `--cw-black` lettering measures
+  5.69:1, so the fixed pair clears AA without either value moving.
+- **The words in the seal are the `<h1>`.** They are real DOM text laid over the star, not SVG
+  `<text>` and not part of the artwork, so they stay selectable, translatable and searchable. The
+  star itself is `aria-hidden`, and the mark carries an `sr-only` "Cap'n Web" so the page still
+  announces its own name.
+
+That last point had a subtlety worth recording. The `<h1>` sits on the star's tomato, but nothing in
+the DOM said so: a contrast checker walks up looking for a background colour, finds no paint on an
+SVG sibling, and measures the text against the page. That reported 1:1 on the dark scheme and, more
+dangerously, *passed* on the light one for entirely the wrong reason. `.cw-star-text` therefore
+carries a `background` of the same tomato it is painted on -- invisible, because the text box is 68%
+of the seal wide and the star's inner radius is 80% -- purely so the measured pair is the real one.
+
+The headline used to be a gradient clipped to text, and that gradient was the one thing the DOM
+contrast harness could never see: it reported `rgba(0,0,0,0)` and was carried as a known permanent
+failure. It is gone, and the landing page now measures 0 below AA in both schemes.
+
 ### The figure is content, not decoration
 
 `CanvasFigure.astro` mounts the `versus` scene in the flow, at full contrast, with nothing over it.

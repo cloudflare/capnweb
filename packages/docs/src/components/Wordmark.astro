@@ -1,0 +1,81 @@
+---
+/*
+ * The Cap'n Web wordmark: chunky arched slab serif, in the 1960s cereal-box
+ * genre that capnproto.org is already set in. Cap'n Proto's site is a Cap'n
+ * Crunch parody by the same author who wrote this library, so the lineage is
+ * the joke and this is the third link in it.
+ *
+ * Two things about how it is built.
+ *
+ * It is geometry, not text. The letterforms are Alfa Slab One outlines,
+ * converted to paths in `logo-paths.ts` at authoring time. Setting it as live
+ * `<text>` would have been fewer bytes and would have meant the mark rendered
+ * in Georgia for anyone whose webfont was slow or blocked, which for a logo is
+ * not a degraded state, it is the wrong logo.
+ *
+ * It is themed, which the reference does not have to be. Cap'n Proto can use
+ * flat white-on-red because that page has one colour scheme. This one honours
+ * the toggle, so a fixed white fill would vanish on the light background. The
+ * fill is therefore `--nb-foreground` and the heavy outline is the tomato
+ * accent, which reads in both schemes and is the job Cap'n Crunch gives its
+ * blue keyline.
+ */
+import { CAPN_PATH, WEB_PATH, LOCKUP, LOCKUP_VIEWBOX } from './logo-paths.ts';
+
+interface Props {
+	/** Accessible name. Empty renders it decorative, for when text nearby says it. */
+	label?: string;
+	class?: string;
+}
+const { label = "Cap'n Web", class: className = '' } = Astro.props;
+const decorative = label === '';
+---
+
+<svg
+	class:list={['cw-wordmark', className]}
+	viewBox={LOCKUP_VIEWBOX}
+	role={decorative ? 'presentation' : 'img'}
+	aria-hidden={decorative ? 'true' : undefined}
+	aria-label={decorative ? undefined : label}
+	xmlns="http://www.w3.org/2000/svg"
+>
+	<g transform={`rotate(${LOCKUP.tilt})`} stroke-linejoin="round">
+		{/*
+			Three passes over the same two paths, back to front: an offset shadow
+			so the mark sits above the page rather than in it, the accent keyline,
+			then the fill. Stroke-then-fill rather than `paint-order` because the
+			shadow needs its own offset transform anyway.
+		*/}
+		<g class="cw-wordmark-shade" transform="translate(9 11)" fill="none" stroke-width="30">
+			<path d={CAPN_PATH} transform={`translate(0 ${LOCKUP.capnY})`}></path>
+			<path d={WEB_PATH} transform={`translate(0 ${LOCKUP.webY})`}></path>
+		</g>
+		<g class="cw-wordmark-edge" fill="none" stroke-width="30">
+			<path d={CAPN_PATH} transform={`translate(0 ${LOCKUP.capnY})`}></path>
+			<path d={WEB_PATH} transform={`translate(0 ${LOCKUP.webY})`}></path>
+		</g>
+		<g class="cw-wordmark-face" stroke="none">
+			<path d={CAPN_PATH} transform={`translate(0 ${LOCKUP.capnY})`}></path>
+			<path d={WEB_PATH} transform={`translate(0 ${LOCKUP.webY})`}></path>
+		</g>
+	</g>
+</svg>
+
+<style>
+	.cw-wordmark {
+		display: block;
+		width: 100%;
+		height: auto;
+		overflow: visible;
+	}
+	.cw-wordmark-shade {
+		stroke: var(--cw-black);
+		opacity: 0.35;
+	}
+	.cw-wordmark-edge {
+		stroke: var(--cw-orange);
+	}
+	.cw-wordmark-face {
+		fill: var(--nb-foreground);
+	}
+</style>
