@@ -1,13 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
   <!--
-    A quiet cool-grey mark: two waves and a tomato spark.
+    The pipelined round trip, abstracted to three strokes: one batched request
+    out, a moment of work at the far end, one response back. It is the right
+    hand panel of the hero figure with everything but the argument removed.
 
-    Keep the two-hyphen sequence out of this comment. XML forbids it inside a
+    The colours are not chosen, they are the ones that figure draws with in
+    light mode (canvas-hero/palette.ts): request #0a2bb5, response #0e6b52, and
+    the muted #4c5a6a for the server's own time.
+
+    Weights carry the meaning and are deliberately unequal. The request is thick
+    because four calls travel inside it; the response is thin because one answer
+    comes back. At 16px that difference is about a pixel, which is why the two
+    also differ in hue and in direction rather than in weight alone.
+
+    Paint order is load bearing: the grey goes last. Drawn in time order it sat
+    between the other two and their round caps swallowed it, so the middle of
+    the three elements vanished below about 48px. Painted on top it reads as
+    what it is in the figure, a bar on the server rail that the request arrives
+    at and the response leaves from.
+
+    The plate is opaque paper so the mark never has to survive an unknown tab
+    colour, which is also why this file needs no prefers-color-scheme block.
+
+    Keep the two hyphen sequence out of this comment. XML forbids it inside a
     comment, and an SVG that fails to parse is an image the browser silently
     declines to draw, which is a genuinely difficult bug to see.
   -->
   <rect width="32" height="32" rx="7" fill="#eef1f4"/>
-  <path d="M6 20c3-4 6-4 10 0s7 4 10 0" fill="none" stroke="#6a7c8f" stroke-width="2" stroke-linecap="round"/>
-  <path d="M6 13c3-4 6-4 10 0s7 4 10 0" fill="none" stroke="#9aa8b8" stroke-width="2" stroke-linecap="round"/>
-  <circle cx="24" cy="10" r="2.4" fill="#e85d2c"/>
+  <g fill="none" stroke-linecap="round">
+    <path d="M5.5 9 L23.8 12.5" stroke="#0a2bb5" stroke-width="5"/>
+    <path d="M23.8 20.5 L5.5 24" stroke="#0e6b52" stroke-width="2.6"/>
+    <path d="M24.6 11.5 L24.6 21.5" stroke="#4c5a6a" stroke-width="3.2"/>
+  </g>
 </svg>
