@@ -62,13 +62,33 @@ const hasIllus = Astro.slots.has('default');
 	<div class="cw-hero-field" aria-hidden="true">
 		<div class="cw-hero-veil"></div>
 	</div>
-	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-12 pb-16 text-center lg:px-6 lg:pt-16 lg:pb-24">
-		{/* Only ever one of these two renders, so the slot is consumed once. The
-			`cw-hero-illus` hook and its spacing are the same either way -- only the
-			side the margin is on changes, since it is always the gap to the copy. */}
+	{/*
+		No bottom padding: the gap from the buttons to the first band of prose is
+		`.docs-content`'s own 40px top padding and nothing else. See the note on
+		`cw-hero-illus` below for why 40 is the number everything here is tuned to.
+	*/}
+	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-12 pb-0 text-center lg:px-6 lg:pt-16">
+		{/*
+			Only ever one of these two renders, so the slot is consumed once.
+
+			The margins either side of the figure are not the same number, and that is
+			not an oversight. Everything vertical in this hero is tuned to one 40px
+			module -- the same one `.docs-content` uses to space itself off the hero,
+			so the figure sits in the page's rhythm rather than its own. But the gap
+			the eye judges is to the figure's *ink*, and the canvas does not fill its
+			own box: the scene's `padTop` leaves 10px clear above the column headers
+			and the space reserved under the axis for the verdict leaves 21px below
+			it. So the CSS margins are 40 minus those, which lands all three gaps at
+			40-42px measured ink to ink. `/tmp/opencode/vgaps.mjs` measures it.
+
+			Compensating in CSS rather than tightening the scene is deliberate: the
+			dead space at the bottom is the verdict's descender room, and reclaiming
+			it would move `bottom`, which moves every vertical position in the figure
+			and every region in the contrast harness with it.
+		*/}
 		{
 			hasIllus && illustration === 'above' && (
-				<div class="cw-hero-illus mb-12 w-full text-left lg:mb-14">
+				<div class="cw-hero-illus mb-5 w-full text-left">
 					<slot />
 				</div>
 			)
@@ -83,7 +103,7 @@ const hasIllus = Astro.slots.has('default');
 		</div>
 		{
 			hasIllus && illustration === 'below' && (
-				<div class="cw-hero-illus mt-12 w-full text-left lg:mt-14">
+				<div class="cw-hero-illus mt-8 w-full text-left">
 					<slot />
 				</div>
 			)
@@ -91,7 +111,14 @@ const hasIllus = Astro.slots.has('default');
 		{/* `cw-hero-actions` is a hook, not a style: the canvas backdrops measure the
 			hero's content boxes so their scenes can lay out in the clear space beside
 			it, and the buttons are part of what they must not draw over. */}
-		<div class="cw-hero-actions mt-10 flex flex-wrap items-center justify-center gap-3">
+		<div
+			class:list={[
+				'cw-hero-actions flex flex-wrap items-center justify-center gap-3',
+				// 20 when the figure is what sits above, because its 21px of empty
+				// canvas is already most of the module; 40 when it is text.
+				illustration === 'below' && hasIllus ? 'mt-5' : 'mt-10',
+			]}
+		>
 			<LinkButton href="/start/quickstart/" variant="primary" size="lg" icon>
 				Get started
 			</LinkButton>

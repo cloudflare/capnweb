@@ -298,6 +298,19 @@ which works because a static block of code is taken in at a glance. An animation
 running time, and opening on one asks the reader to work out what they are watching before being
 told why.
 
+Everything vertical in the hero is tuned to one 40px module: tagline to figure, figure to buttons,
+buttons to the first band of prose. The last of those is `.docs-content`'s own top padding and the
+hero contributes no bottom padding at all, so the figure sits in the page's existing rhythm rather
+than inventing one.
+
+The two CSS margins around the figure are deliberately *not* the same number, though, because the
+gap the eye judges is to the figure's ink and the canvas does not fill its own box: the scene leaves
+10px clear above the column headers and 21px of the verdict's descender room below the axis. The
+margins are 40 minus those, which lands all three gaps at a measured 40-42px ink to ink.
+Compensating here rather than tightening the scene is the cheaper side of the trade -- reclaiming
+the bottom space would move `bottom`, and that moves every vertical position in the figure and every
+region in the contrast harness with it.
+
 ### The figure is content, not decoration
 
 `CanvasFigure.astro` mounts the `versus` scene in the flow, at full contrast, with nothing over it.
