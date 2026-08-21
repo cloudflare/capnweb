@@ -20,8 +20,10 @@ export const heroTagline = (label: string): string =>
 
 /** The accessible description of the hero figure. Says what it says, in words. */
 export const HERO_FIGURE_CAPTION =
-  "Two sequence diagrams side by side on one shared time axis. Without Cap'n Web, four " +
-  "dependent calls are awaited one at a time, so each pays for its own round trip: eight " +
-  "crossings and 400 milliseconds on a 100 millisecond link. With Cap'n Web, the same four " +
-  "calls are pipelined, so all four messages travel together and the far end answers once: " +
-  "two crossings and 100 milliseconds, leaving the remaining 300 milliseconds unspent.";
+  "Two sequence diagrams side by side on one shared time axis, on a 100 millisecond link where " +
+  "each call takes the server 10 milliseconds to handle. Without Cap'n Web, four dependent " +
+  "calls are awaited one at a time, so each pays for its own round trip and its own visit to " +
+  "the server: eight crossings, four handlers, 440 milliseconds. With Cap'n Web the same four " +
+  "calls are pipelined into one batched request, and the far end runs all four handlers before " +
+  "answering once: two crossings, the same four handlers, 140 milliseconds. The server does " +
+  "identical work in both; the 300 milliseconds saved is the waiting that is gone.";

@@ -7,51 +7,84 @@
  *
  * Two sequence diagrams side by side, sharing one vertical time axis. Left is
  * what four dependent calls cost without pipelining: each one is awaited before
- * the next can be written, so each pays for its own round trip, and four round
- * trips on a 100ms link is 400ms. Right is the same four calls with Cap'n Web:
- * every push is written back to back without waiting, because an `RpcPromise` is
- * also a stub for its own eventual result and can be passed as an argument before
- * it resolves. The far end substitutes the real values on arrival and answers
- * once, so the whole chain is one round trip.
+ * the next can be written, so each pays for its own round trip and its own turn
+ * at the far end, which on a 100ms link with a 10ms handler is 440ms. Right is
+ * the same four calls with Cap'n Web: every push is written back to back without
+ * waiting, because an `RpcPromise` is also a stub for its own eventual result and
+ * can be passed as an argument before it resolves. The far end substitutes the
+ * real values on arrival, runs all four handlers, and answers once: 140ms.
+ *
+ * The 40ms of server work is identical on both sides, and that is deliberate.
+ * The saving is not the far end doing less, it is the four trips it no longer
+ * spends waiting between doing it.
  *
  * The shared axis is what makes this an argument rather than two pictures. Both
- * panels are drawn against the same 0..400ms scale, so the right panel visibly
- * stops a quarter of the way down and the 300ms below it is empty. That gap is
- * the product, and it is drawn to scale rather than asserted.
+ * panels are drawn against the same 0..440ms scale, so the right panel visibly
+ * stops a third of the way down and the 300ms below it is empty. That gap is the
+ * product, and it is drawn to scale rather than asserted.
  *
  * Numbers and call names are the docs' own, from `start/pipelining-tour.md`.
  */
 import type { Palette, Scene, SceneSize } from "../types";
 
-/** One network leg. A round trip is two, and the docs' link is 100ms. */
-const MS_PER_LEG = 50;
-/** The slow lane: four round trips, so eight legs, so 400ms. */
-const TOTAL_LEGS = 8;
-/** Seconds of animation per leg. */
-const LEG = 0.62;
-const HOLD = 2.4;
-const CYCLE = LEG * TOTAL_LEGS + HOLD;
-/**
- * Where the reduced-motion still freezes, in legs. The middle of the hold, not
- * its first instant: verdicts fade in over half a leg from the moment they are
- * earned, so freezing at exactly `TOTAL_LEGS` catches the slow lane's verdict at
- * `globalAlpha === 0` and the still loses the very number it exists to show.
+/*
+ * The figure's clock is milliseconds of story, not frames and not "legs".
+ *
+ * It was in legs, where one leg was one network crossing and everything else was
+ * expressed as a fraction of one. That was fine while the far end answered
+ * instantly, and stopped being fine the moment the server got a running time of
+ * its own: 10ms is a fifth of a leg, and a model that can only count crossings
+ * cannot place it. Everything below is in milliseconds and `yAt` is the only
+ * thing that knows how tall a millisecond is.
  */
-const STILL_AT = TOTAL_LEGS + HOLD / LEG / 2;
+
+/** One network crossing. A round trip is two, and the docs' link is 100ms. */
+const MS_PER_LEG = 50;
+/**
+ * What the far end spends on one call before it can answer.
+ *
+ * Small, but not zero, and drawing it as zero was a quiet lie: it made the server
+ * an ideal mirror and put the entire cost of the chain on the network. It also
+ * flattered the pipelined side, where four handlers run back to back and the
+ * saving comes from the trips they no longer each wait for -- not from the work
+ * disappearing. The work is the same 40ms on both sides. That is the point.
+ */
+const MS_SERVER = 10;
+const CALL_COUNT = 4;
+/** Await each: out, work, back, four times over. */
+const SLOW_MS = CALL_COUNT * (MS_PER_LEG * 2 + MS_SERVER);
+/** Pipelined: out once, all four handlers, back once. */
+const FAST_MS = MS_PER_LEG * 2 + CALL_COUNT * MS_SERVER;
+/** The axis is as tall as the slower of the two. */
+const TOTAL_MS = SLOW_MS;
+const SAVED_MS = SLOW_MS - FAST_MS;
+
+/** Seconds of animation per millisecond of story. */
+const SEC_PER_MS = 0.62 / MS_PER_LEG;
+const HOLD = 2.4;
+const CYCLE = TOTAL_MS * SEC_PER_MS + HOLD;
+/** How long a verdict or a label takes to fade up, in story milliseconds. */
+const FADE_MS = 25;
+/**
+ * Where the reduced-motion still freezes. The middle of the hold, not its first
+ * instant: verdicts fade in from the moment they are earned, so freezing at
+ * exactly `TOTAL_MS` catches the slow lane's verdict at `globalAlpha === 0` and
+ * the still loses the very number it exists to show.
+ */
+const STILL_AT = TOTAL_MS + HOLD / SEC_PER_MS / 2;
 
 const CALLS = ["authenticate", "getUserId", "getUserProfile", "getFriendIds"];
 /** What the client sends: one pipeline, not four separate awaited calls. */
 const BATCH_NOTE = "pipeline";
 /**
- * What lands at the far end.
+ * What lands at the far end: one request carrying all four calls.
  *
- * Four, not one, and that is not a contradiction of the verdict below it. A
- * pipelined batch is four `push` messages in one body; what there is only one of
- * is the round trip. Saying "one message" at the client was the simplification --
- * this labels the wire honestly at both ends and lets "1 round trip" carry the
- * claim it actually makes.
+ * Named at the server rail as well as the client one because the two ends are
+ * making different halves of the same point. The client wrote a pipeline; what
+ * crossed the wire was a single batched request; and the far end therefore runs
+ * all four handlers before it answers at all.
  */
-const ARRIVAL_NOTE = "four messages";
+const ARRIVAL_NOTE = "batched request";
 /** Mono advance per character at 1em, the same approximation `space.ts` uses. */
 const MONO_ADV = 0.6;
 const LABEL_PX = 11;
@@ -212,9 +245,9 @@ export function versus(): Scene {
     };
   };
 
-  /** y for a point `legs` into the shared time axis. */
-  const yAt = (l: Layout, legs: number) =>
-    l.top + (l.bottom - l.top) * Math.min(1, Math.max(0, legs / TOTAL_LEGS));
+  /** y for a point `ms` into the shared time axis. */
+  const yAt = (l: Layout, ms: number) =>
+    l.top + (l.bottom - l.top) * Math.min(1, Math.max(0, ms / TOTAL_MS));
 
   const rail = (
     ctx: CanvasRenderingContext2D,
@@ -240,7 +273,7 @@ export function versus(): Scene {
   };
 
   /**
-   * One leg of travel, from `fromX` to `toX`, departing at `startLeg`.
+   * One crossing, from `fromX` to `toX`, departing at `startMs`.
    *
    * Draws nothing before it departs and leaves the finished line in place once it
    * has arrived, so the diagram accumulates into a readable trace rather than
@@ -252,15 +285,15 @@ export function versus(): Scene {
     l: Layout,
     fromX: number,
     toX: number,
-    startLeg: number,
+    startMs: number,
     now: number,
     colour: string,
     label?: string,
   ) => {
-    if (now < startLeg) return;
-    const f = Math.min(1, now - startLeg);
-    const y0 = yAt(l, startLeg);
-    const y1 = yAt(l, startLeg + 1);
+    if (now < startMs) return;
+    const f = Math.min(1, (now - startMs) / MS_PER_LEG);
+    const y0 = yAt(l, startMs);
+    const y1 = yAt(l, startMs + MS_PER_LEG);
     const x = fromX + (toX - fromX) * f;
     const y = y0 + (y1 - y0) * f;
 
@@ -300,14 +333,14 @@ export function versus(): Scene {
     p: Palette,
     l: Layout,
     panel: Panel,
-    atLeg: number,
+    atMs: number,
     now: number,
     text: string,
     colour: string,
   ) => {
-    if (now < atLeg) return;
-    const f = Math.min(1, (now - atLeg) / 0.5);
-    const y = yAt(l, atLeg);
+    if (now < atMs) return;
+    const f = Math.min(1, (now - atMs) / FADE_MS);
+    const y = yAt(l, atMs);
     ctx.globalAlpha = f * 0.85;
     ctx.strokeStyle = colour;
     ctx.lineWidth = 1.2;
@@ -340,22 +373,24 @@ export function versus(): Scene {
     ctx.fillStyle = p.muted;
     ctx.fillText("ms", l.axisX - 6, l.top - 7);
     ctx.textBaseline = "middle";
-    // A tick per round trip, which is every two legs, which is every 100ms. The
-    // ticks cross the line rather than stopping at it, because the axis now has a
-    // diagram on both sides and a tick that only reaches one of them would imply
-    // the scale belongs to that one.
-    for (let legs = 0; legs <= TOTAL_LEGS; legs += 2) {
-      const y = yAt(l, legs);
+    // A round tick every 100ms. The axis runs past the last one, to 440, because
+    // the scale is the slow lane's real cost and rounding it down to fit the
+    // labels would be drawing a different number from the one in the verdict. The
+    // ticks cross the line rather than stopping at it, because the axis has a
+    // diagram on both sides and a tick reaching only one would imply the scale
+    // belonged to that one.
+    for (let ms = 0; ms <= TOTAL_MS; ms += 100) {
+      const y = yAt(l, ms);
       ctx.strokeStyle = `rgb(${p.strokeRgb} / 0.35)`;
       ctx.beginPath();
       ctx.moveTo(l.axisX - 3, y);
       ctx.lineTo(l.axisX + 3, y);
       ctx.stroke();
       ctx.fillStyle = p.muted;
-      ctx.fillText(`${legs * MS_PER_LEG}`, l.axisX - 6, y);
+      ctx.fillText(`${ms}`, l.axisX - 6, y);
     }
     // The head of the clock, so the axis reads as elapsed time rather than a ruler.
-    const y = yAt(l, Math.min(now, TOTAL_LEGS));
+    const y = yAt(l, Math.min(now, TOTAL_MS));
     ctx.strokeStyle = p.muted;
     ctx.globalAlpha = 0.5;
     ctx.lineWidth = 1.4;
@@ -374,9 +409,9 @@ export function versus(): Scene {
    * quarters of the height of this figure.
    */
   const savings = (ctx: CanvasRenderingContext2D, p: Palette, l: Layout, panel: Panel, now: number) => {
-    if (now < 2.05) return;
-    const yFrom = yAt(l, 2.05);
-    const yTo = yAt(l, Math.min(now, TOTAL_LEGS));
+    if (now < FAST_MS) return;
+    const yFrom = yAt(l, FAST_MS);
+    const yTo = yAt(l, Math.min(now, TOTAL_MS));
     if (yTo - yFrom < 2) return;
     ctx.globalAlpha = 0.09;
     ctx.fillStyle = p.response;
@@ -384,14 +419,45 @@ export function versus(): Scene {
     ctx.globalAlpha = 1;
     // Only once the whole saving has played out, so the number never contradicts
     // the band it is labelling.
-    if (now >= TOTAL_LEGS && l.showSaved) {
+    if (now >= TOTAL_MS && l.showSaved) {
       ctx.fillStyle = p.response;
       ctx.font = `600 12px ${p.sans}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("300 ms saved", panel.cx, (yFrom + yTo) / 2);
+      ctx.fillText(`${SAVED_MS} ms saved`, panel.cx, (yFrom + yTo) / 2);
       ctx.globalAlpha = 1;
     }
+  };
+
+  /**
+   * The far end working, drawn on the server rail from arrival to answer.
+   *
+   * Ten milliseconds is seven pixels of a 306px axis, and seven pixels of nothing
+   * between an incoming line and an outgoing one reads as a rendering fault
+   * rather than as time passing. A solid cap on the rail says the gap is the
+   * point. It is a graphical object, so it answers to 3:1 rather than 4.5:1.
+   */
+  const work = (
+    ctx: CanvasRenderingContext2D,
+    p: Palette,
+    l: Layout,
+    x: number,
+    fromMs: number,
+    toMs: number,
+    now: number,
+  ) => {
+    if (now <= fromMs) return;
+    const y0 = yAt(l, fromMs);
+    const y1 = yAt(l, Math.min(now, toMs));
+    ctx.strokeStyle = p.muted;
+    ctx.globalAlpha = 0.75;
+    ctx.lineWidth = 3;
+    ctx.lineCap = "butt";
+    ctx.beginPath();
+    ctx.moveTo(x, y0);
+    ctx.lineTo(x, Math.max(y1, y0 + 1));
+    ctx.stroke();
+    ctx.globalAlpha = 1;
   };
 
   const header = (
@@ -419,7 +485,7 @@ export function versus(): Scene {
       const l = L;
       // The still is the moment the argument is complete and settled: the fast
       // panel long since finished, the slow one landed, both verdicts fully up.
-      const now = c.still ? STILL_AT : (c.t % CYCLE) / LEG;
+      const now = c.still ? STILL_AT : (c.t % CYCLE) / SEC_PER_MS;
 
       const [slow, fast] = l.panels;
 
@@ -428,30 +494,36 @@ export function versus(): Scene {
       header(ctx, p, l, slow, "Without Cap'n Web", p.muted);
       header(ctx, p, l, fast, "With Cap'n Web", p.foreground);
 
-      // Slow panel: await, reply, await, reply. Four trips, eight legs.
+      // Slow panel: out, work, back, four times over.
       rail(ctx, p, l, slow.clientX, "client");
       rail(ctx, p, l, slow.serverX, "server");
-      for (let i = 0; i < 4; i++) {
-        leg(ctx, p, l, slow.clientX, slow.serverX, i * 2, now, p.request, CALLS[i]);
-        leg(ctx, p, l, slow.serverX, slow.clientX, i * 2 + 1, now, p.response);
+      for (let i = 0; i < CALL_COUNT; i++) {
+        // Nothing about call i+1 can be written until call i has come back, which
+        // is the whole reason this column is as tall as it is.
+        const sent = i * (MS_PER_LEG * 2 + MS_SERVER);
+        const landed = sent + MS_PER_LEG;
+        leg(ctx, p, l, slow.clientX, slow.serverX, sent, now, p.request, CALLS[i]);
+        work(ctx, p, l, slow.serverX, landed, landed + MS_SERVER, now);
+        leg(ctx, p, l, slow.serverX, slow.clientX, landed + MS_SERVER, now, p.response);
       }
-      verdict(ctx, p, l, slow, TOTAL_LEGS, now, "4 round trips \u00b7 400 ms", p.muted);
+      verdict(ctx, p, l, slow, SLOW_MS, now, `4 round trips \u00b7 ${SLOW_MS} ms`, p.muted);
 
-      // Fast panel: four pushes inside the first leg, then one reply.
+      // Fast panel: four pushes inside one crossing, four handlers back to back,
+      // then a single reply.
       rail(ctx, p, l, fast.clientX, "client");
       rail(ctx, p, l, fast.serverX, "server");
       savings(ctx, p, l, fast, now);
-      for (let i = 0; i < 4; i++) {
-        // A sixteenth of a leg apart: enough to count, not enough to look like
-        // they are waiting on each other.
-        const start = i * 0.06;
+      for (let i = 0; i < CALL_COUNT; i++) {
+        // Three milliseconds apart: enough to count, not enough to look like they
+        // are waiting on each other.
+        const start = i * 3;
         if (now < start) continue;
         // Normalised against the distance still to run, so however late a push
-        // left it still lands at exactly one leg. The far end cannot answer
+        // left it still lands at exactly one crossing. The far end cannot start
         // before its arguments arrive, and the claim is that it answers once.
-        const f = Math.min(1, (now - start) / (1 - start));
+        const f = Math.min(1, (now - start) / (MS_PER_LEG - start));
         const y0 = yAt(l, start);
-        const y1 = yAt(l, start + 1);
+        const y1 = yAt(l, start + MS_PER_LEG);
         const x = fast.clientX + (fast.serverX - fast.clientX) * f;
         const y = y0 + (y1 - y0) * f;
         ctx.strokeStyle = p.request;
@@ -465,31 +537,33 @@ export function versus(): Scene {
         ctx.fillStyle = p.request;
         ctx.fillRect(x - 2.5, y - 2.5, 5, 5);
       }
-      if (!l.compact && now > 0.4) {
-        ctx.globalAlpha = Math.min(1, (now - 0.4) / 0.5);
+      if (!l.compact && now > 20) {
+        ctx.globalAlpha = Math.min(1, (now - 20) / FADE_MS);
         ctx.fillStyle = p.muted;
         ctx.font = `400 ${LABEL_PX}px ${p.mono}`;
         ctx.textBaseline = "middle";
         // What leaves, against the client rail the pushes depart from.
         ctx.textAlign = "right";
-        ctx.fillText(BATCH_NOTE, fast.clientX - LABEL_GAP, yAt(l, 0.1));
+        ctx.fillText(BATCH_NOTE, fast.clientX - LABEL_GAP, yAt(l, 5));
         ctx.globalAlpha = 1;
       }
-      // What arrives, against the server rail, level with the cluster of marks
-      // the four pushes land in. Held back until they have actually landed --
-      // labelling an arrival before anything has arrived is a lie the eye
-      // notices, and the last push lands at `0.18 + 1`.
-      if (!l.compact && now > 1.18) {
-        ctx.globalAlpha = Math.min(1, (now - 1.18) / 0.5);
+      // All four handlers run back to back before anything goes back, which is
+      // the same 40ms of work the other column spends in four separate visits.
+      work(ctx, p, l, fast.serverX, MS_PER_LEG, MS_PER_LEG + CALL_COUNT * MS_SERVER, now);
+      // What arrived, against the server rail, level with the marks the pushes
+      // land in. Held back until they have actually landed: labelling an arrival
+      // before anything has arrived is a lie the eye notices.
+      if (!l.compact && now > MS_PER_LEG) {
+        ctx.globalAlpha = Math.min(1, (now - MS_PER_LEG) / FADE_MS);
         ctx.fillStyle = p.muted;
         ctx.font = `400 ${LABEL_PX}px ${p.mono}`;
         ctx.textBaseline = "middle";
         ctx.textAlign = "left";
-        ctx.fillText(ARRIVAL_NOTE, fast.serverX + LABEL_GAP, yAt(l, 1.09));
+        ctx.fillText(ARRIVAL_NOTE, fast.serverX + LABEL_GAP, yAt(l, MS_PER_LEG));
         ctx.globalAlpha = 1;
       }
-      leg(ctx, p, l, fast.serverX, fast.clientX, 1.05, now, p.response);
-      verdict(ctx, p, l, fast, 2.05, now, "1 round trip \u00b7 100 ms", p.response);
+      leg(ctx, p, l, fast.serverX, fast.clientX, FAST_MS - MS_PER_LEG, now, p.response);
+      verdict(ctx, p, l, fast, FAST_MS, now, `1 round trip \u00b7 ${FAST_MS} ms`, p.response);
     },
   };
 }

@@ -301,15 +301,24 @@ told why.
 ### The figure is content, not decoration
 
 `CanvasFigure.astro` mounts the `versus` scene in the flow, at full contrast, with nothing over it.
-It draws two sequence diagrams on one shared 0-400ms axis: on the left four dependent calls awaited
-one at a time, each paying for its own round trip, and on the right the same four pipelined into one
-trip, with the 300ms nobody spends shaded in.
+It draws two sequence diagrams on one shared 0-440ms axis: on the left four dependent calls awaited
+one at a time, each paying for its own round trip and its own visit to the far end, and on the right
+the same four pipelined into one trip, with the 300ms nobody spends shaded in.
+
+The far end takes 10ms per call, on both sides, and drawing that mattered more than its size
+suggests. With an instant server the picture put the entire cost of the chain on the network, which
+flattered the pipelined column: it read as though the work had gone away. It has not. The same 40ms
+of handler runs in both columns -- four separate visits on the left, back to back on the right --
+and what pipelining removes is only the waiting in between. Ten milliseconds is seven pixels of a
+306px axis, so the scene draws the handler as a solid cap on the server rail; seven pixels of plain
+nothing between an arriving line and a departing one reads as a rendering fault rather than as time
+passing.
 
 Three rules follow from it being content rather than texture, and all three are the opposite of what
 a backdrop wants.
 
 - **The text is type, so it is measured like type.** The verdicts carry the numbers the docs use --
-  four dependent calls costing four round trips and 400ms against one round trip and 100ms -- set in
+  four dependent calls costing four round trips and 440ms against one round trip and 140ms -- set in
   `--nb-foreground` and `--nb-muted-foreground` at 11-14px with **no `globalAlpha` dimming at all**.
   The first pass did dim them, and `fig-contrast.mjs` caught four label classes at 3.48-4.36:1 in
   light: the `opacity`-as-hierarchy sin, committed against text already chosen for its contrast.
@@ -321,16 +330,23 @@ a backdrop wants.
   still agree. A canvas is an empty element to a screen reader, and the DOM contrast harness cannot
   see into one either, which is why the hero title reports `rgba(0,0,0,0)`.
 - **The reduced-motion still has to carry the whole argument**, not a representative moment. It
-  freezes mid-hold rather than at the instant the last leg lands, because the verdicts fade in over
-  half a leg: frozen at `TOTAL_LEGS` exactly, the slow lane's "4 round trips" was painted at
+  freezes mid-hold rather than at the instant the last reply lands, because the verdicts fade in
+  over 25ms of story time: frozen at `TOTAL_MS` exactly, the slow lane's "4 round trips" was painted
+  at
   `globalAlpha` 0 and the still lost the one number it exists to show. No screenshot diff would
   catch that, so `still-text.mjs` asserts on draw calls -- both verdicts visible at every width, the
   saved band wherever it fits, and nothing painted at alpha 0.
 
-The two wire labels are deliberately not the same count. The client sends a `pipeline`; `four
-messages` arrive at the far end. That is not a contradiction of "1 round trip" underneath it: a
-pipelined batch really is four `push` messages in one body, and what there is only one of is the
-trip. Saying "one message" at the client, as this first did, was the simplification.
+The two wire labels name the two ends of the same claim. The client writes a `pipeline`; what
+crosses the wire is one `batched request`; the far end therefore runs all four handlers before it
+answers at all. That is not a contradiction of "1 round trip" underneath it -- a pipelined batch
+really is four `push` messages in one body, and what there is only one of is the trip.
+
+The scene's clock is in milliseconds of story, and used to be in "legs", where a leg was one
+crossing and everything else was a fraction of one. That was fine while the far end answered
+instantly and stopped being fine the moment it did not: 10ms is a fifth of a leg, and a model that
+can only count crossings cannot place it. `yAt` is now the only thing that knows how tall a
+millisecond is.
 
 ### Laying it out
 
