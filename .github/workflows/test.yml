@@ -35,6 +35,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Same full history the deploy uses. Each page's "Updated" date comes from
+          # `git log -1 --format=%at <file>`, and in a shallow clone that resolves to
+          # the one commit that was fetched -- so every page would claim to have been
+          # updated at the same moment, and this job would be checking a build that is
+          # not the one main deploys.
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
