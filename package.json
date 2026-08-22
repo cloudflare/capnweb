@@ -40,6 +40,8 @@
     "build:watch": "tsdown --config-loader native --watch",
     "dev": "npm run build:watch",
     "dev:docs": "npm run build && npm --prefix packages/docs run dev -- --port 4321",
+    "build:docs": "npm run build && npm --prefix packages/docs run build",
+    "deploy:docs": "npm run build:docs && wrangler deploy -c packages/docs/wrangler.jsonc",
     "lint:md": "markdownlint-cli2 && node scripts/align-markdown-tables.mjs --check",
     "lint:md:fix": "node scripts/align-markdown-tables.mjs && markdownlint-cli2 --fix",
     "setup": "npm install && npm --prefix packages/docs install && npm --prefix examples/worker-react/client install",

@@ -943,9 +943,16 @@ is worth repeating after any framework change.
 
 ## Deployment
 
-`npm run build` emits a plain static site to `dist/`, deployable anywhere. `site` defaults to the
-preview deployment so that canonical URLs, Open Graph URLs, the sitemap and the links inside
-`/llms.txt` are all valid; point it at a real domain with `DOCS_SITE_URL`:
+The site is `https://capnweb.com`, served from a Cloudflare Worker named `capnweb-docs` in the
+`capnweb` account. Every push to `main` redeploys it: `.github/workflows/deploy-docs.yml` builds the
+library, builds the site, and runs `wrangler deploy`. The same build runs as a `build-docs` job on
+every pull request, so a site that does not build fails the PR rather than the deploy.
+
+`npm run build` emits a plain static site to `dist/`, deployable anywhere. `site` is
+`https://capnweb.com` unless `DOCS_SITE_URL` overrides it, and it is what canonical URLs, the
+absolute OG image URLs, `robots.txt`, the sitemap and the links inside `/llms.txt` are all built
+from -- which is why a preview build has to override it rather than publish a sitemap claiming to be
+production:
 
 ```sh
 DOCS_SITE_URL=https://example.com npm run build
@@ -953,10 +960,12 @@ DOCS_SITE_URL=https://example.com npm run build
 
 `wrangler.jsonc` deploys that output to a Cloudflare Worker. There is no `main`, so no Worker script
 runs: every request is served from the asset store, which is all a static site with in-browser
-playgrounds needs.
+playgrounds needs. Deploy by hand from the **repo root**, not from here -- the playgrounds vendor
+`dist/index.js` and the prose substitutes the measured bundle size, so the library has to be built
+first and only the root script does both:
 
 ```sh
-npm run deploy   # rebuilds first, via predeploy
+npm run deploy:docs   # at the repo root: library build, then site build, then wrangler deploy
 ```
 
 `public/_headers` is part of the deployment rather than decoration. Workers' default for static
@@ -966,6 +975,11 @@ stylesheet, revalidated but answered with a 304, arrived first, and that gap was
 header over bare background between navigations. The file gives documents a minute of freshness and
 fingerprinted assets a year.
 
-Pick the account with `CLOUDFLARE_ACCOUNT_ID` if your token can see more than one. Note that an
-account may put Cloudflare Access in front of its whole `*.workers.dev` subdomain, in which case the
-deployed URL prompts for SSO until a bypass policy is added for the hostname.
+`account_id` is committed in `wrangler.jsonc` rather than left to `CLOUDFLARE_ACCOUNT_ID`. It is an
+identifier, not a credential, and pinning it is what stops a deploy from an operator who can see
+several accounts landing in the wrong one -- wrangler refuses to guess and fails the deploy instead.
+
+`workers_dev` and `preview_urls` are both off. Every URL the build emits names `https://capnweb.com`,
+so a second live origin serving those same pages is a duplicate for crawlers and a link people paste
+by accident. The cost is that there is no throwaway URL to check a deploy on: verify a change with
+`npm run build && npm run preview` locally, or deploy to a scratch Worker with `--name`.
