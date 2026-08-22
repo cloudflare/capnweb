@@ -20,10 +20,14 @@
 	// crawlers and a link people paste by accident.
 	"workers_dev": false,
 
-	// Same reasoning, made explicit: with `workers_dev` off, wrangler turns these off
-	// anyway and warns that it is guessing. A per-version URL serving the production
-	// canonicals is the same duplicate problem, one hostname at a time.
-	"preview_urls": false,
+	// Previews, on the other hand, need a hostname to be reachable at, and this is the
+	// switch that gives them one: with it off, `wrangler preview` succeeds and hands
+	// back a Preview with an empty `urls` array, which is a deploy nobody can look at.
+	// It is a separate setting from `workers_dev` -- production stays off `workers.dev`
+	// while `<preview>-capnweb-docs.<subdomain>.workers.dev` is served -- and the
+	// duplicate-content objection above is answered for Previews by the `X-Robots-Tag:
+	// noindex` that preview-docs.yml appends to their `_headers`.
+	"preview_urls": true,
 
 	// A static site: no `main`, so there is no Worker script and every request is
 	// served from the asset store. The playgrounds run their "server" inside the

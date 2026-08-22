@@ -31,7 +31,9 @@ npm_config_@cloudflare:registry=https://registry.npmjs.org npm install
 ```
 
 Don't commit an `.npmrc` to work around it, and don't add `wrangler` as a dependency here: the
-version the starter asks for wants an unpublished miniflare. The root's wrangler deploys this.
+version the starter asks for wants an unpublished miniflare. The root's wrangler deploys this, and
+previews it -- `npm run deploy:docs` at the root, and `.github/workflows/` for the automated ones.
+`README.md`, "Deployment" and "Previews", is the detail.
 
 `predev` and `prebuild` run `bundle-size` and `playgrounds`. The playground bundler reads the
 library's **build output**, so a change under the repo's `src/` needs `npm run build` at the root
