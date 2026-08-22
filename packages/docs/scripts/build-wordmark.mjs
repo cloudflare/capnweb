@@ -336,10 +336,318 @@ const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-104 -104 208 
 </svg>
 `;
 
+/*
+ * The third output: the banner at the top of the repo's root README, which is
+ * also what npm renders on the package page.
+ *
+ * This cannot lean on CSS -- no custom properties, no `prefers-color-scheme`,
+ * no theme attribute -- and it has to look right on GitHub light, GitHub dark,
+ * and npm, which now has a dark theme of its own. The usual answer is a
+ * `<picture>` with a light and a dark file, but npm's markdown sanitiser is far
+ * more aggressive than GitHub's and drops `<source>`, which would leave
+ * dark-mode npm users looking at the light variant on a dark page.
+ *
+ * So the whole band -- gradient and both accents together -- is laid down at
+ * `BAND_ALPHA`, and the page shows through it. On a white README it lifts to a
+ * soft slate; on a dark one it settles almost to the site's own navy. That is
+ * the point: an opaque band looks pasted on, identical on both themes and
+ * matching neither.
+ *
+ * The alpha is high rather than subtle, and that is a legibility floor, not
+ * timidity. The wordmark is white, so the band has to stay dark enough to carry
+ * it whatever is behind. At 0.82 the band lands near rgb(55 62 74) over white
+ * and rgb(11 19 32) over GitHub's dark -- clearly different, both far enough
+ * from white to hold the mark. Taking it much lower washes the band out on a
+ * light page and the wordmark goes with it.
+ *
+ * Only the seal breaks the edge of the band. It is the one element painted to
+ * survive on an unknown background, so it gets the site's treatment: flat
+ * orange, no keyline, and a soft drop shadow to lift it off whatever it lands
+ * on. Below the band the canvas is fully transparent, so it reads as
+ * overhanging a real edge.
+ */
+const BAND_ALPHA = 0.82;
+const BAND_TOP_PAD = 58;
+const BAND_BOTTOM_PAD = 55;
+/* The lockup as a fraction of the banner's width. The band is much wider than
+   the mark, the way a site header is, rather than shrink-wrapped to it. */
+const LOCKUP_FRACTION = 0.34;
+/* How much of the seal hangs below the band, as a fraction of its height. The
+   reference overhangs 18.9%. */
+const SEAL_OVERHANG = 0.19;
+const SEAL_R = 87.5;
+const SEAL_TILT = -11;
+const SEAL_SCALE = SEAL_R / 100;
+
+/*
+ * The site's seal shadow is `drop-shadow(0 2px 3px rgb(0 0 0 / 0.32))` on a
+ * seal 128px across. This one is 175 units across, so both numbers scale by
+ * 175/128, and a CSS blur radius is twice a Gaussian's standard deviation.
+ */
+const SEAL_SHADOW_SCALE = (SEAL_R * 2) / 128;
+const SEAL_SHADOW_DY = 2 * SEAL_SHADOW_SCALE;
+const SEAL_SHADOW_BLUR = (3 / 2) * SEAL_SHADOW_SCALE;
+/*
+ * Where the seal's centre sits, across the lockup.
+ *
+ * The site puts it at 91.5%, but the site's seal hangs off a full-bleed banner
+ * with the whole viewport to its right. Here the wordmark is the only thing on
+ * the band, and at 91.5% the seal lands squarely on the `B` and the lower line
+ * reads "WEE".
+ */
+const SEAL_AT = 1.0;
+
+/*
+ * Then the seal moves this much further right again, and the wordmark the same
+ * distance left, which clears the `B` without shifting where the pair sits as a
+ * whole. The `B` ends 459 units along a 512-unit mark and the seal's radius is
+ * 87.5, so the two stop touching once the nudge passes about 17.
+ */
+const SEAL_NUDGE = 20;
+
+const MARK_W = box.x1 - box.x0 + pad * 2;
+const MARK_H = box.y1 - box.y0 + pad * 2;
+const BAND_W = MARK_W / LOCKUP_FRACTION;
+const BAND_H = MARK_H + BAND_TOP_PAD + BAND_BOTTOM_PAD;
+const sealPad = (STROKE * SEAL_SCALE) / 2 + 1;
+
+/*
+ * Centre the mark and the seal together, not the mark alone. The seal sticks
+ * out past the wordmark's right edge, so centring just the wordmark would leave
+ * the whole assembly visibly sitting right of middle.
+ */
+const ASSEMBLY_W = Math.max(MARK_W, MARK_W * SEAL_AT + SEAL_NUDGE + SEAL_R + sealPad);
+const MARK_LEFT = (BAND_W - ASSEMBLY_W) / 2;
+
+/* Put the lockup's own coordinates into the banner's. */
+const OX = MARK_LEFT - SEAL_NUDGE - (box.x0 - pad);
+const OY = BAND_TOP_PAD - (box.y0 - pad);
+
+const SEAL_CX = MARK_LEFT + MARK_W * SEAL_AT + SEAL_NUDGE;
+const SEAL_CY = BAND_H - SEAL_R + SEAL_OVERHANG * SEAL_R * 2;
+const CANVAS_H = SEAL_CY + SEAL_R + sealPad + 4;
+
+/*
+ * A CSS `linear-gradient(Ndeg, ...)` as SVG gradient endpoints.
+ *
+ * CSS measures the angle clockwise from "to top"; the gradient line runs
+ * through the centre of the box and is long enough that the stops at 0% and
+ * 100% land on the corners, which is `|w*sin| + |h*cos|`.
+ */
+function cssLinear(deg, w, h) {
+	const t = rad(deg);
+	const dx = Math.sin(t);
+	const dy = -Math.cos(t);
+	const len = Math.abs(w * dx) + Math.abs(h * dy);
+	return {
+		x1: q(w / 2 - (dx * len) / 2),
+		y1: q(h / 2 - (dy * len) / 2),
+		x2: q(w / 2 + (dx * len) / 2),
+		y2: q(h / 2 + (dy * len) / 2),
+	};
+}
+
+/*
+ * A CSS `radial-gradient(RX RY at CX CY, colour 0%, transparent STOP%)`.
+ *
+ * SVG radial gradients are circles, so the ellipse is a circle of `rx` scaled
+ * on y about its own centre. The far stop repeats the colour at zero alpha
+ * rather than using `transparent`: fading to `transparent` fades towards
+ * transparent *black*, which greys the accent on its way out.
+ */
+function cssRadial(id, colour, alpha, rxF, ryF, cxF, cyF, stop, w, h) {
+	const cx = q(cxF * w);
+	const cy = q(cyF * h);
+	const rx = rxF * w;
+	const sy = q((ryF * h) / rx);
+	return (
+		`<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${cx}" cy="${cy}" r="${q(rx)}"\n` +
+		`                gradientTransform="translate(${cx} ${cy}) scale(1 ${sy}) translate(${-cx} ${-cy})">\n` +
+		`<stop offset="0" stop-color="${colour}" stop-opacity="${alpha}"/>\n` +
+		`<stop offset="${stop}" stop-color="${colour}" stop-opacity="0"/>\n` +
+		`</radialGradient>`
+	);
+}
+
+const lin = cssLinear(104, BAND_W, BAND_H);
+
+/** Lays out one line of plain text, centred on x=0, as a single path.
+ *  Fill-only, so unlike the wordmark it does not need a path per glyph. */
+function plain(text, size, baselineY) {
+	const width = font.getAdvanceWidth(text, size);
+	return closeContours(font.getPath(text, -width / 2, baselineY, size)).toPathData(1);
+}
+
+/*
+ * The seal's legend. On the site these words are real DOM text so they stay
+ * selectable and translatable; here there is no DOM and no webfont, so they are
+ * outlined. That costs nothing and buys back the fidelity the site gives up --
+ * these are Bookman, the same face as the wordmark, which the site cannot
+ * manage without shipping a font for three words.
+ *
+ * `HERO_TITLE`, lower-cased and broken the way the seal breaks it.
+ */
+const LEGEND = ['one', 'round', 'trip!'];
+
+/*
+ * Sized to the star's flat inner disc (radius 81 of 100), against both of the
+ * constraints a circle imposes: the widest line has to fit across it, and the
+ * stack of lines has to fit down it. With three short lines the height is what
+ * binds, where with two longer ones the width did.
+ */
+const LEGEND_FIT = 81 * 2 * 0.82;
+const LEGEND_LEAD_RATIO = 1.04;
+const LEGEND_SIZE = Math.min(
+	LEGEND_FIT / Math.max(...LEGEND.map((l) => font.getAdvanceWidth(l, 1))),
+	LEGEND_FIT / ((LEGEND.length - 1) * LEGEND_LEAD_RATIO + CAP),
+);
+const LEGEND_LEAD = LEGEND_SIZE * LEGEND_LEAD_RATIO;
+const legendPaths = LEGEND.map((text, i) =>
+	plain(text, LEGEND_SIZE, (i - (LEGEND.length - 1) / 2) * LEGEND_LEAD + (CAP * LEGEND_SIZE) / 2),
+);
+
+/* 2x what the README displays it at, so it stays sharp on a HiDPI screen. */
+const BANNER_W = 1600;
+
+const banner = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${q(BAND_W)} ${q(CANVAS_H)}"
+     width="${BANNER_W}" height="${Math.round((BANNER_W * CANVAS_H) / BAND_W)}"
+     role="img" aria-label="Cap'n Web">
+<title>Cap'n Web</title>
+<defs>
+<linearGradient id="band" gradientUnits="userSpaceOnUse"
+                x1="${lin.x1}" y1="${lin.y1}" x2="${lin.x2}" y2="${lin.y2}">
+<stop offset="0" stop-color="#0a1424"/>
+<stop offset="0.54" stop-color="#0c1c2b"/>
+<stop offset="1" stop-color="#0a2320"/>
+</linearGradient>
+${cssRadial('glow1', '#7aa2ff', 0.13, 0.72, 1.2, 0.12, 0, 0.62, BAND_W, BAND_H)}
+${cssRadial('glow2', '#4fd6a8', 0.12, 0.66, 1.18, 0.9, 1.04, 0.6, BAND_W, BAND_H)}
+<filter id="sealshadow" x="-15%" y="-15%" width="140%" height="140%">
+<feDropShadow dx="0" dy="${q(SEAL_SHADOW_DY)}" stdDeviation="${q(SEAL_SHADOW_BLUR)}"
+              flood-color="#000" flood-opacity="0.32"/>
+</filter>
+</defs>
+<!-- The band is one translucent group, so the accents keep their relationship
+     to the gradient and the page shows through all three together. -->
+<g opacity="${BAND_ALPHA}">
+<rect width="${q(BAND_W)}" height="${q(BAND_H)}" fill="url(#band)"/>
+<rect width="${q(BAND_W)}" height="${q(BAND_H)}" fill="url(#glow1)"/>
+<rect width="${q(BAND_W)}" height="${q(BAND_H)}" fill="url(#glow2)"/>
+</g>
+<g transform="translate(${q(OX)} ${q(OY)})" fill="#fff" stroke="#070a11"
+   stroke-width="${STROKE}" stroke-linejoin="round" paint-order="stroke fill">
+${[...CAPN_PATHS, ...WEB_PATHS].map((d) => `<path d="${d}"/>`).join('\n')}
+</g>
+<g transform="translate(${q(SEAL_CX)} ${q(SEAL_CY)})">
+<!-- The shadow goes on a wrapper rather than the path: on the path itself the
+     filter would resolve in the rotated, scaled space and the shadow would come
+     out tilted and undersized. The legend sits outside it, unshadowed, exactly
+     as the site keeps the filter off the words. -->
+<g filter="url(#sealshadow)">
+<path d="${STAR_PATH}" transform="rotate(${SEAL_TILT}) scale(${q(SEAL_SCALE)})" fill="#e85d2c"/>
+</g>
+${legendPaths.map((d) => `<path d="${d}" fill="#070a11"/>`).join('\n')}
+</g>
+</svg>
+`;
+
+/*
+ * The fourth and fifth outputs: art for the social cards.
+ *
+ * The cards themselves are drawn per page by `astro-og-canvas` (34 of them, one
+ * per title), and that stays as it is -- it rasterises with canvaskit and wants
+ * no browser at build time. What it cannot do is draw this band: it takes a
+ * list of gradient stops, and the band is a linear gradient with two elliptical
+ * accents over it. So the band is handed to it as a finished `bgImage`, and the
+ * mark as a `logo`, both generated here from the same geometry as the README
+ * banner. That keeps one source of truth without a browser in the docs build.
+ *
+ * The band is opaque here, unlike the README's. A social card is composited by
+ * Slack or a search engine onto a surface this repository does not control and
+ * cannot measure, and a translucent one would come out differently in each. The
+ * README can adapt to its page because there are only two of those and both are
+ * known.
+ */
+const OG_W = 1200;
+const OG_H = 630;
+/*
+ * The orange edge is painted into the band rather than left to the card's own
+ * `border` option, because a `bgImage` is drawn over that border and hides it.
+ * The option stays set in `_og-card-config.ts` at this same width, so the
+ * fallback path -- gradient with no image -- still gets an edge.
+ */
+const OG_BORDER = 12;
+const ogLin = cssLinear(104, OG_W, OG_H);
+
+const ogBand = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${OG_W} ${OG_H}"
+     width="${OG_W}" height="${OG_H}">
+<defs>
+<linearGradient id="band" gradientUnits="userSpaceOnUse"
+                x1="${ogLin.x1}" y1="${ogLin.y1}" x2="${ogLin.x2}" y2="${ogLin.y2}">
+<stop offset="0" stop-color="#0a1424"/>
+<stop offset="0.54" stop-color="#0c1c2b"/>
+<stop offset="1" stop-color="#0a2320"/>
+</linearGradient>
+${cssRadial('glow1', '#7aa2ff', 0.13, 0.72, 1.2, 0.12, 0, 0.62, OG_W, OG_H)}
+${cssRadial('glow2', '#4fd6a8', 0.12, 0.66, 1.18, 0.9, 1.04, 0.6, OG_W, OG_H)}
+</defs>
+<rect width="${OG_W}" height="${OG_H}" fill="url(#band)"/>
+<rect width="${OG_W}" height="${OG_H}" fill="url(#glow1)"/>
+<rect width="${OG_W}" height="${OG_H}" fill="url(#glow2)"/>
+<rect width="${OG_BORDER}" height="${OG_H}" fill="#e85d2c"/>
+</svg>
+`;
+
+/*
+ * The mark on its own, transparent, holding the same seal placement the banner
+ * uses. Keeping the relationship identical means the two read as one object:
+ * in the banner the mark moves left by `SEAL_NUDGE` and the seal right by the
+ * same, so here the seal sits `MARK_W * SEAL_AT + 2 * SEAL_NUDGE` along.
+ */
+const ogSealCx = box.x0 - pad + MARK_W * SEAL_AT + 2 * SEAL_NUDGE;
+const ogSealCy = box.y0 - pad + (SEAL_CY - BAND_TOP_PAD);
+const ogShadowPad = SEAL_SHADOW_DY + SEAL_SHADOW_BLUR * 3;
+const mb = {
+	x0: Math.min(box.x0 - pad, ogSealCx - SEAL_R - ogShadowPad),
+	y0: Math.min(box.y0 - pad, ogSealCy - SEAL_R - ogShadowPad),
+	x1: Math.max(box.x1 + pad, ogSealCx + SEAL_R + ogShadowPad),
+	y1: Math.max(box.y1 + pad, ogSealCy + SEAL_R + ogShadowPad),
+};
+
+const ogMark = `<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="${q(mb.x0)} ${q(mb.y0)} ${q(mb.x1 - mb.x0)} ${q(mb.y1 - mb.y0)}"
+     width="${Math.round(mb.x1 - mb.x0)}" height="${Math.round(mb.y1 - mb.y0)}"
+     role="img" aria-label="Cap'n Web">
+<title>Cap'n Web</title>
+<defs>
+<filter id="sealshadow" x="-15%" y="-15%" width="140%" height="140%">
+<feDropShadow dx="0" dy="${q(SEAL_SHADOW_DY)}" stdDeviation="${q(SEAL_SHADOW_BLUR)}"
+              flood-color="#000" flood-opacity="0.32"/>
+</filter>
+</defs>
+<g fill="#fff" stroke="#070a11" stroke-width="${STROKE}" stroke-linejoin="round"
+   paint-order="stroke fill">
+${[...CAPN_PATHS, ...WEB_PATHS].map((d) => `<path d="${d}"/>`).join('\n')}
+</g>
+<g transform="translate(${q(ogSealCx)} ${q(ogSealCy)})">
+<g filter="url(#sealshadow)">
+<path d="${STAR_PATH}" transform="rotate(${SEAL_TILT}) scale(${q(SEAL_SCALE)})" fill="#e85d2c"/>
+</g>
+${legendPaths.map((d) => `<path d="${d}" fill="#070a11"/>`).join('\n')}
+</g>
+</svg>
+`;
+
 const dest = new URL('../src/components/logo-paths.ts', import.meta.url);
 const fav = new URL('../public/favicon.svg', import.meta.url);
+const bnr = new URL('../../../assets/capnweb-banner.svg', import.meta.url);
 fs.writeFileSync(dest, paths);
 fs.writeFileSync(fav, favicon);
+fs.mkdirSync(new URL('../../../assets/', import.meta.url), { recursive: true });
+fs.writeFileSync(bnr, banner);
+fs.mkdirSync(new URL('../og-assets/', import.meta.url), { recursive: true });
+fs.writeFileSync(new URL('../og-assets/og-band.svg', import.meta.url), ogBand);
+fs.writeFileSync(new URL('../og-assets/og-mark.svg', import.meta.url), ogMark);
 
 console.error(
 	`wrote ${dest.pathname}\n` +
@@ -351,5 +659,7 @@ console.error(
 		`  WEB   box x ${q(webLine.box.x0)}..${q(webLine.box.x1)}  y ${q(webLine.box.y0)}..${q(webLine.box.y1)}\n` +
 		`  vertical clearance (WEB top under CAP'N bottom): ${q(webLine.box.y0 - capnLine.box.y1)}\n` +
 		`  cap/em ${q(CAP * 1000) / 1000}  baseline gap ${q(gap)}\n` +
-		`  favicon ${FAVICON_POINTS} points, inner/outer ${FAVICON_RATIO}`,
+		`  favicon ${FAVICON_POINTS} points, inner/outer ${FAVICON_RATIO}\n` +
+		`  banner ${q(BAND_W)}x${q(CANVAS_H)} units, band ${q(BAND_H)}, ` +
+		`seal overhangs ${q(SEAL_OVERHANG * 100)}%`,
 );

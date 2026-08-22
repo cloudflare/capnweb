@@ -9,9 +9,10 @@ const REPO = 'https://github.com/cloudflare/capnweb';
 
 const nimbusConfig = defineNimbusConfig({
 	// Nimbus requires a canonical origin: it drives canonical URLs, the absolute OG image URLs,
-	// robots.txt, the sitemap and the links inside /llms.txt. The preview deployment is the default
-	// so that those come out valid today; set DOCS_SITE_URL once a real domain is chosen.
-	site: process.env.DOCS_SITE_URL ?? 'https://capnweb-docs.ai-foundations.workers.dev',
+	// robots.txt, the sitemap and the links inside /llms.txt. `DOCS_SITE_URL` overrides it, which
+	// is what preview deployments want -- otherwise a preview publishes a sitemap and a set of
+	// canonicals all claiming to be production.
+	site: process.env.DOCS_SITE_URL ?? 'https://capnweb.com',
 	title: "Cap'n Web",
 	description: `A JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, ${bundleSize.label}.`,
 	locale: 'en',

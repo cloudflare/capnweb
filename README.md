@@ -1,3 +1,8 @@
+<!-- The banner precedes the h1 on purpose: it is the title, drawn. MD041 wants
+     the heading first, which is right everywhere else in this repository. -->
+<!-- markdownlint-disable-next-line MD041 -->
+![Cap'n Web](assets/capnweb-banner.png)
+
 # Cap'n Web: A JavaScript-native RPC system
 
 Cap'n Web is a spiritual sibling to [Cap'n Proto](https://capnproto.org) (and is created by the

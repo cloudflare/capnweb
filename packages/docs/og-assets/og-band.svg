@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"
+     width="1200" height="630">
+<defs>
+<linearGradient id="band" gradientUnits="userSpaceOnUse"
+                x1="-38.8" y1="155.7" x2="1238.8" y2="474.3">
+<stop offset="0" stop-color="#0a1424"/>
+<stop offset="0.54" stop-color="#0c1c2b"/>
+<stop offset="1" stop-color="#0a2320"/>
+</linearGradient>
+<radialGradient id="glow1" gradientUnits="userSpaceOnUse" cx="144" cy="0" r="864"
+                gradientTransform="translate(144 0) scale(1 0.9) translate(-144 0)">
+<stop offset="0" stop-color="#7aa2ff" stop-opacity="0.13"/>
+<stop offset="0.62" stop-color="#7aa2ff" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="glow2" gradientUnits="userSpaceOnUse" cx="1080" cy="655.2" r="792"
+                gradientTransform="translate(1080 655.2) scale(1 0.9) translate(-1080 -655.2)">
+<stop offset="0" stop-color="#4fd6a8" stop-opacity="0.12"/>
+<stop offset="0.6" stop-color="#4fd6a8" stop-opacity="0"/>
+</radialGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#band)"/>
+<rect width="1200" height="630" fill="url(#glow1)"/>
+<rect width="1200" height="630" fill="url(#glow2)"/>
+<rect width="12" height="630" fill="#e85d2c"/>
+</svg>
