@@ -288,7 +288,7 @@ const FAVICON_RATIO = 0.55;
 const FAVICON_STAR = star(FAVICON_POINTS, FAVICON_RATIO, 0);
 /* `--cw-orange`, spelled out: a favicon is its own document and gets no page
    custom properties. Keep in step with `globals.css`. */
-const FAVICON_FILL = '#e85d2c';
+const FAVICON_FILL = '#f6821f';
 
 const paths = `// GENERATED -- do not hand-edit. Run \`scripts/build-wordmark.mjs\`.
 // See README, "The wordmark".
@@ -347,18 +347,16 @@ const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-104 -104 208 
  * more aggressive than GitHub's and drops `<source>`, which would leave
  * dark-mode npm users looking at the light variant on a dark page.
  *
- * So the whole band -- gradient and both accents together -- is laid down at
- * `BAND_ALPHA`, and the page shows through it. On a white README it lifts to a
- * soft slate; on a dark one it settles almost to the site's own navy. That is
- * the point: an opaque band looks pasted on, identical on both themes and
- * matching neither.
+ * So the band is translucent all the way down: every layer carries its own
+ * alpha and the page shows through all of them. On a white README it is a pale
+ * blue wash; on a dark one it settles to a faint blue tint over near-black.
+ * That is the point, and it is the same background the site's hero uses in both
+ * schemes -- `--cw-band` in `globals.css` -- so the banner, the social cards and
+ * the site cannot drift apart.
  *
- * The alpha is high rather than subtle, and that is a legibility floor, not
- * timidity. The wordmark is white, so the band has to stay dark enough to carry
- * it whatever is behind. At 0.82 the band lands near rgb(55 62 74) over white
- * and rgb(11 19 32) over GitHub's dark -- clearly different, both far enough
- * from white to hold the mark. Taking it much lower washes the band out on a
- * light page and the wordmark goes with it.
+ * The values below mirror that custom property. SVG gradients and a CSS
+ * `background` shorthand cannot share a definition, so this is a hand-kept
+ * copy: change one and change the other.
  *
  * Only the seal breaks the edge of the band. It is the one element painted to
  * survive on an unknown background, so it gets the site's treatment: flat
@@ -366,7 +364,16 @@ const favicon = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-104 -104 208 
  * on. Below the band the canvas is fully transparent, so it reads as
  * overhanging a real edge.
  */
-const BAND_ALPHA = 0.82;
+const BAND_STOPS = [
+	{ at: 0, colour: 'rgb(35 87 167)', alpha: 0.12 },
+	{ at: 0.54, colour: 'rgb(40 99 155)', alpha: 0.31 },
+	{ at: 1, colour: 'rgb(0 255 221)', alpha: 0.16 },
+];
+const BAND_ACCENTS = [
+	// id, colour, alpha, rx, ry, cx, cy, stop
+	['glow1', '#004dff', 0.129, 0.72, 1.2, 0.12, 0, 0.62],
+	['glow2', '#41d2a0', 0.122, 0.66, 1.18, 0.9, 1.04, 0.6],
+];
 const BAND_TOP_PAD = 58;
 const BAND_BOTTOM_PAD = 55;
 /* The lockup as a fraction of the banner's width. The band is much wider than
@@ -469,7 +476,31 @@ function cssRadial(id, colour, alpha, rxF, ryF, cxF, cyF, stop, w, h) {
 	);
 }
 
-const lin = cssLinear(104, BAND_W, BAND_H);
+/** The band's `<defs>` and the rects that paint it, at a given size. */
+function band(w, h, idPrefix) {
+	const l = cssLinear(104, w, h);
+	const gid = `${idPrefix}band`;
+	const defs =
+		`<linearGradient id="${gid}" gradientUnits="userSpaceOnUse"\n` +
+		`                x1="${l.x1}" y1="${l.y1}" x2="${l.x2}" y2="${l.y2}">\n` +
+		BAND_STOPS.map(
+			(st) =>
+				`<stop offset="${st.at}" stop-color="${st.colour}" stop-opacity="${st.alpha}"/>`,
+		).join('\n') +
+		'\n</linearGradient>\n' +
+		BAND_ACCENTS.map(([id, c, a2, rx, ry, cx, cy, stop]) =>
+			cssRadial(idPrefix + id, c, a2, rx, ry, cx, cy, stop, w, h),
+		).join('\n');
+	/* Painted bottom layer first, matching the CSS shorthand's reverse order. */
+	const rects =
+		`<rect width="${q(w)}" height="${q(h)}" fill="url(#${gid})"/>\n` +
+		BAND_ACCENTS.map(
+			([id]) => `<rect width="${q(w)}" height="${q(h)}" fill="url(#${idPrefix + id})"/>`,
+		).join('\n');
+	return { defs, rects };
+}
+
+const bannerBand = band(BAND_W, BAND_H, 'b');
 
 /** Lays out one line of plain text, centred on x=0, as a single path.
  *  Fill-only, so unlike the wordmark it does not need a path per glyph. */
@@ -495,7 +526,9 @@ const LEGEND = ['one', 'round', 'trip!'];
  * stack of lines has to fit down it. With three short lines the height is what
  * binds, where with two longer ones the width did.
  */
-const LEGEND_FIT = 81 * 2 * 0.82;
+/* 0.62 of the inner disc, not 0.82: at 0.82 the words crowd the points and the
+   seal reads as a block of text with a star round it. */
+const LEGEND_FIT = 81 * 2 * 0.62;
 const LEGEND_LEAD_RATIO = 1.04;
 const LEGEND_SIZE = Math.min(
 	LEGEND_FIT / Math.max(...LEGEND.map((l) => font.getAdvanceWidth(l, 1))),
@@ -514,26 +547,39 @@ const banner = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${q(BAND_W)
      role="img" aria-label="Cap'n Web">
 <title>Cap'n Web</title>
 <defs>
-<linearGradient id="band" gradientUnits="userSpaceOnUse"
-                x1="${lin.x1}" y1="${lin.y1}" x2="${lin.x2}" y2="${lin.y2}">
-<stop offset="0" stop-color="#0a1424"/>
-<stop offset="0.54" stop-color="#0c1c2b"/>
-<stop offset="1" stop-color="#0a2320"/>
-</linearGradient>
-${cssRadial('glow1', '#7aa2ff', 0.13, 0.72, 1.2, 0.12, 0, 0.62, BAND_W, BAND_H)}
-${cssRadial('glow2', '#4fd6a8', 0.12, 0.66, 1.18, 0.9, 1.04, 0.6, BAND_W, BAND_H)}
+${bannerBand.defs}
 <filter id="sealshadow" x="-15%" y="-15%" width="140%" height="140%">
 <feDropShadow dx="0" dy="${q(SEAL_SHADOW_DY)}" stdDeviation="${q(SEAL_SHADOW_BLUR)}"
               flood-color="#000" flood-opacity="0.32"/>
 </filter>
-</defs>
-<!-- The band is one translucent group, so the accents keep their relationship
-     to the gradient and the page shows through all three together. -->
-<g opacity="${BAND_ALPHA}">
-<rect width="${q(BAND_W)}" height="${q(BAND_H)}" fill="url(#band)"/>
-<rect width="${q(BAND_W)}" height="${q(BAND_H)}" fill="url(#glow1)"/>
-<rect width="${q(BAND_W)}" height="${q(BAND_H)}" fill="url(#glow2)"/>
+<!--
+  The legend is knocked out of the artwork rather than painted on it, so the
+  words are holes and whatever is behind shows through: near-white on a light
+  README, near-black on a dark one. Painting them one colour would be wrong on
+  one of the two, and a PNG cannot switch.
+
+  The mask wraps *everything*, not just the star, and that is the whole point.
+  Masking only the star leaves the seal's shadow under each hole (filling the
+  letters with 32% black) and, worse, leaves the band painted behind them: the
+  band is translucent, so the glyphs came out at alpha 76 carrying the band's
+  own colour instead of at alpha 0. They looked transparent against a dark page
+  and wrong against a light one. The letters have to be holes in the composite,
+  not holes in one layer of it.
+
+  Because the mask is applied to the whole canvas, its region and its white
+  backdrop have to be the whole canvas too. Anything outside a mask's region is
+  treated as black, so a seal-sized region here would erase the rest of the art.
+-->
+<mask id="legend" maskUnits="userSpaceOnUse"
+      x="0" y="0" width="${q(BAND_W)}" height="${q(CANVAS_H)}">
+<rect x="0" y="0" width="${q(BAND_W)}" height="${q(CANVAS_H)}" fill="#fff"/>
+<g transform="translate(${q(SEAL_CX)} ${q(SEAL_CY)})">
+${legendPaths.map((d) => `<path d="${d}" fill="#000"/>`).join('\n')}
 </g>
+</mask>
+</defs>
+<g mask="url(#legend)">
+${bannerBand.rects}
 <g transform="translate(${q(OX)} ${q(OY)})" fill="#fff" stroke="#070a11"
    stroke-width="${STROKE}" stroke-linejoin="round" paint-order="stroke fill">
 ${[...CAPN_PATHS, ...WEB_PATHS].map((d) => `<path d="${d}"/>`).join('\n')}
@@ -541,12 +587,11 @@ ${[...CAPN_PATHS, ...WEB_PATHS].map((d) => `<path d="${d}"/>`).join('\n')}
 <g transform="translate(${q(SEAL_CX)} ${q(SEAL_CY)})">
 <!-- The shadow goes on a wrapper rather than the path: on the path itself the
      filter would resolve in the rotated, scaled space and the shadow would come
-     out tilted and undersized. The legend sits outside it, unshadowed, exactly
-     as the site keeps the filter off the words. -->
+     out tilted and undersized. -->
 <g filter="url(#sealshadow)">
-<path d="${STAR_PATH}" transform="rotate(${SEAL_TILT}) scale(${q(SEAL_SCALE)})" fill="#e85d2c"/>
+<path d="${STAR_PATH}" transform="rotate(${SEAL_TILT}) scale(${q(SEAL_SCALE)})" fill="#f6821f"/>
 </g>
-${legendPaths.map((d) => `<path d="${d}" fill="#070a11"/>`).join('\n')}
+</g>
 </g>
 </svg>
 `;
@@ -577,24 +622,18 @@ const OG_H = 630;
  * fallback path -- gradient with no image -- still gets an edge.
  */
 const OG_BORDER = 12;
-const ogLin = cssLinear(104, OG_W, OG_H);
+const ogBand2 = band(OG_W, OG_H, 'o');
 
 const ogBand = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${OG_W} ${OG_H}"
      width="${OG_W}" height="${OG_H}">
 <defs>
-<linearGradient id="band" gradientUnits="userSpaceOnUse"
-                x1="${ogLin.x1}" y1="${ogLin.y1}" x2="${ogLin.x2}" y2="${ogLin.y2}">
-<stop offset="0" stop-color="#0a1424"/>
-<stop offset="0.54" stop-color="#0c1c2b"/>
-<stop offset="1" stop-color="#0a2320"/>
-</linearGradient>
-${cssRadial('glow1', '#7aa2ff', 0.13, 0.72, 1.2, 0.12, 0, 0.62, OG_W, OG_H)}
-${cssRadial('glow2', '#4fd6a8', 0.12, 0.66, 1.18, 0.9, 1.04, 0.6, OG_W, OG_H)}
+${ogBand2.defs}
 </defs>
-<rect width="${OG_W}" height="${OG_H}" fill="url(#band)"/>
-<rect width="${OG_W}" height="${OG_H}" fill="url(#glow1)"/>
-<rect width="${OG_W}" height="${OG_H}" fill="url(#glow2)"/>
-<rect width="${OG_BORDER}" height="${OG_H}" fill="#e85d2c"/>
+<!-- The card needs an opaque base under the translucent band. It is the site's
+     own dark page colour, so the card looks like the site in dark mode. -->
+<rect width="${OG_W}" height="${OG_H}" fill="#070a11"/>
+${ogBand2.rects}
+<rect width="${OG_BORDER}" height="${OG_H}" fill="#f6821f"/>
 </svg>
 `;
 
@@ -631,7 +670,7 @@ ${[...CAPN_PATHS, ...WEB_PATHS].map((d) => `<path d="${d}"/>`).join('\n')}
 </g>
 <g transform="translate(${q(ogSealCx)} ${q(ogSealCy)})">
 <g filter="url(#sealshadow)">
-<path d="${STAR_PATH}" transform="rotate(${SEAL_TILT}) scale(${q(SEAL_SCALE)})" fill="#e85d2c"/>
+<path d="${STAR_PATH}" transform="rotate(${SEAL_TILT}) scale(${q(SEAL_SCALE)})" fill="#f6821f"/>
 </g>
 ${legendPaths.map((d) => `<path d="${d}" fill="#070a11"/>`).join('\n')}
 </g>

@@ -27,7 +27,7 @@
 	/* The one primary action. Kept apart from `--warn`, which has to darken in
 	   light mode to stay readable as text and is the wrong colour for a filled
 	   button. */
-	--cta: #e85d2c;
+	--cta: #f6821f;
 	--cta-ink: #fff8f4;
 
 	--mono: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

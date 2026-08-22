@@ -106,8 +106,23 @@ const { class: className = '', as: Tag = 'div' }: Props = Astro.props;
 		/* The reference's legend is lower case. Doing it here rather than in the
 		   string keeps the accessible name a properly capitalised sentence. */
 		text-transform: lowercase;
-		/* Fixed, not themed. 5.69:1 on the tomato, in both schemes. */
-		color: var(--cw-black);
+		/*
+		 * The page's own background colour, which inverts the legend with the
+		 * scheme: near-white on a light page, near-black on a dark one. The seal
+		 * is a stamp punched through to the paper, so the words are the paper.
+		 * The README banner does the same thing by knocking the letters out of
+		 * the star and letting the page show through the holes.
+		 *
+		 * This is a deliberate exception to the site's "AA everywhere" rule, and
+		 * the only one. Dark is 5.69:1, but paper on tomato is 3.07:1, under the
+		 * 4.5:1 line -- the tomato cannot carry a light label without being
+		 * darkened, and darkening it here would make the stamp a different
+		 * colour on one scheme. The legend was near-black in both schemes before
+		 * and measured 5.69:1; if you want that back, this line is the whole
+		 * change. The primary *button* took the other branch and darkened its
+		 * fill instead: see the `--nb-primary` note in globals.css.
+		 */
+		color: var(--nb-background);
 		/*
 		 * The same tomato as the star, and therefore invisible: the text box is
 		 * 68% of the seal wide, well inside the star's 81% inner radius, so this

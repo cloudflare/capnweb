@@ -3,7 +3,8 @@
 <!-- markdownlint-disable-next-line MD041 -->
 ![Cap'n Web](assets/capnweb-banner.png)
 
-# Cap'n Web: A JavaScript-native RPC system
+<!-- markdownlint-disable-next-line MD033 -->
+<h1 align="center">Cap'n Web: A JavaScript-native RPC system</h1>
 
 Cap'n Web is a spiritual sibling to [Cap'n Proto](https://capnproto.org) (and is created by the
 same author), but designed to play nice in the web stack. That means:
@@ -165,6 +166,8 @@ Runnable examples live in [`examples/`](examples/):
 * [`batch-pipelining`](examples/batch-pipelining/): three dependent calls in one HTTP round trip.
 * [`worker-react`](examples/worker-react/): a React app against a Cap'n Web Worker, with runtime
   validation at the RPC boundary.
+* [`session-recovery`](examples/session-recovery/): a WebSocket session with a button that kills
+  it, showing what a disconnect destroys and what it takes to resume without a gap.
 
 ## Related packages
 

@@ -6,8 +6,8 @@
 :root {
   color-scheme: light dark;
 
-  --theme-orange: #e85d2c;
-  --theme-orange-hover: #f07846;
+  --theme-orange: #f6821f;
+  --theme-orange-hover: #fbad41;
   --theme-orange-foreground: #fff8f4;
 
   /* The ground is tinted and the cards are not, so a card is separated by its

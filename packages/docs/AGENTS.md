@@ -200,10 +200,16 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   Markdown transformations go in `markdown.mdastPlugins` / `hastPlugins`, and a Sätteri plugin is a
   visitor over read-only nodes that writes through `context.setProperty`.
 - Edit `src/components.ts` to bypass registration. If MDX uses a component, register it.
-- Spend the tomato accent (`--cw-orange`, which is also `--nb-primary`) on anything else. It is the
-  call to action and almost nothing else -- prose links are ink, not accent -- and that restraint is
-  the point. If you do set text in it, use `--cw-orange-text`: the brand tomato is 3.1:1 on the
-  paper, and the darkened variant exists so light mode has a legal way to say the same thing.
+- Spend the orange accent on anything else. It is the call to action and almost nothing else --
+  prose links are ink, not accent -- and that restraint is the point.
+- Darken, tint or theme-swap `--cw-orange`. It is Cloudflare orange, `#f6821f`, the brand's value
+  and not ours to adjust, and it is the same hex on both schemes. The text on it inverts instead,
+  via `--nb-background`. That pairing is a **sanctioned exception to the site's AA rule** in light
+  mode -- 2.28:1, against 7.67:1 dark -- and it was chosen over compliance on purpose. Don't "fix"
+  it. Two narrower places do use a darkened variant, for reasons that do not generalise:
+  `--cw-orange-text`, because the brand orange as prose on paper is 2.3:1 and simply unreadable;
+  and the playground's light-mode `--pg-accent`, because that one is the only cue for which tab is
+  active and the brand orange is 2.11:1 on its bar, under even the 3:1 a control needs.
 - Assume the landing page is dark. It was, and is not any more -- it honours the toggle like every
   other page, and the hero figure reads its colours from the same tokens as the prose.
   `.cw-home` marks the page, not a scheme.
@@ -234,10 +240,14 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
   TeX Gyre Bonum Bold is the same Bookman design under the GUST Font License.
 - Merge the wordmark's per-glyph paths into one path per line. The fill then floods their union
   and swallows the keyline wherever two letters touch.
-- Theme the mark or the seal. Both are fixed in both schemes -- white fill with a black keyline,
-  and tomato with `--cw-black` lettering at 5.69:1 -- because they are stamped objects rather than
-  page furniture.
-- Take the seal's invisible `background` off `.cw-star-text`. It is the same tomato it sits on, and
+- Theme the mark, or the seal's *fill*. The mark is fixed in both schemes -- white fill, black
+  keyline -- and the seal is always Cloudflare orange, because they are stamped objects rather than
+  page furniture. The seal's **legend** is the one exception: it takes `--nb-background`, so the
+  words invert with the scheme like paper showing through a punched hole, and the README banner
+  knocks them out of the star with a `<mask>` to get the same effect for real. That costs contrast
+  in light mode (2.28:1, against 7.67:1 dark) and is accepted. Don't "fix" it by darkening the
+  orange; read the note in `StarBadge.astro` first.
+- Take the seal's invisible `background` off `.cw-star-text`. It is the same orange it sits on, and
   it exists so contrast tools measure the real pair instead of walking past the SVG to the page.
 - Regularise the wordmark's per-glyph jitter. The `rot`/`dy`/`scale` arrays are measured off the
   reference, not decoration: a hand-set mark is what is being parodied, and zeroing them makes it
@@ -245,9 +255,12 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
 - Soften the hero banner's bottom edge. It ends on a hard line because a cereal box is printed
   rather than blended, and the seal crossing that line is what stops the band reading as a floating
   slab. Nothing from the banner down may set `overflow: hidden`.
-- Lighten the light-mode banner again. It is at its ceiling: the white mark averages 5.07:1 across
-  the band and is at exactly 4.50:1 over the brightest corner, so there is no headroom left. A pale
-  band means a black-filled mark, which is a different logo.
+- Thin the wordmark's keyline, or lighten the band expecting the white fill to survive it. The band
+  is one translucent value (`--cw-band`) over whatever page shows it, so on light it is a pale wash
+  and the white mark measures 1.56:1 against it on average, 1.23:1 at its lightest. On light the
+  keyline *is* the logo; on dark the fill does the work at 15.45:1. The lever for a genuinely pale
+  treatment is `--cw-mark-fill`, which inverts the mark to a black fill and is a different logo
+  rather than a lighter one.
 - Lower `.cw-hero-lockup`'s `max-width` to shrink the mark on a phone. That is the `min(100%, cap)`
   branch that is not taken there; the band's inline padding is what sets the size below 48rem.
 - Straighten the mark's left nudge because the artwork looks centred without it. The nudge offsets

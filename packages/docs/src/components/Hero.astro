@@ -147,7 +147,19 @@ const hasIllus = Astro.slots.has('default');
 				illustration === 'below' && hasIllus ? 'mt-5' : 'mt-10',
 			]}
 		>
-			<LinkButton href="/start/quickstart/" variant="primary" size="lg" icon>
+			{/* Bold rather than the button's default medium. The weight is doing real
+			    work here: this is the one place a near-white label sits on Cloudflare
+			    orange at 2.28:1, and heavier strokes are what keep it readable at a
+			    contrast the ratio says should not be. Set at the call site because
+			    `cn()` puts the consumer class last and `twMerge` resolves it against
+			    `font-medium`, which keeps the registry's button files unmodified. */}
+			<LinkButton
+				href="/start/quickstart/"
+				variant="primary"
+				size="lg"
+				icon
+				class="font-bold"
+			>
 				Get started
 			</LinkButton>
 			<LinkButton
@@ -213,55 +225,22 @@ const hasIllus = Astro.slots.has('default');
 		 */
 		--cw-hero-nudge: clamp(0rem, (100vw - 30rem) * 0.42, 4.62rem);
 		padding: 2.75rem 1rem var(--cw-banner-pb);
-		background:
-			radial-gradient(
-				72% 120% at 12% 0%,
-				color-mix(in srgb, #7aa2ff 13%, transparent) 0%,
-				transparent 62%
-			),
-			radial-gradient(
-				66% 118% at 90% 104%,
-				color-mix(in srgb, #4fd6a8 12%, transparent) 0%,
-				transparent 60%
-			),
-			linear-gradient(104deg, #0a1424 0%, #0c1c2b 54%, #0a2320 100%);
+		background: var(--cw-band);
 	}
 
 	/*
-	 * The one part of the mark that is themed, and it is themed because a
-	 * near-black slab looks like a hole punched in a paper page. Light mode gets
-	 * the same band mixed lighter -- a printed teal panel rather than a night
-	 * sky -- which is closer to what the reference does anyway, since its red is
-	 * a mid-tone rather than a dark one.
+	 * There is deliberately no light-mode override here any more.
 	 *
-	 * It cannot go much lighter than this. The wordmark is white with a black
-	 * keyline and does not flip, so the band is what the white is read against:
-	 * measured, that pair is 5.97:1 here and 16.88:1 on the dark band. A
-	 * genuinely pale band would mean inverting the mark to a black fill, which
-	 * is a different logo, not a lighter one.
+	 * There used to be two banners, a near-black one and a teal one, because an
+	 * opaque near-black slab looks like a hole punched in a paper page. The band
+	 * is translucent now, so it is the page in both schemes plus the same wash,
+	 * and a second definition would only be a way for the two to disagree.
 	 *
-	 * Keyed off `data-theme` rather than `data-mode` for the reason Playground
-	 * gives: `data-mode` is absent in light mode, so light cannot be selected.
-	 *
-	 * Both schemes lift with the same bright blue and green. They are the
-	 * figure's dark-scheme request and response hues, and they stay put across
-	 * the toggle because on either band they are highlights on a mid-to-dark
-	 * surface; the light palette's ink-dark pair would read as grime here.
+	 * The wash is one bright blue and one bright green in both schemes. They are
+	 * the figure's dark-scheme request and response hues, and they stay put
+	 * across the toggle because on either band they are highlights rather than
+	 * ink; the light palette's ink-dark pair would read as grime here.
 	 */
-	:root[data-theme='light'] .cw-hero-banner {
-		background:
-			radial-gradient(
-				72% 120% at 12% 0%,
-				color-mix(in srgb, #7aa2ff 26%, transparent) 0%,
-				transparent 62%
-			),
-			radial-gradient(
-				66% 118% at 90% 104%,
-				color-mix(in srgb, #4fd6a8 24%, transparent) 0%,
-				transparent 60%
-			),
-			linear-gradient(104deg, #28617a 0%, #2b7489 54%, #288674 100%);
-	}
 
 	/*
 	 * Mark and seal side by side, centred as one object.

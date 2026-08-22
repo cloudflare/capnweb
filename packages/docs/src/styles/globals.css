@@ -40,10 +40,49 @@
 	--cw-paper: #eef1f4;
 	--cw-paper-deep: #e2e7ec;
 
-	/* The spark. Homepage waves and the primary CTA. */
-	--cw-orange: #e85d2c;
-	--cw-orange-bright: #f07846;
-	--cw-orange-deep: #c4471c;
+	/*
+	 * The spark. Homepage waves, the seal, and the primary CTA.
+	 *
+	 * This is Cloudflare orange, and it is the brand's value rather than ours:
+	 * it does not get darkened, tinted or theme-swapped to win a contrast
+	 * argument. It is the same hex on both schemes. What changes with the theme
+	 * is the *text* on it, which takes `--nb-background` -- near-white on a
+	 * light page, near-black on a dark one.
+	 *
+	 * That asymmetry is deliberate and it is not free. This orange is bright, so
+	 * the dark label is comfortable (7.67:1) and the light one is not (2.28:1).
+	 * See the `--nb-primary` note below for what that buys and what it costs.
+	 */
+	--cw-orange: #f6821f;
+
+	/*
+	 * The hero band, and the only definition of it.
+	 *
+	 * Every layer is translucent, so the page shows through and one value serves
+	 * both schemes: a pale blue wash on paper, a faint tint over near-black.
+	 * There is no light-mode override any more, and there should not be one --
+	 * the band adapts because it is transparent, not because it is themed.
+	 *
+	 * `packages/docs/scripts/build-wordmark.mjs` keeps a hand-copy of these
+	 * numbers for the README banner and the social cards, which are SVG and
+	 * cannot read a custom property. Change one and change the other.
+	 */
+	--cw-band:
+		radial-gradient(72% 120% at 12% 0%, #004dff21 0%, #0000 62%),
+		radial-gradient(66% 118% at 90% 104%, #41d2a01f 0%, #0000 60%),
+		linear-gradient(
+			104deg,
+			rgb(35 87 167 / 12%) 0%,
+			rgb(40 99 155 / 31%) 54%,
+			rgb(0 255 221 / 16%) 100%
+		);
+	/* Cloudflare's own lighter orange, used as the dark-scheme hover: the label
+	   there is near-black, so lifting the fill improves it (7.67:1 -> 10.52:1). */
+	--cw-orange-bright: #fbad41;
+	/* The light-scheme hover. The label there is near-white, so the fill has to
+	   move the other way; this is the brand orange darkened enough to register
+	   as a state change and to walk the label back up (2.28:1 -> 3.34:1). */
+	--cw-orange-deep: #cc680e;
 }
 
 /* ---- Light mode ---- */
@@ -72,23 +111,34 @@
 	--nb-accent: #dce3ea;
 	--nb-accent-foreground: #1a222b;
 
-	/* Tomato is the action colour. Links stay ink so the spark stays rare.
+	/* Cloudflare orange is the action colour. Links stay ink so the spark stays
+	 * rare.
 	 *
-	 * The label on a tomato button is ink, not white. White on this orange is
-	 * 3.5:1 and gets worse on hover as the fill brightens (2.8:1); ink is 4.6:1
-	 * and gets better (5.7:1). cloudflare.com resolves the same problem the same
-	 * way -- its orange buttons carry near-black labels. */
+	 * **This pair is a deliberate, sanctioned exception to the site's AA rule.**
+	 * The fill is the brand orange, undarkened, because it is the brand's colour
+	 * and not ours to adjust. The label is `--nb-background`, so it inverts with
+	 * the scheme along with the seal's legend. On this scheme that is near-white
+	 * on a bright orange: 2.28:1, against the 4.5:1 that 1.4.3 asks for. Dark
+	 * mode is comfortable at 7.67:1.
+	 *
+	 * Do not "fix" this by darkening the fill or by flipping the label to ink.
+	 * Both were measured and both were rejected in favour of the brand pairing.
+	 * The hover is the one concession: it darkens rather than lightens here, so
+	 * the label recovers to 3.34:1 while the control is being used. */
 	--nb-primary: var(--cw-orange);
-	--nb-primary-foreground: #1a222b;
-	--nb-primary-hover: var(--cw-orange-bright);
+	--nb-primary-foreground: var(--nb-background);
+	--nb-primary-hover: var(--cw-orange-deep);
 
 	/*
-	 * Tomato as *text* rather than as a fill. The brand orange is 3.1:1 on the
-	 * sheet, so anything set in it at body size needs to be darkened; this is
-	 * the same hue at 5.2:1. Dark mode has no such problem and uses the orange
+	 * The orange as *text* rather than as a fill, which is a different problem
+	 * and gets a different answer. The brand orange is 2.3:1 on the sheet, so
+	 * anything set in it at body size is unreadable rather than merely off-spec;
+	 * this is the same hue darkened to 4.6:1. The exception above is for the
+	 * brand mark on a fill, not a licence to set prose in an illegible colour.
+	 * Dark mode has no such problem and uses the orange
 	 * itself.
 	 */
-	--cw-orange-text: #b03f18;
+	--cw-orange-text: #a85608;
 
 	--nb-border: rgba(26, 34, 43, 0.1);
 	--nb-border-strong: rgba(26, 34, 43, 0.2);
@@ -198,8 +248,12 @@
 	--nb-accent: var(--cw-ink-600);
 	--nb-accent-foreground: #f4f7fa;
 
+	/* Same brand orange as light mode. Here the inverted label lands the right
+	   way up: near-black on the orange is 7.67:1, and the hover lifts the fill
+	   to Cloudflare's lighter orange for 10.52:1. This is the scheme the pairing
+	   was designed on; light mode is the one that pays for it. */
 	--nb-primary: var(--cw-orange);
-	--nb-primary-foreground: #1a222b;
+	--nb-primary-foreground: var(--nb-background);
 	--nb-primary-hover: var(--cw-orange-bright);
 
 	/* On a dark page the brand orange clears AA as text on its own. */

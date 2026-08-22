@@ -200,7 +200,7 @@ const demoSrc = `${example.demoPath}?embed=1`;
 		--pg-fg-muted: #adbccb;
 		--pg-fg: #e8eef4;
 		/* The one place the tool is allowed a spark: the active tab's edge. */
-		--pg-accent: #e85d2c;
+		--pg-accent: #f6821f;
 	}
 
 	:root[data-theme='light'] .capn-stage {
@@ -209,7 +209,12 @@ const demoSrc = `${example.demoPath}?embed=1`;
 		--pg-border: rgba(26, 34, 43, 0.12);
 		--pg-fg-muted: #4c5a6a;
 		--pg-fg: #1a222b;
-		--pg-accent: #c4471c;
+		/* Darkened, unlike the site's CTA and seal, which take Cloudflare orange
+		   raw and accept the contrast hit. This one is not the brand mark, it is
+		   the only thing telling you which tab is active, and the brand orange on
+		   this bar is 2.11:1 -- under the 3:1 a graphical control needs, and
+		   visibly gone. Same hue, darkened to 3.09:1. */
+		--pg-accent: #cc680e;
 	}
 
 	.capn-stage {

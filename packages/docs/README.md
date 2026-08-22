@@ -150,8 +150,8 @@ exists.
 ## The theme
 
 `src/styles/globals.css` is the file to edit. The palette is a soft cool grey (`#eef1f4`) with slate
-ink and a restrained tomato CTA. Type is DM Sans for headings, body and UI, and Commit Mono for
-code.
+ink and a restrained Cloudflare orange CTA. Type is DM Sans for headings, body and UI, and Commit
+Mono for code.
 
 Light mode is a genuine second scheme rather than an inversion. The sidebar and the content sheet
 share `--nb-background`: one surface, not a darker rail meeting a lighter document.
@@ -183,21 +183,28 @@ values the page shell needs that have no Nimbus equivalent.
 | ------------------ | --------- | --------- | ----------------------------------------- |
 | `--cw-ground`      | `#090c10` | `#e2e7ec` | the ground the page sheet rests on        |
 | `--nb-background`  | `#0c1014` | `#eef1f4` | the content sheet and the desktop sidebar |
-| `--nb-primary`     | `#e85d2c` | `#e85d2c` | primary actions                           |
-| `--cw-orange`      | `#e85d2c` | `#e85d2c` | the CTA spark                             |
-| `--cw-orange-text` | `#e85d2c` | `#b03f18` | the same spark, when it is text           |
+| `--nb-primary`     | `#f6821f` | `#f6821f` | primary actions                           |
+| `--cw-orange`      | `#f6821f` | `#f6821f` | the CTA spark, Cloudflare orange          |
+| `--cw-orange-text` | `#f6821f` | `#a85608` | the same spark, when it is text           |
 
-Two of those need saying out loud, because both are places where the obvious value is the wrong one:
+Three of those need saying out loud, because each is a place where the obvious value is the wrong
+one:
 
-- **The label on a tomato button is ink, not white.** White on `#e85d2c` is 3.5:1, and it gets
-  *worse* on hover as the fill brightens, to 2.8:1. Ink is 4.6:1 and gets better, to 5.7:1.
-  cloudflare.com resolves the identical problem the identical way: its orange buttons carry
-  near-black labels.
-- **Orange as text is not the same orange as orange as a fill.** The brand tomato is 3.1:1 on the
-  paper, so anything set in it at body size is below AA before it starts. `--cw-orange-text` is the
-  same hue darkened to 5.2:1, and in dark mode it is just the brand colour, which needs no help
-  there. Nothing sets body text in it today; it exists so that the next thing to try cannot quietly
-  use the 3.1:1 one.
+- **The orange is Cloudflare orange, and it is not ours to adjust.** `#f6821f` is the brand's value.
+  It is the same hex on both schemes and it does not get darkened, tinted or theme-swapped to win a
+  contrast argument. What changes with the theme is the *text* on it.
+- **The label on the orange is `--nb-background`, so it inverts with the scheme, and light mode is
+  a sanctioned exception to AA.** This orange is bright, so the pairing lands well one way and badly
+  the other: near-black on it is 7.67:1, near-white on it is 2.28:1 against a 4.5:1 requirement. The
+  brand pairing was chosen over compliance deliberately, and it is the only such exception on the
+  site. The hover is the one concession -- it darkens in light mode instead of lightening, so the
+  label recovers to 3.34:1 while the control is in use, and lightens in dark mode to Cloudflare's
+  own `#fbad41` for 10.52:1.
+- **Orange as text is not the same orange as orange as a fill.** The brand orange is 2.3:1 on the
+  paper, so anything set in it at body size is not merely off-spec, it is unreadable.
+  `--cw-orange-text` is the same hue darkened to 4.6:1, and in dark mode it is just the brand
+  colour, which needs no help there. The exception above is for the brand mark on a fill; it is not
+  a licence to set prose in an illegible colour.
 
 The palette is kept as hex rather than converted to oklch, which the scaffold's own comment
 recommends. These are measured, tuned values carried over from the theme this replaced, and a round
@@ -318,26 +325,31 @@ lockup with white letters and a heavy black keyline, a starburst seal stuck on i
 and the pair sitting on a coloured band that stops dead where the prose begins.
 
 The band is `.cw-hero-banner`, and its hard bottom edge is the point of it: a cereal box is
-printed, not blended, so the artwork ends on a line rather than fading into the page. It is a
-linear gradient lifted by two soft radials in `#7aa2ff` and `#4fd6a8`. Those two hues are the
-figure's dark-scheme request and response colours from `canvas-hero/palette.ts`, which is the only
-reason the band belongs to this page rather than to any dark hero, and they stay put across the
-toggle because on either band they are highlights on a mid-to-dark surface.
+printed, not blended, so the artwork ends on a line rather than fading into the page.
 
-The base gradient underneath them *is* themed, and it is the one part of the artwork that is. A
-near-black slab looks like a hole punched in a paper page, so light mode gets the same band mixed
-lighter, a printed teal panel rather than a night sky. That is closer to the reference anyway,
-whose red is a mid-tone rather than a dark one. The override is keyed off `data-theme` and not
-`data-mode`, for the reason `Playground.astro` gives: `data-mode` is absent in light mode, so
-light cannot be selected against it.
+**There is exactly one definition of the band: `--cw-band` in `globals.css`.** Every layer in it is
+translucent -- a `104deg` linear gradient running 12% to 31% opacity, lifted by two soft elliptical
+accents in blue and green at around 13% -- so the page shows through and a single declaration
+serves both schemes. On paper it reads as a pale blue-to-teal wash; over near-black it reads as a
+faint tint of the same sweep. There is no light-mode override any more, and there should not be
+one: the previous design themed the base gradient and had to keep two bands honest against each
+other. If you change the stops, change them here.
 
-**The light band is at its ceiling and should not be brightened again.** The wordmark is white and
-does not flip, so the band is what the white is read against. Measured across the band, that pair
-averages 5.07:1, and at the band's brightest corner -- where the two radial lifts pile up -- it is
-exactly 4.50:1. There is no headroom left above that. The mark is decorative artwork rather than
-text, so this is not formally a 1.4.3 obligation, but it is the number that decides whether the
-logo is legible, and the next nudge spends it. Going genuinely pale means inverting the mark to a
-black fill via `--cw-mark-fill`, which is a different logo rather than a lighter one.
+Two other surfaces reuse the same artwork and cannot read a custom property, because they are SVG:
+the README banner and the social card. `build-wordmark.mjs` therefore keeps a hand copy of the
+stops in `BAND_STOPS` and `BAND_ACCENTS`. Change one, change the other, and regenerate.
+
+**On a light page the mark is carried by its keyline, not by its fill.** The wordmark is white and
+does not flip, so the band is what the white is read against, and a translucent band over paper is
+pale: measured across it, white against the band is 1.56:1 on average and 1.23:1 at its lightest.
+The white fill and the light band are near enough the same value that the letterforms are defined
+entirely by their 8px black keyline. That is a legitimate look -- outlined display lettering is
+exactly what the reference is doing -- but it is a different mechanism from dark mode, where the
+same pair measures 15.45:1 and the fill does the work. The mark is decorative artwork rather than
+text, so no 1.4.3 obligation attaches, but two things follow. Don't thin the keyline, because on
+light it is the logo. And don't lighten the band further expecting the mark to survive it; the
+lever that actually exists is `--cw-mark-fill`, which inverts the mark to a black fill and is a
+different logo rather than a lighter one.
 
 The seal is stuck on the mark's bottom right and hangs off the band. That arrangement came from
 the live reference: capnproto.org's is `position: absolute` with a `z-index`, its left edge sits
@@ -470,7 +482,7 @@ rather than 16, because a HiDPI tab strip asks for the icon at 2x and that is wh
 actually resolve; below about 0.5 the star keeps its points but sheds so much ink that the 16px
 rendering reads as a faint sparkle instead of a stamped seal. Eleven is odd, so the offset is zero
 and a point aims straight up -- an even count centres a point top *and* bottom and reads as a cog.
-There is no lettering on it, and the fill is `#e85d2c` written out longhand because a favicon is
+There is no lettering on it, and the fill is `#f6821f` written out longhand because a favicon is
 its own document and inherits none of the page's custom properties -- keep it in step with
 `--cw-orange` by hand.
 
@@ -480,19 +492,37 @@ The same script emits a third thing, and it leaves this package to do it: `asset
 at the repository root, which `scripts/build-banner-png.mjs` rasterises to the PNG the root README
 shows. That README is also the npm package page, and npm is what dictates the whole design.
 
-The band is painted **opaque**, and everything else follows from that. A README image cannot read
-custom properties or `prefers-color-scheme`, so the usual trick is a `<picture>` with a light file
-and a dark one -- but npm's markdown sanitiser is more aggressive than GitHub's and drops
+The band is painted **translucent**, and everything else follows from that. A README image cannot
+read custom properties or `prefers-color-scheme`, so the usual trick is a `<picture>` with a light
+file and a dark one -- but npm's markdown sanitiser is more aggressive than GitHub's and drops
 `<source>`, and npm now has a dark theme, so a stripped `<picture>` would show dark-mode npm users
-the light variant on a dark page. Against an opaque band the gradient, both accents and the white
-wordmark all composite over a known colour and render identically everywhere. The accents stay
-semi-transparent exactly as they are on the site, but they are semi-transparent *over the band*,
-not over the page: a semi-transparent band would go pale on white and murky on black, which is the
-one thing this has to avoid.
+the light variant on a dark page. One file has to work on both.
 
-Only the seal crosses the edge, and it is the one element painted to survive on an unknown
-background -- orange with a dark keyline, which holds on white and on near-black. Below the band
-the canvas is fully transparent, so the seal reads as overhanging a real edge. The seal also sits
+Translucency is how it does that: the same `--cw-band` stops the site uses, composited over
+whatever the host page happens to be, so the image adapts instead of choosing. On GitHub light it
+is a pale wash, on GitHub dark and on npm's dark theme it is a faint tint over near-black. This is
+the opposite of the earlier design, which painted the band opaque precisely so it would render
+identically everywhere, and the trade is deliberate: identical-everywhere meant a dark slab sitting
+in a white page.
+
+Three things make it survivable, and all three have to keep working. The wordmark is white with a
+heavy black keyline, so on a pale composite the keyline defines it (see the band section above --
+this is the same 1.23:1 fill). The seal is Cloudflare orange with a dark keyline, which holds on
+white and on near-black. And the seal's legend is **knocked out with a `<mask>`** rather than
+painted: the words are holes, so the host page shows through them and they invert for free -- white
+lettering on GitHub light, dark on GitHub dark.
+
+That mask wraps the entire composite -- band, wordmark and seal -- and not just the star, which is
+subtler than it sounds. Masking only the star leaves two things behind each hole. The seal's drop
+shadow fills the letters with 32% black, giving grey words instead of the page. And the band, being
+translucent, keeps painting: the glyphs came out at alpha 76 carrying the band's own colour, which
+looks approximately right on a dark page and visibly wrong on a light one. The letters have to be
+holes in the finished image, not holes in one layer of it. Because the mask now applies to the whole
+canvas, its region and its white backdrop must be the whole canvas too: anything outside a mask's
+region is treated as black, so a seal-sized region would erase the rest of the artwork.
+
+Below the band the canvas is fully transparent, so the seal reads as overhanging a real edge. The
+seal also sits
 further right than it does on the site: at the site's 91.5% it lands on the `B` and the lower line
 reads "WEE", because the site's seal hangs off a full-bleed banner with the whole viewport to its
 right and this one does not.
@@ -553,12 +583,18 @@ silently, with the mark left at its intrinsic size. The fix is a wrapper the par
 Custom properties are the exception and inherit straight through, which is why `--cw-star-size`
 and `--cw-star-tilt` can be set from outside `StarBadge.astro` when a width cannot.
 
-**The mark and the seal are both fixed, not themed.** They are stamped objects, and a stamp is the
-same colour wherever it is stuck. White fill with a black keyline works on both schemes because
+**The mark and the seal's fill are fixed, not themed.** They are stamped objects, and a stamp is
+the same colour wherever it is stuck. White fill with a black keyline works on both schemes because
 the two halves trade off: on the dark band the fill carries the mark and the keyline barely shows,
-on the light band the fill drops to about 5:1 and the keyline starts doing real work. The seal is
-tomato with `--cw-black` lettering, a fixed pair measuring 5.69:1. The band they are stuck to is
-the themed part, and it is themed so that these two do not have to be.
+on the light band the fill vanishes into the wash and the keyline carries the whole thing. The seal
+is Cloudflare orange, `#f6821f`, on both schemes.
+
+**The seal's legend is the one exception, and it is deliberate.** It takes `--nb-background`, so
+the words invert with the theme -- near-white on a light page, near-black on a dark one -- as if
+the star were punched through to the paper underneath. The README banner reaches the same effect a
+different way, by knocking the letters out of the star with a `<mask>` so the host page really does
+show through. On dark that is 7.67:1; on light it is 2.28:1, below AA, and accepted as the cost of
+pairing brand orange with an inverting label. `StarBadge.astro` carries the full note.
 
 **The words in the seal are the `<h1>`.** They are real DOM text laid over the star, not SVG
 `<text>` and not part of the artwork, so they stay selectable, translatable and searchable. That
@@ -583,11 +619,11 @@ the rotation on the child also keeps `.cw-star`'s layout box honest -- a rotated
 `size * (cos t + sin t)`, which silently inflated every bounding-box measurement of the seal by
 17% and had to be divided back out by hand in the harnesses.
 
-That last point had a subtlety worth recording. The `<h1>` sits on the star's tomato, but nothing
+That last point had a subtlety worth recording. The `<h1>` sits on the star's orange, but nothing
 in the DOM said so: a contrast checker walks up looking for a background colour, finds no paint on
 an SVG sibling, and measures the text against the page. That reported 1:1 on the dark scheme and,
 more dangerously, *passed* on the light one for entirely the wrong reason. `.cw-star-text`
-therefore carries a `background` of the same tomato it is painted on -- invisible, because the
+therefore carries a `background` of the same orange it is painted on -- invisible, because the
 text box is 68% of the seal wide and the star's inner radius is 81% -- purely so the measured pair
 is the real one.
 
@@ -732,8 +768,8 @@ what matters is the contrast of the strokes themselves.
 
 Every page gets its own Open Graph image at `/og/<slug>.png`, generated at build time by
 `astro-og-canvas` through the routes the scaffold provides. The card's whole visual definition is
-`src/pages/og/_og-card-config.ts`: the site's dark scheme, and a 12px tomato border on the leading
-edge, which is the one thing that makes one of these recognisable at thumbnail size. The cards are
+`src/pages/og/_og-card-config.ts`: the site's dark scheme, and a 12px Cloudflare orange border on
+the leading edge, which is the one thing that makes one recognisable at thumbnail size. The cards are
 still set in Inter, which the site itself no longer uses -- they are rasterized, so the face is a
 build input rather than something a reader downloads.
 
