@@ -1,0 +1,40 @@
+---
+/**
+ * LinkCard — link-styled card with title, optional description, and a trailing
+ * arrow that nudges on hover. Ring (not border+shadow), optical padding, and an
+ * immediate hover (no colour transition), per the Kumo design skill.
+ *
+ *   <LinkCard title="Get started" description="5-min intro" href="/start" />
+ *   <LinkCard title="Title only" href="/x" />
+ */
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"a"> {
+  title: string;
+  description?: string;
+  href: string;
+}
+
+const { title, description, href, class: className, ...attrs } = Astro.props;
+---
+
+<a
+  href={href}
+  class={cn(
+    "group my-4 flex h-full items-center justify-between gap-3 rounded-lg bg-card px-5 py-4 ring-1 ring-border no-underline text-inherit hover:ring-foreground/25",
+    className,
+  )}
+  {...attrs}
+>
+  <div class="grid min-w-0 gap-1">
+    <h3 class="m-0 text-[0.9375rem] font-medium leading-snug text-foreground">{title}</h3>
+    {description && <p class="text-sm leading-relaxed text-muted-foreground">{description}</p>}
+  </div>
+  <Icon
+    name="ph:arrow-right"
+    class="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+    is:inline
+  />
+</a>

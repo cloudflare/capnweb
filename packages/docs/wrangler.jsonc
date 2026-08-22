@@ -1,0 +1,21 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "capnweb-docs",
+	"compatibility_date": "2026-02-05",
+
+	// A static site: no `main`, so there is no Worker script and every request is
+	// served from the asset store. The playgrounds run their "server" inside the
+	// browser, so nothing here needs to execute server-side.
+	"assets": {
+		"directory": "dist",
+
+		// Astro emits `about/index.html` for `/about/`, and the docs link to those
+		// directory paths throughout. `auto-trailing-slash` resolves them and
+		// redirects the non-slashed form instead of 404ing.
+		"html_handling": "auto-trailing-slash",
+
+		// A missing page should render the site's own 404, not the bare
+		// asset-store one.
+		"not_found_handling": "404-page"
+	}
+}

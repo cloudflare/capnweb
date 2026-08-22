@@ -1,0 +1,138 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { Button } from "./ui/button";
+import { LinkButton } from "./ui/link-button";
+import { ThemeToggle } from "./ui/theme-toggle";
+import { SearchTrigger } from "./ui/search";
+import { config } from "virtual:nimbus/config";
+import { getSidebarSections } from "@cloudflare/nimbus-docs";
+import Wordmark from "./Wordmark.astro";
+
+interface Props {
+  /** Astro collection id for the current page, forwarded from DocsLayout. */
+  collection?: string;
+  /** Astro entry id for the current page, forwarded from DocsLayout. */
+  entryId?: string;
+  /**
+   * Whether the page has a sidebar to open. When `false`, the mobile
+   * menu button is hidden — pages that opted out via `sidebar: false`
+   * shouldn't show a button that opens an empty dialog. Default `true`.
+   */
+  showSidebar?: boolean;
+}
+
+// `entryId` is part of Props as a forward-compat hook (the version-switcher
+// recipe reads it) but the base Header doesn't use it — leave it off the
+// destructure to avoid an unused-var warning.
+const { collection, showSidebar = true } = Astro.props;
+
+// Normalize trailing slash so isActive matches sidebar hrefs.
+const currentSlug = Astro.url.pathname.replace(/\/$/, "") || "/";
+const sections = await getSidebarSections(currentSlug, { collection });
+const showSections = sections.length >= 2;
+---
+
+<header class="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-lg">
+  <div class="mx-auto flex items-center justify-between h-14 px-4 lg:px-6">
+    <div class="flex items-center gap-3">
+      {/*
+        The wordmark, on a scrap of the hero's own banner.
+
+        The mark is white with a black keyline, which needs a dark ground: on the
+        light scheme, dropped straight onto a `bg-background/80` header, the fill
+        disappears into the bar and all that is left is a hairline outline about
+        half a pixel thick at this size. The chip is the same gradient the hero
+        banner uses, so the header reads as a torn-off corner of it rather than a
+        second, unrelated treatment.
+
+        The mark is `aria-hidden`; the link is named by the `sr-only` text, which
+        keeps the accessible name identical to what was here before.
+
+        The `<span>` around it is load-bearing. A scoped style here cannot size
+        `<Wordmark>`'s own root `<svg>` -- Astro stamps that element with the
+        child's scope id, not this one -- so the width has to go on a wrapper
+        this file owns, and the svg's own `width: 100%` then fills it.
+      */}
+      <a href="/" class="cw-nav-mark text-foreground">
+        <span class="sr-only">{config.title}</span>
+        <span class="cw-nav-mark-box"><Wordmark label="" /></span>
+      </a>
+
+      {showSections && (
+        <nav aria-label="Sections" class="hidden md:flex items-center gap-1 ml-4 pl-4 border-l border-border h-6">
+          {sections.map((section) => (
+            <a
+              href={section.href}
+              aria-current={section.isActive ? "page" : undefined}
+              class:list={[
+                "px-2 py-1 rounded-md text-[0.8125rem] font-medium no-underline transition-colors",
+                section.isActive
+                  ? "text-foreground bg-accent"
+                  : "text-muted-foreground hover:text-foreground hover:bg-accent/60",
+              ]}
+            >
+              {section.label}
+            </a>
+          ))}
+        </nav>
+      )}
+    </div>
+
+    <div class="flex items-center gap-2">
+      {config.search !== false && <SearchTrigger />}
+      {config.github && (
+        <LinkButton
+          href={config.github}
+          variant="minimal"
+          shape="square"
+          size="sm"
+          aria-label="GitHub"
+          target="_blank"
+          rel="noopener"
+          class="text-muted-foreground"
+        >
+          <Icon name="ph:github-logo" class="w-4 h-4" />
+        </LinkButton>
+      )}
+      <ThemeToggle />
+      {showSidebar && (
+        <Button
+          variant="ghost"
+          shape="square"
+          size="sm"
+          icon="ph:list"
+          aria-label="Open navigation"
+          data-menu-btn
+          class="lg:hidden text-muted-foreground"
+        />
+      )}
+    </div>
+  </div>
+</header>
+
+<style>
+  .cw-nav-mark {
+    display: block;
+    transition: opacity 0.15s ease;
+  }
+
+  .cw-nav-mark:hover {
+    opacity: 0.7;
+  }
+
+  /*
+   * A solid silhouette in the header's own text colour, not the two-colour
+   * stamp the hero uses. At 40px wide the keyline scales to about a third of a
+   * pixel and renders as grey haze rather than a line, which on light paper
+   * left a white mark with nothing drawing it -- the mark was legible in dark
+   * mode and a ghost in light. One colour is the honest reduction at this size,
+   * and it also means the mark tracks the header's text instead of being the
+   * one item up there that ignores the toggle.
+   */
+  .cw-nav-mark-box {
+    display: block;
+    width: 2.5rem;
+    --cw-mark-fill: currentColor;
+    --cw-mark-stroke: currentColor;
+  }
+</style>

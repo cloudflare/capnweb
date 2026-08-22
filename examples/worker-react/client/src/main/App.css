@@ -1,32 +1,51 @@
 
+/* Both schemes live in one place via `light-dark()`, so forcing a theme is a
+   single `color-scheme` switch rather than a second copy of the palette. The
+   docs playground forces it when this app is embedded; standalone it still
+   follows the OS. */
 :root {
-  --theme-orange: #f6821f;
-  --theme-orange-hover: #f69a4aff;
-  --theme-orange-foreground: #000000;
+  color-scheme: light dark;
 
-  --bg-primary: #ffffff;
-  --bg-secondary: #fafafa;
-  --bg-pre: #f5f5f5;
-  --text-primary: #1f2937;
-  --text-secondary: #4b5563;
-  --border-color: #e5e7eb;
+  --theme-orange: #f6821f;
+  --theme-orange-hover: #fbad41;
+  --theme-orange-foreground: #fff8f4;
+
+  /* The ground is tinted and the cards are not, so a card is separated by its
+     own lightness rather than by a hairline alone. */
+  --bg-primary: light-dark(#eef1f4, #070a11);
+  --bg-secondary: light-dark(#f7f9fb, #13171f);
+  --bg-pre: light-dark(#e4e9ee, #1d222d);
+  --text-primary: light-dark(#1a222b, #e8eef4);
+  --text-secondary: light-dark(#5b6b7a, #9aabba);
+  --border-color: light-dark(rgba(26, 34, 43, 0.12), rgba(232, 238, 244, 0.12));
+  /* `light-dark()` takes exactly two arguments, so the scheme switch happens
+     on the colour and the geometry is written once around it. */
+  --shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
+  --shadow-far: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.42));
+  --shadow-sm: 0 1px 2px var(--shadow-near);
+  --shadow: 0 1px 2px var(--shadow-near), 0 8px 20px var(--shadow-far);
   --button-bg: var(--theme-orange);
   --button-hover: var(--theme-orange-hover);
   --button-foreground: var(--theme-orange-foreground);
+  /* Links are not the accent: tomato is spent on the one primary action,
+     which is what makes it read as the primary action. */
+  --link: light-dark(#2f6fd6, #5b9bff);
+
+  font-family:
+    'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+    sans-serif;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg-primary: #181818;
-    --bg-secondary: #272727;
-    --bg-pre: #313131;
-    --text-primary: #f9fafb;
-    --text-secondary: #d1d5db;
-    --border-color: #717171;
-    --button-bg: var(--theme-orange);
-    --button-hover: var(--theme-orange-hover);
-    --button-foreground: var(--theme-orange-foreground);
-  }
+:root[data-theme='light'] {
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
@@ -34,17 +53,77 @@ body {
   color: var(--text-primary);
   margin: 0;
   padding: 0;
+  line-height: 1.6;
 }
 
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 5px;
-  background: var(--theme-orange);
-  z-index: 9999;
+/* The standalone page's own chrome: a title bar, a centred column and a
+   footer, matching the sibling examples so that popping any of them out of the
+   docs lands you somewhere familiar. */
+.site {
+  padding: 0.9rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.site a {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 1.15rem;
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+
+.page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+h1 {
+  font-size: clamp(1.9rem, 4vw, 2.6rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.6rem;
+}
+
+.lede {
+  margin: 0 0 2rem;
+  max-width: 46rem;
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+}
+
+footer {
+  border-top: 1px solid var(--border-color);
+  margin-top: 3rem;
+  padding-top: 1.25rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+footer a,
+.lede a {
+  color: var(--link);
+}
+
+/* Embedded in the docs playground, which supplies the title and the frame, so
+   the duplicated chrome comes off. */
+:root[data-embedded] .site,
+:root[data-embedded] h1,
+:root[data-embedded] footer {
+  display: none;
+}
+
+:root[data-embedded] body {
+  background: var(--bg-primary);
+}
+
+:root[data-embedded] .page {
+  padding: 1.25rem 1rem 2rem;
+}
+
+:root[data-embedded] .lede {
+  font-size: 1rem;
+  margin-bottom: 1.25rem;
 }
 
 .response-container {
@@ -53,10 +132,14 @@ body::before {
   border-radius: 5px;
 }
 
+/* The label and the block below it are one sunken unit, parted by a rule
+   rather than by a colour step, so the strip does not disappear now that the
+   card behind it is plain white. */
 .response-title {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  padding: 3px 6px;
+  background: var(--bg-pre);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 4px 8px;
   font-size: 12px;
   border-radius: 4px 4px 0 0;
   margin: 0;
@@ -68,19 +151,21 @@ pre {
   padding: 12px;
   border-radius: 0 0 4px 4px;
   overflow-x: auto;
-  font-family: 'Courier New', monospace;
+  font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 14px;
   margin: 0;
 }
 
 button {
-  padding: 10px 20px;
-  font-size: 16px;
+  font: inherit;
+  font-weight: 600;
   cursor: pointer;
+  border: 0;
+  border-radius: 999px;
+  padding: 0.55rem 1.4rem;
   background: var(--button-bg);
   color: var(--button-foreground);
-  border: none;
-  border-radius: 4px;
+  box-shadow: 0 2px 8px light-dark(rgba(246, 130, 31, 0.34), rgba(0, 0, 0, 0.35));
   transition: background 0.2s;
 }
 
@@ -90,31 +175,53 @@ button:hover:not(:disabled) {
 }
 
 button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
+  opacity: 0.55;
+  cursor: progress;
+}
+
+button.secondary {
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  box-shadow: none;
+}
+
+button.secondary:hover:not(:disabled) {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 section {
   border: 1px solid var(--border-color);
-  padding: 16px;
-  border-radius: 8px;
+  padding: 1.1rem 1.25rem;
+  border-radius: 0.75rem;
   background: var(--bg-secondary);
-}
-
-h1 {
-  margin-top: 0;
+  box-shadow: var(--shadow);
+  margin-top: 2rem;
 }
 
 h2 {
   margin-top: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
+}
+
+.validation-error {
+  color: light-dark(#b32a20, #ff9d94);
+  margin: 0.75rem 0 0;
+  white-space: pre-wrap;
+  background: var(--bg-pre);
+  border-radius: 0.4rem;
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
 }
 
 code {
   background-color: var(--bg-pre);
   padding: 2px 4px;
   border-radius: 3px;
-  font-family: 'Courier New', monospace;
+  font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 14px;
 }
 

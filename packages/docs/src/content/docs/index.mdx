@@ -1,0 +1,73 @@
+---
+title: Cap'n Web
+description: A JavaScript-native, object-capability RPC system with promise pipelining. No schemas, no boilerplate, %BUNDLE_SIZE%.
+mode: custom
+---
+
+import { examples } from '../../examples.ts';
+import bundleSize from '../../generated/bundle-size.json';
+import CanvasFigure from '../../components/canvas-hero/CanvasFigure.astro';
+import Features from '../../components/Features.astro';
+import NavList from '../../components/NavList.astro';
+import { HERO_TITLE, HERO_FIGURE_CAPTION, heroTagline } from '../../lib/hero-copy.ts';
+
+<Hero
+	title={HERO_TITLE}
+	tagline={heroTagline(bundleSize.label)}
+	illustration="below"
+>
+	<CanvasFigure caption={HERO_FIGURE_CAPTION} />
+</Hero>
+
+<Prose>
+
+Cap'n Web is a spiritual sibling to [Cap'n Proto](https://capnproto.org), created by the same
+author, but designed to play nice in the web stack. Like Cap'n Proto it is an **object-capability**
+protocol: "Cap'n" is short for "capabilities and". Unlike Cap'n Proto, it has no schemas, almost no
+boilerplate, and its serialization is just JSON with a little pre- and post-processing.
+
+## Why it's different
+
+<Features bundleLabel={bundleSize.label} />
+
+## The magic trick
+
+Every call returns an `RpcPromise`. You can use that promise, or a property of it, as the input to
+another call *before it has resolved*. The server substitutes the real value on arrival, so a chain
+of dependent calls costs exactly one round trip:
+
+```ts
+// Authenticate, get the user's ID, fetch their profile, and
+// fetch every friend's profile too. One request, one response.
+let authed = api.authenticate(apiToken);
+let profile = api.getUserProfile(authed.getUserId());
+let friends = authed.getFriendIds().map(id => api.getUserProfile(id));
+
+let [me, myFriends] = await Promise.all([profile, friends]);
+```
+
+[See how promise pipelining works &rarr;](/start/pipelining-tour/) — a step-by-step tour, and the
+record-replay trick behind `.map()`.
+
+## See it running
+
+Both examples run right here in the docs, with the source alongside them. They make the same point
+from opposite ends of the stack: the pipelined version issues one HTTP request where the ordinary
+version issues three.
+
+<NavList items={examples.map((example) => ({
+	title: example.title,
+	description: example.description,
+	href: example.docsPath,
+}))} />
+
+## Get going
+
+<NavList items={[
+	{ title: "Installation", description: "npm i capnweb", href: "/start/installation/" },
+	{ title: "Quickstart", description: "A working client and server in a few minutes.", href: "/start/quickstart/" },
+	{ title: "Core concepts", description: "Stubs, targets, promises, and disposal.", href: "/concepts/values/" },
+	{ title: "Wire protocol", description: "What actually goes over the socket.", href: "/reference/protocol/" },
+]} />
+
+</Prose>

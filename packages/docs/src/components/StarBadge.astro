@@ -1,0 +1,141 @@
+---
+/*
+ * The seal, in the corner of the hero, the way capnproto.org puts "infinitely
+ * faster!" in the corner of its banner.
+ *
+ * The words inside it are real DOM text, not SVG `<text>` and not part of the
+ * artwork. They are the page's `<h1>`, so they have to stay selectable,
+ * translatable, searchable and legible to the contrast harness. Only the star
+ * itself is drawn, and it is `aria-hidden`.
+ *
+ * That does cost some fidelity -- the reference's legend is Bookman, the same
+ * face as the wordmark, and this cannot be without shipping a webfont for three
+ * words. The stack below asks for Bookman first, which a good share of machines
+ * already have, and falls back to Georgia: a high-contrast serif that reads the
+ * same way in a stamp. Outlining these words to match the wordmark exactly was
+ * the alternative and was rejected; see the paragraph above for why.
+ *
+ * Its colours are fixed rather than themed, which is the one place this
+ * component departs from the rest of the site on purpose. A seal is a stamped
+ * object: it is the same colour on both schemes for the same reason the
+ * reference's yellow starburst is the same colour on every page. Tomato fill
+ * with `--cw-black` lettering measures 5.69:1, so it clears AA as a fixed pair
+ * without either value having to move when the toggle does.
+ */
+import { STAR_PATH } from './logo-paths.ts';
+
+interface Props {
+	class?: string;
+	/** Rendered inside the seal. Wrapped in whatever the caller passes as `as`. */
+	as?: 'h1' | 'p' | 'div';
+}
+const { class: className = '', as: Tag = 'div' }: Props = Astro.props;
+---
+
+<div class:list={['cw-star', className]}>
+	<svg
+		class="cw-star-shape"
+		viewBox="-104 -104 208 208"
+		aria-hidden="true"
+		xmlns="http://www.w3.org/2000/svg"
+	>
+		<path d={STAR_PATH}></path>
+	</svg>
+	<Tag class="cw-star-text"><slot /></Tag>
+</div>
+
+<style>
+	.cw-star {
+		position: relative;
+		display: grid;
+		place-items: center;
+		/* Set by the caller; everything inside is a proportion of it, so the seal
+		   scales as one object rather than needing a second breakpoint. */
+		width: var(--cw-star-size, 11rem);
+		aspect-ratio: 1;
+	}
+	/*
+	 * The tilt is on the star alone, not on the seal as a whole, so the legend
+	 * stays upright. The points are what should look hand-stamped; tilting the
+	 * words with them made the seal read as a sticker applied crooked rather
+	 * than as a stamp, and cost legibility on the smallest line for nothing.
+	 *
+	 * Rotating this element rather than the wrapper also keeps `.cw-star`'s
+	 * layout box honest. A rotated box measures `size * (cos t + sin t)` wide,
+	 * which inflated every bounding-box check of the seal by 17% and had to be
+	 * divided back out by hand. The star's ink is inscribed in a circle well
+	 * inside the box, so rotating it changes nothing about the space it takes.
+	 */
+	.cw-star-shape {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		fill: var(--cw-orange);
+		rotate: var(--cw-star-tilt, -9deg);
+		/*
+		 * `drop-shadow`, not `box-shadow`. A box shadow traces the element's
+		 * border box and would print a soft rectangle behind a star; this
+		 * filter works off the rendered alpha, so it follows the points. The
+		 * reference's seal is shadowed the same way.
+		 *
+		 * Offset is small on purpose. The filter is on the rotated element, so
+		 * the offset rotates with it, and a nominally straight-down shadow
+		 * leaves vertical by the tilt: at 2px and -11deg that is 0.4px of drift,
+		 * which is nothing. Lifting the offset would make it something, and the
+		 * fix would be an unrotated wrapper -- but the wrapper also holds the
+		 * legend, and filtering that would shadow the words too.
+		 */
+		filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.32));
+	}
+	.cw-star-text {
+		position: relative;
+		/* The star's inner radius is 81% of its outer, so anything wider than
+		   ~68% of the box runs out past the points and into the gaps. */
+		width: 68%;
+		margin: 0;
+		/* Bookman if the machine has it, Georgia if not. Upright, not italic,
+		   and level: the tilt lives on `.cw-star-shape` so it never reaches
+		   these words. */
+		font-family: Bookman, "Bookman Old Style", "URW Bookman", Georgia, serif;
+		font-size: calc(var(--cw-star-size, 11rem) * 0.135);
+		font-weight: 700;
+		line-height: 1.12;
+		text-align: center;
+		text-wrap: balance;
+		/* The reference's legend is lower case. Doing it here rather than in the
+		   string keeps the accessible name a properly capitalised sentence. */
+		text-transform: lowercase;
+		/*
+		 * The page's own background colour, which inverts the legend with the
+		 * scheme: near-white on a light page, near-black on a dark one. The seal
+		 * is a stamp punched through to the paper, so the words are the paper.
+		 * The README banner does the same thing by knocking the letters out of
+		 * the star and letting the page show through the holes.
+		 *
+		 * This is a deliberate exception to the site's "AA everywhere" rule, and
+		 * the only one. Dark is 5.69:1, but paper on tomato is 3.07:1, under the
+		 * 4.5:1 line -- the tomato cannot carry a light label without being
+		 * darkened, and darkening it here would make the stamp a different
+		 * colour on one scheme. The legend was near-black in both schemes before
+		 * and measured 5.69:1; if you want that back, this line is the whole
+		 * change. The primary *button* took the other branch and darkened its
+		 * fill instead: see the `--nb-primary` note in globals.css.
+		 */
+		color: var(--nb-background);
+		/*
+		 * The same tomato as the star, and therefore invisible: the text box is
+		 * 68% of the seal wide, well inside the star's 81% inner radius, so this
+		 * rectangle never leaves the shape it is painted on.
+		 *
+		 * It is here so the DOM tells the truth about what this text sits on. A
+		 * contrast checker walks up looking for a background colour, finds no
+		 * paint on the SVG sibling, and reports the text against the page --
+		 * which said 1:1 on the dark scheme and, worse, passed on the light one
+		 * for the wrong reason. Now any tool measures the pair that is really
+		 * there. If the words ever outgrow the seal this rectangle will show,
+		 * which is the right thing for it to do.
+		 */
+		background: var(--cw-orange);
+	}
+</style>

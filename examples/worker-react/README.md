@@ -1,12 +1,28 @@
 # Cloudflare Workers + React example
 
-This example exposes a Cap'n Web API from a Worker and calls it from a React app. It demonstrates batched promise pipelining versus sequential requests, with server-boundary runtime validation through `@validateRpc()` and explicit client stub validation through `validateStub()`.
+A Cap'n Web API served from a Worker and called from a React app, comparing batched promise
+pipelining against the same calls made sequentially. Both ends are validated at runtime:
+`@validateRpc()` on the server boundary, `validateStub()` on the client.
+
+Runs as a playground in the docs under **Examples**, and locally as a real Worker.
+
+## Quick start
+
+From the repo root:
+
+```sh
+npm run build   # the examples resolve `capnweb` to dist/
+npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
+```
+
+The rest of this file covers running the pieces individually.
 
 ## Layout
 
 - `server/worker.ts`: Worker RPC endpoint at `/api`.
 - `client/`: React/Vite app.
-- `wrangler.jsonc`: Worker config. Wrangler runs `capnweb-validate build` before starting and points `main` at the generated Worker copy.
+- `wrangler.jsonc`: Worker config. Wrangler runs `capnweb-validate build` before starting and points
+  `main` at the generated Worker copy.
 
 ## Run locally
 
@@ -41,7 +57,7 @@ The Vite dev server proxies `/api` to `http://127.0.0.1:8787`.
 
 ## VS Code debug
 
-Use the `validate: debug all` launch configuration. It starts Wrangler and Vite without the old helper shell scripts.
+Use the `validate: debug all` launch configuration, which starts Wrangler and Vite together.
 
 Worker validation output is generated under `.wrangler/validate/worker.ts`.
 The React client uses normal Cap'n Web client sessions wrapped explicitly with `validateStub()`.

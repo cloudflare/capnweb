@@ -1,0 +1,747 @@
+@import "tailwindcss";
+
+/* ============================================================
+ * Nimbus Theme — THE file you edit to customize your site.
+ *
+ * Architecture:
+ *   1. CSS custom properties (--nb-*) define the design tokens
+ *   2. `@theme` block exposes them to Tailwind so utilities like
+ *      `bg-card`, `text-foreground`, `border-border` work
+ *   3. Dark mode uses the `[data-mode="dark"]` attribute
+ *   4. All colors use oklch for perceptual uniformity
+ *
+ * Naming convention:
+ *   - Surfaces paired with foregrounds: `card` / `card-foreground`
+ *   - Functional names: `primary` (action), `accent` (hover surface),
+ *     `muted` (de-emphasized), not visual relationships
+ *   - Reserved Tailwind keywords avoided (no `text-base`, `font-sans`,
+ *     `shadow-lg`, etc. as color names — they collide with built-ins)
+ * ============================================================ */
+
+/* ---- Palette -------------------------------------------------------------
+ * Soft cool grey paper, slate ink, and a restrained tomato CTA. The yellow
+ * cream was too loud; this is closer to a quiet product surface that the
+ * homepage waves can sit on without fighting the type.
+ *
+ * Dark is the scheme the site was designed in; light is a genuine second
+ * scheme rather than an inversion. Which one loads is decided by the bootstrap
+ * in BaseLayout: a stored choice wins, and failing that the OS decides, with
+ * dark as the answer when the OS expresses no preference.
+ */
+:root {
+	--cw-black: #070a11;
+	--cw-ink-900: #0c0f17;
+	--cw-ink-800: #13171f;
+	--cw-ink-700: #1d222d;
+	--cw-ink-600: #272d38;
+	--cw-ink-500: #3d4a57;
+	--cw-ink-400: #5b6b7a;
+
+	--cw-paper: #eef1f4;
+	--cw-paper-deep: #e2e7ec;
+
+	/*
+	 * The spark. Homepage waves, the seal, and the primary CTA.
+	 *
+	 * This is Cloudflare orange, and it is the brand's value rather than ours:
+	 * it does not get darkened, tinted or theme-swapped to win a contrast
+	 * argument. It is the same hex on both schemes. What changes with the theme
+	 * is the *text* on it, which takes `--nb-background` -- near-white on a
+	 * light page, near-black on a dark one.
+	 *
+	 * That asymmetry is deliberate and it is not free. This orange is bright, so
+	 * the dark label is comfortable (7.67:1) and the light one is not (2.28:1).
+	 * See the `--nb-primary` note below for what that buys and what it costs.
+	 */
+	--cw-orange: #f6821f;
+
+	/*
+	 * The hero band, and the only definition of it.
+	 *
+	 * Every layer is translucent, so the page shows through and one value serves
+	 * both schemes: a pale blue wash on paper, a faint tint over near-black.
+	 * There is no light-mode override any more, and there should not be one --
+	 * the band adapts because it is transparent, not because it is themed.
+	 *
+	 * `packages/docs/scripts/build-wordmark.mjs` keeps a hand-copy of these
+	 * numbers for the README banner and the social cards, which are SVG and
+	 * cannot read a custom property. Change one and change the other.
+	 */
+	--cw-band:
+		radial-gradient(72% 120% at 12% 0%, #004dff21 0%, #0000 62%),
+		radial-gradient(66% 118% at 90% 104%, #41d2a01f 0%, #0000 60%),
+		linear-gradient(
+			104deg,
+			rgb(35 87 167 / 12%) 0%,
+			rgb(40 99 155 / 31%) 54%,
+			rgb(0 255 221 / 16%) 100%
+		);
+	/* Cloudflare's own lighter orange, used as the dark-scheme hover: the label
+	   there is near-black, so lifting the fill improves it (7.67:1 -> 10.52:1). */
+	--cw-orange-bright: #fbad41;
+	/* The light-scheme hover. The label there is near-white, so the fill has to
+	   move the other way; this is the brand orange darkened enough to register
+	   as a state change and to walk the label back up (2.28:1 -> 3.34:1). */
+	--cw-orange-deep: #cc680e;
+}
+
+/* ---- Light mode ---- */
+:root {
+	color-scheme: light;
+
+	/* Surfaces. `--nb-background` is the content sheet; `--cw-ground` is the
+	   ground it rests on. */
+	--nb-background: var(--cw-paper);
+	--nb-foreground: #1a222b;
+
+	--nb-card: #f7f9fb;
+	--nb-card-foreground: var(--nb-foreground);
+
+	--nb-muted: #e4e9ee;
+	/*
+	 * Secondary text: sidebar links, page descriptions, captions, the TOC. The
+	 * binding constraint is the darkest surface it ever sits on, which is the
+	 * ground (`--cw-ground`) showing through the TOC rail and the masthead, not
+	 * the sheet. At the old #5b6b7a that was 4.41:1 -- under AA -- so this is
+	 * solved for the ground: 5.7:1 there, 6.2:1 on the sheet, still well clear
+	 * of the 14:1 body ink so the hierarchy survives.
+	 */
+	--nb-muted-foreground: #4c5a6a;
+
+	--nb-accent: #dce3ea;
+	--nb-accent-foreground: #1a222b;
+
+	/* Cloudflare orange is the action colour. Links stay ink so the spark stays
+	 * rare.
+	 *
+	 * **This pair is a deliberate, sanctioned exception to the site's AA rule.**
+	 * The fill is the brand orange, undarkened, because it is the brand's colour
+	 * and not ours to adjust. The label is `--nb-background`, so it inverts with
+	 * the scheme along with the seal's legend. On this scheme that is near-white
+	 * on a bright orange: 2.28:1, against the 4.5:1 that 1.4.3 asks for. Dark
+	 * mode is comfortable at 7.67:1.
+	 *
+	 * Do not "fix" this by darkening the fill or by flipping the label to ink.
+	 * Both were measured and both were rejected in favour of the brand pairing.
+	 * The hover is the one concession: it darkens rather than lightens here, so
+	 * the label recovers to 3.34:1 while the control is being used. */
+	--nb-primary: var(--cw-orange);
+	--nb-primary-foreground: var(--nb-background);
+	--nb-primary-hover: var(--cw-orange-deep);
+
+	/*
+	 * The orange as *text* rather than as a fill, which is a different problem
+	 * and gets a different answer. The brand orange is 2.3:1 on the sheet, so
+	 * anything set in it at body size is unreadable rather than merely off-spec;
+	 * this is the same hue darkened to 4.6:1. The exception above is for the
+	 * brand mark on a fill, not a licence to set prose in an illegible colour.
+	 * Dark mode has no such problem and uses the orange
+	 * itself.
+	 */
+	--cw-orange-text: #a85608;
+
+	--nb-border: rgba(26, 34, 43, 0.1);
+	--nb-border-strong: rgba(26, 34, 43, 0.2);
+	--nb-selected: rgba(26, 34, 43, 0.07);
+	--nb-ring: rgba(91, 111, 134, 0.45);
+
+	--nb-info: #3d5a73;
+	--nb-info-foreground: #24384a;
+	--nb-info-muted: #dce6ee;
+
+	--nb-success: #0d6d5b;
+	--nb-success-foreground: #054034;
+	--nb-success-muted: #d5f2ea;
+
+	--nb-warning: #96580c;
+	--nb-warning-foreground: #573208;
+	--nb-warning-muted: #fbebd5;
+
+	--nb-danger: #b32a20;
+	--nb-danger-foreground: #6d1610;
+	--nb-danger-muted: #fbdedb;
+
+	/* Layout */
+	--nb-sidebar-width: 18.75rem;
+	--nb-toc-width: 18rem;
+	--nb-content-max: 43.5rem;
+	/*
+	 * The landing page's column. It has no rails to share the viewport with, and
+	 * it carries two code samples side by side that a doc-page measure would
+	 * crush, so it is wider than `--nb-content-max` -- and one value, shared by
+	 * the hero and the prose under it, so both have the same left edge.
+	 */
+	--cw-landing-max: 64rem;
+
+	/* Typography — self-hosted via @fontsource in BaseLayout.astro.
+	 *
+	 * DM Sans carries body, UI, and headings alike -- one neutral grotesque
+	 * throughout instead of a
+	 * separate display face, which reads as intentional rather than decorated.
+	 * Per the Kumo design skill headings keep the font's natural tracking (never
+	 * letter-spaced) and use semibold weight rather than bold. */
+	--nb-font-sans:
+		"DM Sans Variable", "DM Sans", system-ui, -apple-system, "Segoe UI", Roboto,
+		sans-serif;
+	--nb-font-display: var(--nb-font-sans);
+	--nb-font-mono:
+		"Commit Mono", ui-monospace, "Cascadia Code", "Source Code Pro", Menlo,
+		Consolas, monospace;
+	--nb-h1-size: 2.5rem;
+	--nb-h1-weight: 600;
+	--nb-h1-tracking: normal;
+	--nb-h2-size: 1.5rem;
+	--nb-h2-weight: 600;
+	--nb-h2-tracking: normal;
+	--nb-h3-size: 1.1875rem;
+	--nb-h3-weight: 600;
+	--nb-h3-tracking: normal;
+	--nb-h4-weight: 600;
+
+	/* Depth. Hairlines do most of the work; shadows stay almost invisible. */
+	--nb-shadow-sm: 0 1px 1px rgba(23, 22, 20, 0.04);
+	--nb-shadow: 0 1px 2px rgba(23, 22, 20, 0.05), 0 10px 24px -18px rgba(23, 22, 20, 0.18);
+	--nb-shadow-lg: 0 1px 2px rgba(23, 22, 20, 0.05), 0 22px 40px -24px rgba(23, 22, 20, 0.28);
+
+	/* --- Ours, read by the page shell and by the ring field --- */
+
+	/* The ground the sheet rests on. Sidebar and content share `--nb-background`. */
+	--cw-ground: var(--cw-paper-deep);
+
+	--cw-wash-1: rgba(91, 111, 134, 0.08);
+	--cw-wash-2: rgba(246, 130, 31, 0.05);
+
+	/* The bento diagrams in Features. Line art needs to be dark on paper and
+	   light on ink, and its fills follow the same flip. The `-rgb` pair exists
+	   because the art draws the same two colours at a dozen different alphas. */
+	--cw-art-stroke: #253c6d;
+	--cw-art-stroke-rgb: 37 60 109;
+	--cw-art-fill-rgb: 20 44 96;
+}
+
+/* Wider content area on large displays (e.g. MacBook Pro 16″) */
+@media (min-width: 1536px) {
+	:root {
+		--nb-content-max: 52rem;
+	}
+}
+
+/* ---- Dark mode ----
+ * The landing page forces this same mode via `data-mode="dark"` on <html>
+ * (set in BaseLayout's pre-paint script), so it shares this one code path
+ * rather than duplicating tokens. */
+[data-mode="dark"] {
+	color-scheme: dark;
+
+	--nb-background: var(--cw-black);
+	--nb-foreground: #e8eef4;
+
+	--nb-card: var(--cw-ink-800);
+	--nb-card-foreground: var(--nb-foreground);
+
+	--nb-muted: var(--cw-ink-700);
+	/* See the light-mode note. Dark was never below AA, but the sidebar and the
+	   captions read thin against near-black at 13px, so this lifts them from
+	   8.4:1 to 10.2:1 on the page and 6.8:1 to 8.2:1 on the accent surface. */
+	--nb-muted-foreground: #adbccb;
+
+	--nb-accent: var(--cw-ink-600);
+	--nb-accent-foreground: #f4f7fa;
+
+	/* Same brand orange as light mode. Here the inverted label lands the right
+	   way up: near-black on the orange is 7.67:1, and the hover lifts the fill
+	   to Cloudflare's lighter orange for 10.52:1. This is the scheme the pairing
+	   was designed on; light mode is the one that pays for it. */
+	--nb-primary: var(--cw-orange);
+	--nb-primary-foreground: var(--nb-background);
+	--nb-primary-hover: var(--cw-orange-bright);
+
+	/* On a dark page the brand orange clears AA as text on its own. */
+	--cw-orange-text: var(--cw-orange);
+
+	--nb-border: rgba(232, 238, 244, 0.1);
+	--nb-border-strong: rgba(232, 238, 244, 0.2);
+	--nb-selected: rgba(232, 238, 244, 0.08);
+	--nb-ring: rgba(154, 171, 186, 0.5);
+
+	--nb-info: #8aa3b8;
+	--nb-info-foreground: #c5d4e0;
+	--nb-info-muted: #151c24;
+
+	--nb-success: #12866f;
+	--nb-success-foreground: #6ee7c8;
+	--nb-success-muted: #04231d;
+
+	--nb-warning: #b26a12;
+	--nb-warning-foreground: #f5c37a;
+	--nb-warning-muted: #2b1a04;
+
+	--nb-danger: #c2372c;
+	--nb-danger-foreground: #ff9d94;
+	--nb-danger-muted: #2d0b08;
+
+	--nb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+	--nb-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 18px -8px rgba(0, 0, 0, 0.7);
+	--nb-shadow-lg: 0 1px 3px rgba(0, 0, 0, 0.6), 0 18px 40px -22px rgba(0, 0, 0, 0.9);
+
+	--cw-ground: #04060b;
+
+	--cw-wash-1: rgba(154, 171, 186, 0.06);
+	--cw-wash-2: rgba(246, 130, 31, 0.05);
+
+	--cw-art-stroke: #8fb0ec;
+	--cw-art-stroke-rgb: 143 176 236;
+	--cw-art-fill-rgb: 255 255 255;
+}
+
+/* ---- Tailwind theme mapping ----
+ * These generate Tailwind utility classes:
+ *   bg-card, text-foreground, border-border, ring-ring, etc.
+ */
+@theme {
+	--color-background: var(--nb-background);
+	--color-foreground: var(--nb-foreground);
+
+	--color-card: var(--nb-card);
+	--color-card-foreground: var(--nb-card-foreground);
+
+	--color-muted: var(--nb-muted);
+	--color-muted-foreground: var(--nb-muted-foreground);
+
+	--color-accent: var(--nb-accent);
+	--color-accent-foreground: var(--nb-accent-foreground);
+
+	--color-primary: var(--nb-primary);
+	--color-primary-foreground: var(--nb-primary-foreground);
+	--color-primary-hover: var(--nb-primary-hover);
+
+	--color-border: var(--nb-border);
+	--color-border-strong: var(--nb-border-strong);
+	--color-selected: var(--nb-selected);
+	--color-ring: var(--nb-ring);
+
+	--color-info: var(--nb-info);
+	--color-info-foreground: var(--nb-info-foreground);
+	--color-info-muted: var(--nb-info-muted);
+
+	--color-success: var(--nb-success);
+	--color-success-foreground: var(--nb-success-foreground);
+	--color-success-muted: var(--nb-success-muted);
+
+	--color-warning: var(--nb-warning);
+	--color-warning-foreground: var(--nb-warning-foreground);
+	--color-warning-muted: var(--nb-warning-muted);
+
+	--color-danger: var(--nb-danger);
+	--color-danger-foreground: var(--nb-danger-foreground);
+	--color-danger-muted: var(--nb-danger-muted);
+
+	--font-sans: var(--nb-font-sans);
+	--font-mono: var(--nb-font-mono);
+
+	--shadow-sm: var(--nb-shadow-sm);
+	--shadow-default: var(--nb-shadow);
+	--shadow-lg: var(--nb-shadow-lg);
+}
+
+/* ---- Minimal overrides the plugin doesn't cover ---- */
+html {
+	font-family: var(--nb-font-sans);
+	font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+	/*
+	 * Reserve the scrollbar's width whether or not the page needs one. Without
+	 * this, navigating from a page that scrolls to one that does not widens the
+	 * viewport by the scrollbar and every centred thing on the page jumps.
+	 */
+	scrollbar-gutter: stable;
+}
+
+body {
+	opacity: 1;
+	/*
+	 * The ground, not the sheet. BaseLayout deliberately leaves `bg-background`
+	 * off the body, so the ground and its wash are visible exactly where the
+	 * page paints nothing: the TOC rail, the margins, and, blurred, the
+	 * masthead.
+	 */
+	background-color: var(--cw-ground);
+}
+
+/*
+ * Ground wash: two soft gradients, fixed, so they do not scroll with the
+ * content and cannot be hit by the pointer. Kept at `z-index: -2`, below every
+ * element, so nothing on the page has to opt out of it.
+ */
+body::before {
+	content: "";
+	position: fixed;
+	inset: 0;
+	z-index: -2;
+	pointer-events: none;
+	background-image:
+		radial-gradient(58rem 34rem at 8% -8%, var(--cw-wash-1), transparent 68%),
+		radial-gradient(46rem 30rem at 104% 4%, var(--cw-wash-2), transparent 66%);
+}
+
+/*
+ * The landing page's banner is solid edge to edge and stops on a hard line, so
+ * the ground wash behind it would only show above and around it and fight that
+ * edge. The body sits at the page background, which is what the banner's bottom
+ * edge butts against, so the seam below it lands on a single value.
+ */
+body:has(.cw-hero-banner)::before {
+	display: none;
+}
+
+body:has(.cw-hero-banner) {
+	background-color: var(--nb-background);
+}
+
+/*
+ * The content column on a doc page is a sheet over the ground, so the washed
+ * ground shows through the TOC rail and the page margins. The sidebar keeps
+ * Nimbus's own `bg-background` and `border-r`; we do not add a second border,
+ * radius, or current-page marker on top of those.
+ */
+[data-cw-sheet] {
+	background-color: var(--nb-background);
+}
+
+@media (min-width: 64rem) {
+	[data-cw-sheet] {
+		min-height: calc(100vh - 3.5rem);
+	}
+}
+
+@media (prefers-reduced-motion: no-preference) {
+	html:focus-within {
+		scroll-behavior: smooth;
+	}
+}
+
+::selection {
+	background: color-mix(in oklch, var(--nb-primary) 10%, transparent);
+	color: var(--nb-foreground);
+}
+
+/* ---- Focus indicators ---- */
+@layer base {
+	:focus-visible {
+		outline: 2px solid var(--nb-ring);
+		outline-offset: 2px;
+	}
+}
+
+/* ---- Reduced motion ---- */
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+/* ---- Scroll lock (used by native <dialog> overlays) ---- */
+[data-scroll-locked] {
+	overflow: hidden;
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+	width: 6px;
+	height: 6px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: color-mix(in oklch, var(--nb-foreground) 20%, transparent);
+	border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: var(--nb-muted-foreground);
+}
+
+/* ---- Shiki code-block styling + copy button ---- */
+
+pre.astro-code {
+	position: relative;
+	margin: 1rem 0;
+	padding: 0.75rem 1rem;
+	border-radius: 0.5rem;
+	border: 1px solid var(--nb-border);
+	background-color: var(--nb-card);
+	overflow-x: auto;
+	font-family: var(--nb-font-mono);
+	font-size: 0.875rem;
+	line-height: 1.625;
+}
+pre.astro-code > code {
+	background: transparent;
+}
+
+/*
+ * Classed Shiki tokens set --shiki-light/--shiki-dark once in _nimbus/shiki.css:
+ * eight classes, 546 bytes, instead of an inline style on every span. Keeping
+ * that contract is why the themes below are adjusted here rather than swapped
+ * in `astro.config.ts` -- Nimbus only classes tokens while the themes are its
+ * own default pair, and switching to GitHub's high-contrast variants put the
+ * styles back inline and added 4.6 kB to every page.
+ *
+ * The adjustment: github-light and github-dark both ship tokens that miss WCAG
+ * AA on our surfaces -- comments at 4.25:1 in light and 3.73:1 in dark (they
+ * are the same grey in both themes, which is the flaw), keywords at 4.03:1 in
+ * light. Pushing every token a fixed step away from its own background lifts
+ * those without touching the hue relationships that make the theme legible as
+ * a theme, and it applies to tokens we have not enumerated. Light needs a
+ * slightly smaller step than dark because github-dark's comment grey is the
+ * same grey as github-light's, which on a near-black card is the worst token in
+ * either theme. Measured after: every token on a quickstart code block is
+ * >= 4.9:1 in light and >= 5.2:1 in dark, from 3.1 and 3.7.
+ */
+pre.astro-code span {
+	color: color-mix(in oklab, var(--shiki-light, currentColor) 85%, #000);
+}
+[data-mode="dark"] pre.astro-code span {
+	color: color-mix(in oklab, var(--shiki-dark, currentColor) 82%, #fff);
+}
+
+/* Copy button injected by initCodeCopy. */
+.nb-code-copy {
+	position: absolute;
+	top: 0.5rem;
+	right: 0.5rem;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.75rem;
+	height: 1.75rem;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--nb-border);
+	border-radius: 0.375rem;
+	background: var(--nb-card);
+	color: var(--nb-muted-foreground);
+	cursor: pointer;
+	opacity: 0;
+	transition:
+		opacity 0.15s ease,
+		color 0.15s ease,
+		background 0.15s ease;
+	z-index: 2;
+}
+.nb-code-figure:hover .nb-code-copy,
+.nb-code-copy:focus-visible {
+	opacity: 1;
+}
+.nb-code-copy:hover {
+	color: var(--nb-foreground);
+	background: var(--nb-muted);
+}
+.nb-code-copy svg {
+	width: 0.875rem;
+	height: 0.875rem;
+}
+.nb-code-copy[data-state="copied"] {
+	color: var(--nb-success);
+}
+
+/* ---- Premium code chrome ---- */
+
+/* Every Shiki block is wrapped in a .nb-code-figure (titled or not).
+   Chrome lives on the figure so the language badge + copy button can sit
+   on a non-scrolling ancestor — iOS Safari slides absolutely-positioned
+   children of overflow:auto containers. */
+.nb-code-figure {
+	position: relative;
+	margin: 1rem 0;
+	border: 1px solid var(--nb-border);
+	border-radius: 0.5rem;
+	background-color: var(--nb-card);
+	overflow: hidden;
+}
+
+/*
+ * On the dark landing the code samples read better as outlines: the page is
+ * nearly black already, so a filled card is a lighter rectangle floating in it.
+ * In light mode the opposite is true -- an unfilled block loses its edges
+ * against the paper, and its comments lose half a point of contrast -- so the
+ * landing keeps the card there, like the docs pages and like the white cards
+ * cloudflare.com stacks on its own light background.
+ */
+[data-mode="dark"] .cw-home pre.astro-code,
+[data-mode="dark"] .cw-home .nb-code-figure {
+	background-color: transparent;
+}
+.nb-code-figure > pre.astro-code {
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+	background-color: transparent;
+}
+.nb-code-title {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	padding: 0.5rem 0.875rem;
+	border-bottom: 1px solid var(--nb-border);
+	background: color-mix(in oklch, var(--nb-muted) 50%, transparent);
+	font-family: var(--nb-font-mono);
+	font-size: 0.75rem;
+	line-height: 1.4;
+}
+.nb-code-title-name {
+	color: var(--nb-foreground);
+	font-weight: 500;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.nb-code-title-lang {
+	flex-shrink: 0;
+	padding: 0.0625rem 0.375rem;
+	border-radius: 0.25rem;
+	background: var(--nb-muted);
+	color: var(--nb-muted-foreground);
+	font-size: 0.6875rem;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+}
+
+/* Language badge — pinned to the figure (which doesn't scroll), so it
+   stays at top-right even when the pre overflows horizontally. Hidden
+   when a figcaption is already showing the language (titled blocks). */
+.nb-code-figure[data-nb-lang]:not(.nb-code-figure-titled)::before {
+	content: attr(data-nb-lang);
+	position: absolute;
+	top: 0.5rem;
+	right: 0.625rem;
+	padding: 0.0625rem 0.375rem;
+	border-radius: 0.25rem;
+	background: var(--nb-muted);
+	color: var(--nb-muted-foreground);
+	font-family: var(--nb-font-mono);
+	font-size: 0.6875rem;
+	letter-spacing: 0.02em;
+	text-transform: uppercase;
+	pointer-events: none;
+	transition: opacity 0.15s ease;
+	z-index: 1;
+}
+.nb-code-figure:hover::before {
+	opacity: 0;
+}
+/* Hide plaintext/text "language" — it's noise. */
+.nb-code-figure[data-nb-lang="text"]::before,
+.nb-code-figure[data-nb-lang="plaintext"]::before,
+.nb-code-figure[data-nb-lang="plain"]::before,
+.nb-code-figure[data-nb-lang="txt"]::before {
+	display: none;
+}
+
+/*
+ * The badge is pinned top-right and fades on hover, so it doesn't need a
+ * reserved row -- a blank line above the code reads as empty, especially now
+ * that the block has no background. Short first lines clear it; long ones are
+ * recoverable on hover.
+ */
+.nb-code-figure[data-nb-lang]:not(.nb-code-figure-titled) > pre.astro-code {
+	padding-top: 0.75rem;
+}
+
+/* Nothing to make room for where the badge is suppressed. */
+.nb-code-figure[data-nb-lang="text"] > pre.astro-code,
+.nb-code-figure[data-nb-lang="plaintext"] > pre.astro-code,
+.nb-code-figure[data-nb-lang="plain"] > pre.astro-code,
+.nb-code-figure[data-nb-lang="txt"] > pre.astro-code {
+	padding-top: 0.75rem;
+}
+
+/* Block-level lines so tints + gutters paint across the full row. */
+pre.astro-code code {
+	display: block;
+	width: max-content;
+	min-width: 100%;
+}
+pre.astro-code .line {
+	display: inline-block;
+	width: 100%;
+	padding-inline: 1rem;
+	margin-inline: -1rem;
+	box-sizing: content-box;
+}
+
+/* Highlighted lines (`{1,3-5}` meta or `// [!code highlight]`). */
+pre.astro-code .line.highlighted {
+	background: color-mix(in oklch, var(--nb-info) 12%, transparent);
+	box-shadow: inset 2px 0 0 var(--nb-info);
+}
+
+/* Diff lines (`// [!code ++]` / `// [!code --]`). */
+pre.astro-code .line.diff {
+	position: relative;
+}
+pre.astro-code .line.diff.add {
+	background: color-mix(in oklch, var(--nb-success) 10%, transparent);
+	box-shadow: inset 2px 0 0 var(--nb-success);
+}
+pre.astro-code .line.diff.remove {
+	background: color-mix(in oklch, var(--nb-danger) 10%, transparent);
+	box-shadow: inset 2px 0 0 var(--nb-danger);
+}
+pre.astro-code .line.diff.add::before,
+pre.astro-code .line.diff.remove::before {
+	position: absolute;
+	left: 0.25rem;
+	color: var(--nb-muted-foreground);
+	font-weight: 600;
+}
+pre.astro-code .line.diff.add::before {
+	content: "+";
+	color: var(--nb-success);
+}
+pre.astro-code .line.diff.remove::before {
+	content: "−";
+	color: var(--nb-danger);
+}
+
+/* Focus mode — dim non-focused lines; clears on hover. */
+pre.astro-code.has-focused .line:not(.focused) {
+	opacity: 0.45;
+	filter: blur(0.25px);
+	transition: opacity 0.2s ease, filter 0.2s ease;
+}
+pre.astro-code.has-focused:hover .line:not(.focused) {
+	opacity: 1;
+	filter: none;
+}
+
+/* Error / warning lines — use muted tokens for theme-tuned tints. */
+pre.astro-code .line.highlighted.error {
+	background: var(--nb-danger-muted);
+	box-shadow: inset 2px 0 0 var(--nb-danger);
+}
+pre.astro-code .line.highlighted.warning {
+	background: var(--nb-warning-muted);
+	box-shadow: inset 2px 0 0 var(--nb-warning);
+}
+
+/* Word highlight (`// [!code word:foo]` and meta `/foo/`). */
+pre.astro-code .highlighted-word {
+	padding: 0.0625rem 0.25rem;
+	margin: -0.0625rem -0.125rem;
+	border-radius: 0.25rem;
+	background: color-mix(in oklch, var(--nb-info) 18%, transparent);
+	box-shadow: 0 0 0 1px color-mix(in oklch, var(--nb-info) 30%, transparent);
+}
+
+/* ---- Mobile sidebar toggle ---- */
+
+/* Hide hamburger on pages without a sidebar dialog. */
+body:not(:has([data-mobile-sidebar])) [data-menu-btn] {
+	display: none;
+}

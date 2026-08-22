@@ -19,6 +19,9 @@
   "assets": {
     "directory": "client/dist"
   },
+  "observability": {
+    "enabled": true
+  },
   "vars": {
     // Optional per-method artificial delays (ms)
     "DELAY_AUTH_MS": 80,

@@ -6,7 +6,7 @@
 //   node examples/batch-pipelining/client.mjs
 
 import { performance } from 'node:perf_hooks';
-import { newHttpBatchRpcSession } from '../../dist/index.js';
+import { newHttpBatchRpcSession } from 'capnweb';
 
 // Mirror of the server API shape (for reference only).
 // authenticate(sessionToken) -> { id, name }

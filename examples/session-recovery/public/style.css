@@ -1,0 +1,322 @@
+/*
+ * Palette matches the docs site: near-black with a blue undertone, azure for
+ * anything live, Cloudflare orange used sparingly enough to still mean
+ * something. `light-dark()` keeps both schemes in one declaration.
+ */
+:root {
+	color-scheme: light dark;
+
+	/* The ground is tinted and the cards are not, so a card is separated by
+	   its own lightness rather than by a hairline alone. */
+	--ground: light-dark(#eef1f4, #070a11);
+	--surface: light-dark(#f7f9fb, #13171f);
+	--sunken: light-dark(#e4e9ee, #1d222d);
+	--ink: light-dark(#1a222b, #e8eef4);
+	--ink-dim: light-dark(#5b6b7a, #9aabba);
+	--rule: light-dark(rgba(26, 34, 43, 0.12), rgba(232, 238, 244, 0.12));
+	/* `light-dark()` takes exactly two arguments, so the scheme switch happens
+	   on the colour and the geometry is written once around it. */
+	--shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
+	--shadow-far: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.42));
+	--shadow-sm: 0 1px 2px var(--shadow-near);
+	--shadow: 0 1px 2px var(--shadow-near), 0 8px 20px var(--shadow-far);
+	--accent: light-dark(#2f6fd6, #5b9bff);
+	--good: light-dark(#0d6d5b, #34d399);
+	--warn: light-dark(#96580c, #f5c37a);
+	--bad: light-dark(#b32a20, #ff9d94);
+	/* The one primary action. Kept apart from `--warn`, which has to darken in
+	   light mode to stay readable as text and is the wrong colour for a filled
+	   button. */
+	--cta: #f6821f;
+	--cta-ink: #fff8f4;
+
+	--mono: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+:root[data-theme='dark'] {
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+body {
+	margin: 0;
+	background: var(--ground);
+	color: var(--ink);
+	font-family:
+		'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial,
+		sans-serif;
+	line-height: 1.6;
+}
+
+/* The standalone page's own chrome: a title bar, a centred column and a
+   footer, matching the sibling examples so that popping any of them out of the
+   docs lands you somewhere familiar. */
+.site {
+	padding: 0.9rem 1.5rem;
+	border-bottom: 1px solid var(--rule);
+}
+
+.site a {
+	color: var(--ink);
+	font-weight: 600;
+	font-size: 1.15rem;
+	text-decoration: none;
+	letter-spacing: -0.01em;
+}
+
+.page {
+	max-width: 60rem;
+	margin: 0 auto;
+	padding: 2.5rem 1.5rem 4rem;
+}
+
+h1 {
+	font-size: clamp(1.9rem, 4vw, 2.6rem);
+	line-height: 1.15;
+	letter-spacing: -0.02em;
+	margin: 0 0 0.6rem;
+}
+
+.lede {
+	margin: 0 0 2rem;
+	max-width: 46rem;
+	font-size: 1.1rem;
+	color: var(--ink-dim);
+}
+
+footer {
+	border-top: 1px solid var(--rule);
+	margin-top: 3rem;
+	padding-top: 1.25rem;
+	color: var(--ink-dim);
+	font-size: 0.9rem;
+}
+
+footer a,
+.lede a {
+	color: var(--accent);
+}
+
+/* Embedded in the docs playground, which supplies the title and the frame, so
+   the duplicated chrome comes off. */
+:root[data-embedded='true'] .site,
+:root[data-embedded='true'] h1,
+:root[data-embedded='true'] footer {
+	display: none;
+}
+
+:root[data-embedded='true'] body {
+	background: var(--ground);
+}
+
+:root[data-embedded='true'] .page {
+	padding: 1.25rem 1rem 2rem;
+}
+
+:root[data-embedded='true'] .lede {
+	font-size: 1rem;
+	margin-bottom: 1.25rem;
+}
+
+.panel {
+	background: var(--surface);
+	border: 1px solid var(--rule);
+	border-radius: 0.6rem;
+	box-shadow: var(--shadow);
+	padding: 1rem 1.1rem;
+}
+
+.panel h2 {
+	margin: 0 0 0.6rem;
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	color: var(--ink-dim);
+}
+
+.status {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 1.5rem;
+	margin-bottom: 0.85rem;
+}
+
+.stat {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15rem;
+}
+
+.stat__label {
+	font-size: 0.7rem;
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	color: var(--ink-dim);
+}
+
+.stat__value {
+	font-family: var(--mono);
+	font-size: 1.05rem;
+	font-weight: 600;
+}
+
+.stat__value[data-state='online'] {
+	color: var(--good);
+}
+.stat__value[data-state='connecting'] {
+	color: var(--warn);
+}
+.stat__value[data-state='offline'] {
+	color: var(--ink-dim);
+}
+
+.toggle {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	margin-left: auto;
+	color: var(--ink-dim);
+	cursor: pointer;
+	user-select: none;
+}
+
+.controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-bottom: 1rem;
+}
+
+.btn {
+	padding: 0.55rem 1.1rem;
+	border: 1px solid var(--rule);
+	border-radius: 999px;
+	background: var(--surface);
+	color: var(--ink);
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.btn:hover:not(:disabled) {
+	border-color: var(--accent);
+}
+
+.btn:disabled {
+	opacity: 0.45;
+	cursor: not-allowed;
+}
+
+.btn--primary {
+	background: var(--cta);
+	border-color: var(--cta);
+	color: var(--cta-ink);
+	box-shadow: 0 2px 8px light-dark(rgba(246, 130, 31, 0.34), rgba(0, 0, 0, 0.35));
+}
+
+.btn--quiet {
+	color: var(--ink-dim);
+}
+
+.columns {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0.85rem;
+}
+
+@media (max-width: 48rem) {
+	.columns {
+		grid-template-columns: 1fr;
+	}
+	.toggle {
+		margin-left: 0;
+	}
+}
+
+.feed,
+.log {
+	margin: 0;
+	padding: 0;
+	list-style: none;
+	height: 15rem;
+	overflow-y: auto;
+	background: var(--sunken);
+	border-radius: 0.4rem;
+	padding: 0.5rem 0.6rem;
+	font-family: var(--mono);
+	font-size: 0.8125rem;
+}
+
+.event,
+.line {
+	display: flex;
+	gap: 0.6rem;
+	padding: 0.16rem 0;
+}
+
+.event__id {
+	color: var(--accent);
+	min-width: 3.6rem;
+}
+
+.event--gap {
+	color: var(--warn);
+	border-top: 1px dashed currentColor;
+	border-bottom: 1px dashed currentColor;
+	margin: 0.25rem 0;
+	padding: 0.25rem 0;
+}
+
+.event--gap .event__id {
+	color: inherit;
+	font-weight: 600;
+}
+
+.line__time {
+	color: var(--ink-dim);
+	min-width: 4.6rem;
+}
+
+.line--good .line__text {
+	color: var(--good);
+}
+.line--warn .line__text {
+	color: var(--warn);
+}
+.line--bad .line__text {
+	color: var(--bad);
+}
+
+.notes {
+	margin-top: 1.5rem;
+	color: var(--ink-dim);
+}
+
+.notes h2 {
+	font-size: 0.75rem;
+	text-transform: uppercase;
+	letter-spacing: 0.09em;
+	margin-bottom: 0.5rem;
+}
+
+.notes ol {
+	margin: 0;
+	padding-left: 1.2rem;
+	max-width: 52rem;
+}
+
+.notes li {
+	margin-bottom: 0.4rem;
+}
+
+.notes strong {
+	color: var(--ink);
+}

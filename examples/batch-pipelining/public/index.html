@@ -1,0 +1,456 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#070a11" media="(prefers-color-scheme: dark)" />
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+		<link href="https://cdn.jsdelivr.net/npm/@fontsource/commit-mono@5/400.css" rel="stylesheet" />
+		<link
+			rel="icon"
+			href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2304070e'/%3E%3Cline x1='7' y1='23' x2='16' y2='9' stroke='%234db4ff' stroke-width='2'/%3E%3Cline x1='16' y1='9' x2='25' y2='20' stroke='%234db4ff' stroke-width='2'/%3E%3Ccircle cx='7' cy='23' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='25' cy='20' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='16' cy='9' r='3.8' fill='%23f6821f'/%3E%3C/svg%3E"
+		/>
+		<title>Batch + pipelining in Cap'n Web</title>
+		<script>
+			// The docs playground embeds this page in an iframe and passes its own
+			// state on the URL. Applied before first paint so there is no flash of
+			// the standalone layout or the wrong theme.
+			(() => {
+				const root = document.documentElement;
+				const params = new URLSearchParams(location.search);
+				if (params.get('embed') || window.self !== window.top) root.dataset.embedded = 'true';
+
+				// Embedded in the docs, the page above is same-origin, so its theme
+				// can be read directly here rather than passed in. Done before first
+				// paint, so there is no flash of the wrong scheme. The try/catch is
+				// for a cross-origin embedder; standalone there is simply no parent
+				// to read, and either way it falls through to the OS preference.
+				const fromUrl = params.get('theme');
+				const theme =
+					fromUrl ??
+					(() => {
+						try {
+							return parent.document.documentElement.dataset.theme ?? null;
+						} catch {
+							return null;
+						}
+					})();
+				if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+
+				// Later theme toggles arrive by postMessage, so the frame does not
+				// have to reload. Only ever sets an attribute, so an unexpected
+				// sender can do nothing interesting.
+				addEventListener('message', (event) => {
+					const next = event.data?.type === 'capn-theme' ? event.data.theme : null;
+					if (next === 'light' || next === 'dark') root.dataset.theme = next;
+				});
+			})();
+		</script>
+		<meta
+			name="description"
+			content="Dependent Cap'n Web RPC calls in a single HTTP round trip, compared against the same calls made sequentially."
+		/>
+		<style>
+			/* A plain palette, deliberately not the docs one: this is a sample
+			   app, and it should look like a sample app whether it is read here
+			   or embedded in the docs. Matches the sibling worker-react example.
+			   `light-dark()` keeps both schemes in one place, so forcing a theme
+			   is a `color-scheme` switch rather than a duplicated palette. */
+			:root {
+				color-scheme: light dark;
+
+				/* The ground is tinted and the cards are not, so a card is
+				   separated by its own lightness rather than by a hairline
+				   alone. Dark mode works the same way, inverted. */
+				--ground: light-dark(#eef1f4, #070a11);
+				--surface: light-dark(#f7f9fb, #13171f);
+				--pre: light-dark(#e4e9ee, #1d222d);
+				--ink: light-dark(#1a222b, #e8eef4);
+				--ink-dim: light-dark(#5b6b7a, #9aabba);
+				--rule: light-dark(rgba(26, 34, 43, 0.12), rgba(232, 238, 244, 0.12));
+				/* `light-dark()` takes exactly two arguments, so the scheme
+				   switch happens on the colour and the geometry is written
+				   once around it. */
+				--shadow-near: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.38));
+				--shadow-far: light-dark(rgba(13, 26, 43, 0.07), rgba(0, 0, 0, 0.42));
+				--shadow-sm: 0 1px 2px var(--shadow-near);
+				--shadow: 0 1px 2px var(--shadow-near), 0 8px 20px var(--shadow-far);
+				--accent: #f6821f;
+				--accent-ink: #fff8f4;
+				/* Links are not the accent: tomato is spent on the one primary
+				   action, which is what makes it read as the primary action. */
+				--link: light-dark(#2f6fd6, #5b9bff);
+				--fast: light-dark(#0d6d5b, #34d399);
+				--slow: light-dark(#64748b, #7f95b3);
+
+				font-family:
+					'DM Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica,
+					Arial, sans-serif;
+			}
+
+			:root[data-theme='light'] {
+				color-scheme: light;
+			}
+
+			:root[data-theme='dark'] {
+				color-scheme: dark;
+			}
+
+			* {
+				box-sizing: border-box;
+			}
+
+			body {
+				margin: 0;
+				background: var(--ground);
+				color: var(--ink);
+				line-height: 1.6;
+			}
+
+			header {
+				padding: 0.9rem 1.5rem;
+				border-bottom: 1px solid var(--rule);
+			}
+
+			header a {
+				color: var(--ink);
+				font-weight: 600;
+				font-size: 1.15rem;
+				text-decoration: none;
+				letter-spacing: -0.01em;
+			}
+
+			main {
+				max-width: 60rem;
+				margin: 0 auto;
+				padding: 2.5rem 1.5rem 4rem;
+			}
+
+			/* Embedded in the docs playground: the surrounding page supplies the
+			   title and the frame, so drop the duplicated chrome. */
+			:root[data-embedded] header,
+			:root[data-embedded] h1,
+			:root[data-embedded] footer {
+				display: none;
+			}
+
+			:root[data-embedded] body {
+				background: var(--ground);
+			}
+
+			:root[data-embedded] main {
+				padding: 1.5rem 1.5rem 2rem;
+			}
+
+			h1 {
+				font-size: clamp(1.9rem, 4vw, 2.6rem);
+				line-height: 1.15;
+				letter-spacing: -0.02em;
+				margin: 0 0 0.6rem;
+			}
+
+			.lede {
+				color: var(--ink-dim);
+				font-size: 1.1rem;
+				max-width: 46rem;
+				margin: 0 0 2rem;
+			}
+
+			code {
+				font-family: 'Commit Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+				font-size: 0.9em;
+				color: var(--ink);
+			}
+
+			.controls {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 1.25rem;
+				align-items: center;
+				padding: 1.1rem 1.25rem;
+				border: 1px solid var(--rule);
+				border-radius: 0.75rem;
+				background: var(--surface);
+				box-shadow: var(--shadow-sm);
+				margin-bottom: 2rem;
+			}
+
+			.controls label {
+				display: flex;
+				align-items: center;
+				gap: 0.6rem;
+				font-size: 0.92rem;
+				color: var(--ink-dim);
+			}
+
+			/* The track is painted by hand rather than left to `accent-color`.
+			   Chrome derives the unfilled half from the accent, and for a
+			   saturated orange it picks something near black, which is wrong
+			   against a light page. `--pct` is the filled fraction and is kept
+			   up to date by the same handler that writes the millisecond
+			   readout. */
+			input[type='range'] {
+				--pct: 40%;
+				appearance: none;
+				width: 11rem;
+				height: 1rem;
+				background: transparent;
+				cursor: pointer;
+			}
+
+			input[type='range']::-webkit-slider-runnable-track {
+				height: 0.375rem;
+				border-radius: 999px;
+				background: linear-gradient(
+					to right,
+					var(--accent) 0 var(--pct),
+					var(--rule) var(--pct) 100%
+				);
+			}
+
+			input[type='range']::-moz-range-track {
+				height: 0.375rem;
+				border-radius: 999px;
+				background: var(--rule);
+			}
+
+			input[type='range']::-moz-range-progress {
+				height: 0.375rem;
+				border-radius: 999px;
+				background: var(--accent);
+			}
+
+			input[type='range']::-webkit-slider-thumb {
+				appearance: none;
+				width: 1rem;
+				height: 1rem;
+				margin-top: -0.3125rem;
+				border: 0;
+				border-radius: 50%;
+				background: var(--accent);
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+			}
+
+			input[type='range']::-moz-range-thumb {
+				width: 1rem;
+				height: 1rem;
+				border: 0;
+				border-radius: 50%;
+				background: var(--accent);
+				box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+			}
+
+			input[type='range']:focus-visible {
+				outline: 2px solid var(--link);
+				outline-offset: 3px;
+			}
+
+			button {
+				font: inherit;
+				font-weight: 600;
+				cursor: pointer;
+				border: 0;
+				border-radius: 999px;
+				padding: 0.55rem 1.4rem;
+				background: var(--accent);
+				color: var(--accent-ink);
+				box-shadow: 0 2px 8px light-dark(rgba(246, 130, 31, 0.34), rgba(0, 0, 0, 0.35));
+			}
+
+			button:hover:not(:disabled) {
+				filter: brightness(1.08);
+			}
+
+			button:disabled {
+				opacity: 0.55;
+				cursor: progress;
+			}
+
+			button.secondary {
+				background: transparent;
+				color: var(--ink);
+				box-shadow: none;
+				border: 1px solid var(--rule);
+			}
+
+			.results {
+				display: grid;
+				gap: 1.25rem;
+				grid-template-columns: repeat(auto-fit, minmax(19rem, 1fr));
+			}
+
+			.panel {
+				border: 1px solid var(--rule);
+				border-radius: 0.75rem;
+				background: var(--surface);
+				box-shadow: var(--shadow);
+				padding: 1.25rem;
+			}
+
+			.panel h2 {
+				margin: 0 0 0.15rem;
+				font-size: 1.15rem;
+			}
+
+			.panel .sub {
+				margin: 0 0 1rem;
+				color: var(--ink-dim);
+				font-size: 0.88rem;
+			}
+
+			.stat {
+				display: flex;
+				justify-content: space-between;
+				align-items: baseline;
+				gap: 1rem;
+				padding: 0.4rem 0;
+				border-bottom: 1px dashed var(--rule);
+			}
+
+			.stat:last-of-type {
+				border-bottom: 0;
+			}
+
+			.stat .k {
+				color: var(--ink-dim);
+				font-size: 0.88rem;
+			}
+
+			.stat .v {
+				font-variant-numeric: tabular-nums;
+				font-weight: 600;
+				font-size: 1.35rem;
+			}
+
+			.bar {
+				height: 10px;
+				border-radius: 999px;
+				background: color-mix(in srgb, var(--ink) 12%, transparent);
+				overflow: hidden;
+				margin-top: 0.9rem;
+			}
+
+			.bar > span {
+				display: block;
+				height: 100%;
+				border-radius: 999px;
+				transition: width 0.35s ease;
+			}
+
+			.fast > span {
+				background: var(--fast);
+			}
+
+			.slow > span {
+				background: var(--slow);
+			}
+
+			pre {
+				margin: 1rem 0 0;
+				padding: 0.85rem;
+				border-radius: 0.5rem;
+				background: var(--pre);
+				color: var(--ink-dim);
+				font-size: 0.8rem;
+				line-height: 1.5;
+				overflow-x: auto;
+				max-height: 15rem;
+			}
+
+			.verdict {
+				margin-top: 1.75rem;
+				padding: 1rem 1.25rem;
+				border-left: 3px solid var(--accent);
+				background: var(--surface);
+				border-radius: 0 0.5rem 0.5rem 0;
+			}
+
+			.verdict strong {
+				color: var(--ink);
+			}
+
+			.error {
+				border-left-color: #c2372c;
+				color: light-dark(#b32a20, #ff9d94);
+			}
+
+			footer {
+				border-top: 1px solid var(--rule);
+				margin-top: 3rem;
+				padding-top: 1.25rem;
+				color: var(--ink-dim);
+				font-size: 0.9rem;
+			}
+
+			footer a,
+			.lede a {
+				color: var(--link);
+			}
+
+			@media (prefers-reduced-motion: reduce) {
+				.bar > span {
+					transition: none;
+				}
+			}
+		</style>
+	</head>
+	<body>
+		<header><a href="/">Cap'n Web: batch + pipelining</a></header>
+
+		<main>
+			<h1>One round trip, three dependent calls</h1>
+			<p class="lede">
+				This page authenticates a user, then fetches that user's profile and notifications,
+				both of which need the user ID from the first call. Pipelined, all three
+				travel in a <strong>single</strong> HTTP request. Done the ordinary way, they take
+				three. Only the round trips differ; the server does identical work either way.
+			</p>
+
+			<div class="controls">
+				<label>
+					Simulated latency
+					<input id="rtt" type="range" min="0" max="300" step="10" value="120" />
+					<span id="rttValue" style="font-variant-numeric: tabular-nums">120 ms</span>
+				</label>
+				<button id="run">Run both</button>
+				<button id="reset" class="secondary">Reset</button>
+			</div>
+
+			<div class="results">
+				<section class="panel">
+					<h2>Pipelined</h2>
+					<p class="sub">One session, calls chained on unresolved promises.</p>
+					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="pPosts">&hellip;</span></div>
+					<div class="stat"><span class="k">Elapsed</span><span class="v" id="pTime">&hellip;</span></div>
+					<div class="bar fast"><span id="pBar" style="width: 0"></span></div>
+					<pre id="pOut">Not run yet.</pre>
+				</section>
+
+				<section class="panel">
+					<h2>Sequential</h2>
+					<p class="sub">A fresh session per call, each awaited in turn.</p>
+					<div class="stat"><span class="k">HTTP round trips</span><span class="v" id="sPosts">&hellip;</span></div>
+					<div class="stat"><span class="k">Elapsed</span><span class="v" id="sTime">&hellip;</span></div>
+					<div class="bar slow"><span id="sBar" style="width: 0"></span></div>
+					<pre id="sOut">Not run yet.</pre>
+				</section>
+			</div>
+
+			<div class="verdict" id="verdict" hidden></div>
+
+			<footer>
+				Source:
+				<a href="https://github.com/cloudflare/capnweb/tree/main/examples/batch-pipelining"
+					>examples/batch-pipelining</a
+				>. The same comparison runs in a terminal via <code>client.mjs</code>. Latency is
+				simulated in the browser, so the server is doing the same work in both columns;
+				see <a href="https://capnweb.com/concepts/promises/">promise pipelining</a>.
+			</footer>
+		</main>
+
+		<script type="module" src="./main.js"></script>
+	</body>
+</html>

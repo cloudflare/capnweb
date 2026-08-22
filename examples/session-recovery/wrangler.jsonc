@@ -1,0 +1,28 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "capnweb-session-recovery",
+	"main": "worker.js",
+	"compatibility_date": "2026-02-05",
+
+	// `capnweb` resolves to the workerd build. Under Node the same bare
+	// specifier resolves through the repo's workspace self-link, so `api.mjs`
+	// is shared without hard-coding a path into `dist/`.
+	"alias": {
+		"capnweb": "../../dist/index-workers.js"
+	},
+
+	// The browser client imports the library directly, so stage the
+	// dependency-free ESM build alongside the page. `dist/index.js` has no
+	// imports and no Node globals, so it runs unmodified in a browser.
+	"build": {
+		"command": "mkdir -p public/vendor && cp ../../dist/index.js public/vendor/capnweb.js"
+	},
+
+	"assets": {
+		"directory": "public"
+	},
+
+	"observability": {
+		"enabled": true
+	}
+}

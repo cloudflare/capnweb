@@ -1,0 +1,470 @@
+---
+/**
+ * A live example, laid out like a code playground: the real source on the left,
+ * the running demo on the right, filling most of the viewport.
+ *
+ * Two things keep it honest. The source is read out of the repo at build time
+ * by `readRepoFile`, so it cannot drift from the code that ships -- a renamed
+ * file fails the build rather than rendering an empty tab. And the demo in the
+ * frame is the example's own Worker and client, bundled by
+ * `scripts/build-playgrounds.mjs` and running in the page; the request counts
+ * it reports are real.
+ *
+ * The chrome here deliberately does not use the site's palette. It is meant to
+ * read as an editor, so it borrows the code theme's own colours instead.
+ */
+import { Code } from '@/components/ui/code';
+import { readRepoFile } from '../lib/source';
+import type { Example } from '../examples';
+
+interface Props {
+	example: Example;
+}
+
+const { example } = Astro.props;
+
+const files = example.files.map((file) => ({
+	...file,
+	code: readRepoFile(file.path),
+}));
+
+const id = `pg-${example.slug}`;
+// Same-origin, so the frame can read the docs theme itself and `src` can be
+// server-rendered -- no flash, and the code still shows with JS disabled.
+const demoSrc = `${example.demoPath}?embed=1`;
+---
+
+<div class="capn-stage" data-capn-stage>
+	<section class="capn-pane capn-code" aria-label={`${example.title} source`}>
+		<div class="capn-tabs" role="tablist" aria-label="Files">
+			{
+				files.map((file, i) => (
+					<button
+						type="button"
+						role="tab"
+						class="capn-tab"
+						id={`${id}-tab-${i}`}
+						aria-controls={`${id}-panel-${i}`}
+						aria-selected={i === 0 ? 'true' : 'false'}
+						tabindex={i === 0 ? 0 : -1}
+						title={file.note}
+					>
+						{file.label}
+					</button>
+				))
+			}
+		</div>
+
+		<div class="capn-panels">
+			{
+				files.map((file, i) => (
+					<div
+						role="tabpanel"
+						class="capn-panel"
+						id={`${id}-panel-${i}`}
+						aria-labelledby={`${id}-tab-${i}`}
+						tabindex={0}
+						hidden={i !== 0}
+					>
+						<Code code={file.code} lang={file.lang} />
+					</div>
+				))
+			}
+		</div>
+	</section>
+
+	<section class="capn-pane capn-preview" aria-label={`${example.title} demo`}>
+		<div class="capn-chrome">
+			<span class="capn-url">{example.demoPath}</span>
+			<a class="capn-open" href={example.demoPath} target="_blank" rel="noopener">
+				Open
+				<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true">
+					<path d="M7 17 17 7M9 7h8v8" stroke-linecap="round" stroke-linejoin="round"></path>
+				</svg>
+			</a>
+		</div>
+		<iframe src={demoSrc} title={`${example.title} \u2014 live demo`}></iframe>
+	</section>
+</div>
+
+<script>
+	// Tabs. Roving tabindex with arrow keys, per the APG tabs pattern.
+	for (const stage of document.querySelectorAll<HTMLElement>('[data-capn-stage]')) {
+		const tabs = [...stage.querySelectorAll<HTMLButtonElement>('.capn-tab')];
+		const panels = [...stage.querySelectorAll<HTMLElement>('.capn-panel')];
+
+		const select = (next: number, focus = true) => {
+			tabs.forEach((tab, i) => {
+				const on = i === next;
+				tab.setAttribute('aria-selected', String(on));
+				tab.tabIndex = on ? 0 : -1;
+				panels[i].hidden = !on;
+			});
+			// The strip scrolls once the files outgrow the pane, so a tab picked
+			// by keyboard has to be brought into view.
+			tabs[next].scrollIntoView({ block: 'nearest', inline: 'nearest' });
+			if (focus) tabs[next].focus();
+		};
+
+		// There is no CSS test for "this element overflows", so the edge fades
+		// that hint at more tabs are driven from here.
+		const strip = stage.querySelector<HTMLElement>('.capn-tabs');
+		if (strip) {
+			const sync = () => {
+				const max = strip.scrollWidth - strip.clientWidth;
+				strip.dataset.scrollStart = String(strip.scrollLeft > 1);
+				strip.dataset.scrollEnd = String(strip.scrollLeft < max - 1);
+			};
+			strip.addEventListener('scroll', sync, { passive: true });
+			new ResizeObserver(sync).observe(strip);
+			sync();
+		}
+
+		tabs.forEach((tab, i) => {
+			tab.addEventListener('click', () => select(i, false));
+			tab.addEventListener('keydown', (event) => {
+				const delta = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+				if (delta) {
+					event.preventDefault();
+					select((i + delta + tabs.length) % tabs.length);
+				} else if (event.key === 'Home') {
+					event.preventDefault();
+					select(0);
+				} else if (event.key === 'End') {
+					event.preventDefault();
+					select(tabs.length - 1);
+				}
+			});
+		});
+	}
+
+	// Keep the demo on the docs theme. The frame reads the initial value itself on
+	// the way up (BaseLayout's `data-theme`); this only has to push later toggles,
+	// which avoids a reload.
+	const frames = document.querySelectorAll<HTMLIFrameElement>('.capn-preview iframe');
+	if (frames.length) {
+		// A toggle in the docs is pushed straight through to the frame, which flips
+		// on its own next frame. Nothing to coordinate: both documents change on the
+		// same tick.
+		new MutationObserver(() => {
+			const theme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+			for (const frame of frames) {
+				frame.contentWindow?.postMessage({ type: 'capn-theme', theme }, location.origin);
+			}
+		}).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+	}
+</script>
+
+<style is:global>
+	/* The stage wants the whole main column, but prose does not. Widen the
+	   container and cap the prose instead of trying to break the stage out of a
+	   centred column, which would mean guessing at the sidebar width. Left
+	   edges stay aligned with the page title.
+
+	   Nimbus's prose rules are all `:not([class])`, so anything with a class is
+	   already exempt from them -- the stage needs no opt-out marker, only room. */
+	:root:has(.capn-stage) {
+		--nb-content-max: 100%;
+	}
+
+	/* Guarded by the same `:has` as the width above, and for a sharper reason
+	   than symmetry: `is:global` styles are hoisted into the route's shared
+	   stylesheet, so every page built by `[...slug].astro` loads this rule
+	   whether or not it has a stage. Unguarded, it capped the landing page's
+	   prose at a measure meant for a page with a playground on it. */
+	:root:has(.capn-stage) .docs-content > *:not(.capn-stage) {
+		max-width: 47rem;
+	}
+</style>
+
+<style>
+	/* Editor colours, kept as their own small palette rather than reusing the
+	   site tokens: the panes should read as a tool embedded in the page, not as
+	   more page. `--pg-bg` is the editor body: the stage paints it and the code
+	   block inside is stripped back to transparent, so the active tab and the
+	   code below it are the same fill by construction, which is what makes the
+	   tab look attached rather than stuck on. Everything around it is retinted
+	   to the site's charcoal so the tool still belongs here.
+
+	   Keyed off `data-theme`, which BaseLayout writes explicitly as light or dark
+	   for exactly this kind of consumer -- the frames read it too. Nimbus's own
+	   `data-mode` is absent in light mode, so a dark default plus one light
+	   override would not be expressible against it. */
+	.capn-stage {
+		--pg-bg: #12171c;
+		--pg-bar: #0c1014;
+		--pg-border: rgba(232, 238, 244, 0.12);
+		/* Tracks the site's muted token by value, not by reference: these are
+		   deliberately their own palette, but an idle tab label is still body
+		   text and has to clear AA on `--pg-bar` like everything else. */
+		--pg-fg-muted: #adbccb;
+		--pg-fg: #e8eef4;
+		/* The one place the tool is allowed a spark: the active tab's edge. */
+		--pg-accent: #f6821f;
+	}
+
+	:root[data-theme='light'] .capn-stage {
+		--pg-bg: #f7f9fb;
+		--pg-bar: #e4e9ee;
+		--pg-border: rgba(26, 34, 43, 0.12);
+		--pg-fg-muted: #4c5a6a;
+		--pg-fg: #1a222b;
+		/* Darkened, unlike the site's CTA and seal, which take Cloudflare orange
+		   raw and accept the contrast hit. This one is not the brand mark, it is
+		   the only thing telling you which tab is active, and the brand orange on
+		   this bar is 2.11:1 -- under the 3:1 a graphical control needs, and
+		   visibly gone. Same hue, darkened to 3.09:1. */
+		--pg-accent: #cc680e;
+	}
+
+	.capn-stage {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+		/* Sized to sit under the page title without pushing its own bottom edge
+		   past the fold on a laptop, so the whole thing reads as one panel. */
+		height: min(74vh, 54rem);
+		min-height: 30rem;
+		margin-block: 1.25rem 2.5rem;
+		border: 1px solid var(--pg-border);
+		border-radius: 6px;
+		overflow: hidden;
+		background: var(--pg-bg);
+	}
+
+	.capn-pane {
+		display: flex;
+		flex-direction: column;
+		min-width: 0;
+		min-height: 0;
+	}
+
+	.capn-code {
+		border-inline-end: 1px solid var(--pg-border);
+	}
+
+	/* --- file tabs, VS Code style: flat, dense, active tab merges into the
+	   editor body and takes a top accent --- */
+
+	.capn-tabs {
+		display: flex;
+		flex: none;
+		height: 2.25rem;
+		/* Files outgrow the pane well before the layout stacks, so the strip
+		   scrolls rather than letting the tabs squeeze. The native scrollbar is
+		   hidden because it would eat into a 36px bar and break alignment with
+		   the preview toolbar; the edge fades below replace the affordance. */
+		overflow-x: auto;
+		overflow-y: hidden;
+		scrollbar-width: none;
+		scroll-behavior: smooth;
+		background: var(--pg-bar);
+		border-bottom: 1px solid var(--pg-border);
+		mask-image: linear-gradient(
+			to right,
+			transparent 0,
+			#000 var(--pg-fade-start, 0px),
+			#000 calc(100% - var(--pg-fade-end, 0px)),
+			transparent 100%
+		);
+	}
+
+	.capn-tabs[data-scroll-start='true'] {
+		--pg-fade-start: 1.5rem;
+	}
+
+	.capn-tabs[data-scroll-end='true'] {
+		--pg-fade-end: 1.5rem;
+	}
+
+	.capn-tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.capn-tabs {
+			scroll-behavior: auto;
+		}
+	}
+
+	.capn-tab {
+		flex: none;
+		display: flex;
+		align-items: center;
+		padding: 0 0.85rem;
+		border: 0;
+		border-right: 1px solid var(--pg-border);
+		background: none;
+		color: var(--pg-fg-muted);
+		font-family: var(--nb-font-sans);
+		font-size: 0.78rem;
+		line-height: 1;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.capn-tab:hover {
+		color: var(--pg-fg);
+	}
+
+	.capn-tab[aria-selected='true'] {
+		background: var(--pg-bg);
+		color: var(--pg-fg);
+		box-shadow: inset 0 2px 0 var(--pg-accent);
+	}
+
+	.capn-tab:focus-visible {
+		outline: 1px solid var(--pg-accent);
+		outline-offset: -2px;
+	}
+
+	/* --- code --- */
+
+	.capn-panels {
+		flex: 1;
+		min-height: 0;
+		overflow: hidden;
+	}
+
+	.capn-panel {
+		height: 100%;
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+	}
+
+	.capn-panel[hidden] {
+		display: none;
+	}
+
+	/* Strip the code block's own frame. It is already inside one, and the
+	   doubled border, radius and margin is what made this look like a widget
+	   rather than an editor -- and the tab strip only looks attached if the
+	   active tab meets the code itself rather than a gap above an inset panel.
+
+	   `.nb-code-figure` is Nimbus's wrapper around every Shiki block. The
+	   figure has to become the pane's flex column and give up its `overflow:
+	   hidden`, and the `<pre>` inside it has to be the thing that scrolls: left
+	   as it comes, the figure clips a file at the pane's height and the rest of
+	   it is unreachable. */
+	.capn-panel :global(.nb-code-figure) {
+		display: flex;
+		flex-direction: column;
+		flex: 1;
+		min-height: 0;
+		width: 100%;
+		margin: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
+		/* The figure is the copy button's positioning ancestor, so it keeps
+		   `position: relative` from the base rule. */
+		overflow: visible;
+	}
+
+	.capn-panel :global(.nb-code-figure > pre.astro-code) {
+		flex: 1;
+		min-height: 0;
+		/* Both axes: a source file is not wrapped, and the pane is narrower
+		   than the lines in it. */
+		overflow: auto;
+		margin: 0;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		/* Undo the room made for the language badge, which is suppressed
+		   below. */
+		padding-top: 0.75rem;
+	}
+
+	/* No language badge in here. It labels a block that appears in prose with
+	   no other indication of what it is; in the stage the tab above already
+	   names the file, and a chip floating over the first line of a source pane
+	   reads as a rendering fault. */
+	.capn-panel :global(.nb-code-figure)::before {
+		display: none;
+	}
+
+	/* The copy button is worth keeping -- it is a source pane -- but not in the
+	   site's colours: retint it to the editor palette like everything else in
+	   here. */
+	.capn-panel :global(.nb-code-copy) {
+		border-color: var(--pg-border);
+		background: var(--pg-bar);
+		color: var(--pg-fg-muted);
+	}
+
+	.capn-panel :global(.nb-code-copy:hover) {
+		background: var(--pg-bar);
+		color: var(--pg-fg);
+	}
+
+	/* --- preview --- */
+
+	.capn-chrome {
+		display: flex;
+		flex: none;
+		align-items: center;
+		gap: 0.75rem;
+		/* Same height as the tab strip, so the two panes line up. */
+		height: 2.25rem;
+		padding: 0 0.75rem;
+		background: var(--pg-bar);
+		border-bottom: 1px solid var(--pg-border);
+	}
+
+	.capn-url {
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		color: var(--pg-fg-muted);
+		font-family: var(--nb-font-mono);
+		font-size: 0.72rem;
+	}
+
+	.capn-open {
+		flex: none;
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		color: var(--pg-fg-muted);
+		font-family: var(--nb-font-sans);
+		font-size: 0.72rem;
+		text-decoration: none;
+	}
+
+	.capn-open:hover {
+		color: var(--pg-fg);
+	}
+
+	.capn-preview iframe {
+		flex: 1;
+		width: 100%;
+		min-height: 0;
+		border: 0;
+		background: var(--pg-bg);
+		color-scheme: normal;
+	}
+
+	/* Stacked below the split, with the demo first: it is the point of the
+	   page, and a half-height pane each would leave neither usable. */
+	@media (max-width: 60rem) {
+		.capn-stage {
+			grid-template-columns: minmax(0, 1fr);
+			grid-template-rows: 26rem 30rem;
+			height: auto;
+		}
+
+		.capn-code {
+			order: 2;
+			border-inline-end: 0;
+			border-top: 1px solid var(--pg-border);
+		}
+
+		.capn-preview {
+			order: 1;
+		}
+	}
+</style>

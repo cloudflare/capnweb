@@ -1,0 +1,373 @@
+---
+/**
+ * The "why it's different" bento: white isometric line-art figures (à la
+ * Linear). A faint base layer with a brighter animated layer on top — a pulse
+ * travelling down the tube, flowing arrows, a call that lands and flashes the
+ * remote object, lines that write themselves in, a spinning globe, and a few
+ * lit cubes among many.
+ *
+ * The illustrations are built as SVG strings and injected with `set:html`,
+ * which means Astro's scoped styles do NOT reach them — so their styling lives
+ * in the `is:global` block below, namespaced under `.cw-bento`. All motion is
+ * transform / stroke-dashoffset / opacity and pauses under reduced motion.
+ */
+interface Props {
+  bundleLabel: string;
+}
+const { bundleLabel } = Astro.props;
+
+const dia = (cx: number, cy: number, s: number) => {
+  const X = s,
+    Y = s / 2;
+  return `M${cx} ${cy - Y} L${cx + X} ${cy} L${cx} ${cy + Y} L${cx - X} ${cy} Z`;
+};
+const cube = (cx: number, cy: number, s: number, h: number) => {
+  const X = s,
+    Y = s / 2;
+  return {
+    top: dia(cx, cy, s),
+    left: `M${cx - X} ${cy} L${cx} ${cy + Y} L${cx} ${cy + Y + h} L${cx - X} ${cy + h} Z`,
+    right: `M${cx + X} ${cy} L${cx} ${cy + Y} L${cx} ${cy + Y + h} L${cx + X} ${cy + h} Z`,
+  };
+};
+const p = (cls: string, d: string, extra = "") => `<path class="${cls}" d="${d}"${extra}/>`;
+const cubeStr = (c: ReturnType<typeof cube>, top = "cw-top", side = "cw-side") =>
+  p(side, c.left) + p(side, c.right) + p(top, c.top);
+const r1 = (n: number) => Math.round(n * 10) / 10;
+
+// 1) tube with a data pulse travelling down through transparent rings
+const tube = (() => {
+  const x = 100,
+    rx = 32,
+    ry = 16;
+  let s = p("cw-side", `M${x - rx} 42 L${x - rx} 104 M${x + rx} 42 L${x + rx} 104`);
+  [42, 58, 74, 90, 104].forEach((y, i) => {
+    s += `<ellipse class="cw-ring" cx="${x}" cy="${y}" rx="${rx}" ry="${ry}" style="animation-delay:${(i * 0.28).toFixed(2)}s"/>`;
+  });
+  return s;
+})();
+
+// 2) two level cubes exchanging over two flowing arrows.
+// Both lines animate with the same keyframe: dashes travel along a path in the
+// path's own direction, and the return line is already authored right to left
+// (M116 -> L86), so reversing the animation too would cancel out and send its
+// dashes back the way its arrowhead points.
+const bidi =
+  cubeStr(cube(58, 82, 20, 26)) +
+  cubeStr(cube(142, 82, 20, 26)) +
+  p("cw-flow", "M84 84 L114 84") +
+  p("cw-arrow", "M114 84 l-6 -3 M114 84 l-6 3") +
+  p("cw-flow", "M116 98 L86 98") +
+  p("cw-arrow", "M86 98 l6 -3 M86 98 l6 3");
+
+// 3) a reference orbiting the object it points at (pass by reference)
+const reference = (() => {
+  const ring = "M60 75 a40 14 0 1 0 80 0 a40 14 0 1 0 -80 0";
+  return (
+    `<circle class="cw-halo" cx="100" cy="75" r="13"/>` +
+    `<circle class="cw-nucleus" cx="100" cy="75" r="8"/>` +
+    `<g class="cw-ring1"><path class="cw-orbitline" d="${ring}"/><circle class="cw-electron" r="3.5"/></g>`
+  );
+})();
+
+// 4) a plain data card whose three lines write themselves in
+const schemas = (() => {
+  const c = cube(100, 66, 42, 5);
+  const P = (u: number, v: number): [number, number] => [58 + u * 42 + v * 42, 66 + u * -21 + v * 21];
+  let lines = "";
+  ([
+    [0.32, 0.2, 0.8],
+    [0.52, 0.2, 0.66],
+    [0.72, 0.2, 0.84],
+  ] as const).forEach(([v, u0, u1], i) => {
+    const a = P(u0, v),
+      b = P(u1, v);
+    lines += p(
+      "cw-write",
+      `M${r1(a[0])} ${r1(a[1])} L${r1(b[0])} ${r1(b[1])}`,
+      ` pathLength="1" style="animation-delay:${(i * 0.5).toFixed(2)}s"`,
+    );
+  });
+  return cubeStr(c) + lines;
+})();
+
+// 5) a real 3D wireframe globe (longitude rings in 3D, spinning on a tilt).
+// Rendered as HTML/CSS rather than SVG so it can actually rotate in 3D.
+const gmers = [0, 45, 90, 135]
+  .map((a) => '<div class="cw-gmer" style="transform:rotateY(' + a + 'deg)"></div>')
+  .join("");
+const glats = [
+  [-33, 15],
+  [-17, 4],
+  [17, 4],
+  [33, 15],
+]
+  .map(
+    ([ty, ins]) =>
+      '<div class="cw-glat" style="inset:' + ins + 'px;transform:translateY(' + ty + 'px) rotateX(90deg)"></div>',
+  )
+  .join("");
+const globe = '<div class="cw-globe">' + gmers + glats + '<div class="cw-geq"></div></div>';
+
+// 6) a few lit cubes among many faint ones
+const bundle = (() => {
+  const lit = new Map([
+    ["3,3", 0],
+    ["3,2", 0.5],
+    ["2,3", 1],
+  ]);
+  let s = "";
+  for (let r = 0; r < 4; r++) {
+    for (let c = 0; c < 4; c++) {
+      const cu = cube(100 + (c - r) * 18, 46 + (c + r) * 9, 8, 9);
+      if (lit.has(`${r},${c}`)) {
+        const dl = ` style="animation-delay:${lit.get(`${r},${c}`)}s"`;
+        s +=
+          p("cw-lit cw-fill2", cu.left, dl) +
+          p("cw-lit cw-fill2", cu.right, dl) +
+          p("cw-lit cw-fill", cu.top, dl);
+      } else {
+        s += p("cw-faint", cu.left) + p("cw-faint", cu.right) + p("cw-faint", cu.top);
+      }
+    }
+  }
+  return s;
+})();
+
+const figures = [
+  { fig: "01", art: tube, title: "Promise pipelining", body: "Don't await a result before you use it. Chain dependent calls together and the whole chain resolves in a single network round trip — even over plain HTTP." },
+  { fig: "02", art: bidi, title: "Bidirectional by default", body: "Sessions are symmetric: the client can call the server, and the server can call the client. Pass a function and the other side gets a stub that calls back." },
+  { fig: "03", art: reference, title: "Pass by reference", body: "Classes that extend RpcTarget travel as references, not copies. You hold a stub; method calls run where the object actually lives." },
+  { fig: "04", art: schemas, title: "No schemas, no codegen", body: "No .proto files, no build step, no generated clients. Types are just TypeScript — erased at runtime, and free." },
+  { fig: "05", art: globe, title: "Runs everywhere", body: "Every major browser, Cloudflare Workers, Node, Deno, and Bun — over HTTP, WebSocket, MessagePort, or a transport you write yourself." },
+  { fig: "06", art: bundle, title: bundleLabel, body: "Minified and gzipped, with zero dependencies. The whole protocol is human-readable JSON — you can read it straight from the network tab." },
+];
+---
+
+<div class="cw-bento">
+  {
+    figures.map((f, i) => (
+      <article class="cw-cell">
+        <span class="cw-fig">FIG. {f.fig}</span>
+        <div class="cw-art">
+          {i === 4 && <div class="cw-globe-scene" set:html={f.art} />}
+          {i !== 4 && (
+            <svg class="cw-svg" viewBox="0 0 200 150" fill="none" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+              <g class={`cw-obj cw-obj-${i}`} stroke="currentColor" stroke-width="1.15" stroke-linejoin="round" set:html={f.art} />
+            </svg>
+          )}
+        </div>
+        <div class="cw-txt">
+          <h3>{f.title}</h3>
+          <p>{f.body}</p>
+        </div>
+      </article>
+    ))
+  }
+</div>
+
+<style is:global>
+  .cw-bento {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-right: 1px solid var(--nb-border);
+    border-bottom: 1px solid var(--nb-border);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    margin: 1.5rem 0;
+  }
+  .cw-bento .cw-cell {
+    display: flex;
+    flex-direction: column;
+    padding: 1.1rem 1.25rem 1.4rem;
+    border-top: 1px solid var(--nb-border);
+    border-left: 1px solid var(--nb-border);
+  }
+  /*
+   * No opacity here. Dimming the muted token to 0.6 was what made these
+   * captions the least readable text on the site -- 3.6:1 in dark and 2.3:1 in
+   * light, against a 4.5 requirement. The token is already the "quieter than
+   * body" colour; dimming it again was saying the same thing twice and only the
+   * second one was measured.
+   */
+  .cw-bento .cw-fig {
+    font-family: var(--nb-font-mono);
+    font-size: 0.6875rem;
+    color: var(--nb-muted-foreground);
+  }
+  .cw-bento .cw-art {
+    height: 132px;
+    margin: 0.25rem 0 1rem;
+    color: var(--cw-art-stroke);
+  }
+  .cw-bento .cw-svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  /* ---- Faint base layer (duotone) ---- */
+  .cw-bento .cw-top { stroke-opacity: 0.54; fill: rgb(var(--cw-art-fill-rgb) / 0.025); }
+  .cw-bento .cw-side { stroke-opacity: 0.28; fill: none; }
+  .cw-bento .cw-faint { stroke-opacity: 0.24; fill: none; }
+  .cw-bento .cw-halo { stroke-opacity: 0.22; fill: none; }
+  .cw-bento .cw-orbitline { stroke-opacity: 0.26; fill: none; }
+
+  /* ---- Bright animated layer ---- */
+  .cw-bento .cw-hi { stroke-opacity: 0.95; fill: rgb(var(--cw-art-fill-rgb) / 0.08); }
+  .cw-bento .cw-arrow { stroke-opacity: 0.85; fill: none; stroke-linecap: round; }
+  .cw-bento .cw-lit { stroke-opacity: 0.72; fill: none; }
+
+  .cw-bento .cw-ring {
+    fill: none;
+    stroke-opacity: 0.22;
+    animation: cw-ring 2.4s ease-in-out infinite;
+  }
+  @keyframes cw-ring {
+    0%, 42%, 100% { stroke-opacity: 0.22; }
+    14% { stroke-opacity: 0.95; }
+  }
+
+  .cw-bento .cw-flow {
+    stroke-opacity: 0.78;
+    fill: none;
+    stroke-dasharray: 4 5;
+    animation: cw-flow 1.4s linear infinite;
+  }
+  @keyframes cw-flow { to { stroke-dashoffset: -27; } }
+
+  /* Pass by reference: nucleus (the object) with references orbiting it. */
+  .cw-bento .cw-nucleus { stroke-opacity: 1; fill: rgb(var(--cw-art-fill-rgb) / 0.14); }
+  .cw-bento .cw-ring1 { transform: rotate(-16deg); transform-box: view-box; transform-origin: 100px 75px; }
+  .cw-bento .cw-electron {
+    fill: currentColor;
+    stroke: none;
+    offset-path: path("M60 75 a40 14 0 1 0 80 0 a40 14 0 1 0 -80 0");
+    offset-rotate: 0deg;
+    animation: cw-orbit 5s linear infinite;
+  }
+  @keyframes cw-orbit { to { offset-distance: 100%; } }
+
+  .cw-bento .cw-write {
+    stroke-opacity: 0.6;
+    fill: none;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: cw-write 3.6s ease-in-out infinite;
+  }
+  @keyframes cw-write {
+    0% { stroke-dashoffset: 1; }
+    22% { stroke-dashoffset: 0; }
+    72% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -1; }
+  }
+
+  /* Runs everywhere: a 3D wireframe globe spinning on a tilted axis. */
+  .cw-bento .cw-globe-scene {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    perspective: 340px;
+  }
+  /* sphere body behind the wires, gives a clean silhouette */
+  .cw-bento .cw-globe-scene::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 94px;
+    height: 94px;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    background: rgb(var(--cw-art-stroke-rgb) / 0.05);
+    box-shadow: inset 0 0 0 1px rgb(var(--cw-art-stroke-rgb) / 0.46);
+  }
+  .cw-bento .cw-globe {
+    position: relative;
+    z-index: 1;
+    width: 90px;
+    height: 90px;
+    transform-style: preserve-3d;
+    transform: rotateX(-16deg) rotateY(20deg);
+    animation: cw-globe-spin 9s linear infinite;
+  }
+  .cw-bento .cw-globe > div {
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+  }
+  .cw-bento .cw-gmer { border: 1px solid rgb(var(--cw-art-stroke-rgb) / 0.32); }
+  .cw-bento .cw-glat { border: 1px solid rgb(var(--cw-art-stroke-rgb) / 0.3); }
+  .cw-bento .cw-geq {
+    border: 1px solid rgb(var(--cw-art-stroke-rgb) / 0.52);
+    transform: rotateX(90deg);
+  }
+  @keyframes cw-globe-spin {
+    from { transform: rotateX(-16deg) rotateY(0deg); }
+    to { transform: rotateX(-16deg) rotateY(360deg); }
+  }
+
+  /* Bundle: the lit blocks fill themselves in, staggered, then clear. */
+  .cw-bento .cw-fill { animation: cw-fill 3.8s ease-in-out infinite; }
+  .cw-bento .cw-fill2 { animation: cw-fill2 3.8s ease-in-out infinite; }
+  @keyframes cw-fill {
+    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.42; }
+    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.24); stroke-opacity: 1; }
+  }
+  @keyframes cw-fill2 {
+    0%, 100% { fill: rgb(var(--cw-art-fill-rgb) / 0); stroke-opacity: 0.36; }
+    18%, 75% { fill: rgb(var(--cw-art-fill-rgb) / 0.1); stroke-opacity: 0.82; }
+  }
+
+  .cw-bento .cw-obj {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: cw-float 5s ease-in-out infinite;
+  }
+  .cw-bento .cw-obj-1 { animation-delay: -0.8s; }
+  .cw-bento .cw-obj-2 { animation-delay: -1.6s; }
+  .cw-bento .cw-obj-3 { animation-delay: -2.4s; }
+  .cw-bento .cw-obj-4 { animation-delay: -3.2s; }
+  .cw-bento .cw-obj-5 { animation-delay: -4s; }
+  @keyframes cw-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+
+  .cw-bento .cw-txt { margin-top: auto; display: grid; gap: 0.35rem; }
+  .cw-bento .cw-txt h3 {
+    margin: 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--nb-foreground);
+  }
+  .cw-bento .cw-txt p {
+    margin: 0;
+    font-size: 0.875rem;
+    line-height: 1.55;
+    color: var(--nb-muted-foreground);
+  }
+
+  @media (max-width: 34rem) {
+    .cw-bento { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cw-bento .cw-obj,
+    .cw-bento .cw-ring,
+    .cw-bento .cw-flow,
+    .cw-bento .cw-write,
+    .cw-bento .cw-globe,
+    .cw-bento .cw-electron,
+    .cw-bento .cw-fill,
+    .cw-bento .cw-fill2 {
+      animation: none;
+    }
+    .cw-bento .cw-ring { stroke-opacity: 0.42; }
+    .cw-bento .cw-write { stroke-dashoffset: 0; }
+  }
+</style>

@@ -1,0 +1,38 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "capnweb-batch-pipelining",
+	"main": "worker.js",
+	"compatibility_date": "2026-02-05",
+
+	// `capnweb` resolves to the workerd build. Under Node the same bare
+	// specifier resolves through the repo's workspace self-link, so `api.mjs`
+	// is shared by the Worker and `server-node.mjs` without either of them
+	// hard-coding a path into `dist/`.
+	"alias": {
+		"capnweb": "../../dist/index-workers.js"
+	},
+
+	// The browser demo imports the library directly, so stage the dependency-free
+	// ESM build alongside the page. `dist/index.js` has no imports and no Node
+	// globals, so it runs unmodified in a browser -- no bundler needed here.
+	"build": {
+		"command": "mkdir -p public/vendor && cp ../../dist/index.js public/vendor/capnweb.js"
+	},
+
+	"assets": {
+		"directory": "public"
+	},
+
+
+	"observability": {
+		"enabled": true
+	},
+
+	// Per-method artificial delays (ms). Network latency is simulated in the
+	// browser instead, so the page can expose it as a slider.
+	"vars": {
+		"DELAY_AUTH_MS": 80,
+		"DELAY_PROFILE_MS": 120,
+		"DELAY_NOTIFS_MS": 120
+	}
+}

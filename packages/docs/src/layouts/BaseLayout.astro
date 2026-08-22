@@ -1,0 +1,156 @@
+---
+import "@fontsource-variable/dm-sans";
+import "@fontsource/commit-mono";
+import "../styles/globals.css";
+import "../styles/prose.css";
+import { config } from "virtual:nimbus/config";
+import { getCollectionLlmsUrl, getVersionStatus } from "@cloudflare/nimbus-docs";
+import AgentDirective from "@/components/AgentDirective.astro";
+import { SearchDialog } from "@/components/ui/search";
+import NimbusHead from "@cloudflare/nimbus-docs/components/NimbusHead.astro";
+import type { BasePageProps } from "@cloudflare/nimbus-docs/types";
+import { cn } from "@/lib/cn";
+
+type Props = BasePageProps;
+
+const {
+  title,
+  description,
+  noindex,
+  markdownUrl,
+  socialImage,
+  lastUpdated,
+  head: pageHead = [],
+  collection,
+  entryId,
+} = Astro.props;
+
+const lang = config.locale ?? "en";
+// `cw-home` marks the landing page, for the one rule that only applies there:
+// code blocks go outline-only in dark, where the page is nearly black already and
+// a filled card reads as a lighter rectangle floating in it. It does not force a
+// colour scheme -- the landing honours the toggle like every other page. The
+// trailing-slash strip is what makes `/` match as the empty string.
+const path = Astro.url.pathname.replace(/\/+$/, "");
+const isHome = path === "";
+// Per-page agent-index pointer. For pages in non-primary or version
+// collections, this resolves to `/<prefix>/llms.txt` (e.g. `/v0/llms.txt`
+// for a v0 docs page, `/blog/llms.txt` for a blog post). Falls back to
+// the root `/llms.txt` when no collection is provided.
+// Hidden-version pages don't advertise an agent index (the per-version
+// llms.txt isn't emitted for them); suppress the AgentDirective entirely.
+const versionStatus = collection ? await getVersionStatus(collection) : null;
+const isHiddenVersion = versionStatus?.isHidden === true;
+const llmsIndexPath = collection
+  ? await getCollectionLlmsUrl(collection)
+  : "/llms.txt";
+const llmsUrl = Astro.site
+  ? new URL(llmsIndexPath, Astro.site).href
+  : llmsIndexPath;
+---
+
+<!doctype html>
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    {/*
+      `is:inline` is load-bearing. Without a directive Astro processes this and
+      emits `<script type="module">`, which is deferred: the document can paint
+      before it runs, and a reader whose stored choice is dark gets a flash of
+      the light scheme first. Measured at 20x CPU throttling, that flash lasted
+      about sixty frames. Inline makes it a classic blocking script that runs
+      during head parsing, before anything is painted. Nothing in here needs
+      processing anyway -- no imports, no TypeScript.
+    */}
+    <script is:inline>
+      (() => {
+        const KEY = "ui-mode";
+        // Queried the other way round on purpose: the site is designed dark, so
+        // "no preference" resolves to dark rather than light. A stored choice
+        // still wins over both.
+        const media = window.matchMedia("(prefers-color-scheme: light)");
+
+        const readPref = () => {
+          try {
+            const v = localStorage.getItem(KEY);
+            return v === "dark" || v === "light" ? v : null;
+          } catch {
+            return null;
+          }
+        };
+
+        const resolveMode = () => readPref() ?? (media.matches ? "light" : "dark");
+
+        const applyTheme = () => {
+          const root = document.documentElement;
+          const mode = resolveMode();
+          if (mode === "dark") root.setAttribute("data-mode", "dark");
+          else root.removeAttribute("data-mode");
+          // Published for same-origin embeds: the example playgrounds read the
+          // embedding page's `data-theme` before their first paint, so there is
+          // no flash of the wrong scheme inside the frame. They cannot read
+          // `data-mode`, which is absent rather than "light" in light mode, and
+          // an attribute that only exists half the time cannot be read
+          // positively by a document that may load either way round.
+          root.dataset.theme = mode;
+          root.style.colorScheme = mode;
+          // The two theme-color metas are media-scoped, which answers the OS
+          // but not a stored choice that disagrees with it. Drop the media
+          // condition on the one that won and neuter the other, so the browser
+          // chrome matches the page a reader actually gets.
+          document.querySelectorAll('meta[name="theme-color"]').forEach((m) => {
+            const wants = m.dataset.mode || (m.media.includes("light") ? "light" : "dark");
+            m.dataset.mode = wants;
+            m.media = wants === mode ? "" : "not all";
+          });
+          document.querySelectorAll("[data-nb-theme-toggle]").forEach((b) => {
+            b.setAttribute("data-nb-state", mode);
+          });
+        };
+
+        applyTheme();
+        media.addEventListener("change", () => {
+          if (!readPref()) applyTheme();
+        });
+        window.addEventListener("storage", (e) => {
+          if (e.key === KEY) applyTheme();
+        });
+
+        window.__nbApplyTheme = applyTheme;
+      })();
+    </script>
+
+    <NimbusHead
+      title={title}
+      description={description}
+      noindex={noindex}
+      markdownUrl={markdownUrl}
+      socialImage={socialImage}
+      lastUpdated={lastUpdated}
+      head={pageHead}
+      collection={collection}
+      entryId={entryId}
+    />
+  </head>
+  <!-- No `bg-background` here: the body paints the ground (see globals.css) and
+       the content sheet paints itself, so the ground has somewhere to show. -->
+  <body class={cn("min-h-screen text-foreground antialiased", isHome && "cw-home")}>
+    <a
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-100 focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary-foreground focus:no-underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-2"
+    >
+      Skip to content
+    </a>
+    {markdownUrl && !isHiddenVersion && <AgentDirective markdownUrl={markdownUrl} llmsUrl={llmsUrl} />}
+    <slot />
+    {config.search !== false && <SearchDialog />}
+
+    <script>
+      import { codeCopy, headingAnchors } from "@cloudflare/nimbus-docs/client";
+      codeCopy();
+      headingAnchors();
+    </script>
+  </body>
+</html>

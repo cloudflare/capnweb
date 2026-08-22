@@ -3,7 +3,50 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2304070e'/%3E%3Cline x1='7' y1='23' x2='16' y2='9' stroke='%234db4ff' stroke-width='2'/%3E%3Cline x1='16' y1='9' x2='25' y2='20' stroke='%234db4ff' stroke-width='2'/%3E%3Ccircle cx='7' cy='23' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='25' cy='20' r='3.2' fill='%234db4ff'/%3E%3Ccircle cx='16' cy='9' r='3.8' fill='%23f6821f'/%3E%3C/svg%3E"
+    />
     <title>Cap'n Web Cloudflare Workers + React Example</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/@fontsource/commit-mono@5/400.css" rel="stylesheet" />
+    <script>
+      // The docs playground embeds this app in an iframe and passes its own
+      // theme on the URL. Applied before first paint so there is no flash of
+      // the wrong scheme. Standalone, this is a no-op and the OS preference
+      // still wins via `color-scheme: light dark`.
+      (() => {
+        const root = document.documentElement;
+        const params = new URLSearchParams(location.search);
+        if (params.get('embed') || window.self !== window.top) root.dataset.embedded = 'true';
+
+        // Embedded in the docs, the page above is same-origin, so its theme can
+        // be read directly here rather than passed in. Done before first paint,
+        // so there is no flash of the wrong scheme. The try/catch is for a
+        // cross-origin embedder; standalone there is no parent to read, and
+        // either way it falls through to the OS preference.
+        const fromUrl = params.get('theme');
+        const theme =
+          fromUrl ??
+          (() => {
+            try {
+              return parent.document.documentElement.dataset.theme ?? null;
+            } catch {
+              return null;
+            }
+          })();
+        if (theme === 'light' || theme === 'dark') root.dataset.theme = theme;
+
+        // Later toggles arrive by postMessage so the frame need not reload.
+        // Only ever sets an attribute, so an unexpected sender can do nothing.
+        addEventListener('message', (event) => {
+          const next = event.data?.type === 'capn-theme' ? event.data.theme : null;
+          if (next === 'light' || next === 'dark') root.dataset.theme = next;
+        });
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

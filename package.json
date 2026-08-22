@@ -32,11 +32,17 @@
   },
   "workspaces": [
     ".",
-    "packages/*"
+    "packages/*",
+    "!packages/docs"
   ],
   "scripts": {
     "build": "tsdown --config-loader native && node scripts/check-dist-ascii.mjs && npm run -w capnweb-validate build",
     "build:watch": "tsdown --config-loader native --watch",
+    "dev": "npm run build:watch",
+    "dev:docs": "npm run build && npm --prefix packages/docs run dev -- --port 4321",
+    "lint:md": "markdownlint-cli2 && node scripts/align-markdown-tables.mjs --check",
+    "lint:md:fix": "node scripts/align-markdown-tables.mjs && markdownlint-cli2 --fix",
+    "setup": "npm install && npm --prefix packages/docs install && npm --prefix examples/worker-react/client install",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",
     "test:ci": "vitest run && bun test __tests__/bun.test.ts",
@@ -52,12 +58,14 @@
     "@types/bun": "^1.2.0",
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.7",
+    "markdownlint-cli2": "^0.23.2",
     "pkg-pr-new": "^0.0.60",
     "playwright": "^1.56.1",
     "tsdown": "^0.22.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7",
+    "wrangler": "4.63.0",
     "ws": "^8.21.1"
   },
   "repository": {
@@ -67,5 +75,5 @@
   "bugs": {
     "url": "https://github.com/cloudflare/capnweb/issues"
   },
-  "homepage": "https://github.com/cloudflare/capnweb#readme"
+  "homepage": "https://capnweb.com"
 }

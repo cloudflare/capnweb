@@ -1,0 +1,29 @@
+---
+import Icon from "@cloudflare/nimbus-docs/components/Icon.astro";
+import { cn } from "@/lib/cn";
+import type { HTMLAttributes } from "astro/types";
+
+interface Props extends HTMLAttributes<"article"> {
+  title: string;
+  /** Iconify icon name, e.g. `ph:lightning`. */
+  icon?: string;
+}
+
+const { title, icon, class: className, ...attrs } = Astro.props;
+---
+
+<article
+  class={cn(
+    "my-4 flex flex-col gap-1.5 rounded-lg bg-card px-5 py-4 ring-1 ring-border",
+    className,
+  )}
+  {...attrs}
+>
+  <div class="flex items-center gap-2">
+    {icon && <Icon name={icon} class="h-4 w-4 shrink-0 text-muted-foreground" />}
+    <h3 class="m-0 text-[0.9375rem] font-medium leading-snug text-foreground">{title}</h3>
+  </div>
+  <div class="text-sm leading-relaxed text-muted-foreground">
+    <slot />
+  </div>
+</article>

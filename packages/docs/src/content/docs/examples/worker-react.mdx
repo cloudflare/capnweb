@@ -1,0 +1,88 @@
+---
+title: Workers + React
+description: A React app calling a Cap'n Web Worker, with a request timeline and runtime validation at the RPC boundary.
+tableOfContents: false
+sidebar:
+  order: 2
+---
+
+import { exampleBySlug } from '../../../examples.ts';
+
+<Playground example={exampleBySlug('worker-react')} />
+
+The same comparison as the [batch + pipelining example](/examples/batch-pipelining/), but from a
+real front end: a React app served as static assets by the same Worker that answers its RPC calls.
+It draws a timeline of the requests, so you can watch the sequential version wait out three round
+trips while the pipelined version makes one.
+
+It also shows the two halves of runtime validation, `@validateRpc()` on the server and
+`validateStub()` on the client, including what a rejected call looks like.
+
+:::note[There is no server behind this page.]
+The Worker is bundled into the page and answers its own requests, with the simulated latency from
+its `wrangler.jsonc`. The POST counts and the validation error are real:
+see [how the playground works](/examples/batch-pipelining/#how-this-page-runs).
+:::
+
+## One Worker, both jobs
+
+The Worker serves the built React app *and* the RPC endpoint. Static assets are matched first, so
+`fetch` only ever sees `/api`:
+
+```ts
+export default {
+	async fetch(request: Request, env: Env) {
+		const url = new URL(request.url);
+		if (url.pathname === '/api') {
+			return newWorkersRpcResponse(request, new Api(env));
+		}
+		return new Response('Not found', { status: 404 });
+	},
+};
+```
+
+The client points at a relative `/api`, so the same build works when served by the Worker and when
+served by the Vite dev server, which proxies `/api` across:
+
+```ts
+const api = validateStub<Api>(newHttpBatchRpcSession<Api>('/api'));
+```
+
+## Typed end to end, checked at runtime
+
+`runs.ts` imports the `Api` class from `server/worker.ts` **as a type**. That gives the client full
+autocomplete and compile-time checking against the real server interface, with no schema, no
+codegen step, and nothing shipped to the browser. The import disappears at build time.
+
+Types alone stop at the network boundary though, since anything can POST to `/api`. That is what the
+validation layer is for:
+
+- `@validateRpc()` on the server generates argument and return validators from the TypeScript
+  types, and rejects malformed calls before they reach your method.
+- `validateStub()` on the client checks that what came back matches what the types promised.
+
+The **Test validation failure** button calls `authenticate(12345)` with a number where a string is
+declared, so you can see the server refuse it.
+
+:::note
+Validation is opt-in and lives in a separate package, `capnweb-validate`. Cap'n Web itself does not
+require it. See [runtime validation](/guides/validation/).
+:::
+
+## Run it yourself
+
+```sh
+npm run build   # the examples resolve capnweb to dist/
+npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
+```
+
+That serves it from a Worker, so the round trips cross the network.
+
+For React hot reloading, run the Worker and the Vite dev server side by side. See the
+[example's README](https://github.com/cloudflare/capnweb/tree/main/examples/worker-react).
+
+## Next
+
+- [Runtime validation](/guides/validation/): the validation package in full.
+- [Cloudflare Workers](/servers/workers/): serving Cap'n Web from a Worker.
+- [RpcPromise & pipelining](/concepts/promises/): the mechanism being demonstrated.

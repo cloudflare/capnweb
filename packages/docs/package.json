@@ -1,0 +1,47 @@
+{
+  "name": "capnweb-docs",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Documentation website for Cap'n Web.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "playgrounds": "node scripts/build-playgrounds.mjs",
+    "bundle-size": "node scripts/measure-bundle.mjs",
+    "predev": "npm run bundle-size && npm run playgrounds",
+    "dev": "astro dev",
+    "start": "astro dev",
+    "prebuild": "npm run bundle-size && npm run playgrounds",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "lint:docs": "nimbus-docs lint",
+    "lint:docs:fix": "nimbus-docs lint --fix",
+    "predeploy": "npm run build",
+    "deploy": "wrangler deploy",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@cloudflare/nimbus-docs": "^0.10.0",
+    "@fontsource-variable/dm-sans": "^5.3.0",
+    "@fontsource/commit-mono": "^5.3.0",
+    "@iconify-json/ph": "^1.2.0",
+    "astro": "^7.2.1",
+    "astro-og-canvas": "^0.13.0",
+    "canvaskit-wasm": "^0.41.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.5.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cloudflare/capnweb",
+    "directory": "packages/docs"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9.10",
+    "@tailwindcss/vite": "^4.1.4",
+    "pagefind": "^1.5.2",
+    "tailwindcss": "^4.1.4",
+    "typescript": "^6.0.3"
+  }
+}
