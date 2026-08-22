@@ -315,9 +315,7 @@ region in the contrast harness with it.
 
 The landing page is set the way [capnproto.org](https://capnproto.org) is set: a fat Bookman
 lockup with white letters and a heavy black keyline, a starburst seal stuck on its bottom corner,
-and the pair sitting on a coloured band that stops dead where the prose begins. Cap'n Proto's site
-is a Cap'n Crunch parody written by the same author as this library, so the lineage is the joke
-and this is the third link in the chain.
+and the pair sitting on a coloured band that stops dead where the prose begins.
 
 The band is `.cw-hero-banner`, and its hard bottom edge is the point of it: a cereal box is
 printed, not blended, so the artwork ends on a line rather than fading into the page. It is a
@@ -400,6 +398,21 @@ build -- it runs when the mark changes, which is close to never -- and it needs 
 `opentype.js` that the site does not otherwise depend on. Its header comment has the two commands
 that fetch them.
 
+Most of its constants are numbers taken off capnproto.org, and on their own they are unfalsifiable
+magic. `scripts/measure-wordmark.mjs` re-derives every one of them from the reference art and
+prints it next to the value actually in use:
+
+```sh
+node scripts/measure-wordmark.mjs        # fetches the two reference PNGs
+```
+
+It has no dependencies -- it decodes PNGs with `node:zlib` in about fifty lines rather than
+booting a headless browser for a canvas -- so it still runs in a checkout with nothing installed.
+Differences of a pixel are the two measuring methods, not drift; it explains which gaps are
+deliberate and prints the reasoning. It found a real error the first time it ran, so it earns its
+place: `PROTO`'s cap height had been recorded as 114px and is 124px, which had propagated into
+four comments here and in the build script as a cap ratio of 1.152 instead of 1.24.
+
 Six things in there are worth knowing about.
 
 - **The face is TeX Gyre Bonum Bold, and must stay that way.** capnproto.org's mark is URW
@@ -418,11 +431,11 @@ Six things in there are worth knowing about.
   at IoU 0.67 because a round letter is nearly invariant under rotation, so their fitted angles are
   noise and were thrown away.
 - **The scatter is hand-set, and copied rather than invented.** A least-squares baseline through
-  the reference's letters is -5.19 degrees for `CAP'N` and -7.41 for `PROTO`, and the letters sit
-  22px and 10px peak to peak off those lines against a cap height near 100. That is a hand-set
+  the reference's letters is -5.6 degrees for `CAP'N` and -7.1 for `PROTO`, and the letters sit
+  21px and 9px peak to peak off those lines against caps of 100 and 124. That is a hand-set
   wordmark, not a rendered one, so the script carries a per-glyph `rot`/`dy`/`scale` array and the
   vertical residuals for `CAP'N` are the measured ones: C -2.4, A +10.2, P -11.8, N +4.1. The
-  reference's `P` is set 1.243x the rest of its line; `W` here gets 1.15, because `W` is already
+  reference's `P` is set 1.27x the rest of its line; `W` here gets 1.15, because `W` is already
   the widest letter in the alphabet and the full ratio ran it into the margins. Regenerating with
   the jitter zeroed produces something visibly deader, which is the whole argument for keeping it.
 - **One path per glyph, never one per line.** Merged into a single path the letters become
@@ -436,8 +449,8 @@ Six things in there are worth knowing about.
   glyphs overprinting each other, which is a long way from the cause; `closeContours` is the fix.
 
 The two lines are sized against each other rather than independently, and that ratio is the one
-number here that is *not* copied. The reference runs a 114px cap under a 99px one, a ratio of
-1.152; this lockup is at 1.28. It cannot be 1.152, because `WEB` is three letters where `PROTO` is
+number here that is *not* copied. The reference runs a 124px cap under a 100px one, a ratio of
+1.24; this lockup is at 1.28. It cannot be 1.24, because `WEB` is three letters where `PROTO` is
 five -- at the reference's ratio the lower line comes out visibly narrower than the upper one and
 the block falls apart. 1.28 is where the two lines land within a couple of percent of the same
 width, which is what the reference achieves by a different route. An earlier pass sat at 1.39 and

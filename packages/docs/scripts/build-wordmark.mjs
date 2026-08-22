@@ -45,9 +45,9 @@ const CAP = font.charToGlyph('H').getMetrics().yMax / font.unitsPerEm;
  * letters scattered around it.
  *
  * What makes it look hand-lettered rather than typed is that scatter, and it is
- * bigger than it looks: `CAP'N` deviates 22px peak-to-peak from its own
- * baseline, on a cap height of 99. Roughly a fifth of a letter. `PROTO` is
- * calmer at 10px on a cap of 114. Both words also sit at different angles.
+ * bigger than it looks: `CAP'N` deviates 21px peak-to-peak from its own
+ * baseline, on a cap height of 100. Roughly a fifth of a letter. `PROTO` is
+ * calmer at 9px on a cap of 124. Both words also sit at different angles.
  *
  * So each glyph carries three of its own numbers -- an extra rotation, a
  * baseline offset and a size multiplier -- on top of its line's tilt. For
@@ -75,9 +75,9 @@ const LINES = [
 		text: 'WEB',
 		/*
 		 * Against `CAP'N`'s 134 this is a cap-height ratio of 1.28. The
-		 * reference is 1.152 (a 114px cap under a 99px one) and an earlier pass
+		 * reference is 1.24 (a 124px cap under a 100px one) and an earlier pass
 		 * here was 1.39, which read as a second, louder logo rather than the
-		 * second line of one. It is not taken all the way down to 1.152 because
+		 * second line of one. It is not taken all the way down to 1.24 because
 		 * `WEB` is three letters where `PROTO` is five: at the reference's ratio
 		 * the lower line ends up visibly narrower than the upper one, and the
 		 * lockup stops looking like a block. This is the compromise -- the two
@@ -86,11 +86,12 @@ const LINES = [
 		size: 172,
 		track: 4,
 		tilt: -7.4,
-		// The oversized initial is measured, not invented: `PROTO`'s P fits at
-		// 207.5 against 167 for the other four, a ratio of 1.243. But that is
-		// measured on a P, and a W is already the widest, tallest-feeling letter
-		// in the alphabet -- at 1.243 it swamps the lockup -- so it is dialled
-		// back. `CAP'N` has no oversized initial; the reference's is uniform.
+		// The oversized initial is measured, not invented: `PROTO`'s P stands
+		// 157px against a 124px cap, a ratio of 1.27, and fitting outlines to it
+		// rather than measuring ink agrees at 1.24. But that is measured on a P,
+		// and a W is already the widest, tallest-feeling letter in the alphabet
+		// -- at 1.27 it swamps the lockup -- so it is dialled back. `CAP'N` has
+		// no oversized initial; the reference's is uniform.
 		initial: 1.15,
 		//        W      E      B
 		rot: [1, 2, 3],
@@ -101,7 +102,7 @@ const LINES = [
 
 /*
  * Baseline-to-baseline, as a multiple of the lower line's cap height. Measured
- * 156px against a 114px cap on the reference, which is 1.37. The lines do not
+ * 150px against a 124px cap on the reference, which is 1.21. The lines do not
  * interlock there: `PROTO`'s oversized P is far enough left that `CAP'N` never
  * reaches over it, so its extra height is free. `WEB` has no such luxury -- its
  * oversized initial sits directly under `CAP'N` -- so the lead is opened up
@@ -110,7 +111,7 @@ const LINES = [
 const LEAD = 1.47;
 
 /*
- * `CAP'N` sits right of centre over the longer word, by 11% of that word's
+ * `CAP'N` sits right of centre over the longer word, by 9% of that word's
  * width on the reference. With the tilt, that is what stops the lockup reading
  * as a rectangle.
  */
