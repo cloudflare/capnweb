@@ -20,6 +20,8 @@
  * running behind it would only compete with it.
  */
 import { LinkButton } from '@/components/ui/link-button';
+import Wordmark from './Wordmark.astro';
+import StarBadge from './StarBadge.astro';
 
 interface Props {
 	title: string;
@@ -59,15 +61,40 @@ const hasIllus = Astro.slots.has('default');
 	behind the prose, and unlike `hidden`/`isolate` it creates no stacking context.
 */}
 <section class="relative [overflow-x:clip]">
-	<div class="cw-hero-field" aria-hidden="true">
-		<div class="cw-hero-veil"></div>
+	{/*
+		The banner. Full-bleed, solid, and cut off square at the bottom -- the way
+		capnproto.org bands its masthead in red -- so the mark sits *on* something
+		rather than floating over the page. It ends where the tagline begins.
+
+		This replaced a radial pool that was dissolved into the page by a veil.
+		A soft-edged backdrop and a stamped-on mark are arguing: the mark reads as
+		a physical object stuck to a surface, and the surface has to have an edge
+		for that to land.
+	*/}
+	<div class="cw-hero-banner">
+		<div class="cw-hero-lockup">
+			<span class="sr-only">Cap'n Web</span>
+			<div class="cw-hero-mark"><Wordmark label="" /></div>
+			{/*
+				The seal is wrapped rather than styled directly. A scoped style here
+				cannot reach a child component's own root element -- Astro gives that
+				element the child's scope id, not this one -- so `.cw-hero-seal` on
+				`<StarBadge>` silently matched nothing. Positioning a wrapper this
+				file owns avoids reaching for `:global`, and `--cw-star-size` still
+				reaches the child because custom properties inherit.
+			*/}
+			<div class="cw-hero-seal">
+				<StarBadge as="h1">{title}</StarBadge>
+			</div>
+		</div>
 	</div>
 	{/*
-		No bottom padding: the gap from the buttons to the first band of prose is
-		`.docs-content`'s own 40px top padding and nothing else. See the note on
-		`cw-hero-illus` below for why 40 is the number everything here is tuned to.
+		Top padding is the same 40px module as everything else here, measured from
+		the banner's hard edge to the tagline. No bottom padding: the gap from the
+		buttons to the first band of prose is `.docs-content`'s own 40px top
+		padding and nothing else. See the note on `cw-hero-illus` below.
 	*/}
-	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-12 pb-0 text-center lg:px-6 lg:pt-16">
+	<div class="relative mx-auto flex w-full max-w-(--cw-landing-max) flex-col items-center px-4 pt-10 pb-0 text-center lg:px-6">
 		{/*
 			Only ever one of these two renders, so the slot is consumed once.
 
@@ -93,10 +120,11 @@ const hasIllus = Astro.slots.has('default');
 				</div>
 			)
 		}
-		<div class="cw-hero-scrim grid max-w-2xl justify-items-center gap-5">
-			<h1 class="cw-hero-title text-5xl leading-[1.02] text-balance sm:text-6xl lg:text-7xl">
-				{title}
-			</h1>
+		{/* `cw-hero-lede` is a hook, not a style, for the same reason as
+			`cw-hero-actions`: the vertical rhythm above is a measured claim, and
+			`/tmp/opencode/vgaps.mjs` needs a stable handle on the tagline to check
+			it. It used to hang off `.cw-hero-scrim p`, which the banner replaced. */}
+		<div class="cw-hero-lede grid max-w-2xl justify-items-center">
 			<p class="max-w-xl text-lg leading-relaxed text-pretty text-muted-foreground">
 				{tagline}
 			</p>
@@ -137,93 +165,207 @@ const hasIllus = Astro.slots.has('default');
 
 <style>
 	/*
-	 * The stage the hero sits on: a wide radial pool of `--cw-hero-stage-bg` over
-	 * the page background, taller than the hero itself so it runs on behind the
-	 * first band of prose rather than ending in a seam. `globals.css` suppresses
-	 * the page's own top decoration for any page containing this element.
+	 * The banner.
+	 *
+	 * Solid, full width, and cut off square at the bottom. The section is already
+	 * edge to edge, so this needs no negative-margin trickery -- it just paints
+	 * itself and stops, and the hard line where it stops is the whole point.
+	 *
+	 * The colour is fixed rather than themed, like the mark and the seal it
+	 * carries. A stamped object is the same colour wherever it is stuck, and a
+	 * white-filled mark needs a dark ground under it on both schemes; on the
+	 * light scheme this reads exactly like capnproto.org's red band over a white
+	 * page, which is the effect being copied.
+	 *
+	 * The two radial lifts are the figure's own request blue and response green,
+	 * at around a tenth alpha. They are meant to be felt rather than seen: enough
+	 * that the band is not a flat rectangle, not enough to read as a colour in
+	 * its own right or to compete with the seal.
 	 */
-	.cw-hero-field {
-		position: absolute;
-		inset: 0 0 auto 0;
-		z-index: -1;
-		height: min(48rem, 112vh);
-		overflow: hidden;
-		pointer-events: none;
-		background:
-			radial-gradient(
-				60rem 52rem at 50% 42%,
-				var(--cw-hero-stage-bg) 0%,
-				color-mix(in srgb, var(--cw-hero-stage-bg) 40%, transparent) 40%,
-				transparent 68%
-			),
-			var(--nb-background);
-	}
-
-	/*
-	 * Dissolves the pool's edges into the page, and harder at the bottom, so the
-	 * backdrop meets the copy below it without a visible boundary.
-	 */
-	.cw-hero-veil {
-		position: absolute;
-		inset: 0;
-		background:
-			radial-gradient(
-				78% 86% at 50% 42%,
-				transparent 0%,
-				transparent 46%,
-				color-mix(in srgb, var(--nb-background) 50%, transparent) 72%,
-				var(--nb-background) 96%
-			),
-			linear-gradient(
-				180deg,
-				transparent 0%,
-				transparent 64%,
-				color-mix(in srgb, var(--nb-background) 60%, transparent) 84%,
-				var(--nb-background) 100%
-			);
-	}
-
-	/*
-	 * A vertical wash from the foreground into the accent, which is what makes the headline read as
-	 * the brightest thing on the page without simply being the largest. The whole gradient is one
-	 * token because its final stop sits past 100% -- the box ends part-way along it -- and that is
-	 * per-scheme, so it cannot be reduced to two colour tokens.
-	 */
-	.cw-hero-title {
-		font-family: var(--nb-font-display);
-		font-weight: 600;
-		background-image: var(--cw-hero-title);
-		-webkit-background-clip: text;
-		background-clip: text;
-		color: transparent;
-		-webkit-text-fill-color: transparent;
-	}
-
-	/* A soft scrim of the page background sits behind the centred copy so it stays
-	   legible over the vortex, without touching the text colour itself. */
-	.cw-hero-scrim {
+	.cw-hero-banner {
+		/* The seal is positioned against this, and hangs past the bottom edge, so
+		   nothing from here down may clip. */
 		position: relative;
+		/*
+		 * One number, used twice: the space under the lockup, and the distance
+		 * the seal has to drop before it clears the band. Changing the padding
+		 * without moving the seal would leave it floating in the middle of the
+		 * band or falling off it, so the seal reads this rather than repeating a
+		 * literal.
+		 */
+		--cw-banner-pb: 1.75rem;
+		/*
+		 * How far left of centre the mark sits, to counterweight the seal. Not a
+		 * correction -- the mark's ink is centred in its own box to within a few
+		 * units -- but payment for the seal, which hangs off the right, is the
+		 * most saturated thing in the band, and is not in the mark's box at all.
+		 * Geometric centring of the pair only accounts for about 22px of this;
+		 * the rest is that orange outweighs its area.
+		 *
+		 * It is a `clamp` rather than a constant because the nudge needs room to
+		 * move into, and how much room exists depends on the viewport. The
+		 * lockup is `min(100%, cap)`: above roughly 41rem it has hit the cap and
+		 * the band is wider than it, so there is slack either side; below that
+		 * the lockup fills the band and there is none, and a fixed nudge walks
+		 * the mark off the left edge. This grows the nudge with the slack and
+		 * reaches zero before the slack does, which is what keeps a phone
+		 * centred without a breakpoint or an overflow.
+		 */
+		--cw-hero-nudge: clamp(0rem, (100vw - 30rem) * 0.42, 4.62rem);
+		padding: 2.75rem 1rem var(--cw-banner-pb);
+		background:
+			radial-gradient(
+				72% 120% at 12% 0%,
+				color-mix(in srgb, #7aa2ff 13%, transparent) 0%,
+				transparent 62%
+			),
+			radial-gradient(
+				66% 118% at 90% 104%,
+				color-mix(in srgb, #4fd6a8 12%, transparent) 0%,
+				transparent 60%
+			),
+			linear-gradient(104deg, #0a1424 0%, #0c1c2b 54%, #0a2320 100%);
 	}
 
-	.cw-hero-scrim::before {
-		content: "";
+	/*
+	 * The one part of the mark that is themed, and it is themed because a
+	 * near-black slab looks like a hole punched in a paper page. Light mode gets
+	 * the same band mixed lighter -- a printed teal panel rather than a night
+	 * sky -- which is closer to what the reference does anyway, since its red is
+	 * a mid-tone rather than a dark one.
+	 *
+	 * It cannot go much lighter than this. The wordmark is white with a black
+	 * keyline and does not flip, so the band is what the white is read against:
+	 * measured, that pair is 5.97:1 here and 16.88:1 on the dark band. A
+	 * genuinely pale band would mean inverting the mark to a black fill, which
+	 * is a different logo, not a lighter one.
+	 *
+	 * Keyed off `data-theme` rather than `data-mode` for the reason Playground
+	 * gives: `data-mode` is absent in light mode, so light cannot be selected.
+	 *
+	 * Both schemes lift with the same bright blue and green. They are the
+	 * figure's dark-scheme request and response hues, and they stay put across
+	 * the toggle because on either band they are highlights on a mid-to-dark
+	 * surface; the light palette's ink-dark pair would read as grime here.
+	 */
+	:root[data-theme='light'] .cw-hero-banner {
+		background:
+			radial-gradient(
+				72% 120% at 12% 0%,
+				color-mix(in srgb, #7aa2ff 26%, transparent) 0%,
+				transparent 62%
+			),
+			radial-gradient(
+				66% 118% at 90% 104%,
+				color-mix(in srgb, #4fd6a8 24%, transparent) 0%,
+				transparent 60%
+			),
+			linear-gradient(104deg, #28617a 0%, #2b7489 54%, #288674 100%);
+	}
+
+	/*
+	 * Mark and seal side by side, centred as one object.
+	 *
+	 * The mark is capped in `rem` rather than given a percentage, because it is a
+	 * logo: past a certain size it stops reading as a mark and starts reading as
+	 * a wall. The cap holds it at large viewports; the percentage lets it shrink
+	 * on small ones.
+	 */
+	/*
+	 * Sized to the mark exactly, because it is the seal's containing block and
+	 * every offset below is a percentage of it. That is what keeps the seal on
+	 * the same spot of the artwork as the mark resizes, instead of needing a
+	 * breakpoint per width.
+	 *
+	 * The mark is capped in `rem` rather than given a percentage, because it is
+	 * a logo: past a certain size it stops reading as a mark and starts reading
+	 * as a wall. The cap holds it at large viewports; the percentage lets it
+	 * shrink on small ones.
+	 */
+	.cw-hero-lockup {
+		position: relative;
+		width: min(100%, 24.8rem);
+		margin-inline: auto;
+	}
+
+	/*
+	 * A wrapper this file owns, because a scoped style cannot reach the `<svg>`
+	 * at the root of `<Wordmark>`; Astro gives that element the child's scope id.
+	 *
+	 * Nudged left by `--cw-hero-nudge`; see the banner for what that is and why
+	 * it is a clamp. Only the mark moves. The seal is a sibling positioned
+	 * against the lockup, so it stays where it was measured to go, and the gap
+	 * this opens between them is deliberate -- it is what puts the seal beside
+	 * the B rather than on top of it.
+	 */
+	.cw-hero-mark {
+		display: block;
+		width: 100%;
+		translate: calc(-1 * var(--cw-hero-nudge)) 0;
+	}
+
+	/*
+	 * Stuck on over the bottom right of the mark and hanging off the band, which
+	 * is what the reference does: its seal is `position: absolute`, its left
+	 * edge sits 50px behind the final O, and 19% of its height is below the
+	 * banner's edge and over the section beneath. Measured off the live site,
+	 * not guessed.
+	 *
+	 * The overhang is the whole point of the effect. A seal that stops at the
+	 * edge reads as part of the picture; one that crosses the edge reads as a
+	 * sticker put on afterwards, and it ties the band to the page instead of
+	 * leaving it a floating slab.
+	 *
+	 * Tilted the other way from the mark, so the two tilts read as separate
+	 * objects rather than as one crooked thing.
+	 */
+	.cw-hero-seal {
 		position: absolute;
-		inset: -14% -20%;
-		z-index: -1;
-		background: radial-gradient(
-			58% 60% at 50% 50%,
-			color-mix(in srgb, var(--nb-background) 70%, transparent) 0%,
-			color-mix(in srgb, var(--nb-background) 40%, transparent) 46%,
-			transparent 74%
-		);
-		pointer-events: none;
+		/* Above the mark it overlaps, and above the static content it hangs
+		   over. Nothing between here and the page background is positioned, so
+		   this does not have to out-rank anything else. */
+		z-index: 2;
+		--cw-star-size: 6.8rem;
+		--cw-star-tilt: -11deg;
+		left: calc(91.5% - var(--cw-star-size) / 2);
+		/*
+		 * Bottom of the lockup, plus the band's remaining padding, less the part
+		 * of the seal that stays inside it. The rest is the overhang, and the
+		 * coefficient is the only thing that sets it: 0.718 leaves 28.2%.
+		 *
+		 * That is not the reference's number. capnproto.org hangs 19% of its
+		 * seal below the band and this matched that exactly for a while, but the
+		 * band has since been tightened under the mark, and at 19% the seal read
+		 * as merely resting on the edge rather than crossing it. 28.2% is set by
+		 * eye against the shorter band. Do not "restore" it to 19% on the
+		 * strength of the reference alone.
+		 */
+		top: calc(100% + var(--cw-banner-pb) - 0.718 * var(--cw-star-size));
 	}
 
-	/* Without `background-clip: text` the fill would leave the headline invisible. */
-	@supports not ((background-clip: text) or (-webkit-background-clip: text)) {
-		.cw-hero-title {
-			color: var(--nb-foreground);
-			-webkit-text-fill-color: currentColor;
+	@media (max-width: 48rem) {
+		/*
+		 * The lockup is `min(100%, cap)`, so on a phone it is the 100% branch and
+		 * the band's own inline padding is the only thing setting the mark's
+		 * size. At 1rem the mark ran nearly edge to edge and read as oversized
+		 * -- a logo needs air around it to look placed rather than cropped -- so
+		 * the margin is widened here rather than the cap being lowered, which
+		 * would do nothing on the branch that is actually taken.
+		 */
+		.cw-hero-banner {
+			padding-inline: 2rem;
+		}
+
+		/*
+		 * Pulled in and shrunk. The offsets are proportional, so at a phone's
+		 * width the same 94% puts the seal's right edge past the viewport and
+		 * the page scrolls sideways; there is no room out there to hang into.
+		 */
+		.cw-hero-seal {
+			--cw-star-size: 5.5rem;
+			left: calc(86% - var(--cw-star-size) / 2);
 		}
 	}
+
+
 </style>

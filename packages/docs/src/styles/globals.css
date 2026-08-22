@@ -161,13 +161,6 @@
 	--cw-wash-1: rgba(91, 111, 134, 0.08);
 	--cw-wash-2: rgba(232, 93, 44, 0.05);
 
-	/* The hero sits on the page background; the warm waves flow in from the top
-	   right so they never sit under the copy. */
-	/* Light mode: the stage stays paper. Just enough cool tint to separate the
-	   hero from the prose below it, without becoming a band. */
-	--cw-hero-stage-bg: rgba(96, 128, 196, 0.13);
-	--cw-hero-title: linear-gradient(180deg, #1a222b 0%, #4c5a6a 120%);
-
 	/* The bento diagrams in Features. Line art needs to be dark on paper and
 	   light on ink, and its fills follow the same flip. The `-rgb` pair exists
 	   because the art draws the same two colours at a dozen different alphas. */
@@ -241,11 +234,6 @@
 
 	--cw-wash-1: rgba(154, 171, 186, 0.06);
 	--cw-wash-2: rgba(232, 93, 44, 0.05);
-
-	/* Dark mode: the page is already dark, so a slightly deeper navy pool gives
-	   the hero a floor to sit on. */
-	--cw-hero-stage-bg: #070d1c;
-	--cw-hero-title: linear-gradient(180deg, #f4f7fa 0%, #adbccb 120%);
 
 	--cw-art-stroke: #8fb0ec;
 	--cw-art-stroke-rgb: 143 176 236;
@@ -342,16 +330,16 @@ body::before {
 }
 
 /*
- * The landing page paints its own dark stage edge to edge behind the hero, so
- * the ground wash behind it would only muddy that canvas. The body sits at the
- * page background, which is exactly where the hero's veil finishes fading, so
- * the seam below the hero lands on a single value.
+ * The landing page's banner is solid edge to edge and stops on a hard line, so
+ * the ground wash behind it would only show above and around it and fight that
+ * edge. The body sits at the page background, which is what the banner's bottom
+ * edge butts against, so the seam below it lands on a single value.
  */
-body:has(.cw-hero-field)::before {
+body:has(.cw-hero-banner)::before {
 	display: none;
 }
 
-body:has(.cw-hero-field) {
+body:has(.cw-hero-banner) {
 	background-color: var(--nb-background);
 }
 

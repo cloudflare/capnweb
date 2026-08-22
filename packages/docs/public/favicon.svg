@@ -1,35 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <!--
-    The pipelined round trip, abstracted to three strokes: one batched request
-    out, a moment of work at the far end, one response back. It is the right
-    hand panel of the hero figure with everything but the argument removed.
-
-    The colours are not chosen, they are the ones that figure draws with in
-    light mode (canvas-hero/palette.ts): request #0a2bb5, response #0e6b52, and
-    the muted #4c5a6a for the server's own time.
-
-    Weights carry the meaning and are deliberately unequal. The request is thick
-    because four calls travel inside it; the response is thin because one answer
-    comes back. At 16px that difference is about a pixel, which is why the two
-    also differ in hue and in direction rather than in weight alone.
-
-    Paint order is load bearing: the grey goes last. Drawn in time order it sat
-    between the other two and their round caps swallowed it, so the middle of
-    the three elements vanished below about 48px. Painted on top it reads as
-    what it is in the figure, a bar on the server rail that the request arrives
-    at and the response leaves from.
-
-    The plate is opaque paper so the mark never has to survive an unknown tab
-    colour, which is also why this file needs no prefers-color-scheme block.
-
-    Keep the two hyphen sequence out of this comment. XML forbids it inside a
-    comment, and an SVG that fails to parse is an image the browser silently
-    declines to draw, which is a genuinely difficult bug to see.
-  -->
-  <rect width="32" height="32" rx="7" fill="#eef1f4"/>
-  <g fill="none" stroke-linecap="round">
-    <path d="M5.5 9 L23.8 12.5" stroke="#0a2bb5" stroke-width="5"/>
-    <path d="M23.8 20.5 L5.5 24" stroke="#0e6b52" stroke-width="2.6"/>
-    <path d="M24.6 11.5 L24.6 21.5" stroke="#4c5a6a" stroke-width="3.2"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-104 -104 208 208">
+<title>Cap'n Web</title>
+<path d="M100 0L52.8 15.5L84.1 54.1L36 41.6L41.5 91L7.8 54.4L-14.2 99L-22.8 50L-65.5 75.6L-46.3 29.7L-95.9 28.2L-55 0L-95.9 -28.2L-46.3 -29.7L-65.5 -75.6L-22.8 -50L-14.2 -99L7.8 -54.4L41.5 -91L36 -41.6L84.1 -54.1L52.8 -15.5Z" fill="#e85d2c"/>
 </svg>

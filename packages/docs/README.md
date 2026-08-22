@@ -311,6 +311,195 @@ Compensating here rather than tightening the scene is the cheaper side of the tr
 the bottom space would move `bottom`, and that moves every vertical position in the figure and every
 region in the contrast harness with it.
 
+### The wordmark
+
+The landing page is set the way [capnproto.org](https://capnproto.org) is set: a fat Bookman
+lockup with white letters and a heavy black keyline, a starburst seal stuck on its bottom corner,
+and the pair sitting on a coloured band that stops dead where the prose begins. Cap'n Proto's site
+is a Cap'n Crunch parody written by the same author as this library, so the lineage is the joke
+and this is the third link in the chain.
+
+The band is `.cw-hero-banner`, and its hard bottom edge is the point of it: a cereal box is
+printed, not blended, so the artwork ends on a line rather than fading into the page. It is a
+linear gradient lifted by two soft radials in `#7aa2ff` and `#4fd6a8`. Those two hues are the
+figure's dark-scheme request and response colours from `canvas-hero/palette.ts`, which is the only
+reason the band belongs to this page rather than to any dark hero, and they stay put across the
+toggle because on either band they are highlights on a mid-to-dark surface.
+
+The base gradient underneath them *is* themed, and it is the one part of the artwork that is. A
+near-black slab looks like a hole punched in a paper page, so light mode gets the same band mixed
+lighter, a printed teal panel rather than a night sky. That is closer to the reference anyway,
+whose red is a mid-tone rather than a dark one. The override is keyed off `data-theme` and not
+`data-mode`, for the reason `Playground.astro` gives: `data-mode` is absent in light mode, so
+light cannot be selected against it.
+
+**The light band is at its ceiling and should not be brightened again.** The wordmark is white and
+does not flip, so the band is what the white is read against. Measured across the band, that pair
+averages 5.07:1, and at the band's brightest corner -- where the two radial lifts pile up -- it is
+exactly 4.50:1. There is no headroom left above that. The mark is decorative artwork rather than
+text, so this is not formally a 1.4.3 obligation, but it is the number that decides whether the
+logo is legible, and the next nudge spends it. Going genuinely pale means inverting the mark to a
+black fill via `--cw-mark-fill`, which is a different logo rather than a lighter one.
+
+The seal is stuck on the mark's bottom right and hangs off the band. That arrangement came from
+the live reference: capnproto.org's is `position: absolute` with a `z-index`, its left edge sits
+50px behind the final O, and **19% of its height is below the banner's edge**, over the section
+beneath. The overhang is the whole effect -- a seal that stops at the edge reads as part of the
+picture, and one that crosses the edge reads as a sticker put on afterwards, which ties the band
+to the page instead of leaving it a floating slab. Nothing from the banner down may set
+`overflow: hidden` or the seal is guillotined.
+
+Ours hangs **28.2%**, not 19%, and that is deliberate. It matched the reference exactly until the
+band was tightened under the mark; against a shorter band, 19% read as the seal merely resting on
+the edge rather than crossing it. The figure lives in one place, the coefficient in the seal's
+`top`, and 0.718 is what leaves 28.2%. Do not restore it to 19% on the strength of the reference
+alone -- the band it was measured against is not the band we have.
+
+`.cw-hero-lockup` is sized to the mark exactly, because it is the seal's containing block and
+every offset is a percentage of it -- that is what keeps the seal on the same spot of the artwork
+as the mark resizes, instead of needing a breakpoint per width. Two things do need a breakpoint.
+Below 48rem the seal is pulled in from 94% to 86% and shrunk, because out at 94% a phone has no
+room to hang into and the page scrolls sideways instead. And the band's inline padding widens to
+`2rem` there, which is what sets the mark's size on a phone: the lockup is `min(100%, cap)`, so
+the 100% branch is the one taken and lowering the cap does nothing at all. At `1rem` the mark ran
+nearly edge to edge and read as oversized, because a logo needs air around it to look placed
+rather than cropped.
+
+The mark is also nudged left of its own centre, which is not a correction -- its ink is centred in
+its box to within a few units. It is the seal being paid for. The seal hangs off the right and is
+the heaviest, most saturated thing in the band, so a mark centred by geometry sits right of where
+the composition's weight actually is. Centring the pair's bounding box only accounts for about
+22px of the 74px; the rest is that orange outweighs its area. Only the mark moves, and the gap
+that opens between the two is what puts the seal beside the B rather than on top of it.
+
+`--cw-hero-nudge` is a `clamp` rather than a number, because the nudge needs slack to move into
+and how much exists depends on the viewport. The lockup is `min(100%, cap)`: above roughly 41rem
+it has hit the cap and the band is wider than it, so there is room either side; below that the
+lockup fills the band and there is none, and a fixed nudge walks the mark straight off the left
+edge. The clamp grows the nudge with the slack and reaches zero at 30rem, before the slack does,
+which is what keeps a phone centred without a breakpoint and without overflow. Measured at 360px
+the mark sits 32px from the left and 35px from the right; at 1440px it is 77px left of centre.
+
+`scripts/build-wordmark.mjs` generates `src/components/logo-paths.ts`. It is not part of the
+build -- it runs when the mark changes, which is close to never -- and it needs a font file and
+`opentype.js` that the site does not otherwise depend on. Its header comment has the two commands
+that fetch them.
+
+Six things in there are worth knowing about.
+
+- **The face is TeX Gyre Bonum Bold, and must stay that way.** capnproto.org's mark is URW
+  Bookman, which is installed on most Linux boxes and is the obvious thing to reach for. It is
+  AGPL-3, and its font exception covers only "a Postscript or PDF file" -- not SVG on a web page.
+  Bonum is the same Bookman design under the GUST Font License, which has no such limit. Only the
+  converted outlines ship either way, but the licence still follows them.
+- **The mark is geometry, not text.** Setting it as live `<text>` would be a tenth of the bytes
+  and would mean the mark rendered in Georgia for anyone whose webfont was slow or blocked. For
+  body copy that is a degraded state; for a logo it is the wrong logo.
+- **It is a tilt, not an arch.** It reads as text on a circle and the first attempt built it that
+  way. Fitting each glyph of the reference independently -- best scale and rotation by
+  intersection-over-union -- puts every well-determined letter within a degree or two of the same
+  angle. It is one rigid tilt, with a few degrees of per-glyph scatter and an oversized initial on
+  the second line, and those three things together are what read as an arch. The round letters fit
+  at IoU 0.67 because a round letter is nearly invariant under rotation, so their fitted angles are
+  noise and were thrown away.
+- **The scatter is hand-set, and copied rather than invented.** A least-squares baseline through
+  the reference's letters is -5.19 degrees for `CAP'N` and -7.41 for `PROTO`, and the letters sit
+  22px and 10px peak to peak off those lines against a cap height near 100. That is a hand-set
+  wordmark, not a rendered one, so the script carries a per-glyph `rot`/`dy`/`scale` array and the
+  vertical residuals for `CAP'N` are the measured ones: C -2.4, A +10.2, P -11.8, N +4.1. The
+  reference's `P` is set 1.243x the rest of its line; `W` here gets 1.15, because `W` is already
+  the widest letter in the alphabet and the full ratio ran it into the margins. Regenerating with
+  the jitter zeroed produces something visibly deader, which is the whole argument for keeping it.
+- **One path per glyph, never one per line.** Merged into a single path the letters become
+  subpaths of one shape: the fill floods their union, and since `paint-order: stroke` lays every
+  keyline down first and then covers it with that union, any keyline running through a touching
+  pair vanishes. Tight pairs merge into a blob and stray serifs poke out as unstroked white.
+- **Contours have to be closed by hand.** `opentype.js` 2.0.0 returns glyph outlines as open runs
+  of M/L/C/Q with no `Z` anywhere. A fill closes an open subpath implicitly, but with a straight
+  chord that cuts the corner off a slab serif, and a stroke does not close it at all, so the
+  keyline is missing along every contour's last edge. The symptom looks exactly like neighbouring
+  glyphs overprinting each other, which is a long way from the cause; `closeContours` is the fix.
+
+The two lines are sized against each other rather than independently, and that ratio is the one
+number here that is *not* copied. The reference runs a 114px cap under a 99px one, a ratio of
+1.152; this lockup is at 1.28. It cannot be 1.152, because `WEB` is three letters where `PROTO` is
+five -- at the reference's ratio the lower line comes out visibly narrower than the upper one and
+the block falls apart. 1.28 is where the two lines land within a couple of percent of the same
+width, which is what the reference achieves by a different route. An earlier pass sat at 1.39 and
+read as a second, louder logo stacked under the first. Changing `size` on either line changes the
+leading too, since `LEAD` is a multiple of the lower line's cap: after any change, check the
+clearance the build prints still falls in the reference's 17-34px, and move `LEAD` if it does not.
+
+The seal is a regular 20-point star, inner radius 0.81 of its outer. The reference's points land
+on exact 18 degree centres, so this one's do too -- an earlier version jittered them on the theory
+that a stamped seal would be irregular, and the reference simply says otherwise.
+
+The same script emits `public/favicon.svg`, and it is deliberately *not* the same star. Twenty
+points at 0.81 is a circle with a fuzzy edge once it is 16 pixels wide: the points are two pixels
+long and antialiasing eats them. The favicon is 11 points at 0.55, tuned by rendering the sweep at
+16/20/24/32/64 on both a light and a dark tab strip. The ratio is tuned for 32 physical pixels
+rather than 16, because a HiDPI tab strip asks for the icon at 2x and that is where the points
+actually resolve; below about 0.5 the star keeps its points but sheds so much ink that the 16px
+rendering reads as a faint sparkle instead of a stamped seal. Eleven is odd, so the offset is zero
+and a point aims straight up -- an even count centres a point top *and* bottom and reads as a cog.
+There is no lettering on it, and the fill is `#e85d2c` written out longhand because a favicon is
+its own document and inherits none of the page's custom properties -- keep it in step with
+`--cw-orange` by hand.
+
+The header replaces the site title with the mark at `2.5rem`, with no chip behind it and in one
+colour rather than two. That reduction is forced: at 40px wide the keyline scales to about a third
+of a pixel, so it renders as grey haze rather than a line, and a white mark drawn by grey haze on
+light paper is a ghost. `Wordmark.astro` exposes `--cw-mark-fill` and `--cw-mark-stroke` for this
+one caller, which sets both to `currentColor` and gets a solid silhouette that tracks the header's
+text across the toggle. They are a size reduction, not a theming hook. The visible mark is
+`aria-hidden` (passing `label=""` drops its `role="img"` as well) and the link carries an
+`sr-only` "Cap'n Web", so the accessible name is a word rather than a description of a picture of
+a word.
+
+Both places that use the mark wrap it in an element they own, and that is not tidiness. **A
+parent's scoped styles cannot size a child component's root element.** Astro stamps the `<svg>` in
+`Wordmark.astro` with *that component's* scope hash, so a `.cw-hero-mark svg { width: ... }` rule
+written in `Hero.astro` compiles to a selector carrying the hero's hash and matches nothing --
+silently, with the mark left at its intrinsic size. The fix is a wrapper the parent does own
+(`.cw-hero-mark`, `.cw-nav-mark-box`) sized normally, with the svg filling it at `width: 100%`.
+Custom properties are the exception and inherit straight through, which is why `--cw-star-size`
+and `--cw-star-tilt` can be set from outside `StarBadge.astro` when a width cannot.
+
+**The mark and the seal are both fixed, not themed.** They are stamped objects, and a stamp is the
+same colour wherever it is stuck. White fill with a black keyline works on both schemes because
+the two halves trade off: on the dark band the fill carries the mark and the keyline barely shows,
+on the light band the fill drops to about 5:1 and the keyline starts doing real work. The seal is
+tomato with `--cw-black` lettering, a fixed pair measuring 5.69:1. The band they are stuck to is
+the themed part, and it is themed so that these two do not have to be.
+
+**The words in the seal are the `<h1>`.** They are real DOM text laid over the star, not SVG
+`<text>` and not part of the artwork, so they stay selectable, translatable and searchable. That
+costs some fidelity, since the reference's legend is Bookman like the rest of the mark and this
+cannot be without shipping a webfont for three words; the stack asks for Bookman first and falls
+back to Georgia. `text-transform` does the lower-casing so the accessible name stays a properly
+capitalised sentence. The star itself is `aria-hidden`, and the lockup carries an `sr-only`
+"Cap'n Web" so the page still announces its own name.
+
+**The legend is level, and only the star is tilted.** `--cw-star-tilt` is applied to
+`.cw-star-shape`, not to `.cw-star`, so it never reaches the words. The points are what should
+look hand-stamped; rotating the text with them made the seal read as a sticker applied crooked
+rather than as a stamp, and cost legibility on the smallest type on the page for nothing. Putting
+the rotation on the child also keeps `.cw-star`'s layout box honest -- a rotated box measures
+`size * (cos t + sin t)`, which silently inflated every bounding-box measurement of the seal by
+17% and had to be divided back out by hand in the harnesses.
+
+That last point had a subtlety worth recording. The `<h1>` sits on the star's tomato, but nothing
+in the DOM said so: a contrast checker walks up looking for a background colour, finds no paint on
+an SVG sibling, and measures the text against the page. That reported 1:1 on the dark scheme and,
+more dangerously, *passed* on the light one for entirely the wrong reason. `.cw-star-text`
+therefore carries a `background` of the same tomato it is painted on -- invisible, because the
+text box is 68% of the seal wide and the star's inner radius is 81% -- purely so the measured pair
+is the real one.
+
+The headline used to be a gradient clipped to text, and that gradient was the one thing the DOM
+contrast harness could never see: it reported `rgba(0,0,0,0)` and was carried as a known permanent
+failure. It is gone, and the landing page now measures 0 below AA in both schemes.
+
 ### The figure is content, not decoration
 
 `CanvasFigure.astro` mounts the `versus` scene in the flow, at full contrast, with nothing over it.

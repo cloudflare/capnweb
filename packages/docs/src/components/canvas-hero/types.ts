@@ -12,9 +12,10 @@ export interface Palette {
    * True when `data-theme="light"` is on `<html>`.
    *
    * There is deliberately no background colour here. A scene must never fill one:
-   * the harness clears to transparent so the canvas composites over
-   * `.cw-hero-field`'s radial pool and under `.cw-hero-veil`, and an opaque fill
-   * would erase the stage the whole backdrop is composed against.
+   * the harness clears to transparent so the canvas composites over whatever the
+   * page puts behind it, and an opaque fill would erase it. The figure now sits
+   * on the plain page background below the hero banner, but that is the page's
+   * business and not a scene's.
    */
   light: boolean;
   /** Structural line work: cables, table rules, node links. */

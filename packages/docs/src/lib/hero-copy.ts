@@ -12,7 +12,15 @@
  * numbers the scene draws, and nothing checks that they still agree.
  */
 
-export const HERO_TITLE = "One round trip";
+/*
+ * The headline, and also the seal's legend -- they are the same words because
+ * the seal *is* the `<h1>`. See `StarBadge.astro`.
+ *
+ * Capitalised here and lowercased in CSS: the reference sets its "infinitely
+ * faster!" in lower case, but `text-transform` does not touch the accessible
+ * name, so a screen reader and a search result still get a sentence.
+ */
+export const HERO_TITLE = "One round trip!";
 
 /** `label` is `bundle-size.json`'s measured figure, never a typed-in number. */
 export const heroTagline = (label: string): string =>
