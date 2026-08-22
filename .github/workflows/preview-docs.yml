@@ -23,7 +23,7 @@ env:
   #
   # The subdomain belongs to the account in `packages/docs/wrangler.jsonc`. It is fixed
   # per account, not a secret, and there is no way to ask for it before deploying.
-  PREVIEW_NAME: pr-${{ github.event.pull_request.number }}
+  PREVIEW_NAME: ${{ github.event.pull_request.number }}
   PREVIEW_URL: https://${{ github.event.pull_request.number }}.pr.capnweb.com
 
 jobs:
