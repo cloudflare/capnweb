@@ -17,8 +17,6 @@
     "check": "astro check",
     "lint:docs": "nimbus-docs lint",
     "lint:docs:fix": "nimbus-docs lint --fix",
-    "predeploy": "npm run build",
-    "deploy": "wrangler deploy",
     "astro": "astro"
   },
   "dependencies": {
