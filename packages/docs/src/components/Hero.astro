@@ -325,22 +325,30 @@ const hasIllus = Astro.slots.has('default');
 		   over. Nothing between here and the page background is positioned, so
 		   this does not have to out-rank anything else. */
 		z-index: 2;
-		--cw-star-size: 6.8rem;
+		--cw-star-size: 8rem;
 		--cw-star-tilt: -11deg;
+		/*
+		 * How far the seal crosses the band's bottom edge, stated directly
+		 * rather than as a fraction of the seal. It used to be a coefficient
+		 * inside `top`, which meant resizing the seal silently moved it and
+		 * "raise it a little" was not a single edit. This is the number the
+		 * design is actually about, so it is the number that is written down.
+		 *
+		 * capnproto.org hangs 19% of its seal past the edge, which at this size
+		 * would be 24px. 20px is a touch less, set by eye against a band that is
+		 * tighter under the mark than the reference's is.
+		 */
+		--cw-seal-overhang: 1.25rem;
 		left: calc(91.5% - var(--cw-star-size) / 2);
 		/*
-		 * Bottom of the lockup, plus the band's remaining padding, less the part
-		 * of the seal that stays inside it. The rest is the overhang, and the
-		 * coefficient is the only thing that sets it: 0.718 leaves 28.2%.
-		 *
-		 * That is not the reference's number. capnproto.org hangs 19% of its
-		 * seal below the band and this matched that exactly for a while, but the
-		 * band has since been tightened under the mark, and at 19% the seal read
-		 * as merely resting on the edge rather than crossing it. 28.2% is set by
-		 * eye against the shorter band. Do not "restore" it to 19% on the
-		 * strength of the reference alone.
+		 * The band's bottom edge is `100% + --cw-banner-pb` from the top of the
+		 * lockup, so putting the seal's *bottom* one overhang past that and
+		 * working back by its height places it in one step, and the overhang is
+		 * read straight off the declaration above rather than inferred.
 		 */
-		top: calc(100% + var(--cw-banner-pb) - 0.718 * var(--cw-star-size));
+		top: calc(
+			100% + var(--cw-banner-pb) + var(--cw-seal-overhang) - var(--cw-star-size)
+		);
 	}
 
 	@media (max-width: 48rem) {
@@ -362,8 +370,45 @@ const hasIllus = Astro.slots.has('default');
 		 * the page scrolls sideways; there is no room out there to hang into.
 		 */
 		.cw-hero-seal {
-			--cw-star-size: 5.5rem;
+			/* Held at the same fraction of the desktop seal as before it grew, so
+			   the two stay the same design at two sizes. Smaller than the desktop
+			   value because a seal wide enough for three lines of legend eats a
+			   third of a phone's width, and the wordmark is what has to stay
+			   legible. */
+			--cw-star-size: 6.5rem;
 			left: calc(86% - var(--cw-star-size) / 2);
+		}
+	}
+
+	/*
+	 * Below this the seal has nowhere left to sit. It stops being beside the B
+	 * and lands on it, and shrinking it further would make the legend unreadable
+	 * before it made the overlap acceptable, so the artwork goes away instead.
+	 *
+	 * 34rem is not a new number: it is where `Features.astro` drops the bento to
+	 * a single column. Same judgement -- the page has stopped being wide enough
+	 * for two things side by side -- so it is the same breakpoint.
+	 *
+	 * Hidden the `sr-only` way rather than with `display: none`, because the
+	 * legend inside is the page's `<h1>`. Nothing is painted, but the heading
+	 * stays in the document outline and in the accessibility tree, which is
+	 * where a phone most needs it.
+	 */
+	@media (max-width: 34rem) {
+		.cw-hero-seal {
+			top: 0;
+			left: 0;
+			width: 1px;
+			height: 1px;
+			overflow: hidden;
+			clip-path: inset(50%);
+			white-space: nowrap;
+		}
+
+		/* Nothing left to counterweight, so the mark centres honestly. The clamp
+		   would still be paying for a seal that is no longer drawn. */
+		.cw-hero-banner {
+			--cw-hero-nudge: 0rem;
 		}
 	}
 

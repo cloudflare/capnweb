@@ -255,9 +255,12 @@ Emit findings as `- [error|warn|info] FILE:LINE -- what + why + fix.` and end wi
 - Resize either line of the lockup without re-checking the clearance the build prints. `LEAD` is a
   multiple of the lower line's cap height, so changing `size` moves the leading with it, and the
   reference's range is 17-34px.
-- "Restore" the hero seal's overhang to the reference's 19%. It is 28.2% on purpose: the band was
-  tightened under the mark after that measurement, and against a shorter band 19% reads as resting
-  on the edge rather than crossing it. One coefficient in the seal's `top` sets it.
+- Hide the hero seal with `display: none` below `34rem`. Its legend is the page's `<h1>`, so it is
+  hidden the `sr-only` way and the heading survives in the outline and the accessibility tree.
+  Pick `34rem` over a new number if you move it: `Features.astro` already breaks there.
+- Re-express the hero seal's overhang as a fraction of the seal. `--cw-seal-overhang` is a length
+  because that is what the eye reads, and because a fraction means every resize of the seal moves
+  it without anyone asking. The seal's `top` is derived from the overhang, not the reverse.
 - Tilt the seal as a whole. `--cw-star-tilt` belongs on `.cw-star-shape` so the legend stays level
   and `.cw-star`'s layout box stays measurable; rotating the wrapper inflates its bounding box by
   17% and every harness then has to divide that back out.

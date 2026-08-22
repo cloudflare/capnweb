@@ -349,11 +349,13 @@ picture, and one that crosses the edge reads as a sticker put on afterwards, whi
 to the page instead of leaving it a floating slab. Nothing from the banner down may set
 `overflow: hidden` or the seal is guillotined.
 
-Ours hangs **28.2%**, not 19%, and that is deliberate. It matched the reference exactly until the
-band was tightened under the mark; against a shorter band, 19% read as the seal merely resting on
-the edge rather than crossing it. The figure lives in one place, the coefficient in the seal's
-`top`, and 0.718 is what leaves 28.2%. Do not restore it to 19% on the strength of the reference
-alone -- the band it was measured against is not the band we have.
+Ours hangs a flat **20px** (`--cw-seal-overhang`), which is 15.6% of the desktop seal and 19.2% of
+the smaller one a phone gets. It is stated as a length rather than as the reference's percentage
+on purpose: the overhang is the one thing about the seal's position that the eye actually reads,
+and expressing it as a fraction of the seal meant that resizing the seal silently moved it. Two
+consecutive rounds of "make the star bigger" each pushed it further off the band without anyone
+asking for that. Now the seal's `top` is derived from the overhang instead of the other way round,
+and "raise it a little" is one number.
 
 `.cw-hero-lockup` is sized to the mark exactly, because it is the seal's containing block and
 every offset is a percentage of it -- that is what keeps the seal on the same spot of the artwork
@@ -371,6 +373,19 @@ the heaviest, most saturated thing in the band, so a mark centred by geometry si
 the composition's weight actually is. Centring the pair's bounding box only accounts for about
 22px of the 74px; the rest is that orange outweighs its area. Only the mark moves, and the gap
 that opens between the two is what puts the seal beside the B rather than on top of it.
+
+Below `34rem` the seal is not drawn at all. It stops sitting beside the B and lands on it, and
+shrinking it further would make the legend unreadable before it made the overlap acceptable. That
+is not a new breakpoint: it is the one `Features.astro` uses to drop the bento to a single column,
+and it is the same judgement -- the page has stopped being wide enough for two things side by
+side. The mark's nudge goes to zero at the same width, since there is no longer a seal to
+counterweight.
+
+**It is hidden the `sr-only` way, not with `display: none`.** The legend inside the seal is the
+page's `<h1>`. Nothing is painted below `34rem`, but the heading stays in the document outline and
+in the accessibility tree, which is verified rather than assumed: the harness checks that there is
+still exactly one `<h1>`, that it reads "One round trip!", and that it appears as a heading in
+Chrome's accessibility snapshot at every width down to 320px.
 
 `--cw-hero-nudge` is a `clamp` rather than a number, because the nudge needs slack to move into
 and how much exists depends on the viewport. The lockup is `min(100%, cap)`: above roughly 41rem
@@ -479,6 +494,13 @@ cannot be without shipping a webfont for three words; the stack asks for Bookman
 back to Georgia. `text-transform` does the lower-casing so the accessible name stays a properly
 capitalised sentence. The star itself is `aria-hidden`, and the lockup carries an `sr-only`
 "Cap'n Web" so the page still announces its own name.
+
+**The seal's shadow is a `drop-shadow` filter, never a `box-shadow`.** A box shadow traces the
+element's border box, which would print a soft rectangle behind a twenty-pointed star; the filter
+works off the rendered alpha and follows the points. It sits on `.cw-star-shape` alongside the
+tilt, so the offset rotates with the star -- at a 2px offset and 11 degrees that is 0.4px of
+drift, which is why the offset stays small. A larger one would need an unrotated wrapper, and the
+only wrapper available also holds the legend, which should not be shadowed.
 
 **The legend is level, and only the star is tilted.** `--cw-star-tilt` is applied to
 `.cw-star-shape`, not to `.cw-star`, so it never reaches the words. The points are what should

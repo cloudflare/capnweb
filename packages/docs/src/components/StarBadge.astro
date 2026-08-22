@@ -73,6 +73,20 @@ const { class: className = '', as: Tag = 'div' }: Props = Astro.props;
 		height: 100%;
 		fill: var(--cw-orange);
 		rotate: var(--cw-star-tilt, -9deg);
+		/*
+		 * `drop-shadow`, not `box-shadow`. A box shadow traces the element's
+		 * border box and would print a soft rectangle behind a star; this
+		 * filter works off the rendered alpha, so it follows the points. The
+		 * reference's seal is shadowed the same way.
+		 *
+		 * Offset is small on purpose. The filter is on the rotated element, so
+		 * the offset rotates with it, and a nominally straight-down shadow
+		 * leaves vertical by the tilt: at 2px and -11deg that is 0.4px of drift,
+		 * which is nothing. Lifting the offset would make it something, and the
+		 * fix would be an unrotated wrapper -- but the wrapper also holds the
+		 * legend, and filtering that would shadow the words too.
+		 */
+		filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.32));
 	}
 	.cw-star-text {
 		position: relative;
