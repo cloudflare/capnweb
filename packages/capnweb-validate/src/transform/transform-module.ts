@@ -7,7 +7,10 @@
 
 import ts from "typescript";
 
-import { fileMatchesTransformFilters, type TransformContext } from "./context.js";
+import {
+  fileMatchesTransformFilters,
+  type TransformContext,
+} from "./context.js";
 import { emitValidator } from "./emit.js";
 import {
   collectPlatformMethodNames,
@@ -149,8 +152,19 @@ export function transformModule(
     markerNamespaces,
     checker
   );
+  let wrapperSites = collectWrapperSites(
+    sourceFile,
+    decoratorBindings,
+    markerNamespaces,
+    checker
+  );
 
-  if (callSites.length === 0 && decoratorSites.length === 0) return null;
+  if (
+    callSites.length === 0 &&
+    decoratorSites.length === 0 &&
+    wrapperSites.length === 0
+  )
+    return null;
 
   let dedup = new ValidatorDedup();
   for (let site of callSites) {
@@ -159,11 +173,16 @@ export function transformModule(
   for (let site of decoratorSites) {
     site.bindingName = dedup.bind(site.shape, "server");
   }
+  for (let site of wrapperSites) {
+    site.bindingName = dedup.bind(site.shape, "server");
+  }
 
   let serverMode = context.options.serverValidation ?? "throw";
 
   let edits: TextEdit[] = [];
-  let capnwebCallSites = callSites.filter((site) => site.marker.side === "server");
+  let capnwebCallSites = callSites.filter(
+    (site) => site.marker.side === "server"
+  );
   let coreCallSites = callSites.filter((site) => site.marker.side === "client");
   let needsCapnwebRuntime = capnwebCallSites.length > 0;
   let needsCoreExtraRuntime = needsCapnwebRuntime && coreCallSites.length > 0;
@@ -180,11 +199,12 @@ export function transformModule(
 
   for (let cs of callSites) {
     let callee = cs.call.expression;
-    let runtimeNamespace = cs.marker.side === "client"
-      ? needsCapnwebRuntime
-        ? CORE_RUNTIME_NAMESPACE
-        : RUNTIME_NAMESPACE
-      : RUNTIME_NAMESPACE;
+    let runtimeNamespace =
+      cs.marker.side === "client"
+        ? needsCapnwebRuntime
+          ? CORE_RUNTIME_NAMESPACE
+          : RUNTIME_NAMESPACE
+        : RUNTIME_NAMESPACE;
     let headStart =
       cs.marker.form === "new"
         ? cs.call.getStart(sourceFile)
@@ -216,6 +236,29 @@ export function transformModule(
       end: site.decorator.expression.getEnd(),
       text: `${RUNTIME_NAMESPACE}.__validateRpcClass(${site.bindingName!})`,
     });
+  }
+
+  // Replace only the callee, leaving the class argument as written:
+  //   validateRpc(Api)        ->  __cw.__validateRpcClass(__v0)(Api)
+  //   validateRpc<S>()(Api)   ->  __cw.__validateRpcClass(__v0)(Api)
+  // The static-block form has no class argument, so it names the class:
+  //   validateRpc()           ->  __cw.__validateRpcClass(__v0)(Api)
+  for (let site of wrapperSites) {
+    edits.push(
+      site.selfForm
+        ? {
+            start: site.call.getStart(sourceFile),
+            end: site.call.getEnd(),
+            text: `${RUNTIME_NAMESPACE}.__validateRpcClass(${site.bindingName!})(${
+              site.cls.name!.text
+            })`,
+          }
+        : {
+            start: site.call.expression.getStart(sourceFile),
+            end: site.call.expression.getEnd(),
+            text: `${RUNTIME_NAMESPACE}.__validateRpcClass(${site.bindingName!})`,
+          }
+    );
   }
 
   return { code: applyTextEdits(code, edits) };
@@ -296,6 +339,19 @@ type DecoratorSite = {
   bindingName?: string;
 };
 
+/**
+ * The wrapper form: `validateRpc(Api)` or
+ * `validateRpc<Surface>()(Api)`, for builds that can't enable decorators.
+ */
+type WrapperSite = {
+  call: ts.CallExpression;
+  cls: ts.ClassDeclaration;
+  shape: ServiceShape;
+  /** `static { validateRpc(); }`: the whole call is replaced, class included. */
+  selfForm?: boolean;
+  bindingName?: string;
+};
+
 // A call, or a `new` with an argument list. A bare `new Foo` without `()` is
 // never a marker call, so it is excluded.
 function isCallLike(
@@ -323,7 +379,14 @@ function collectMarkerCallSites(
         checker
       );
       if (resolved)
-        pushCallSite(out, sf, node, resolved.marker, resolved.localName, checker);
+        pushCallSite(
+          out,
+          sf,
+          node,
+          resolved.marker,
+          resolved.localName,
+          checker
+        );
     }
     ts.forEachChild(node, visit);
   }
@@ -337,14 +400,20 @@ function resolveMarkerCallee(
   bindings: Map<string, MarkerBinding>,
   namespaces: Set<string>,
   checker: ts.TypeChecker
-): { marker: (typeof MARKERS)[keyof typeof MARKERS]; localName: string } | null {
+): {
+  marker: (typeof MARKERS)[keyof typeof MARKERS];
+  localName: string;
+} | null {
   if (ts.isIdentifier(callee)) {
     let binding = bindings.get(callee.text);
     // Confirm the name resolves to the imported marker, not a local that shadows it.
     if (!binding || !resolvesToMarker(checker, callee, binding.markerName)) {
       return null;
     }
-    return { marker: MARKERS[binding.markerName], localName: binding.localName };
+    return {
+      marker: MARKERS[binding.markerName],
+      localName: binding.localName,
+    };
   }
   if (
     ts.isPropertyAccessExpression(callee) &&
@@ -370,7 +439,8 @@ function resolvesToMarker(
   markerName: string
 ): boolean {
   let sym = checker.getSymbolAtLocation(node);
-  if (sym && sym.flags & ts.SymbolFlags.Alias) sym = checker.getAliasedSymbol(sym);
+  if (sym && sym.flags & ts.SymbolFlags.Alias)
+    sym = checker.getAliasedSymbol(sym);
   return sym?.getName() === markerName && isCapnwebValidateSymbol(sym);
 }
 
@@ -419,7 +489,14 @@ function collectDecoratorSites(
           )
         )
           continue;
-        let shape = resolveDecoratorShape(sf, node, decorator, checker);
+        let shape = resolveClassShape(
+          sf,
+          node,
+          getDecoratorTypeArgumentNode(decorator),
+          decorator,
+          "@validateRpc",
+          checker
+        );
         rejectUnsupported(sf, decorator, "validateRpc", shape);
         out.push({ decorator, cls: node, shape });
       }
@@ -438,13 +515,23 @@ function isValidateRpcDecorator(
 ): boolean {
   let expression = decorator.expression;
   if (ts.isCallExpression(expression)) expression = expression.expression;
+  return isValidateRpcReference(expression, bindings, namespaces, checker);
+}
+
+/** `validateRpc` or `ns.validateRpc`, confirmed to resolve to our export. */
+function isValidateRpcReference(
+  expression: ts.Expression,
+  bindings: Set<string>,
+  namespaces: Set<string>,
+  checker: ts.TypeChecker
+): boolean {
   if (ts.isIdentifier(expression)) {
     return (
       bindings.has(expression.text) &&
       resolvesToMarker(checker, expression, "validateRpc")
     );
   }
-  // `@ns.validateRpc()` from `import * as ns from "capnweb-validate"`.
+  // `ns.validateRpc()` from `import * as ns from "capnweb-validate"`.
   return (
     ts.isPropertyAccessExpression(expression) &&
     ts.isIdentifier(expression.expression) &&
@@ -454,14 +541,281 @@ function isValidateRpcDecorator(
   );
 }
 
-function resolveDecoratorShape(
+// The wrapper form, for downstream builds that can't enable decorators:
+//
+//   class Api { static { validateRpc(); } ... }     // keeps the class's name
+//   export default validateRpc(Api);                // class surface
+//   export default validateRpc<Surface>()(Api);     // exact surface
+//
+// A static block already names its class, so that form takes no argument. The
+// surface can otherwise only come from the factory's type argument: TypeScript
+// has no partial type-argument inference, so `validateRpc<Surface>(Api)` would
+// drop the inferred class type.
+function collectWrapperSites(
+  sf: ts.SourceFile,
+  decoratorBindings: Set<string>,
+  namespaces: Set<string>,
+  checker: ts.TypeChecker
+): WrapperSite[] {
+  let out: WrapperSite[] = [];
+  if (decoratorBindings.size === 0 && namespaces.size === 0) return out;
+
+  function visit(node: ts.Node): void {
+    if (
+      ts.isCallExpression(node) &&
+      (node.arguments.length === 0 ||
+        (node.arguments.length === 1 &&
+          ts.isObjectLiteralExpression(node.arguments[0]!))) &&
+      !ts.isDecorator(node.parent) &&
+      ts.isExpressionStatement(node.parent) &&
+      isValidateRpcReference(
+        node.expression,
+        decoratorBindings,
+        namespaces,
+        checker
+      )
+    ) {
+      // `static { validateRpc(); }`: the block names the class, so the call
+      // takes the surface and the skip list and nothing else.
+      let cls = resolveStaticBlockClass(sf, node);
+      let shape = resolveClassShape(
+        sf,
+        cls,
+        node.typeArguments?.[0] ?? null,
+        node,
+        "validateRpc()",
+        checker,
+        parseWrapperSkipOption(sf, node.arguments[0])
+      );
+      rejectUnsupported(sf, node, "validateRpc", shape);
+      out.push({ call: node, cls, shape, selfForm: true });
+      return;
+    }
+    if (
+      ts.isCallExpression(node) &&
+      node.arguments.length >= 1 &&
+      node.arguments.length <= 2 &&
+      // `@validateRpc(...)` is a decorator site, not a wrapper call.
+      !ts.isDecorator(node.parent)
+    ) {
+      let typeArgument = resolveWrapperCallee(
+        node,
+        decoratorBindings,
+        namespaces,
+        checker
+      );
+      if (typeArgument !== undefined) {
+        let cls = resolveWrapperClass(sf, node.arguments[0]!, checker);
+        let shape = resolveClassShape(
+          sf,
+          cls,
+          typeArgument,
+          node,
+          "validateRpc()",
+          checker,
+          parseWrapperSkipOption(sf, node.arguments[1])
+        );
+        rejectUnsupported(sf, node, "validateRpc", shape);
+        rejectDetachedWrapperCall(sf, node, cls);
+        out.push({ call: node, cls, shape });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(sf);
+  return out;
+}
+
+/**
+ * Returns the surface type argument (null if none) for a wrapper call, or
+ * `undefined` when the call isn't one.
+ */
+function resolveWrapperCallee(
+  call: ts.CallExpression,
+  bindings: Set<string>,
+  namespaces: Set<string>,
+  checker: ts.TypeChecker
+): ts.TypeNode | null | undefined {
+  let callee = call.expression;
+  if (isValidateRpcReference(callee, bindings, namespaces, checker)) {
+    if (call.typeArguments && call.typeArguments.length > 0) {
+      throw buildError(
+        call.getSourceFile(),
+        call.typeArguments[0]!,
+        `capnweb-validate: pass the RPC surface through the factory form ` +
+          `\`validateRpc<Surface>()(MyClass)\`. \`validateRpc<Surface>(MyClass)\` ` +
+          `would discard the class type, since TypeScript cannot infer the ` +
+          `remaining type argument.`
+      );
+    }
+    return null;
+  }
+  // `validateRpc<Surface>()(MyClass)`: the surface comes from the inner call.
+  if (
+    ts.isCallExpression(callee) &&
+    callee.arguments.length === 0 &&
+    isValidateRpcReference(callee.expression, bindings, namespaces, checker)
+  ) {
+    return callee.typeArguments?.[0] ?? null;
+  }
+  return undefined;
+}
+
+// `validateRpc()` with no class names the class it is written in, which is only
+// unambiguous in a static block: anywhere else the call is detached from the
+// class, and a class expression has no name to emit.
+function resolveStaticBlockClass(
+  sf: ts.SourceFile,
+  call: ts.CallExpression
+): ts.ClassDeclaration {
+  let block = call.parent.parent;
+  let staticBlock = block.parent;
+  if (
+    ts.isBlock(block) &&
+    ts.isClassStaticBlockDeclaration(staticBlock) &&
+    ts.isClassDeclaration(staticBlock.parent) &&
+    staticBlock.parent.name
+  ) {
+    return staticBlock.parent;
+  }
+  throw buildError(
+    sf,
+    call,
+    `capnweb-validate: \`validateRpc()\` with no class validates the class it ` +
+      `is written in, so it has to be a static block in a named class ` +
+      `declaration: \`class MyClass { static { validateRpc(); } ... }\`. ` +
+      `Elsewhere, pass the class: \`export default validateRpc(MyClass);\`.`
+  );
+}
+
+// The class declaration is needed for `@skipRpcValidation` members and platform
+// method filtering, so the argument must name a class declared in this module.
+function resolveWrapperClass(
+  sf: ts.SourceFile,
+  arg: ts.Expression,
+  checker: ts.TypeChecker
+): ts.ClassDeclaration {
+  if (ts.isIdentifier(arg)) {
+    let sym = checker.getSymbolAtLocation(arg);
+    if (sym && sym.flags & ts.SymbolFlags.Alias)
+      sym = checker.getAliasedSymbol(sym);
+    // A name can have several declarations (e.g. an interface merged with the
+    // class), so look for the class rather than trusting declaration order.
+    let decl = sym?.declarations?.find(ts.isClassDeclaration);
+    if (decl && decl.getSourceFile() === sf) return decl;
+  }
+  throw buildError(
+    sf,
+    arg,
+    `capnweb-validate: validateRpc() must be passed the name of a class ` +
+      `declared in this module, e.g. \`class MyClass { ... } ` +
+      `export default validateRpc(MyClass);\`.`
+  );
+}
+
+// The wrapper mutates the class in place when the call runs, so a call that
+// runs before the class is initialized, or that only runs when some function is
+// called, leaves the class unvalidated. A decorator could not be detached from
+// its class this way, so the discarded-result form has to be written where it
+// cannot detach: a static block in the class it names, which runs exactly when
+// the class is created. `tsc` reports the ordering case, but type-stripping
+// builders don't typecheck, so reject both here.
+function rejectDetachedWrapperCall(
+  sf: ts.SourceFile,
+  call: ts.CallExpression,
+  cls: ts.ClassDeclaration
+): void {
+  // Only the statement form can detach: every other form uses the result, so
+  // the class can only be reached through the wrapper.
+  if (ts.isExpressionStatement(call.parent)) {
+    let block = call.parent.parent;
+    let staticBlock = block.parent;
+    if (
+      !ts.isBlock(block) ||
+      !ts.isClassStaticBlockDeclaration(staticBlock) ||
+      staticBlock.parent !== cls
+    ) {
+      throw buildError(
+        sf,
+        call,
+        `capnweb-validate: write the call as a static block in the body of ` +
+          `\`${
+            cls.name?.text ?? "the class"
+          }\`, \`static { validateRpc(); }\`. Anywhere else the call is ` +
+          `detached from the class, and only validates it if that code runs.`
+      );
+    }
+    return;
+  }
+  if (call.getStart() < cls.getStart()) {
+    throw buildError(
+      sf,
+      call,
+      `capnweb-validate: validateRpc() must appear after the declaration of ` +
+        `\`${
+          cls.name?.text ?? "the class"
+        }\`, which is not initialized until ` +
+        `its declaration is evaluated.`
+    );
+  }
+}
+
+// `validateRpc(Api, { skip: ["foo"] })`. Read statically, so the option must be
+// an inline object literal whose `skip` is an array of string literals.
+function parseWrapperSkipOption(
+  sf: ts.SourceFile,
+  arg: ts.Expression | undefined
+): Map<string, ts.Node> {
+  let out = new Map<string, ts.Node>();
+  if (!arg) return out;
+  let bad = (node: ts.Node): never => {
+    throw buildError(
+      sf,
+      node,
+      `capnweb-validate: the second argument to validateRpc() must be written ` +
+        `inline as \`{ skip: ["methodName"] }\`, since the transform reads the ` +
+        `method names at build time.`
+    );
+  };
+  if (!ts.isObjectLiteralExpression(arg)) return bad(arg);
+  // `{}` carries no method names, so it is a typo rather than a no-op.
+  if (arg.properties.length === 0) return bad(arg);
+  for (let prop of arg.properties) {
+    if (
+      !ts.isPropertyAssignment(prop) ||
+      !ts.isIdentifier(prop.name) ||
+      prop.name.text !== "skip"
+    ) {
+      return bad(prop);
+    }
+    let value = prop.initializer;
+    if (!ts.isArrayLiteralExpression(value)) return bad(value);
+    for (let element of value.elements) {
+      if (!ts.isStringLiteral(element)) return bad(element);
+      if (out.has(element.text)) {
+        throw buildError(
+          sf,
+          element,
+          `capnweb-validate: \`${element.text}\` is listed twice in the ` +
+            `validateRpc() skip list.`
+        );
+      }
+      out.set(element.text, element);
+    }
+  }
+  return out;
+}
+
+function resolveClassShape(
   sf: ts.SourceFile,
   cls: ts.ClassDeclaration,
-  decorator: ts.Decorator,
-  checker: ts.TypeChecker
+  decoratorTypeArg: ts.TypeNode | null,
+  errorNode: ts.Node,
+  label: string,
+  checker: ts.TypeChecker,
+  extraSkips?: Map<string, ts.Node>
 ): ServiceShape {
   let classType = getClassInstanceType(cls, checker);
-  let decoratorTypeArg = getDecoratorTypeArgumentNode(decorator);
   if (decoratorTypeArg && typeNodeContainsAny(decoratorTypeArg)) {
     warnDecoratorAny(sf, decoratorTypeArg);
   }
@@ -471,17 +825,18 @@ function resolveDecoratorShape(
   if (signatureType && isTooGeneric(signatureType)) {
     throw buildError(
       sf,
-      decorator,
-      `capnweb-validate: could not resolve a concrete service type for @validateRpc.`
+      errorNode,
+      `capnweb-validate: could not resolve a concrete service type for ${label}.`
     );
   }
   // Generic class with no type arg: default free params to `any` and record it
   // so we can warn those positions are not validated. Constrained params still
   // resolve against their constraint.
   let generic: GenericFallback = {
-    mode: !decoratorTypeArg && (cls.typeParameters?.length ?? 0) > 0
-      ? "any"
-      : "error",
+    mode:
+      !decoratorTypeArg && (cls.typeParameters?.length ?? 0) > 0
+        ? "any"
+        : "error",
     used: false,
   };
   let resolved = resolveServiceShape(
@@ -495,15 +850,16 @@ function resolveDecoratorShape(
   if (resolved === null) {
     throw buildError(
       sf,
-      decorator,
-      `capnweb-validate: could not resolve a concrete service type for @validateRpc.`
+      errorNode,
+      `capnweb-validate: could not resolve a concrete service type for ${label}.`
     );
   }
   if (generic.used) {
-    warnGenericDefaultedToAny(sf, cls, decorator);
+    warnGenericDefaultedToAny(sf, cls, errorNode);
   }
   let shape = cloneServiceShape(resolved);
   let skipped = collectClassSkipRpcValidationMethods(cls, checker);
+  for (let [name, node] of extraSkips ?? []) skipped.set(name, node);
   if (skipped.size > 0) {
     rejectSkippedMethodsOutsideSurface(sf, cls, shape, skipped);
     shape = applySkippedMethods(shape, skipped);
@@ -539,11 +895,9 @@ function typeNodeContainsAny(node: ts.TypeNode): boolean {
 function warnGenericDefaultedToAny(
   sf: ts.SourceFile,
   cls: ts.ClassDeclaration,
-  decorator: ts.Decorator
+  at: ts.Node
 ): void {
-  let { line, character } = sf.getLineAndCharacterOfPosition(
-    decorator.getStart(sf)
-  );
+  let { line, character } = sf.getLineAndCharacterOfPosition(at.getStart(sf));
   let name = cls.name?.text ?? "class";
   console.warn(
     `${sf.fileName}:${line + 1}:${character + 1}: capnweb-validate: ` +
@@ -608,25 +962,25 @@ function rejectSkippedMethodsOutsideSurface(
   sf: ts.SourceFile,
   cls: ts.ClassDeclaration,
   shape: ServiceShape,
-  skipped: Map<string, ts.Decorator>
+  skipped: Map<string, ts.Node>
 ): void {
   let surfaceMethods = new Set(shape.methods.map((method) => method.name));
   let className = cls.name?.text ?? "<anonymous>";
-  for (let [name, decorator] of skipped) {
+  for (let [name, node] of skipped) {
     if (surfaceMethods.has(name)) continue;
     throw buildError(
       sf,
-      decorator,
-      `capnweb-validate: @skipRpcValidation() on ${className}.${name} ` +
-        `does not match a method in the resolved RPC surface ${shape.name}. ` +
-        `@skipRpcValidation() only applies to methods in the RPC surface.`
+      node,
+      `capnweb-validate: skipped method ${className}.${name} does not match a ` +
+        `method in the resolved RPC surface ${shape.name}. Validation can only ` +
+        `be skipped for methods in the RPC surface.`
     );
   }
 }
 
 function applySkippedMethods(
   shape: ServiceShape,
-  skipped: Map<string, ts.Decorator>
+  skipped: Map<string, ts.Node>
 ): ServiceShape {
   return {
     ...shape,
@@ -641,8 +995,8 @@ function applySkippedMethods(
 function collectClassSkipRpcValidationMethods(
   cls: ts.ClassDeclaration,
   checker: ts.TypeChecker
-): Map<string, ts.Decorator> {
-  let skipped = new Map<string, ts.Decorator>();
+): Map<string, ts.Node> {
+  let skipped = new Map<string, ts.Node>();
   for (let member of cls.members) {
     if (!ts.isMethodDeclaration(member)) continue;
     let name = methodName(member.name);
@@ -770,7 +1124,9 @@ function applyPlatformPassthrough(
   let platformMethods = new Set(platform);
   return {
     ...shape,
-    methods: shape.methods.filter((method) => !platformMethods.has(method.name)),
+    methods: shape.methods.filter(
+      (method) => !platformMethods.has(method.name)
+    ),
     passthrough: platform,
   };
 }

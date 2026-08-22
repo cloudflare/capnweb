@@ -59,6 +59,47 @@ symbol-named.
 An explicit `@validateRpc<SomeInterface>()` makes `SomeInterface` the RPC
 surface. Public class methods outside that interface are rejected over RPC.
 
+## Wrapper form
+
+`validateRpc` can also be called directly on a class instead of decorating it,
+for builds that can't enable decorators (no `experimentalDecorators`, a toolchain
+that strips them, or a downstream consumer that rejects them):
+
+A static block validates the class in place, so the class keeps its name and its
+`export`. The block already names its class, so the call takes no class:
+
+```ts
+export class Api extends RpcTarget {
+  static { validateRpc(); } // same as @validateRpc()
+  static { validateRpc<Surface>(); } // same as @validateRpc<Surface>()
+  static { validateRpc({ skip: ["raw"] }); } // same as @skipRpcValidation() on raw()
+
+  async authenticate(token: string): Promise<number> { ... }
+}
+```
+
+The call can also wrap the class on the way out, for a class that is exported as
+an expression:
+
+```ts
+export default validateRpc(Api); // same as @validateRpc()
+export default validateRpc<Surface>()(Api); // same as @validateRpc<Surface>()
+export default validateRpc(Api, { skip: ["raw"] }); // same as @skipRpcValidation() on raw()
+```
+
+Each form emits the same validator as the decorator it replaces.
+
+Constraints, all reported as build errors:
+
+| Rule                                                                                                | Why                                                                                                  |
+| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| A call whose result is discarded must be a `static` block in the class it validates                 | Anywhere else the call is detached from the class, and only validates it if that code runs           |
+| `validateRpc()` with no class is only valid in a static block of a named class declaration          | That is the only place the class it validates is unambiguous, and has a name to emit                 |
+| Surface goes through the factory form, not `validateRpc<Surface>(Api)`                              | TypeScript has no partial type-argument inference, so the class type would be discarded              |
+| The argument must name a class declared in the same module, not an import or inline `class { ... }` | The transform reads the declaration for `@skipRpcValidation()` members and platform method filtering |
+| `skip` must be an inline object literal with an array of string literals                            | The names are read at build time                                                                     |
+| A `skip` name must exist in the resolved surface                                                    | Same as a stray `@skipRpcValidation()`                                                               |
+
 ## Generic service classes
 
 A decorator emits one validator at the class declaration. If the class itself
@@ -131,11 +172,11 @@ Cap'n Web client constructors are not rewritten automatically.
 Use the adapter that matches your bundler:
 
 ```ts
-import capnwebValidate from "capnweb-validate/vite";     // or
-import capnwebValidate from "capnweb-validate/rollup";    // or
-import capnwebValidate from "capnweb-validate/webpack";   // or
-import capnwebValidate from "capnweb-validate/rspack";    // or
-import capnwebValidate from "capnweb-validate/esbuild";   // or
+import capnwebValidate from "capnweb-validate/vite"; // or
+import capnwebValidate from "capnweb-validate/rollup"; // or
+import capnwebValidate from "capnweb-validate/webpack"; // or
+import capnwebValidate from "capnweb-validate/rspack"; // or
+import capnwebValidate from "capnweb-validate/esbuild"; // or
 import capnwebValidate from "capnweb-validate/farm";
 
 export default {
