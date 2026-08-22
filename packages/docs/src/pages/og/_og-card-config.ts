@@ -33,7 +33,7 @@ export const ogCardConfig = {
   logo: { path: "./og-assets/og-mark.png", size: [240] },
   // Drawn over by `bgImage`, which carries the same edge at the same width.
   // Kept so the no-image fallback still has one.
-  border: { color: [232, 93, 44], width: 12, side: "inline-start" },
+  border: { color: [246, 130, 31], width: 12, side: "inline-start" },
   padding: 96,
   // Build-time only, and deliberately not under `public/`, where the starter
   // puts it: these paths are resolved from the project root when the cards are

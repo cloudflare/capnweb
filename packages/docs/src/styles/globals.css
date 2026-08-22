@@ -209,7 +209,7 @@
 	--cw-ground: var(--cw-paper-deep);
 
 	--cw-wash-1: rgba(91, 111, 134, 0.08);
-	--cw-wash-2: rgba(232, 93, 44, 0.05);
+	--cw-wash-2: rgba(246, 130, 31, 0.05);
 
 	/* The bento diagrams in Features. Line art needs to be dark on paper and
 	   light on ink, and its fills follow the same flip. The `-rgb` pair exists
@@ -287,7 +287,7 @@
 	--cw-ground: #04060b;
 
 	--cw-wash-1: rgba(154, 171, 186, 0.06);
-	--cw-wash-2: rgba(232, 93, 44, 0.05);
+	--cw-wash-2: rgba(246, 130, 31, 0.05);
 
 	--cw-art-stroke: #8fb0ec;
 	--cw-art-stroke-rgb: 143 176 236;
