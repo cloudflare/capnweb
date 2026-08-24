@@ -88,38 +88,142 @@ Normally an `RpcPromise` comes back from a call. You can also build one yourself
 ordinary `Promise`, with `new RpcPromise(promise)`. Pipelined calls then queue up in order and are
 delivered once the inner promise settles.
 
-```ts
-// You don't have the stub yet, but callers can start using it now.
-let session = new RpcPromise(connectWhenReady());
-
-// No await, no round trip, and nothing to wait for locally either.
-let profile = session.getUserProfile();
-```
-
-This is for publishing a capability that does not exist yet. Without it, everything downstream of
-`connectWhenReady()` has to be written inside a `.then()` or after an `await`, which is exactly the
-sequencing that pipelining exists to avoid.
-
-It is not a new mechanism. Wrapping a promise is semantically identical to making a local-loopback
-call that returns it:
+Wrapping a promise is semantically identical to making a local-loopback RPC that returns it:
 
 ```ts
+import { RpcPromise, RpcStub } from 'capnweb';
+
+let myPromise = Promise.resolve({ value: 123 });
+
 // This...
-let rpcPromise = new RpcPromise(myPromise);
+using direct = new RpcPromise(myPromise);
 
 // ...means the same as this.
-let rpcFunc = new RpcStub(() => myPromise);
-let rpcPromise = rpcFunc();
+using rpcFunc = new RpcStub(() => myPromise);
+using loopback = rpcFunc();
 ```
 
-Which is a useful thing to remember, because it tells you what the rules are without having to
-learn a second set. The resolution goes over RPC, so:
+### Call a target that does not exist yet
 
-- It has to be [serializable](/concepts/values/).
-- `RpcTarget`s and functions in it come out the other side as stubs.
-- Ownership of any stubs in the resolution transfers to the `RpcPromise`. Disposing the promise
-  disposes them. **If you also want to keep one, resolve with a `.dup()`.**
-- A rejection propagates to every pipelined call.
+`new RpcPromise(promise)` lets you call a target before the target exists. Here, two calls and a
+getter queue before the counter is created.
+
+```ts
+import { RpcPromise, RpcTarget } from 'capnweb';
+
+class Counter extends RpcTarget {
+  #value: number;
+
+  constructor(value = 0) {
+    super();
+    this.#value = value;
+  }
+
+  increment(by = 1) {
+    return this.#value += by;
+  }
+
+  get value() {
+    return this.#value;
+  }
+}
+
+{
+  let { promise, resolve } = Promise.withResolvers<Counter>();
+  using counter = new RpcPromise(promise);
+
+  using first = counter.increment();
+  using second = counter.increment(10);
+  let value = counter.value;
+
+  resolve(new Counter(0));
+  console.log('ordered:', await first, await second, await value);
+}
+```
+
+This prints `ordered: 1 11 11`: pending operations run in invocation order. Property promises such
+as `counter.value` have no independent disposer.
+
+### Hide connection setup behind a stub
+
+This [MessagePort](/transports/message-port/) example exposes a stub while local setup finishes.
+
+```ts
+import { newMessagePortRpcSession } from 'capnweb';
+
+class Api extends RpcTarget {
+  authenticate(token: string) {
+    if (token !== 's3cret') {
+      throw new Error('bad token');
+    }
+    return new Counter(100);
+  }
+}
+
+{
+  let channel = new MessageChannel();
+  using serverSide = newMessagePortRpcSession(channel.port1, new Api());
+
+  async function connect() {
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 50);
+    await promise;
+    return newMessagePortRpcSession<Api>(channel.port2);
+  }
+
+  using api = new RpcPromise(connect());
+  using authed = api.authenticate('s3cret');
+  using result = authed.increment(5);
+
+  console.log('connected:', await result);
+}
+```
+
+This prints `connected: 105`. The caller does not await readiness or authentication, so the calls
+remain pipelined.
+
+### Reject when readiness fails
+
+A rejected source breaks the wrapper and its queued operations.
+
+```ts
+{
+  using counter = new RpcPromise<Counter>(
+    Promise.reject(new Error('connection failed')),
+  );
+
+  counter.onRpcBroken((error: Error) => console.log('broken:', error.message));
+  using result = counter.increment();
+
+  try {
+    await result;
+  } catch (error) {
+    if (error instanceof Error) {
+      console.log('call:', error.message);
+    }
+  }
+}
+```
+
+The output is `broken: connection failed` followed by `call: connection failed`. Both receive the
+same rejection. An unused wrapper observes its backing rejection, but every queued call or `.map()`
+result must still be awaited or disposed.
+
+Cap'n Web processes the resolution with the same serialization, stub conversion, rejection, and
+ownership semantics as an RPC return:
+
+- The backing value must be a real `Promise`.
+- The promise may resolve to any [serializable value](/concepts/values/), an `RpcTarget` or function
+  that Cap'n Web converts to a stub, or an `RpcStub`.
+- The wrapper [owns](/concepts/disposal/) every stub in the resolution. If another owner will keep
+  using a stub, resolve with `stub.dup()`.
+- Rejection reaches queued operations, code awaiting the wrapper, and `onRpcBroken`.
+
+> **Pending calls have no built-in bound**
+>
+> Pending calls retain their arguments, and there is no queue limit or backpressure setting. A
+> readiness or reconnection producer must eventually settle. Reject on terminal failure or an
+> application deadline, and rate-limit untrusted callers.
 
 ## Disposal
 
