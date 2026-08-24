@@ -134,6 +134,7 @@ class Counter extends RpcTarget {
 
   using first = counter.increment();
   using second = counter.increment(10);
+  // Property access queues the getter and returns an RpcPromise<number>.
   let value = counter.value;
 
   resolve(new Counter(0));
