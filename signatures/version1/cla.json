@@ -207,6 +207,14 @@
       "created_at": "2026-08-13T21:36:06Z",
       "repoId": 998173252,
       "pullRequestNo": 233
+    },
+    {
+      "name": "yusuke99",
+      "id": 66258931,
+      "comment_id": 5449180736,
+      "created_at": "2026-08-28T06:21:57Z",
+      "repoId": 998173252,
+      "pullRequestNo": 259
     }
   ]
 }
