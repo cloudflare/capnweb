@@ -288,12 +288,10 @@ type TupleProvider<T extends ReadonlyArray<unknown>> = {
 export type Provider<T> = MaybeCallableProvider<T> &
   (T extends ReadonlyArray<unknown>
     ? number extends T["length"] ? ArrayProvider<T[number]> : TupleProvider<T>
-    : {
-        [K in Exclude<
-          keyof T,
-          symbol | keyof StubBase<never>
-        >]: MethodOrProperty<T[K]>;
-      } & {
+    : Pick<
+        { [K in keyof T]: MethodOrProperty<T[K]> },
+        Exclude<keyof T, symbol | keyof StubBase<never>>
+      > & {
         map<V>(
           callback: (value: MapCallbackValue<NonNullable<T>>) => MapCallbackReturn<V>
         ): Result<Array<V>>;

@@ -219,16 +219,17 @@ type MapCallbackReturn<V> =
   InvalidNativePromiseInMapResult<V> extends never ? V : never;
 export type ValidatedStub<T> = MaybeCallableStub<T> &
   (T extends object
-    ? {
-        [K in Exclude<
+    ? Pick<
+        { [K in keyof T]: StubMethodOrProperty<T[K]> },
+        Exclude<
           keyof T,
           | symbol
           | "__RPC_TARGET_BRAND"
           | "__WORKER_ENTRYPOINT_BRAND"
           | "__DURABLE_OBJECT_BRAND"
           | keyof StubBase<never>
-        >]: StubMethodOrProperty<T[K]>;
-      } & {
+        >
+      > & {
         map<V>(callback: (value: MapCallbackValue<NonNullable<T>>) => MapCallbackReturn<V>): StubResult<
           Array<V>
         >;
