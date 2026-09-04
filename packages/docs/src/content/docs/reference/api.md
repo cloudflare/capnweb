@@ -103,11 +103,11 @@ Passed as the last argument to the session and response helpers. Commonly used f
 
 **By value:** primitives, plain objects, arrays, `bigint`, `Date`, `ArrayBuffer`, `DataView`, typed
 arrays, `Error` and well-known subclasses, `Blob`, `ReadableStream`, `WritableStream`, `URL`,
-`Headers`, `Request`, `Response`.
+`RegExp`, `Headers`, `Request`, `Response`.
 
 **By reference:** `RpcTarget` subclasses, functions, existing stubs and promises.
 
-**Not supported:** `Map`, `Set`, `RegExp` (not yet); non-`RpcTarget` classes and cyclic values
+**Not supported:** `Map`, `Set` (not yet); non-`RpcTarget` classes and cyclic values
 (intentionally).
 
 [Docs](/concepts/values/)

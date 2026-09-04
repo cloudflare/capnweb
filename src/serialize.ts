@@ -335,6 +335,15 @@ export class Devaluator {
         return ["date", Number.isNaN(time) ? null : time];
       }
 
+      case "regexp": {
+        // At structuredClonable level, keep RegExp as native value.
+        if (this.encodingLevel === "structuredClonable") {
+          return value;
+        }
+        let re = <RegExp>value;
+        return re.flags ? ["regexp", re.source, re.flags] : ["regexp", re.source];
+      }
+
       case "bytes": {
         let alternateTypeName = BYTE_CONTAINER_TYPE_BY_PROTOTYPE.get(Object.getPrototypeOf(value));
         let bytes: Uint8Array;
@@ -806,12 +815,12 @@ export class Evaluator {
           `Deserialization exceeded maximum allowed message depth of ${maxDepth}.`);
     }
 
-    // At structuredClonable level, some native types pass through devaluation unencoded: Date and
-    // BigInt (as well as undefined and non-finite numbers, which the generic paths below already
-    // handle). Note that bytes and errors are tuple-encoded at every level, so raw `Uint8Array`
-    // and `Error` values are intentionally *not* accepted here.
+    // At structuredClonable level, some native types pass through devaluation unencoded: Date,
+    // RegExp, and BigInt (as well as undefined and non-finite numbers, which the generic paths
+    // below already handle). Note that bytes and errors are tuple-encoded at every level, so raw
+    // `Uint8Array` and `Error` values are intentionally *not* accepted here.
     if (this.encodingLevel === "structuredClonable") {
-      if (value instanceof Date || typeof value === "bigint") {
+      if (value instanceof Date || value instanceof RegExp || typeof value === "bigint") {
         return value;
       }
     }
@@ -843,6 +852,13 @@ export class Evaluator {
           }
           if (typeof value[1] == "number") {
             return new Date(value[1]);
+          }
+          break;
+        case "regexp":
+          if (typeof value[1] === "string" &&
+              (value.length === 2 ||
+               (value.length === 3 && typeof value[2] === "string"))) {
+            return new RegExp(value[1], value[2] as string | undefined);
           }
           break;
         case "bytes": {
