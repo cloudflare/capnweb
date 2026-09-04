@@ -65,10 +65,11 @@ jobs:
         run: |
           npx wrangler preview -c packages/docs/wrangler.jsonc --name "$PREVIEW_NAME"
           jq -er --arg expected "$PREVIEW_URL" '
-            select(.type == "preview"
-              and (.preview_urls[0] | rtrimstr("/")) == ($expected | rtrimstr("/"))
-              and .deployment_urls[0])
-            | "url=\(.preview_urls[0])\ndeployment=\(.deployment_urls[0])"
+            select(.type == "preview" and .deployment_id)
+            | ($expected | capture("^(?<origin>https?://)[^.]+(?<suffix>\\..*)$")) as $url
+            | (.preview_urls[0] // if .preview_slug then "\($url.origin)\(.preview_slug)\($url.suffix)" else empty end) as $preview_url
+            | (.deployment_urls[0] // "\($url.origin)\(.deployment_id | split("-")[0])\($url.suffix)") as $deployment_url
+            | "url=\($preview_url)\ndeployment=\($deployment_url)"
           ' "$WRANGLER_OUTPUT_FILE_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Comment the Preview URL
