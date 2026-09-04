@@ -43,6 +43,9 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
 
   '["url","https://example.com/path?q=1"]': new URL("https://example.com/path?q=1"),
 
+  '["regexp","foo\\\\d+","gi"]': /foo\d+/gi,
+  '["regexp","^bar$"]': /^bar$/,
+
   '["headers",[]]': new Headers(),
   '["headers",[["content-type","text/plain"],["x-custom","hello"]]]':
       new Headers({"Content-Type": "text/plain", "X-Custom": "hello"}),
@@ -3305,6 +3308,16 @@ describe("transport encoding levels", () => {
       let date = await stub.echo(new Date(1234567890)) as Date;
       expect(date).toBeInstanceOf(Date);
       expect(date.getTime()).toBe(1234567890);
+
+      let re = await stub.echo(/foo\d+/gi) as RegExp;
+      expect(re).toBeInstanceOf(RegExp);
+      expect(re.source).toBe("foo\\d+");
+      expect(re.flags).toBe("gi");
+
+      let bare = await stub.echo(/^bar$/) as RegExp;
+      expect(bare).toBeInstanceOf(RegExp);
+      expect(bare.source).toBe("^bar$");
+      expect(bare.flags).toBe("");
 
       expect(await stub.echo(123n)).toBe(123n);
     });
