@@ -3,6 +3,23 @@
 	"name": "capnweb-docs",
 	"compatibility_date": "2026-02-05",
 
+	// The `capnweb` account. An account ID is an identifier rather than a secret --
+	// nothing can be done with it without a credential -- and committing it is what
+	// lets both a laptop and CI deploy without being told which of the several
+	// accounts an operator can see is the right one.
+	"account_id": "b14f364f7066ca93045436e8450ce7e2",
+
+	// The site is the apex domain and nothing else. `custom_domain` makes Cloudflare
+	// own the DNS record and the certificate for it, so the record cannot drift away
+	// from the Worker by hand.
+	"routes": [{ "pattern": "capnweb.com", "custom_domain": true }],
+
+	// No `*.workers.dev` copy. Canonical URLs, the sitemap and the links inside
+	// `/llms.txt` all name `https://capnweb.com` (see `site` in astro.config.ts), and a
+	// second origin serving the same pages with the same canonicals is a duplicate for
+	// crawlers and a link people paste by accident.
+	"workers_dev": false,
+
 	// A static site: no `main`, so there is no Worker script and every request is
 	// served from the asset store. The playgrounds run their "server" inside the
 	// browser, so nothing here needs to execute server-side.

@@ -1,0 +1,123 @@
+name: Preview Docs
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-docs-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Astro bakes this origin into canonical URLs, OG URLs, robots.txt, and the sitemap.
+  PREVIEW_NAME: ${{ github.event.pull_request.number }}
+  PREVIEW_URL: https://${{ github.event.pull_request.number }}.pr.capnweb.com
+
+jobs:
+  preview:
+    permissions:
+      contents: read
+      pull-requests: write
+    # Never expose the deploy token to forked pull requests.
+    if: ${{ github.event.action != 'closed' && github.event.pull_request.head.repo.id == github.event.repository.id }}
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # PageActions reads `git log %at` for each page's "Updated" date
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            packages/docs/package-lock.json
+            examples/worker-react/client/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix packages/docs
+          npm ci --prefix examples/worker-react/client
+
+      - name: Build docs
+        env:
+          DOCS_SITE_URL: ${{ env.PREVIEW_URL }}
+        run: npm run build:docs
+
+      - name: Keep the Preview out of search results
+        # Keep public Preview URLs out of search results without affecting production.
+        run: |
+          printf '\n/*\n  X-Robots-Tag: noindex\n' >> packages/docs/dist/_headers
+
+      - name: Deploy Preview
+        id: deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.json
+        run: |
+          npx wrangler preview -c packages/docs/wrangler.jsonc --name "$PREVIEW_NAME"
+          jq -er --arg expected "$PREVIEW_URL" '
+            select(.type == "preview"
+              and (.preview_urls[0] | rtrimstr("/")) == ($expected | rtrimstr("/"))
+              and .deployment_urls[0])
+            | "url=\(.preview_urls[0])\ndeployment=\(.deployment_urls[0])"
+          ' "$WRANGLER_OUTPUT_FILE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the Preview URL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          URL: ${{ steps.deploy.outputs.url }}
+          DEPLOYMENT: ${{ steps.deploy.outputs.deployment }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        # Keep one bot comment current across pushes.
+        run: |
+          marker='<!-- capnweb-docs-preview -->'
+          body=$(printf '%s\n### Docs preview\n\n| | |\n| --- | --- |\n| **Preview** | %s |\n| **This commit** | %s |\n\nUpdates on every push. Deleted when this pull request closes. Not indexed by search engines.\n\n<sub>`%s`</sub>\n' \
+            "$marker" "$URL" "$DEPLOYMENT" "$SHA")
+          id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+            --jq "[.[] | select(.user.type == \"Bot\" and (.body | startswith(\"$marker\")))] | first | .id // empty")
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" --silent
+          else
+            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$body" --silent
+          fi
+
+  cleanup:
+    # Delete the public Preview when its pull request closes.
+    if: ${{ github.event.action == 'closed' && github.event.pull_request.head.repo.id == github.event.repository.id }}
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install wrangler
+        run: npm ci
+
+      - name: Delete the Preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        # A Preview may not exist if its deployment never ran.
+        run: |
+          status=0
+          output=$(npx wrangler preview delete -c packages/docs/wrangler.jsonc --name "$PREVIEW_NAME" --skip-confirmation 2>&1) || status=$?
+          printf '%s\n' "$output"
+          [[ "$status" -eq 0 || "$output" == *"code: 10025"* ]]

@@ -1,0 +1,49 @@
+name: Deploy Docs
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Preserve deployment order so the newest push finishes last.
+concurrency:
+  group: deploy-docs
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    environment: docs
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # PageActions reads `git log %at` for each page's "Updated" date
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: "npm"
+          cache-dependency-path: |
+            package-lock.json
+            packages/docs/package-lock.json
+            examples/worker-react/client/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm ci --prefix packages/docs
+          npm ci --prefix examples/worker-react/client
+
+      - name: Build docs
+        run: npm run build:docs
+
+      - name: Deploy to Cloudflare
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy -c packages/docs/wrangler.jsonc

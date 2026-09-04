@@ -40,6 +40,8 @@
     "build:watch": "tsdown --config-loader native --watch",
     "dev": "npm run build:watch",
     "dev:docs": "npm run build && npm --prefix packages/docs run dev -- --port 4321",
+    "build:docs": "npm run build && npm --prefix packages/docs run build",
+    "deploy:docs": "npm run build:docs && wrangler deploy -c packages/docs/wrangler.jsonc",
     "lint:md": "markdownlint-cli2 && node scripts/align-markdown-tables.mjs --check",
     "lint:md:fix": "node scripts/align-markdown-tables.mjs && markdownlint-cli2 --fix",
     "setup": "npm install && npm --prefix packages/docs install && npm --prefix examples/worker-react/client install",
@@ -54,7 +56,7 @@
     "@changesets/changelog-github": "^0.5.2",
     "@changesets/cli": "^2.29.8",
     "@cloudflare/vitest-pool-workers": "^0.12.10",
-    "@cloudflare/workers-types": "^4.20260205.0",
+    "@cloudflare/workers-types": "^5.20260820.1",
     "@types/bun": "^1.2.0",
     "@types/ws": "^8.18.1",
     "@vitest/browser": "^3.2.7",
@@ -65,7 +67,7 @@
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7",
-    "wrangler": "4.63.0",
+    "wrangler": "4.125.0",
     "ws": "^8.21.1"
   },
   "repository": {

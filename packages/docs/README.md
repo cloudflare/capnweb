@@ -47,7 +47,7 @@ npm_config_@cloudflare:registry=https://registry.npmjs.org npm install
 
 **Wrangler is not a dependency here.** The starter lists one, at a version that resolves to an
 unpublished alpha of miniflare. The root's wrangler deploys this site, so the dependency is simply
-absent; `npm run deploy` in this package picks up the root's, which npm puts on the path (4.63.0).
+absent -- npm puts the root's on the path for scripts run from this directory anyway.
 
 ## What Nimbus owns, and what we changed
 
@@ -943,9 +943,17 @@ is worth repeating after any framework change.
 
 ## Deployment
 
-`npm run build` emits a plain static site to `dist/`, deployable anywhere. `site` defaults to the
-preview deployment so that canonical URLs, Open Graph URLs, the sitemap and the links inside
-`/llms.txt` are all valid; point it at a real domain with `DOCS_SITE_URL`:
+The site is `https://capnweb.com`, served from a Cloudflare Worker named `capnweb-docs` in the
+`capnweb` account. Every push to `main` redeploys it: `.github/workflows/deploy-docs.yml` builds the
+library, builds the site, and runs `wrangler deploy`. The same build runs as a `build-docs` job on
+every pull request, so a site that does not build fails the PR rather than the deploy, and every
+pull request from a branch in this repo also gets its own live copy -- see "Previews" below.
+
+`npm run build` emits a plain static site to `dist/`, deployable anywhere. `site` is
+`https://capnweb.com` unless `DOCS_SITE_URL` overrides it, and it is what canonical URLs, the
+absolute OG image URLs, `robots.txt`, the sitemap and the links inside `/llms.txt` are all built
+from -- which is why a preview build has to override it rather than publish a sitemap claiming to be
+production:
 
 ```sh
 DOCS_SITE_URL=https://example.com npm run build
@@ -953,10 +961,12 @@ DOCS_SITE_URL=https://example.com npm run build
 
 `wrangler.jsonc` deploys that output to a Cloudflare Worker. There is no `main`, so no Worker script
 runs: every request is served from the asset store, which is all a static site with in-browser
-playgrounds needs.
+playgrounds needs. Deploy by hand from the **repo root**, not from here -- the playgrounds vendor
+`dist/index.js` and the prose substitutes the measured bundle size, so the library has to be built
+first and only the root script does both:
 
 ```sh
-npm run deploy   # rebuilds first, via predeploy
+npm run deploy:docs   # at the repo root: library build, then site build, then wrangler deploy
 ```
 
 `public/_headers` is part of the deployment rather than decoration. Workers' default for static
@@ -966,6 +976,48 @@ stylesheet, revalidated but answered with a 304, arrived first, and that gap was
 header over bare background between navigations. The file gives documents a minute of freshness and
 fingerprinted assets a year.
 
-Pick the account with `CLOUDFLARE_ACCOUNT_ID` if your token can see more than one. Note that an
-account may put Cloudflare Access in front of its whole `*.workers.dev` subdomain, in which case the
-deployed URL prompts for SSO until a bypass policy is added for the hostname.
+`account_id` is committed in `wrangler.jsonc` rather than left to `CLOUDFLARE_ACCOUNT_ID`. It is an
+identifier, not a credential, and pinning it is what stops a deploy from an operator who can see
+several accounts landing in the wrong one -- wrangler refuses to guess and fails the deploy instead.
+
+`workers_dev` is off and `preview_urls` is on, and they are not the same switch. `workers_dev` is
+production's `capnweb-docs.<subdomain>.workers.dev` copy, which we do not want: every URL the build
+emits names `https://capnweb.com`, so a second live origin serving those same pages is a duplicate
+for crawlers and a link people paste by accident. `preview_urls` is what gives a **Preview** a
+hostname. With it off, `wrangler preview` still succeeds and still returns a Preview -- with an empty
+`urls` array, which is a deploy nobody can look at.
+
+## Previews
+
+Every pull request from a branch in this repo gets its own copy of the site at
+`https://<number>.pr.capnweb.com`, posted as a comment on the pull request and deleted when it
+closes. `.github/workflows/preview-docs.yml` uses
+[Worker Previews](https://developers.cloudflare.com/workers/previews/) -- `wrangler preview` rather
+than `wrangler deploy`, against the same Worker, so a Preview is a branch of `capnweb-docs` rather
+than a second Worker to operate.
+
+Two details are load-bearing:
+
+- **The Preview URL is known before deployment.** The site bakes its origin into canonicals, OG
+  URLs, `robots.txt` and the sitemap, so `DOCS_SITE_URL` must be set before `astro build`. The
+  workflow checks Wrangler's returned URL against that origin before posting the Preview.
+- **`X-Robots-Tag: noindex` is appended to `dist/_headers`, not committed to `public/_headers`.** A
+  Preview URL is public and this repo is public, so the pull request comment is a crawlable link to
+  it. It is a header rather than a `Disallow` in `robots.txt` because disallowing the crawl would
+  stop a crawler ever reading the `noindex` -- which is how staging sites end up indexed as bare
+  URLs regardless. Committing it is not an option: that file ships to production too.
+
+Fork pull requests do not get a Preview. A `pull_request` run from a fork has no access to secrets,
+and `pull_request_target`, which would give it them, would be handing a contributor's build scripts
+a credential that can deploy the real site. They are still built by `build-docs` in `test.yml`.
+
+Previews are capped per Worker, and Cloudflare evicts the least recently deployed one at the cap, so
+the cleanup job is hygiene rather than a hard requirement. Locally, `wrangler preview --name <name>`
+does the same thing by hand; `wrangler preview delete --name <name>` removes it. Note that `--name`
+is a flag on both, not a positional -- the positional is the entry point script.
+
+Previews need a `wrangler` new enough to have the command, which is why the root pins 4.125.0. There
+is no `previews` block in `wrangler.jsonc` and there should not need to be: this Worker has no
+bindings, and the settings a static site does care about -- `assets`, `compatibility_date` -- are
+read from the top level for Previews too. If this site ever gains a binding, note that Previews do
+**not** inherit bindings from the top level; each one has to be declared under `previews`.
