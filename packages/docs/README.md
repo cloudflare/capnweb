@@ -989,21 +989,18 @@ hostname. With it off, `wrangler preview` still succeeds and still returns a Pre
 
 ## Previews
 
-Every pull request from a branch in this repo gets its own copy of the site, at
-`https://pr-<number>-capnweb-docs.<subdomain>.workers.dev`, posted as a comment on the pull request
-and deleted when it closes. `.github/workflows/preview-docs.yml` does it with
+Every pull request from a branch in this repo gets its own copy of the site at
+`https://<number>.pr.capnweb.com`, posted as a comment on the pull request and deleted when it
+closes. `.github/workflows/preview-docs.yml` uses
 [Worker Previews](https://developers.cloudflare.com/workers/previews/) -- `wrangler preview` rather
 than `wrangler deploy`, against the same Worker, so a Preview is a branch of `capnweb-docs` rather
 than a second Worker to operate.
 
-Two things about that workflow are load-bearing:
+Two details are load-bearing:
 
-- **The Preview URL is derived, not read back.** A Preview URL is
-  `<preview-name>-<worker-name>.<subdomain>.workers.dev`, and all three parts are known before the
-  build. They have to be, because `site` is baked into canonicals, OG URLs, `robots.txt` and the
-  sitemap at build time, so `DOCS_SITE_URL` must be set *before* `astro build` rather than
-  discovered after `wrangler preview`. The workflow deploys, reads the URL back anyway, and fails if
-  it is not the one it built for.
+- **The Preview URL is known before deployment.** The site bakes its origin into canonicals, OG
+  URLs, `robots.txt` and the sitemap, so `DOCS_SITE_URL` must be set before `astro build`. The
+  workflow checks Wrangler's returned URL against that origin before posting the Preview.
 - **`X-Robots-Tag: noindex` is appended to `dist/_headers`, not committed to `public/_headers`.** A
   Preview URL is public and this repo is public, so the pull request comment is a crawlable link to
   it. It is a header rather than a `Disallow` in `robots.txt` because disallowing the crawl would

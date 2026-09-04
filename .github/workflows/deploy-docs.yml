@@ -5,20 +5,15 @@ permissions:
 on:
   push:
     branches: [main]
-  # For redeploying the current main without an empty commit -- a rolled-back
-  # Cloudflare deployment, or a failed run that needs another go.
   workflow_dispatch:
 
-# One deploy at a time, and no cancelling. Cancelling would let an older run
-# finish after a newer one and leave stale content live; queueing keeps the last
-# push to main the last thing deployed.
+# Preserve deployment order so the newest push finishes last.
 concurrency:
   group: deploy-docs
   cancel-in-progress: false
 
 jobs:
   deploy:
-    if: ${{ github.repository_owner == 'cloudflare' }}
     timeout-minutes: 10
     runs-on: ubuntu-latest
     environment: docs
@@ -27,40 +22,28 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # PageActions reads `git log %at` for each page's "Updated" date
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
           cache: "npm"
-          # packages/docs is excluded from the workspaces and the React example's
-          # client is its own install, so both have lockfiles the root one does not
-          # cover. Missing one here means a cache key that does not change when its
-          # dependencies do.
           cache-dependency-path: |
             package-lock.json
             packages/docs/package-lock.json
             examples/worker-react/client/package-lock.json
 
-      # Three installs, because there are three lockfiles. The docs build bundles
-      # each example's real source, so the React example's client needs its own
-      # node_modules for esbuild to resolve react out of.
       - name: Install dependencies
         run: |
           npm ci
           npm ci --prefix packages/docs
           npm ci --prefix examples/worker-react/client
 
-      # `build:docs` is the library build followed by the site build, in that order
-      # on purpose: the playgrounds vendor `dist/index.js` and the prose substitutes
-      # the measured bundle size, so the site is built against the library from this
-      # same commit rather than whatever was there last.
       - name: Build docs
         run: npm run build:docs
 
       - name: Deploy to Cloudflare
-        run: npx wrangler deploy -c packages/docs/wrangler.jsonc
         env:
-          # Account ID is committed in packages/docs/wrangler.jsonc; only the
-          # credential is a secret.
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx wrangler deploy -c packages/docs/wrangler.jsonc

@@ -1,38 +1,27 @@
 name: Preview Docs
 permissions:
   contents: read
-  pull-requests: write # to post the Preview URL back on the pull request
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
 
-# One Preview per pull request, and the newest commit wins. Unlike the production
-# deploy, cancelling here is what we want: an in-flight Preview of a commit that has
-# already been superseded is not worth waiting for.
 concurrency:
   group: preview-docs-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
-  # `<preview-name>-<worker-name>.<subdomain>.workers.dev` is the Preview URL format,
-  # and all three parts are known before the build runs. That matters: the site bakes
-  # its origin into canonical URLs, OG image URLs, robots.txt and the sitemap, so the
-  # build has to be told where it is going to live *before* it happens. Deriving the
-  # URL instead of reading it back from `wrangler preview` is what makes that possible.
-  #
-  # The subdomain belongs to the account in `packages/docs/wrangler.jsonc`. It is fixed
-  # per account, not a secret, and there is no way to ask for it before deploying.
+  # Astro bakes this origin into canonical URLs, OG URLs, robots.txt, and the sitemap.
   PREVIEW_NAME: ${{ github.event.pull_request.number }}
   PREVIEW_URL: https://${{ github.event.pull_request.number }}.pr.capnweb.com
 
 jobs:
   preview:
-    # A pull request from a fork gets a read-only token and no access to secrets, so it
-    # cannot deploy -- and `pull_request_target`, which would hand it both, would be
-    # running a contributor's build scripts with a credential that can deploy the real
-    # site. Fork pull requests are checked by the `build-docs` job in test.yml instead.
-    if: ${{ github.event.action != 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      contents: read
+      pull-requests: write
+    # Never expose the deploy token to forked pull requests.
+    if: ${{ github.event.action != 'closed' && github.event.pull_request.head.repo.id == github.event.repository.id }}
     timeout-minutes: 15
     runs-on: ubuntu-latest
 
@@ -40,6 +29,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # PageActions reads `git log %at` for each page's "Updated" date
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -58,22 +48,12 @@ jobs:
           npm ci --prefix examples/worker-react/client
 
       - name: Build docs
-        # Without this the Preview publishes canonical URLs, a sitemap and an
-        # /llms.txt all claiming to be https://capnweb.com.
         env:
           DOCS_SITE_URL: ${{ env.PREVIEW_URL }}
         run: npm run build:docs
 
       - name: Keep the Preview out of search results
-        # A Preview URL is public, and this repo is public, so the comment below puts a
-        # crawlable link to it on the open web. `noindex` is the header rather than a
-        # robots.txt `Disallow` on purpose: disallowing the crawl would stop the crawler
-        # ever reading the `noindex`, which is how staging sites end up indexed as bare
-        # URLs anyway.
-        #
-        # Appended rather than committed to `public/_headers`, because that file ships
-        # to production too. A request matching two rules inherits both, and no other
-        # rule sets `X-Robots-Tag`, so there is nothing here to collide with.
+        # Keep public Preview URLs out of search results without affecting production.
         run: |
           printf '\n/*\n  X-Robots-Tag: noindex\n' >> packages/docs/dist/_headers
 
@@ -81,27 +61,15 @@ jobs:
         id: deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        # `--json` does not mean "only JSON": wrangler prints its asset-upload progress
-        # to stdout first, so the payload has to be sliced out from the first brace.
-        # The URL is read back and compared with the one the build was given -- if the
-        # two ever disagree, the site has been built for the wrong origin and saying so
-        # is better than shipping a Preview full of wrong canonicals.
+          WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.json
         run: |
-          set -euo pipefail
-          npx wrangler preview -c packages/docs/wrangler.jsonc --name "$PREVIEW_NAME" --json | tee /tmp/preview.log
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
-          import json, os, sys
-          raw = open("/tmp/preview.log").read()
-          data = json.loads(raw[raw.index("{"):])
-          urls = data["preview"]["urls"]
-          if not urls:
-              sys.exit("Preview has no URL. Is `preview_urls` still true in wrangler.jsonc?")
-          expected = os.environ["PREVIEW_URL"]
-          if urls[0].rstrip("/") != expected.rstrip("/"):
-              sys.exit(f"Preview URL {urls[0]} is not the {expected} the site was built for.")
-          print(f"url={urls[0]}")
-          print(f"deployment={data['deployment']['urls'][0]}")
-          PY
+          npx wrangler preview -c packages/docs/wrangler.jsonc --name "$PREVIEW_NAME"
+          jq -er --arg expected "$PREVIEW_URL" '
+            select(.type == "preview"
+              and (.preview_urls[0] | rtrimstr("/")) == ($expected | rtrimstr("/"))
+              and .deployment_urls[0])
+            | "url=\(.preview_urls[0])\ndeployment=\(.deployment_urls[0])"
+          ' "$WRANGLER_OUTPUT_FILE_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Comment the Preview URL
         env:
@@ -110,10 +78,8 @@ jobs:
           URL: ${{ steps.deploy.outputs.url }}
           DEPLOYMENT: ${{ steps.deploy.outputs.deployment }}
           SHA: ${{ github.event.pull_request.head.sha }}
-        # Edited in place rather than appended, so a pull request with thirty commits
-        # has one comment and not thirty. The marker is how the comment is found again.
+        # Keep one bot comment current across pushes.
         run: |
-          set -euo pipefail
           marker='<!-- capnweb-docs-preview -->'
           body=$(printf '%s\n### Docs preview\n\n| | |\n| --- | --- |\n| **Preview** | %s |\n| **This commit** | %s |\n\nUpdates on every push. Deleted when this pull request closes. Not indexed by search engines.\n\n<sub>`%s`</sub>\n' \
             "$marker" "$URL" "$DEPLOYMENT" "$SHA")
@@ -126,15 +92,15 @@ jobs:
           fi
 
   cleanup:
-    # Previews are capped per Worker and Cloudflare evicts the least recently deployed
-    # one when the cap is hit, so this is hygiene rather than a hard requirement -- but
-    # without it a merged pull request leaves a live copy of its branch serving forever.
-    if: ${{ github.event.action == 'closed' && github.event.pull_request.head.repo.full_name == github.repository }}
+    # Delete the public Preview when its pull request closes.
+    if: ${{ github.event.action == 'closed' && github.event.pull_request.head.repo.id == github.event.repository.id }}
     timeout-minutes: 10
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -143,30 +109,15 @@ jobs:
           cache: "npm"
           cache-dependency-path: package-lock.json
 
-      # Only the root install: deleting a Preview needs wrangler and nothing else. In
-      # particular it does not need `dist/`, so this job never builds.
       - name: Install wrangler
         run: npm ci
 
       - name: Delete the Preview
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        # `--name` is a flag here, not a positional -- the positional is the entry point
-        # script. `wrangler preview delete pr-1` would try to deploy a Worker called
-        # `pr-1` rather than delete the Preview.
-        #
-        # Deleting a Preview that is not there exits 1 (`code: 10025`), which would put
-        # a failed check on every pull request that closed without one: anything opened
-        # before this workflow existed, anything from a fork, and anything whose preview
-        # job never got as far as deploying. That case is success here. Any other
-        # failure is still a failure.
+        # A Preview may not exist if its deployment never ran.
         run: |
-          set -uo pipefail
-          out=$(npx wrangler preview delete -c packages/docs/wrangler.jsonc --name "$PREVIEW_NAME" --skip-confirmation 2>&1) && status=0 || status=$?
-          printf '%s\n' "$out"
-          if [ "$status" -ne 0 ]; then
-            case "$out" in
-              *"code: 10025"*) echo "No Preview named $PREVIEW_NAME. Nothing to delete." ;;
-              *) exit "$status" ;;
-            esac
-          fi
+          status=0
+          output=$(npx wrangler preview delete -c packages/docs/wrangler.jsonc --name "$PREVIEW_NAME" --skip-confirmation 2>&1) || status=$?
+          printf '%s\n' "$output"
+          [[ "$status" -eq 0 || "$output" == *"code: 10025"* ]]
