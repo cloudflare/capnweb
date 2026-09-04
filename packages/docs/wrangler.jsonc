@@ -9,15 +9,28 @@
 	// accounts an operator can see is the right one.
 	"account_id": "b14f364f7066ca93045436e8450ce7e2",
 
-	// The site is the apex domain and nothing else. `custom_domain` makes Cloudflare
-	// own the DNS record and the certificate for it, so the record cannot drift away
-	// from the Worker by hand.
-	"routes": [{ "pattern": "capnweb.com", "custom_domain": true }],
+	// Production is the apex only. Previews are a separate custom domain that is not
+	// production-enabled: `enabled: false` keeps `pr.capnweb.com` itself dark, while
+	// `previews_enabled: true` routes `<name>.pr.capnweb.com` to the matching Preview
+	// (so PR 257 is `https://257.pr.capnweb.com`). Omitting `previews_enabled` defaults
+	// it off, which is why `wrangler preview` was succeeding with empty URL arrays.
+	// `custom_domain` makes Cloudflare own the DNS and certificate for each pattern.
+	"routes": [
+		{ "pattern": "capnweb.com", "custom_domain": true },
+		{
+			"pattern": "pr.capnweb.com",
+			"custom_domain": true,
+			"enabled": false,
+			"previews_enabled": true
+		}
+	],
 
 	// No `*.workers.dev` copy. Canonical URLs, the sitemap and the links inside
 	// `/llms.txt` all name `https://capnweb.com` (see `site` in astro.config.ts), and a
 	// second origin serving the same pages with the same canonicals is a duplicate for
-	// crawlers and a link people paste by accident.
+	// crawlers and a link people paste by accident. Top-level `preview_urls` is the
+	// workers.dev version of the same switch and stays off for the same reason --
+	// Previews use the `pr.capnweb.com` custom domain above instead.
 	"workers_dev": false,
 
 	// A static site: no `main`, so there is no Worker script and every request is

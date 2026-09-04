@@ -980,21 +980,23 @@ fingerprinted assets a year.
 identifier, not a credential, and pinning it is what stops a deploy from an operator who can see
 several accounts landing in the wrong one -- wrangler refuses to guess and fails the deploy instead.
 
-`workers_dev` is off and `preview_urls` is on, and they are not the same switch. `workers_dev` is
-production's `capnweb-docs.<subdomain>.workers.dev` copy, which we do not want: every URL the build
-emits names `https://capnweb.com`, so a second live origin serving those same pages is a duplicate
-for crawlers and a link people paste by accident. `preview_urls` is what gives a **Preview** a
-hostname. With it off, `wrangler preview` still succeeds and still returns a Preview -- with an empty
-`urls` array, which is a deploy nobody can look at.
+`workers_dev` and top-level `preview_urls` are both off. Both would put a second origin on
+`*.workers.dev`, and every URL the build emits already names `https://capnweb.com`, so a live
+workers.dev copy is a duplicate for crawlers and a link people paste by accident. Previews get a
+hostname a different way: a second custom-domain route on `pr.capnweb.com` with `enabled: false`
+and `previews_enabled: true`. That keeps the bare `pr.capnweb.com` dark and routes
+`<name>.pr.capnweb.com` to the matching Preview. Without `previews_enabled`, `wrangler preview`
+still succeeds and still returns a Preview -- with an empty `urls` array, which is a deploy nobody
+can look at. Routes are applied by `wrangler deploy`, not by `wrangler preview`, so a production
+deploy is what turns the switch on.
 
 ## Previews
 
 Every pull request from a branch in this repo gets its own copy of the site at
 `https://<number>.pr.capnweb.com`, posted as a comment on the pull request and deleted when it
-closes. `.github/workflows/preview-docs.yml` uses
-[Worker Previews](https://developers.cloudflare.com/workers/previews/) -- `wrangler preview` rather
-than `wrangler deploy`, against the same Worker, so a Preview is a branch of `capnweb-docs` rather
-than a second Worker to operate.
+closes. `.github/workflows/preview-docs.yml` uses Worker Previews (`wrangler preview`) rather than
+`wrangler deploy`, against the same Worker, so a Preview is a branch of `capnweb-docs` rather than a
+second Worker to operate.
 
 Two details are load-bearing:
 
