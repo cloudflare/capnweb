@@ -12,7 +12,14 @@
 	// The site is the apex domain and nothing else. `custom_domain` makes Cloudflare
 	// own the DNS record and the certificate for it, so the record cannot drift away
 	// from the Worker by hand.
-	"routes": [{ "pattern": "capnweb.com", "custom_domain": true }],
+	"routes": [
+		{ "pattern": "capnweb.com", "custom_domain": true },
+		{
+			"pattern": "pr.capnweb.com",
+			"custom_domain": true,
+			"previews_enabled": true
+		}
+	],
 
 	// No `*.workers.dev` copy. Canonical URLs, the sitemap and the links inside
 	// `/llms.txt` all name `https://capnweb.com` (see `site` in astro.config.ts), and a
