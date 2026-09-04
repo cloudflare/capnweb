@@ -17,6 +17,7 @@
 		{
 			"pattern": "pr.capnweb.com",
 			"custom_domain": true,
+			"enabled": false,
 			"previews_enabled": true
 		}
 	],
