@@ -935,11 +935,11 @@ is worth repeating after any framework change.
 ## Deployment
 
 The site is `https://capnweb.com`, served from a Cloudflare Worker named `capnweb-docs` in the
-`capnweb` account. Production deploys via **Workers Builds** on the Cloudflare dashboard (not a
-GitHub Action): root `/`, build `pnpm --filter capnweb-docs build`, deploy
-`pnpx --filter capnweb-docs wrangler deploy`. The same build runs as a `build-docs` job on every
-pull request so a site that does not build fails the PR rather than the deploy, and every pull
-request from a branch in this repo also gets its own live copy -- see "Previews" below.
+`capnweb` account. Production and pull-request previews both deploy via **Workers Builds** on the
+Cloudflare dashboard (not a GitHub Action): root `/`, build `pnpm --filter capnweb-docs build`,
+deploy `pnpm --filter capnweb-docs exec wrangler deploy`. A `build-docs` job on every pull request
+still builds the site in GitHub Actions so a broken docs tree fails the PR before merge; the live
+preview URL comes from Workers Builds -- see "Previews" below.
 
 `pnpm --filter capnweb-docs build` emits a plain static site to `dist/`, deployable anywhere.
 `site` is `https://capnweb.com` unless `DOCS_SITE_URL` overrides it, and it is what canonical URLs,
@@ -982,34 +982,32 @@ deploy is what turns the switch on.
 
 ## Previews
 
-Every pull request from a branch in this repo gets its own copy of the site at
-`https://<number>.pr.capnweb.com`, posted as a comment on the pull request and deleted when it
-closes. `.github/workflows/preview-docs.yml` uses Worker Previews (`wrangler preview`) rather than
-`wrangler deploy`, against the same Worker, so a Preview is a branch of `capnweb-docs` rather than a
-second Worker to operate.
+Every pull request from a branch in this repo gets its own copy of the site via Workers Builds, on a
+hostname under `pr.capnweb.com` (branch name or PR number, depending on how the Build is configured),
+posted as a comment by the Cloudflare GitHub app. It is the same Worker as production, so a Preview
+is a branch of `capnweb-docs` rather than a second Worker to operate.
 
 Two details are load-bearing:
 
-- **The Preview URL is known before deployment.** The site bakes its origin into canonicals, OG
-  URLs, `robots.txt` and the sitemap, so `DOCS_SITE_URL` must be set before `astro build`. The
-  workflow checks Wrangler's returned URL against that origin before posting the Preview.
-- **`X-Robots-Tag: noindex` is appended to `dist/_headers`, not committed to `public/_headers`.** A
+- **The Preview origin is baked into the build.** The site puts its origin into canonicals, OG URLs,
+  `robots.txt` and the sitemap. Workers Builds should set `DOCS_SITE_URL` for non-production branches
+  to the Preview hostname before `astro build`, otherwise the Preview publishes a sitemap claiming to
+  be production.
+- **`X-Robots-Tag: noindex` belongs on Preview responses, not in committed `public/_headers`.** A
   Preview URL is public and this repo is public, so the pull request comment is a crawlable link to
   it. It is a header rather than a `Disallow` in `robots.txt` because disallowing the crawl would
   stop a crawler ever reading the `noindex` -- which is how staging sites end up indexed as bare
   URLs regardless. Committing it is not an option: that file ships to production too.
 
-Fork pull requests do not get a Preview. A `pull_request` run from a fork has no access to secrets,
-and `pull_request_target`, which would give it them, would be handing a contributor's build scripts
-a credential that can deploy the real site. They are still built by `build-docs` in `test.yml`.
+Fork pull requests do not get a Preview from this repo's secrets; they are still built by
+`build-docs` in `test.yml`. Previews are capped per Worker, and Cloudflare evicts the least recently
+deployed one at the cap.
 
-Previews are capped per Worker, and Cloudflare evicts the least recently deployed one at the cap, so
-the cleanup job is hygiene rather than a hard requirement. Locally, `wrangler preview --name <name>`
-does the same thing by hand; `wrangler preview delete --name <name>` removes it. Note that `--name`
-is a flag on both, not a positional -- the positional is the entry point script.
+Locally, `pnpm --filter capnweb-docs exec wrangler preview --name <name>` does the same thing by
+hand; `… wrangler preview delete --name <name>` removes it. Note that `--name` is a flag on both, not
+a positional -- the positional is the entry point script.
 
-Previews need a `wrangler` new enough to have the command, which is why the root pins 4.125.0. There
-is no `previews` block in `wrangler.jsonc` and there should not need to be: this Worker has no
+There is no `previews` block in `wrangler.jsonc` and there should not need to be: this Worker has no
 bindings, and the settings a static site does care about -- `assets`, `compatibility_date` -- are
 read from the top level for Previews too. If this site ever gains a binding, note that Previews do
 **not** inherit bindings from the top level; each one has to be declared under `previews`.

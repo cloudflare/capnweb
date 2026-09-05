@@ -26,8 +26,8 @@ The repo root `.npmrc` pins `@cloudflare` to the public registry so installs of
 npmrc maps that scope to an internal registry. Do not remove that line to "fix" a local registry
 preference.
 
-Production deploys via Workers Builds (`pnpm --filter capnweb-docs build` /
-`pnpx --filter capnweb-docs wrangler deploy`); PR previews use `.github/workflows/preview-docs.yml`.
+Production and PR preview deploys both go through Workers Builds
+(`pnpm --filter capnweb-docs build` / `pnpm --filter capnweb-docs exec wrangler deploy`).
 `README.md`, "Deployment" and "Previews", is the detail.
 
 `predev` and `prebuild` build the library, then run `bundle-size` and `playgrounds`. The playground
