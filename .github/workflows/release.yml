@@ -66,7 +66,7 @@ jobs:
             exit 1
           fi
 
-          gh workflow run cla.yml --ref "$head_ref" -f "pull_request=${PR_NUMBER}"
+          gh workflow run cla.yml --ref "$head_ref" --raw-field "pull_request=${PR_NUMBER}"
 
   prerelease:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.repository_owner == 'cloudflare' }}
@@ -93,4 +93,4 @@ jobs:
       - name: Modify package.json version
         run: pnpm exec tsx .github/version-script.ts
 
-      - run: pnpm publish -r --filter capnweb --filter capnweb-validate --tag beta --access public --no-git-checks
+      - run: pnpm publish --recursive --filter capnweb --filter capnweb-validate --tag beta --access public --no-git-checks

@@ -60,7 +60,7 @@ jobs:
           WRANGLER_OUTPUT_FILE_PATH: ${{ runner.temp }}/wrangler-output.json
         run: |
           pnpm --filter capnweb-docs exec wrangler preview --name "$PREVIEW_NAME"
-          jq -er --arg expected "$PREVIEW_URL" '
+          jq --exit-status --raw-output --arg expected "$PREVIEW_URL" '
             select(.type == "preview"
               and (.preview_urls[0] | rtrimstr("/")) == ($expected | rtrimstr("/"))
               and .deployment_urls[0])
@@ -82,9 +82,9 @@ jobs:
           id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
             --jq "[.[] | select(.user.type == \"Bot\" and (.body | startswith(\"$marker\")))] | first | .id // empty")
           if [ -n "$id" ]; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" --silent
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" --raw-field body="$body" --silent
           else
-            gh api -X POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$body" --silent
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --raw-field body="$body" --silent
           fi
 
   cleanup:

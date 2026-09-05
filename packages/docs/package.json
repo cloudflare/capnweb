@@ -8,10 +8,10 @@
   "scripts": {
     "playgrounds": "node scripts/build-playgrounds.mjs",
     "bundle-size": "node scripts/measure-bundle.mjs",
-    "predev": "pnpm -w run build && pnpm run bundle-size && pnpm run playgrounds",
+    "predev": "pnpm --workspace-root run build && pnpm run bundle-size && pnpm run playgrounds",
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "pnpm -w run build && pnpm run bundle-size && pnpm run playgrounds",
+    "prebuild": "pnpm --workspace-root run build && pnpm run bundle-size && pnpm run playgrounds",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",

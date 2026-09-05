@@ -45,7 +45,7 @@
     "test:bun": "bun test __tests__/bun.test.ts",
     "test:ci": "vitest run && bun test __tests__/bun.test.ts",
     "test:watch": "vitest",
-    "test:types": "tsc -p __type-tests__/tsconfig.json --noEmit",
+    "test:types": "tsc --project __type-tests__/tsconfig.json --noEmit",
     "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
