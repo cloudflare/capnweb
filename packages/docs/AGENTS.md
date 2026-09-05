@@ -21,16 +21,14 @@ pnpm --filter capnweb-docs check    # astro check: types, content collections
 pnpm --filter capnweb-docs lint:docs
 ```
 
-If `pnpm install` 404s on `@cloudflare/nimbus-docs`, your npmrc maps the `@cloudflare` scope to an
-internal registry and these packages are on the public one:
+The repo root `.npmrc` pins `@cloudflare` to the public registry so installs of
+`@cloudflare/nimbus-docs` (and other public `@cloudflare` packages) work even when a user-level
+npmrc maps that scope to an internal registry. Do not remove that line to "fix" a local registry
+preference.
 
-```sh
-npm_config_@cloudflare:registry=https://registry.npmjs.org pnpm install
-```
-
-Don't commit an `.npmrc` to work around it. Production deploys via Workers Builds
-(`pnpm --filter capnweb-docs build` / `pnpx --filter capnweb-docs wrangler deploy`); PR previews
-use `.github/workflows/preview-docs.yml`. `README.md`, "Deployment" and "Previews", is the detail.
+Production deploys via Workers Builds (`pnpm --filter capnweb-docs build` /
+`pnpx --filter capnweb-docs wrangler deploy`); PR previews use `.github/workflows/preview-docs.yml`.
+`README.md`, "Deployment" and "Previews", is the detail.
 
 `predev` and `prebuild` build the library, then run `bundle-size` and `playgrounds`. The playground
 bundler reads the library's **build output**, so that root build is required before demos show up.

@@ -36,13 +36,9 @@ into `public/playground/`. The examples no longer need to be running for the doc
 demos are inlined into the pages. To run one as a real Worker over a real network, see
 `examples/README.md`.
 
-**The `@cloudflare` scope may not resolve.** `@cloudflare/nimbus-docs` is on the public registry. A
-machine whose npmrc maps that scope to an internal registry gets a 404 on install; override it for
-the one command rather than committing an `.npmrc`:
-
-```sh
-npm_config_@cloudflare:registry=https://registry.npmjs.org pnpm install
-```
+**The `@cloudflare` scope is forced public.** `@cloudflare/nimbus-docs` lives on the public registry.
+The repo root `.npmrc` sets `@cloudflare:registry=https://registry.npmjs.org` so a user-level npmrc
+that maps the scope to an internal registry does not 404 the install. Leave that line alone.
 
 ## What Nimbus owns, and what we changed
 
