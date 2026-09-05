@@ -23,6 +23,7 @@ The following types can be passed over RPC, in arguments or return values:
 - `ReadableStream` and `WritableStream`, with automatic flow control (see
   [Streaming](/concepts/streaming/))
 - `URL`
+- `RegExp`
 - `Headers`, `Request`, and `Response` from the Fetch API
 
 ## Passed by reference
@@ -39,7 +40,6 @@ Anything passed by reference produces a **stub** on the far side, and stubs must
 These may be added in the future:
 
 - `Map` and `Set`
-- `RegExp`
 
 ## Intentionally not supported
 
