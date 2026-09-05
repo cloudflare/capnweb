@@ -30,27 +30,23 @@
   "publishConfig": {
     "access": "public"
   },
-  "workspaces": [
-    ".",
-    "packages/*",
-    "!packages/docs"
-  ],
+  "packageManager": "pnpm@10.15.1",
   "scripts": {
-    "build": "tsdown --config-loader native && node scripts/check-dist-ascii.mjs && npm run -w capnweb-validate build",
+    "build": "tsdown --config-loader native && node scripts/check-dist-ascii.mjs && pnpm --filter capnweb-validate build",
     "build:watch": "tsdown --config-loader native --watch",
-    "dev": "npm run build:watch",
-    "dev:docs": "npm run build && npm --prefix packages/docs run dev -- --port 4321",
-    "build:docs": "npm run build && npm --prefix packages/docs run build",
-    "deploy:docs": "npm run build:docs && wrangler deploy -c packages/docs/wrangler.jsonc",
+    "dev": "pnpm run build:watch",
+    "dev:docs": "pnpm run build && pnpm --filter capnweb-docs dev",
+    "build:docs": "pnpm --filter capnweb-docs build",
+    "deploy:docs": "pnpm run build:docs && pnpm --filter capnweb-docs exec wrangler deploy",
     "lint:md": "markdownlint-cli2 && node scripts/align-markdown-tables.mjs --check",
     "lint:md:fix": "node scripts/align-markdown-tables.mjs && markdownlint-cli2 --fix",
-    "setup": "npm install && npm --prefix packages/docs install && npm --prefix examples/worker-react/client install",
+    "setup": "pnpm install",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",
     "test:ci": "vitest run && bun test __tests__/bun.test.ts",
     "test:watch": "vitest",
     "test:types": "tsc -p __type-tests__/tsconfig.json --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "devDependencies": {
     "@changesets/changelog-github": "^0.5.2",
@@ -77,5 +73,13 @@
   "bugs": {
     "url": "https://github.com/cloudflare/capnweb/issues"
   },
-  "homepage": "https://capnweb.com"
+  "homepage": "https://capnweb.com",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp",
+      "workerd",
+      "@parcel/watcher"
+    ]
+  }
 }

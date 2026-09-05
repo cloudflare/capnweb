@@ -13,41 +13,36 @@ rules. This file is why the site is the way it is.
 
 ## Running it
 
-This package is **deliberately excluded from the repo's npm workspaces** (see `!packages/docs` in the
-root `package.json`). The docs site pulls in Astro, Vite and a few hundred transitive dependencies,
-and we don't want any of that hoisted into the tree that builds and tests the library itself. It
-therefore has its own `package-lock.json` and its own `node_modules`.
+This package is part of the repo's pnpm workspace (`pnpm-workspace.yaml`). Install once at the repo
+root; that pulls in the library, `capnweb-validate`, this site, and the React example client the
+playgrounds bundle.
 
 ```sh
-cd packages/docs
-npm install
+# from the repo root
+pnpm install
 
-npm run dev      # dev server at http://localhost:4321
-npm run build    # static output in ./dist
-npm run preview  # serve ./dist
-npm run check    # astro check (types + content collections)
+pnpm --filter capnweb-docs dev      # http://localhost:4321
+pnpm --filter capnweb-docs build    # static output in ./dist
+pnpm --filter capnweb-docs preview  # serve ./dist
+pnpm --filter capnweb-docs check    # astro check (types + content collections)
+
+# or the root shortcuts
+pnpm run dev:docs
+pnpm run build:docs
 ```
 
-`dev` and `build` are both preceded by `npm run playgrounds`, which bundles the examples into
-`public/playground/`. That step reads the library's **build output**, so run `npm run build` at the
-repo root first, or just use `npm run dev:docs` there, which does both.
-
-The examples no longer need to be running for the docs to work: their demos are bundled into the
-pages. To run one as a real Worker over a real network, see `examples/README.md`.
-
-Two things about installing, both of which have cost time:
+`dev` and `build` both run `pnpm -w run build` first (library + validate), then bundle the examples
+into `public/playground/`. The examples no longer need to be running for the docs to work: their
+demos are inlined into the pages. To run one as a real Worker over a real network, see
+`examples/README.md`.
 
 **The `@cloudflare` scope may not resolve.** `@cloudflare/nimbus-docs` is on the public registry. A
 machine whose npmrc maps that scope to an internal registry gets a 404 on install; override it for
 the one command rather than committing an `.npmrc`:
 
 ```sh
-npm_config_@cloudflare:registry=https://registry.npmjs.org npm install
+npm_config_@cloudflare:registry=https://registry.npmjs.org pnpm install
 ```
-
-**Wrangler is not a dependency here.** The starter lists one, at a version that resolves to an
-unpublished alpha of miniflare. The root's wrangler deploys this site, so the dependency is simply
-absent -- npm puts the root's on the path for scripts run from this directory anyway.
 
 ## What Nimbus owns, and what we changed
 
@@ -944,29 +939,28 @@ is worth repeating after any framework change.
 ## Deployment
 
 The site is `https://capnweb.com`, served from a Cloudflare Worker named `capnweb-docs` in the
-`capnweb` account. Every push to `main` redeploys it: `.github/workflows/deploy-docs.yml` builds the
-library, builds the site, and runs `wrangler deploy`. The same build runs as a `build-docs` job on
-every pull request, so a site that does not build fails the PR rather than the deploy, and every
-pull request from a branch in this repo also gets its own live copy -- see "Previews" below.
+`capnweb` account. Production deploys via **Workers Builds** on the Cloudflare dashboard (not a
+GitHub Action): root `/`, build `pnpm --filter capnweb-docs build`, deploy
+`pnpx --filter capnweb-docs wrangler deploy`. The same build runs as a `build-docs` job on every
+pull request so a site that does not build fails the PR rather than the deploy, and every pull
+request from a branch in this repo also gets its own live copy -- see "Previews" below.
 
-`npm run build` emits a plain static site to `dist/`, deployable anywhere. `site` is
-`https://capnweb.com` unless `DOCS_SITE_URL` overrides it, and it is what canonical URLs, the
-absolute OG image URLs, `robots.txt`, the sitemap and the links inside `/llms.txt` are all built
+`pnpm --filter capnweb-docs build` emits a plain static site to `dist/`, deployable anywhere.
+`site` is `https://capnweb.com` unless `DOCS_SITE_URL` overrides it, and it is what canonical URLs,
+the absolute OG image URLs, `robots.txt`, the sitemap and the links inside `/llms.txt` are all built
 from -- which is why a preview build has to override it rather than publish a sitemap claiming to be
 production:
 
 ```sh
-DOCS_SITE_URL=https://example.com npm run build
+DOCS_SITE_URL=https://example.com pnpm --filter capnweb-docs build
 ```
 
 `wrangler.jsonc` deploys that output to a Cloudflare Worker. There is no `main`, so no Worker script
 runs: every request is served from the asset store, which is all a static site with in-browser
-playgrounds needs. Deploy by hand from the **repo root**, not from here -- the playgrounds vendor
-`dist/index.js` and the prose substitutes the measured bundle size, so the library has to be built
-first and only the root script does both:
+playgrounds needs. Deploy by hand from the **repo root**:
 
 ```sh
-npm run deploy:docs   # at the repo root: library build, then site build, then wrangler deploy
+pnpm run deploy:docs   # library + site build, then wrangler deploy
 ```
 
 `public/_headers` is part of the deployment rather than decoration. Workers' default for static
