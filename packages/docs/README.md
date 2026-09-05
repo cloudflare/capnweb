@@ -13,41 +13,32 @@ rules. This file is why the site is the way it is.
 
 ## Running it
 
-This package is **deliberately excluded from the repo's npm workspaces** (see `!packages/docs` in the
-root `package.json`). The docs site pulls in Astro, Vite and a few hundred transitive dependencies,
-and we don't want any of that hoisted into the tree that builds and tests the library itself. It
-therefore has its own `package-lock.json` and its own `node_modules`.
+This package is part of the repo's pnpm workspace (`pnpm-workspace.yaml`). Install once at the repo
+root; that pulls in the library, `capnweb-validate`, this site, and the React example client the
+playgrounds bundle.
 
 ```sh
-cd packages/docs
-npm install
+# from the repo root
+pnpm install
 
-npm run dev      # dev server at http://localhost:4321
-npm run build    # static output in ./dist
-npm run preview  # serve ./dist
-npm run check    # astro check (types + content collections)
+pnpm --filter capnweb-docs dev      # http://localhost:4321
+pnpm --filter capnweb-docs build    # static output in ./dist
+pnpm --filter capnweb-docs preview  # serve ./dist
+pnpm --filter capnweb-docs check    # astro check (types + content collections)
+
+# or the root shortcuts
+pnpm run dev:docs
+pnpm run build:docs
 ```
 
-`dev` and `build` are both preceded by `npm run playgrounds`, which bundles the examples into
-`public/playground/`. That step reads the library's **build output**, so run `npm run build` at the
-repo root first, or just use `npm run dev:docs` there, which does both.
+`dev` and `build` both run `pnpm --workspace-root run build` first (library + validate), then bundle
+the examples into `public/playground/`. The examples no longer need to be running for the docs to
+work: their demos are inlined into the pages. To run one as a real Worker over a real network, see
+`examples/README.md`.
 
-The examples no longer need to be running for the docs to work: their demos are bundled into the
-pages. To run one as a real Worker over a real network, see `examples/README.md`.
-
-Two things about installing, both of which have cost time:
-
-**The `@cloudflare` scope may not resolve.** `@cloudflare/nimbus-docs` is on the public registry. A
-machine whose npmrc maps that scope to an internal registry gets a 404 on install; override it for
-the one command rather than committing an `.npmrc`:
-
-```sh
-npm_config_@cloudflare:registry=https://registry.npmjs.org npm install
-```
-
-**Wrangler is not a dependency here.** The starter lists one, at a version that resolves to an
-unpublished alpha of miniflare. The root's wrangler deploys this site, so the dependency is simply
-absent -- npm puts the root's on the path for scripts run from this directory anyway.
+**The `@cloudflare` scope is forced public.** `@cloudflare/nimbus-docs` lives on the public registry.
+The repo root `.npmrc` sets `@cloudflare:registry=https://registry.npmjs.org` so a user-level npmrc
+that maps the scope to an internal registry does not 404 the install. Leave that line alone.
 
 ## What Nimbus owns, and what we changed
 
@@ -944,29 +935,28 @@ is worth repeating after any framework change.
 ## Deployment
 
 The site is `https://capnweb.com`, served from a Cloudflare Worker named `capnweb-docs` in the
-`capnweb` account. Every push to `main` redeploys it: `.github/workflows/deploy-docs.yml` builds the
-library, builds the site, and runs `wrangler deploy`. The same build runs as a `build-docs` job on
-every pull request, so a site that does not build fails the PR rather than the deploy, and every
-pull request from a branch in this repo also gets its own live copy -- see "Previews" below.
+`capnweb` account. Production and pull-request previews both deploy via **Workers Builds** on the
+Cloudflare dashboard (not a GitHub Action): root `/`, build `pnpm --filter capnweb-docs build`,
+deploy `pnpm --filter capnweb-docs exec wrangler deploy`. A `build-docs` job on every pull request
+still builds the site in GitHub Actions so a broken docs tree fails the PR before merge; the live
+preview URL comes from Workers Builds -- see "Previews" below.
 
-`npm run build` emits a plain static site to `dist/`, deployable anywhere. `site` is
-`https://capnweb.com` unless `DOCS_SITE_URL` overrides it, and it is what canonical URLs, the
-absolute OG image URLs, `robots.txt`, the sitemap and the links inside `/llms.txt` are all built
+`pnpm --filter capnweb-docs build` emits a plain static site to `dist/`, deployable anywhere.
+`site` is `https://capnweb.com` unless `DOCS_SITE_URL` overrides it, and it is what canonical URLs,
+the absolute OG image URLs, `robots.txt`, the sitemap and the links inside `/llms.txt` are all built
 from -- which is why a preview build has to override it rather than publish a sitemap claiming to be
 production:
 
 ```sh
-DOCS_SITE_URL=https://example.com npm run build
+DOCS_SITE_URL=https://example.com pnpm --filter capnweb-docs build
 ```
 
 `wrangler.jsonc` deploys that output to a Cloudflare Worker. There is no `main`, so no Worker script
 runs: every request is served from the asset store, which is all a static site with in-browser
-playgrounds needs. Deploy by hand from the **repo root**, not from here -- the playgrounds vendor
-`dist/index.js` and the prose substitutes the measured bundle size, so the library has to be built
-first and only the root script does both:
+playgrounds needs. Deploy by hand from the **repo root**:
 
 ```sh
-npm run deploy:docs   # at the repo root: library build, then site build, then wrangler deploy
+pnpm run deploy:docs   # library + site build, then wrangler deploy
 ```
 
 `public/_headers` is part of the deployment rather than decoration. Workers' default for static
@@ -992,34 +982,32 @@ deploy is what turns the switch on.
 
 ## Previews
 
-Every pull request from a branch in this repo gets its own copy of the site at
-`https://<number>.pr.capnweb.com`, posted as a comment on the pull request and deleted when it
-closes. `.github/workflows/preview-docs.yml` uses Worker Previews (`wrangler preview`) rather than
-`wrangler deploy`, against the same Worker, so a Preview is a branch of `capnweb-docs` rather than a
-second Worker to operate.
+Every pull request from a branch in this repo gets its own copy of the site via Workers Builds, on a
+hostname under `pr.capnweb.com` (branch name or PR number, depending on how the Build is configured),
+posted as a comment by the Cloudflare GitHub app. It is the same Worker as production, so a Preview
+is a branch of `capnweb-docs` rather than a second Worker to operate.
 
 Two details are load-bearing:
 
-- **The Preview URL is known before deployment.** The site bakes its origin into canonicals, OG
-  URLs, `robots.txt` and the sitemap, so `DOCS_SITE_URL` must be set before `astro build`. The
-  workflow checks Wrangler's returned URL against that origin before posting the Preview.
-- **`X-Robots-Tag: noindex` is appended to `dist/_headers`, not committed to `public/_headers`.** A
+- **The Preview origin is baked into the build.** The site puts its origin into canonicals, OG URLs,
+  `robots.txt` and the sitemap. Workers Builds should set `DOCS_SITE_URL` for non-production branches
+  to the Preview hostname before `astro build`, otherwise the Preview publishes a sitemap claiming to
+  be production.
+- **`X-Robots-Tag: noindex` belongs on Preview responses, not in committed `public/_headers`.** A
   Preview URL is public and this repo is public, so the pull request comment is a crawlable link to
   it. It is a header rather than a `Disallow` in `robots.txt` because disallowing the crawl would
   stop a crawler ever reading the `noindex` -- which is how staging sites end up indexed as bare
   URLs regardless. Committing it is not an option: that file ships to production too.
 
-Fork pull requests do not get a Preview. A `pull_request` run from a fork has no access to secrets,
-and `pull_request_target`, which would give it them, would be handing a contributor's build scripts
-a credential that can deploy the real site. They are still built by `build-docs` in `test.yml`.
+Fork pull requests do not get a Preview from this repo's secrets; they are still built by
+`build-docs` in `test.yml`. Previews are capped per Worker, and Cloudflare evicts the least recently
+deployed one at the cap.
 
-Previews are capped per Worker, and Cloudflare evicts the least recently deployed one at the cap, so
-the cleanup job is hygiene rather than a hard requirement. Locally, `wrangler preview --name <name>`
-does the same thing by hand; `wrangler preview delete --name <name>` removes it. Note that `--name`
-is a flag on both, not a positional -- the positional is the entry point script.
+Locally, `pnpm --filter capnweb-docs exec wrangler preview --name <name>` does the same thing by
+hand; `… wrangler preview delete --name <name>` removes it. Note that `--name` is a flag on both, not
+a positional -- the positional is the entry point script.
 
-Previews need a `wrangler` new enough to have the command, which is why the root pins 4.125.0. There
-is no `previews` block in `wrangler.jsonc` and there should not need to be: this Worker has no
+There is no `previews` block in `wrangler.jsonc` and there should not need to be: this Worker has no
 bindings, and the settings a static site does care about -- `assets`, `compatibility_date` -- are
 read from the top level for Previews too. If this site ever gains a binding, note that Previews do
 **not** inherit bindings from the top level; each one has to be declared under `previews`.

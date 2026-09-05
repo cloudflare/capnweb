@@ -90,7 +90,7 @@
     "url": "https://github.com/cloudflare/capnweb"
   },
   "dependencies": {
-    "typescript": ">=5.7.0 <7",
+    "typescript": "5.9.3",
     "unplugin": "^3.0.0"
   },
   "peerDependenciesMeta": {

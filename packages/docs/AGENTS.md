@@ -11,33 +11,27 @@ visual.
 
 ## Working in here
 
-This package is **excluded from the repo's npm workspaces** and has its own `package-lock.json` and
-`node_modules`, so install from this directory:
+This package is part of the repo pnpm workspace. Install once at the repo root:
 
 ```sh
-cd packages/docs
-npm install
-npm run dev      # http://localhost:4321
-npm run build    # static output in ./dist
-npm run check    # astro check: types, content collections
-npm run lint:docs
+pnpm install
+pnpm --filter capnweb-docs dev      # http://localhost:4321
+pnpm --filter capnweb-docs build    # static output in ./dist
+pnpm --filter capnweb-docs check    # astro check: types, content collections
+pnpm --filter capnweb-docs lint:docs
 ```
 
-If `npm install` 404s on `@cloudflare/nimbus-docs`, your npmrc maps the `@cloudflare` scope to an
-internal registry and these packages are on the public one:
+The repo root `.npmrc` pins `@cloudflare` to the public registry so installs of
+`@cloudflare/nimbus-docs` (and other public `@cloudflare` packages) work even when a user-level
+npmrc maps that scope to an internal registry. Do not remove that line to "fix" a local registry
+preference.
 
-```sh
-npm_config_@cloudflare:registry=https://registry.npmjs.org npm install
-```
-
-Don't commit an `.npmrc` to work around it, and don't add `wrangler` as a dependency here: the
-version the starter asks for wants an unpublished miniflare. The root's wrangler deploys this, and
-previews it -- `npm run deploy:docs` at the root, and `.github/workflows/` for the automated ones.
+Production and PR preview deploys both go through Workers Builds
+(`pnpm --filter capnweb-docs build` / `pnpm --filter capnweb-docs exec wrangler deploy`).
 `README.md`, "Deployment" and "Previews", is the detail.
 
-`predev` and `prebuild` run `bundle-size` and `playgrounds`. The playground bundler reads the
-library's **build output**, so a change under the repo's `src/` needs `npm run build` at the root
-before it shows up on an examples page. `npm run dev:docs` at the root does both.
+`predev` and `prebuild` build the library, then run `bundle-size` and `playgrounds`. The playground
+bundler reads the library's **build output**, so that root build is required before demos show up.
 
 ## File layout
 
