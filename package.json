@@ -40,7 +40,6 @@
     "deploy:docs": "pnpm run build:docs && pnpm --filter capnweb-docs exec wrangler deploy",
     "lint:md": "markdownlint-cli2 && node scripts/align-markdown-tables.mjs --check",
     "lint:md:fix": "node scripts/align-markdown-tables.mjs && markdownlint-cli2 --fix",
-    "setup": "pnpm install",
     "test": "vitest run",
     "test:bun": "bun test __tests__/bun.test.ts",
     "test:ci": "vitest run && bun test __tests__/bun.test.ts",
