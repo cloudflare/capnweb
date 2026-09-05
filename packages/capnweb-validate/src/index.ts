@@ -11,12 +11,16 @@ type AnyMethod = (this: unknown, ...args: any[]) => unknown;
 // Optional `@validateRpc<TSurface>()` arg: the class instance must satisfy
 // TSurface, and the transform uses TSurface as the exact RPC surface. No arg =>
 // `unknown`, so any class is accepted and the transform uses the class surface.
+//
+// `context` is optional and the class is returned so the same marker works as a
+// plain wrapper for codebases that can't enable decorators:
+// `export default validateRpc<TSurface>()(MyApi)`.
 type ClassDecoratorMarker<TSurface = unknown> = <
   TClass extends abstract new (...args: any[]) => TSurface
 >(
   value: TClass,
-  context: ClassDecoratorContext<TClass>
-) => void | TClass;
+  context?: ClassDecoratorContext<TClass>
+) => TClass;
 
 type MethodDecoratorMarker = <This, Value extends AnyMethod>(
   value: Value,
@@ -29,14 +33,34 @@ type LegacyMethodDecoratorMarker = (
   descriptor: PropertyDescriptor
 ) => void;
 
+// `static { validateRpc({ skip: ["raw"] }); }`: the static block names the
+// class, so the skip names are only checked by the transform.
+export function validateRpc(options: { skip: readonly string[] }): void;
+// `static { validateRpc<TSurface>({ skip: ["raw"] }); }`: an explicit surface
+// gives the skip names a type to check against, which the no-argument form has
+// no way to name.
+export function validateRpc<TSurface>(options: {
+  skip: readonly (keyof TSurface & string)[];
+}): void;
+// Serves `@validateRpc` and the wrapper form `validateRpc(MyApi)`: the class is
+// argument 0 either way, and returning it is legal for a class decorator.
 export function validateRpc<TClass extends AnyClass = AnyClass>(
   value: TClass,
-  context: ClassDecoratorContext<TClass>
-): void | TClass;
-export function validateRpc<TSurface = unknown>(): ClassDecoratorMarker<TSurface>;
-export function validateRpc(
-  ...args: unknown[]
-): void | ClassDecoratorMarker {
+  context?: ClassDecoratorContext<TClass>
+): TClass;
+// Wrapper-form equivalent of `@skipRpcValidation()`, which is a method
+// decorator and so out of reach for codebases that can't enable decorators.
+// The transform reads the array literal, so it must be written inline.
+export function validateRpc<TClass extends AnyClass>(
+  value: TClass,
+  options: { skip: readonly (keyof InstanceType<TClass> & string)[] }
+): TClass;
+// The factory form `validateRpc<TSurface>()(MyApi)`, and the static-block form
+// `static { validateRpc(); }`, which names its class and discards the result.
+export function validateRpc<
+  TSurface = unknown
+>(): ClassDecoratorMarker<TSurface>;
+export function validateRpc(...args: unknown[]): void | ClassDecoratorMarker {
   return uncompiledDecoratorMarker(args);
 }
 
@@ -64,8 +88,8 @@ export function skipRpcValidation(
 ): void | (MethodDecoratorMarker & LegacyMethodDecoratorMarker) {
   // Decorator marker read by the transform. Runtime behavior is intentionally
   // a no-op so decorated methods behave normally after TypeScript lowers them.
-  if (args.length === 0) return (() => {}) as MethodDecoratorMarker &
-    LegacyMethodDecoratorMarker;
+  if (args.length === 0)
+    return (() => {}) as MethodDecoratorMarker & LegacyMethodDecoratorMarker;
 }
 
 function uncompiledDecoratorMarker(
