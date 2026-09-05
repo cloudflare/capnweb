@@ -31,9 +31,9 @@ pnpm run dev:docs
 pnpm run build:docs
 ```
 
-`dev` and `build` both run `pnpm --workspace-root run build` first (library + validate), then bundle the examples
-into `public/playground/`. The examples no longer need to be running for the docs to work: their
-demos are inlined into the pages. To run one as a real Worker over a real network, see
+`dev` and `build` both run `pnpm --workspace-root run build` first (library + validate), then bundle
+the examples into `public/playground/`. The examples no longer need to be running for the docs to
+work: their demos are inlined into the pages. To run one as a real Worker over a real network, see
 `examples/README.md`.
 
 **The `@cloudflare` scope is forced public.** `@cloudflare/nimbus-docs` lives on the public registry.
