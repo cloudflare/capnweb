@@ -2993,11 +2993,15 @@ describe("WritableStream over RPC", () => {
     await rpcPromise;
   });
 
-  it("applies backpressure when custom transport omits stream message size", async () => {
+  it.each([
+    ["jsonCompatible", "x".repeat(40000)],
+    ["structuredClonable", new RegExp("x".repeat(40000), "gi")],
+  ] as const)("applies backpressure when custom transport omits stream message size (%s)",
+      async (encodingLevel, chunk) => {
     let writesReceived = 0;
     let closeReceived = false;
 
-    let stream = new WritableStream<string>({
+    let stream = new WritableStream<string | RegExp>({
       write(chunk) { writesReceived++; },
       close() { closeReceived = true; }
     });
@@ -3005,9 +3009,8 @@ describe("WritableStream over RPC", () => {
     let writesSent = 0;
 
     class StreamReceiver extends RpcTarget {
-      async receiveStream(stream: WritableStream<string>) {
+      async receiveStream(stream: WritableStream<string | RegExp>) {
         let writer = stream.getWriter();
-        let chunk = "x".repeat(40000);
         for (let i = 0; i < 20; i++) {
           writesSent++;
           await writer.write(chunk);
@@ -3016,8 +3019,8 @@ describe("WritableStream over RPC", () => {
       }
     }
 
-    let clientTransport = new ObjectTestTransport();
-    let serverTransport = new ObjectTestTransport(clientTransport);
+    let clientTransport = new ObjectTestTransport(undefined, encodingLevel);
+    let serverTransport = new ObjectTestTransport(clientTransport, encodingLevel);
     let client = new RpcSession<StreamReceiver>(clientTransport);
     new RpcSession(serverTransport, new StreamReceiver());
     using clientStub = client.getRemoteMain();

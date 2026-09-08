@@ -120,6 +120,10 @@ function estimateEncodedSize(value: unknown, seen?: WeakSet<object>, depth: numb
         return ESTIMATED_BINARY_OVERHEAD + value.size;
       }
       if (value instanceof Date) return 16;
+      if (value instanceof RegExp) {
+        return ESTIMATED_OBJECT_OVERHEAD + estimateStringSize(value.source) +
+            estimateStringSize(value.flags);
+      }
 
       // `seen` is only ever added to, never removed, so it dedupes by object identity across the
       // entire traversal rather than just along the current path. This is intentional: it keeps the
