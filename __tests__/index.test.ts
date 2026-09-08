@@ -4211,3 +4211,66 @@ describe("deserialization and transport correctness", () => {
     expect(sentReason).toBe("a".repeat(MAX_CLOSE_REASON_BYTES - 1));
   });
 });
+
+describe("restored numeric byte maps", () => {
+  it("restores contiguous bytes including both boundaries", () => {
+    expect(deserialize('["bytes",{"2":255,"0":0,"1":123}]'))
+        .toEqual(new Uint8Array([0, 123, 255]));
+  });
+
+  it("restores empty bytes", () => {
+    expect(deserialize('["bytes",{}]')).toEqual(new Uint8Array());
+  });
+
+  it.each([
+    {"0": 123, "2": 34},
+    {"1": 123},
+    {"00": 123},
+    {"0": -1},
+    {"0": 256},
+    {"0": 1.5},
+    {"0": "123"},
+    {"0": null},
+    {"data": 123},
+    {"0": 123, "length": 1},
+    [123],
+    null,
+  ])("rejects malformed byte payload %j", (payload) => {
+    expect(() => deserialize(JSON.stringify(["bytes", payload])))
+        .toThrow("unknown special value");
+  });
+
+  it("restores a JSON-persisted byte tuple and reserializes it canonically", () => {
+    let original = new TextEncoder().encode('{"success":true}');
+    let persisted = JSON.stringify({body: ["bytes", original]});
+    expect(JSON.parse(persisted).body[1]).not.toBeInstanceOf(Uint8Array);
+    let restored = deserialize(persisted);
+    expect(restored).toEqual({body: original});
+    let continued = deserialize(serialize(restored)) as {body: Uint8Array};
+    expect(continued.body).toBeInstanceOf(Uint8Array);
+    expect(new Uint8Array(continued.body)).toEqual(original);
+  });
+});
+
+it("continues RPC calls after raw bytes cross a JSON boundary", async () => {
+  class JsonByteTransport extends ObjectTestTransport {
+    send(message: unknown): void {
+      super.send(JSON.parse(JSON.stringify(message)));
+    }
+  }
+  class EchoBytes extends RpcTarget {
+    echo(bytes: Uint8Array): Uint8Array {
+      expect(bytes).toBeInstanceOf(Uint8Array);
+      return bytes;
+    }
+  }
+  let clientTransport = new JsonByteTransport(undefined, "jsonCompatibleWithBytes");
+  let serverTransport = new JsonByteTransport(clientTransport, "jsonCompatibleWithBytes");
+  let client = new RpcSession<EchoBytes>(clientTransport);
+  new RpcSession(serverTransport, new EchoBytes());
+  using stub = client.getRemoteMain();
+  expect(await stub.echo(new Uint8Array([123, 34, 255])))
+      .toEqual(new Uint8Array([123, 34, 255]));
+  expect(await stub.echo(new Uint8Array([0, 1])))
+      .toEqual(new Uint8Array([0, 1]));
+});

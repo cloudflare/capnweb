@@ -863,6 +863,18 @@ export class Evaluator {
                 bytes[i] = bs.charCodeAt(i);
               }
             }
+          } else if (value[1] !== null && typeof value[1] === "object" &&
+                     (Object.getPrototypeOf(value[1]) === Object.prototype ||
+                      Object.getPrototypeOf(value[1]) === null)) {
+            // JSON persistence can turn a Uint8Array into an object of indexed bytes.
+            // Validate before conversion: Uint8Array.from() would truncate invalid values.
+            let entries = Object.entries(value[1]);
+            if (!entries.every(([key, byte], index) =>
+                key === String(index) && typeof byte === "number" &&
+                Number.isInteger(byte) && byte >= 0 && byte <= 255)) {
+              break;
+            }
+            bytes = Uint8Array.from(entries.map(([, byte]) => byte as number));
           } else {
             break;
           }
