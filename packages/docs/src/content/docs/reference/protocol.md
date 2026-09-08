@@ -357,6 +357,21 @@ bound parsing cost.
 
 A JavaScript `Date` value. The number is milliseconds since the Unix epoch.
 
+### regexp
+
+```json
+["regexp", source, flags?]
+```
+
+A JavaScript `RegExp` value. `source` and `flags` are the strings from the regular expression's
+`source` and `flags` properties. The receiver reconstructs the value via `new RegExp(source, flags)`.
+`flags` is omitted when the expression has no flags. For example:
+
+```json
+["regexp", "foo\\d+", "gi"]
+["regexp", "^bar$"]
+```
+
 ### error
 
 ```json
