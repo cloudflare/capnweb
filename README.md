@@ -156,7 +156,7 @@ Guides and reference:
 To run the site locally, with both examples embedded as live in-browser playgrounds:
 
 ```sh
-cd packages/docs && npm install && npm run dev
+pnpm install && pnpm run dev:docs
 ```
 
 ## Examples

@@ -15,60 +15,51 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
-          cache: "npm"
+          cache: "pnpm"
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Lint Markdown
-        run: npm run lint:md
+        run: pnpm run lint:md
 
-  # The docs site is deployed from main by deploy-docs.yml, so without this the
-  # first place its build ever runs is the deploy. Fail it on the pull request
-  # instead.
+  # Production deploys via Workers Builds. Fail the docs build on the PR rather
+  # than discovering it only after merge.
   build-docs:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v7
         with:
-          # Same full history the deploy uses. Each page's "Updated" date comes from
-          # `git log -1 --format=%at <file>`, and in a shallow clone that resolves to
-          # the one commit that was fetched -- so every page would claim to have been
-          # updated at the same moment, and this job would be checking a build that is
-          # not the one main deploys.
+          # Same full history production builds use. Each page's "Updated" date
+          # comes from `git log -1 --format=%at <file>`, and in a shallow clone
+          # that resolves to the one commit that was fetched.
           fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
-          cache: "npm"
-          # packages/docs is excluded from the workspaces and the React example's
-          # client is its own install, so both have lockfiles the root one does not
-          # cover.
-          cache-dependency-path: |
-            package-lock.json
-            packages/docs/package-lock.json
-            examples/worker-react/client/package-lock.json
+          cache: "pnpm"
 
-      # The docs build bundles each example's real source, so the React example's
-      # client needs its own node_modules for esbuild to resolve react out of.
       - name: Install dependencies
-        run: |
-          npm ci
-          npm ci --prefix packages/docs
-          npm ci --prefix examples/worker-react/client
+        run: pnpm install --frozen-lockfile
 
       - name: Build docs
-        run: npm run build:docs
+        run: pnpm --filter capnweb-docs build
 
       - name: Check docs
-        run: npm --prefix packages/docs run check
+        run: pnpm --filter capnweb-docs check
 
   test:
     runs-on: ubuntu-latest
@@ -79,23 +70,26 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: "24"
-          cache: "npm"
+          cache: "pnpm"
 
       - name: Setup Bun
-        run: npm install -g bun
+        run: npm install --global bun
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build project
-        run: npm run build
+        run: pnpm run build
 
       - name: Run tests
-        run: npm run test:ci
+        run: pnpm run test:ci
 
       - name: Run type tests
-        run: npm run test:types
+        run: pnpm run test:types

@@ -8,10 +8,10 @@
   "scripts": {
     "playgrounds": "node scripts/build-playgrounds.mjs",
     "bundle-size": "node scripts/measure-bundle.mjs",
-    "predev": "npm run bundle-size && npm run playgrounds",
+    "predev": "pnpm --workspace-root run build && pnpm run bundle-size && pnpm run playgrounds",
     "dev": "astro dev",
     "start": "astro dev",
-    "prebuild": "npm run bundle-size && npm run playgrounds",
+    "prebuild": "pnpm --workspace-root run build && pnpm run bundle-size && pnpm run playgrounds",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check",
@@ -38,8 +38,10 @@
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
     "@tailwindcss/vite": "^4.1.4",
+    "esbuild": "^0.28.0",
     "pagefind": "^1.5.2",
     "tailwindcss": "^4.1.4",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "wrangler": "4.125.0"
   }
 }
