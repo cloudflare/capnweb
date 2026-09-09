@@ -4227,3 +4227,44 @@ describe("deserialization and transport correctness", () => {
     expect(sentReason).toBe("a".repeat(MAX_CLOSE_REASON_BYTES - 1));
   });
 });
+
+describe("settled import references", () => {
+  // Regression: ImportTableEntry.resolve() stores `resolution` and immediately calls
+  // sendRelease(), so the import id is dead on both sides -- but the entry keeps `importId`,
+  // because the release accounting names the id through it. getImport() then still handed out
+  // that dead id, so passing the settled promise object into a later message re-serialized a
+  // released id. The peer could not find it and threw inside readLoop, and because readLoop is
+  // wrapped in a single session-wide `.catch(err => this.abort(err))`, a call-level fault
+  // destroyed the entire session.
+  //
+  // dispose(), abort() and onBroken() all already branch on `resolution`; getImport() did not.
+  it("does not cite a released import id after the reference has settled", async () => {
+    let harness = new TestHarness(new TestTarget());
+
+    // Awaiting settles the entry: the resolution is stored and the import is released.
+    let promise = harness.stub.returnNumber(7);
+    await promise;
+
+    // Passing the same *promise object* (not its awaited value) as an argument is what
+    // re-serialized the now-dead id.
+    expect(await harness.stub.square(promise)).toBe(49);
+
+    // The load-bearing assertion: a failing call would be tolerable, a dead session is not.
+    expect(await harness.stub.returnNumber(3)).toBe(3);
+
+    harness.stub.dispose();
+  });
+
+  // A guard that cleared `importId` instead of gating its use would stop the release
+  // accounting naming the id, leaking the peer's exports.
+  it("still releases settled imports by id", async () => {
+    let harness = new TestHarness(new TestTarget());
+
+    await harness.stub.returnNumber(1);
+    await harness.stub.returnNumber(2);
+
+    expect(await harness.stub.returnNumber(3)).toBe(3);
+
+    harness.stub.dispose();
+  });
+});
