@@ -45,13 +45,13 @@ fonts/                       # build-time only, for the OG cards. Not under publ
 scripts/
 ├── build-playgrounds.mjs    # bundles each example's worker + client into public/playground/
 ├── measure-bundle.mjs       # writes src/generated/bundle-size.json
-└── mdast-bundle-size.mjs    # Sätteri plugin: %BUNDLE_SIZE% in .md bodies
+└── mdast-bundle-size.mjs    # Sätteri plugin: %BUNDLE_SIZE% in .mdx bodies
 src/
 ├── components.ts            # MDX globals registry -- every component used in .mdx must be listed
 ├── components/              # ours: Hero, Features, NavList, Playground, Prose, and
 │                            #       canvas-hero/ (the landing figure and its harness)
 │   └── ui/<slug>/           # from the Nimbus registry, plus AgentDirective, Header, Render
-├── content/docs/**.{md,mdx} # the pages, one directory per sidebar group
+├── content/docs/**/*.mdx    # the pages, one directory per sidebar group
 ├── content.config.ts        # docsCollection() + partialsCollection() + the %BUNDLE_SIZE% transform
 ├── examples.ts              # the single list of playground examples, read by pages and bundler
 ├── generated/               # bundle-size.json, written by prebuild. Gitignored.
@@ -104,7 +104,7 @@ what it is first.
 
 | Goal                      | Action                                                                                                                 |
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| New doc page              | `src/content/docs/<group>/<slug>.md`, with `sidebar.order`. The group autogenerates.                                   |
+| New doc page              | `src/content/docs/<group>/<slug>.mdx`, with `sidebar.order`. The group autogenerates.                                  |
 | New sidebar group         | A directory under `src/content/docs/` and an `autogenerate` entry in `astro.config.ts`.                                |
 | Off-site sidebar link     | Give the group an `items:` array: `{ autogenerate }` first, then `{ label, link }`. Nimbus adds `target="_blank"`.     |
 | New partial               | `src/content/partials/<slug>.mdx` (the collection is registered; there are none yet), then `<Render file="<slug>" />`. |

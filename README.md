@@ -45,7 +45,7 @@ import { RpcTarget, newWebSocketRpcSession } from "capnweb";
 ```
 
 To use `using` declarations, your `tsconfig.json` needs `"target": "esnext"` and matching `lib`s.
-See [Installation](packages/docs/src/content/docs/start/installation.md).
+See [Installation](packages/docs/src/content/docs/start/installation.mdx).
 
 ## Example
 
@@ -114,44 +114,44 @@ under [`packages/docs/`](packages/docs/), and every page is readable as Markdown
 
 Start here:
 
-| Page                                                                       | What it covers                                       |
-| -------------------------------------------------------------------------- | ---------------------------------------------------- |
-| [Introduction](packages/docs/src/content/docs/start/introduction.md)       | What Cap'n Web is and why object capabilities matter |
-| [Quickstart](packages/docs/src/content/docs/start/quickstart.md)           | A working client and server                          |
-| [Pipelining tour](packages/docs/src/content/docs/start/pipelining-tour.md) | The part that makes it fast                          |
-| [How it compares](packages/docs/src/content/docs/guides/comparisons.md)    | Against tRPC, JSON-RPC, GraphQL and Cap'n Proto      |
+| Page                                                                        | What it covers                                       |
+| --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [Introduction](packages/docs/src/content/docs/start/introduction.mdx)       | What Cap'n Web is and why object capabilities matter |
+| [Quickstart](packages/docs/src/content/docs/start/quickstart.mdx)           | A working client and server                          |
+| [Pipelining tour](packages/docs/src/content/docs/start/pipelining-tour.mdx) | The part that makes it fast                          |
+| [How it compares](packages/docs/src/content/docs/guides/comparisons.mdx)    | Against tRPC, JSON-RPC, GraphQL and Cap'n Proto      |
 
 Core concepts:
-[What can be passed](packages/docs/src/content/docs/concepts/values.md) ·
-[RpcTarget](packages/docs/src/content/docs/concepts/rpc-target.md) ·
-[RpcStub](packages/docs/src/content/docs/concepts/stubs.md) ·
-[RpcPromise & pipelining](packages/docs/src/content/docs/concepts/promises.md) ·
-[The magic `map()`](packages/docs/src/content/docs/concepts/map.md) ·
-[Streaming](packages/docs/src/content/docs/concepts/streaming.md) ·
-[Disposal](packages/docs/src/content/docs/concepts/disposal.md)
+[What can be passed](packages/docs/src/content/docs/concepts/values.mdx) ·
+[RpcTarget](packages/docs/src/content/docs/concepts/rpc-target.mdx) ·
+[RpcStub](packages/docs/src/content/docs/concepts/stubs.mdx) ·
+[RpcPromise & pipelining](packages/docs/src/content/docs/concepts/promises.mdx) ·
+[The magic `map()`](packages/docs/src/content/docs/concepts/map.mdx) ·
+[Streaming](packages/docs/src/content/docs/concepts/streaming.mdx) ·
+[Disposal](packages/docs/src/content/docs/concepts/disposal.mdx)
 
 Transports:
-[Overview](packages/docs/src/content/docs/transports/index.md) ·
-[HTTP batch](packages/docs/src/content/docs/transports/http-batch.md) ·
-[WebSocket](packages/docs/src/content/docs/transports/websocket.md) ·
-[MessagePort](packages/docs/src/content/docs/transports/message-port.md) ·
-[Custom](packages/docs/src/content/docs/transports/custom.md)
+[Overview](packages/docs/src/content/docs/transports/index.mdx) ·
+[HTTP batch](packages/docs/src/content/docs/transports/http-batch.mdx) ·
+[WebSocket](packages/docs/src/content/docs/transports/websocket.mdx) ·
+[MessagePort](packages/docs/src/content/docs/transports/message-port.mdx) ·
+[Custom](packages/docs/src/content/docs/transports/custom.mdx)
 
 Server runtimes:
-[Cloudflare Workers](packages/docs/src/content/docs/servers/workers.md) ·
-[Node.js](packages/docs/src/content/docs/servers/node.md) ·
-[Deno](packages/docs/src/content/docs/servers/deno.md) ·
-[Bun](packages/docs/src/content/docs/servers/bun.md) ·
-[Hono](packages/docs/src/content/docs/servers/hono.md) ·
-[Other](packages/docs/src/content/docs/servers/other.md)
+[Cloudflare Workers](packages/docs/src/content/docs/servers/workers.mdx) ·
+[Node.js](packages/docs/src/content/docs/servers/node.mdx) ·
+[Deno](packages/docs/src/content/docs/servers/deno.mdx) ·
+[Bun](packages/docs/src/content/docs/servers/bun.mdx) ·
+[Hono](packages/docs/src/content/docs/servers/hono.mdx) ·
+[Other](packages/docs/src/content/docs/servers/other.mdx)
 
 Guides and reference:
-[Security considerations](packages/docs/src/content/docs/guides/security.md) ·
-[Sessions & reconnection](packages/docs/src/content/docs/guides/sessions.md) ·
-[Runtime validation](packages/docs/src/content/docs/guides/validation.md) ·
-[Workers RPC interop](packages/docs/src/content/docs/guides/workers-rpc.md) ·
-[Wire protocol](packages/docs/src/content/docs/reference/protocol.md) ·
-[API cheat sheet](packages/docs/src/content/docs/reference/api.md)
+[Security considerations](packages/docs/src/content/docs/guides/security.mdx) ·
+[Sessions & reconnection](packages/docs/src/content/docs/guides/sessions.mdx) ·
+[Runtime validation](packages/docs/src/content/docs/guides/validation.mdx) ·
+[Workers RPC interop](packages/docs/src/content/docs/guides/workers-rpc.mdx) ·
+[Wire protocol](packages/docs/src/content/docs/reference/protocol.mdx) ·
+[API cheat sheet](packages/docs/src/content/docs/reference/api.mdx)
 
 To run the site locally, with both examples embedded as live in-browser playgrounds:
 
@@ -180,7 +180,7 @@ Runnable examples live in [`examples/`](examples/):
 Cap'n Web gives you strong authorization tools, but a few things are your responsibility:
 authenticating in-band rather than with cookies, rate-limiting because pipelining is cheap for
 attackers, setting transport payload limits, and validating types at runtime. Read
-[Security considerations](packages/docs/src/content/docs/guides/security.md) before exposing a
+[Security considerations](packages/docs/src/content/docs/guides/security.mdx) before exposing a
 service to untrusted peers.
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).

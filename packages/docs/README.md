@@ -134,7 +134,7 @@ kept in sync by hand:
 One number is never typed: `%BUNDLE_SIZE%` is substituted from `src/generated/bundle-size.json`,
 which `scripts/measure-bundle.mjs` writes during prebuild by measuring the built library. It is
 reached three ways, because there are three places a token can appear and only one pipeline sees each:
-a Sätteri plugin for `.md` bodies, a schema `transform` for frontmatter, and a plain JSON import in
+a Sätteri plugin for `.mdx` bodies, a schema `transform` for frontmatter, and a plain JSON import in
 `index.mdx`, which interpolates it directly. `scripts/mdast-bundle-size.mjs` explains why the third
 exists.
 
