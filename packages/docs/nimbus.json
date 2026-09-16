@@ -22,5 +22,6 @@
         "src/components/ui/link-card/index.ts"
       ]
     }
-  ]
+  ],
+  "lastReviewedNimbusVersion": "0.14.1"
 }

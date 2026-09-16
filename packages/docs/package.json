@@ -20,7 +20,7 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@cloudflare/nimbus-docs": "^0.10.0",
+    "@cloudflare/nimbus-docs": "^0.14.1",
     "@fontsource-variable/dm-sans": "^5.3.0",
     "@fontsource/commit-mono": "^5.3.0",
     "@iconify-json/ph": "^1.2.0",
