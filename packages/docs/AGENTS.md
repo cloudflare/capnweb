@@ -108,16 +108,16 @@ what it is first.
 | New sidebar group         | A directory under `src/content/docs/` and an `autogenerate` entry in `astro.config.ts`.                                |
 | Off-site sidebar link     | Give the group an `items:` array: `{ autogenerate }` first, then `{ label, link }`. Nimbus adds `target="_blank"`.     |
 | New partial               | `src/content/partials/<slug>.mdx` (the collection is registered; there are none yet), then `<Render file="<slug>" />`. |
-| UI from the registry      | `npx nimbus-docs add <slug>`, then register it in `src/components.ts` if MDX uses it.                                  |
+| UI from the registry      | `pnpm exec nimbus-docs add <slug>`, then register it in `src/components.ts` if MDX uses it.                            |
 | New playground example    | An entry in `src/examples.ts` (`files` and `build`), and a page under `src/content/docs/examples/`.                    |
 | Custom page route         | A file under `src/pages/`.                                                                                             |
 | OG card restyle           | `src/pages/og/_og-card-config.ts`.                                                                                     |
-| Check it builds           | `npx nimbus-docs check` -- build-free preflight. `--json` for an agent loop, `--fix` to repair what's safe.            |
-| Check for updates         | `npx nimbus-docs outdated` -- starter files behind their tag, registry components behind.                              |
-| Review an upstream change | `npx nimbus-docs diff <file>`, then `diff --apply <file>`.                                                             |
-| Update a registry item    | `npx nimbus-docs add <slug> --overwrite`, then read `git diff`.                                                        |
+| Check it builds           | `pnpm exec nimbus-docs check` -- build-free preflight. `--json` for an agent loop, `--fix` to repair what's safe.      |
+| Check for updates         | `pnpm exec nimbus-docs outdated` -- starter files behind their tag, registry components behind.                        |
+| Review an upstream change | `pnpm exec nimbus-docs diff <file>`, then `diff --apply <file>`.                                                       |
+| Update a registry item    | `pnpm exec nimbus-docs add <slug> --overwrite`, then read `git diff`.                                                  |
 
-`npx nimbus-docs list` shows what is installable.
+`pnpm exec nimbus-docs list` shows what is installable.
 
 Ten starter files are modified here, so `diff --apply` wants review rather than a blind apply: the
 two layouts, `[...slug].astro`, `404.astro`, `components.ts`, `content.config.ts`, `globals.css`,
@@ -139,8 +139,8 @@ moves too, because the timestamp is a real instant from `git log %at`.
 
 ## Audit this site
 
-Start with `npx nimbus-docs check --json`. It runs the environment, structural, authoring, and type
-checks build-free -- config validity, `site` placeholder, route collisions, MDX component
+Start with `pnpm exec nimbus-docs check --json`. It runs the environment, structural, authoring,
+and type checks build-free -- config validity, `site` placeholder, route collisions, MDX component
 resolution, the lint rules, and a `tsc` type-check -- and returns three top-level signals plus
 per-scope detail:
 

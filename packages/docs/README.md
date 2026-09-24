@@ -54,9 +54,9 @@ directory, and the framework cannot be blamed for anything visible.
 The CLI tracks which of those files came from the scaffold and at what version:
 
 ```sh
-npx nimbus-docs outdated        # starter files behind their tag, registry components behind
-npx nimbus-docs diff <file>     # what upstream changed vs what we changed
-npx nimbus-docs check           # build-free preflight: env, structure, authoring, types
+pnpm exec nimbus-docs outdated    # starter files behind their tag, registry components behind
+pnpm exec nimbus-docs diff <file> # what upstream changed vs what we changed
+pnpm exec nimbus-docs check       # build-free preflight: env, structure, authoring, types
 ```
 
 Ten scaffold files are modified, so an upgrade to any of them is a merge and not an apply:

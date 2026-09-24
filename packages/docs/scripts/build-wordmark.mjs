@@ -8,7 +8,7 @@
  * to never, and it needs a font file and `opentype.js` that the site does not
  * otherwise depend on:
  *
- *   npm i opentype.js
+ *   pnpm add -D opentype.js   # temporary: revert package.json and pnpm-lock.yaml after
  *   curl -sLO https://www.gust.org.pl/projects/e-foundry/tex-gyre/bonum/qbk2.004otf.zip
  *   unzip -j qbk2.004otf.zip 'texgyrebonum-bold.otf'
  *   node scripts/build-wordmark.mjs texgyrebonum-bold.otf

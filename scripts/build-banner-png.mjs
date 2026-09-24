@@ -21,9 +21,10 @@ import { fileURLToPath } from 'node:url';
 /*
  * Three images, one browser. Two of them belong to the docs package rather than
  * the root, and are written across the boundary on purpose: `playwright` and
- * `sharp` are declared here, and `packages/docs` is deliberately outside the
- * npm workspaces with its own lockfile, so a script living there could only
- * reach these by hoisting. The generator already crosses the other way.
+ * `sharp` are declared here, not in `packages/docs`, so a script living there
+ * could only reach them by Node's lookup climbing out of its package into the
+ * root `node_modules`: an undeclared dependency. The generator already crosses
+ * the other way.
  */
 const JOBS = [
 	{
