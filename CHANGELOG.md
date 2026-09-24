@@ -1,5 +1,11 @@
 # capnweb
 
+## 0.13.0
+
+### Minor Changes
+
+- [#225](https://github.com/cloudflare/capnweb/pull/225) [`296d9c0`](https://github.com/cloudflare/capnweb/commit/296d9c0380c87eaad07440f8caf426cd93051548) Thanks [@dimitropoulos](https://github.com/dimitropoulos)! - Support serializing `RegExp` objects over RPC.
+
 ## 0.12.0
 
 ### Minor Changes
