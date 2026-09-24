@@ -1,7 +1,7 @@
 ---
 description: Cap'n Web (capnweb) engineer. Triages issues, reviews PRs, and implements fixes.
 mode: primary
-model: anthropic/claude-opus-4-8
+model: anthropic/claude-opus-5-5
 temperature: 0.2
 ---
 
