@@ -247,6 +247,11 @@ class ImportTableEntry {
   }
 
   async awaitResolution(): Promise<RpcPayload> {
+    // If the entry has already settled, the import has been released (resolve() calls
+    // sendRelease()), so there is nothing left on the wire to pull. Read the stored
+    // resolution instead of sending a "pull" naming a released id.
+    if (this.resolution) return this.resolution.pull();
+
     if (!this.activePull) {
       this.session.sendPull(this.importId);
       this.activePull = Promise.withResolvers<void>();
@@ -662,7 +667,11 @@ class RpcSessionImpl implements Importer, Exporter {
   }
 
   getImport(hook: StubHook): ImportId | undefined {
-    if (hook instanceof RpcImportHook && hook.entry && hook.entry.session === this) {
+    // A settled entry has already released its import (resolve() calls sendRelease()), so its
+    // importId no longer names anything on the peer. Fall through to exporting the resolution,
+    // the way dispose(), abort() and onBroken() all branch on `resolution`.
+    if (hook instanceof RpcImportHook && hook.entry && hook.entry.session === this &&
+        !hook.entry.resolution) {
       return hook.entry.importId;
     } else {
       return undefined;
