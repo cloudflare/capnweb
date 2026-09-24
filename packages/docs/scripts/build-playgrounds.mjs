@@ -25,7 +25,7 @@ const repoRoot = path.resolve(docsRoot, '../..');
 for (const sentinel of ['examples', 'dist/index.js', 'packages/capnweb-validate/dist/index.mjs']) {
 	if (!existsSync(path.join(repoRoot, sentinel))) {
 		throw new Error(
-			`Expected ${sentinel} under ${repoRoot}. Run \`npm run build\` at the repo root first ` +
+			`Expected ${sentinel} under ${repoRoot}. Run \`pnpm run build\` at the repo root first ` +
 				`-- the playgrounds bundle the library's build output, not its source.`,
 		);
 	}

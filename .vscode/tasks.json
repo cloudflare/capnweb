@@ -4,7 +4,7 @@
     {
       "label": "validate: Worker dev server",
       "type": "shell",
-      "command": "npm run build && cd examples/worker-react && npx wrangler dev --config wrangler.jsonc --ip 127.0.0.1 --port 8787 --inspector-port 9229",
+      "command": "pnpm run build && cd examples/worker-react && pnpm exec wrangler dev --config wrangler.jsonc --ip 127.0.0.1 --port 8787 --inspector-port 9229",
       "isBackground": true,
       "problemMatcher": {
         "owner": "validate-worker",
@@ -24,7 +24,7 @@
     {
       "label": "validate: client dev server",
       "type": "shell",
-      "command": "cd examples/worker-react/client && npm install && npm run dev -- --host 127.0.0.1 --port 5173 --strictPort",
+      "command": "pnpm install && cd examples/worker-react/client && pnpm run dev --host 127.0.0.1 --port 5173 --strictPort",
       "isBackground": true,
       "problemMatcher": {
         "owner": "validate-client",

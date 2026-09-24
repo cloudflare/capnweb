@@ -18,14 +18,14 @@ All three also run as playgrounds in the docs, under **Examples**; see
 From the repo root:
 
 ```sh
-npm run setup              # first time only: installs the docs and the React
-                           # client, which sit outside the npm workspace
-npm run build              # the examples resolve `capnweb` to dist/
+pnpm install               # first time only: installs every workspace package,
+                           # including the docs and the React client
+pnpm run build             # the examples resolve `capnweb` to dist/
 
 # then any of these, one per shell: each is a long-running server
-npx wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788
-npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
-npx wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
+pnpm exec wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788
+pnpm exec wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
+pnpm exec wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
 ```
 
 This is the version worth reaching for when you are changing an example: it is a real Worker
@@ -55,7 +55,7 @@ Two consequences worth knowing when editing an example:
   `packages/docs/src/examples.ts` and the docs build fails until it is updated. Because they are
   shown whole, a file worth putting in a tab is worth keeping short and free of unrelated wiring,
   which is why each example splits its RPC code out from its DOM code.
-- The playground bundles `dist/`, so a library change needs `npm run build` at the repo root before
+- The playground bundles `dist/`, so a library change needs `pnpm run build` at the repo root before
   it shows up in the docs.
 
 ## Deploying
@@ -68,5 +68,5 @@ has a working `wrangler.jsonc`, so `wrangler deploy --cwd examples/<name>` will 
 
 - Examples import `capnweb` as a bare specifier. Under Node that resolves through the repo's own
   workspace self-link; under Workers it is mapped to the workerd build by the `alias` block in each
-  `wrangler.jsonc`. Either way, run `npm run build` at the repo root first: both resolve to `dist/`.
+  `wrangler.jsonc`. Either way, run `pnpm run build` at the repo root first: both resolve to `dist/`.
 - Requires Node 18+ (built-in `fetch`, `Request`, `Response`).

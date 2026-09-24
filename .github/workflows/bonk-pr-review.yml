@@ -43,6 +43,9 @@ jobs:
             echo EOF
           } >> "$GITHUB_OUTPUT"
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Run Bonk
         uses: ask-bonk/ask-bonk/github@24832587005550860c8ad13fd96519e731ca632a # main
         env:

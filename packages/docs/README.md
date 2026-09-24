@@ -811,7 +811,7 @@ touches `WebSocketPair`, and the shim never routes an upgrade to it.
 
 Output lands in `public/playground/<slug>/` and is gitignored. `predev` and `prebuild` regenerate
 it, so it cannot go stale, but note it bundles the library's **build output**, so a change to
-`src/` needs `npm run build` at the repo root before it reaches a playground.
+`src/` needs `pnpm run build` at the repo root before it reaches a playground.
 
 The iframe points at `/playground/<slug>/index.html`, spelled out in full. Astro's dev server does
 not resolve a directory request under `public/` to its index, so the tidier-looking

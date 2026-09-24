@@ -11,8 +11,8 @@ Runs as a playground in the docs under **Examples**, and locally as a real Worke
 From the repo root:
 
 ```sh
-npm run build   # the examples resolve `capnweb` to dist/
-npx wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
+pnpm run build  # the examples resolve `capnweb` to dist/
+pnpm exec wrangler dev --cwd examples/worker-react --ip 127.0.0.1 --port 8787
 ```
 
 The rest of this file covers running the pieces individually.
@@ -29,12 +29,12 @@ The rest of this file covers running the pieces individually.
 From the repo root:
 
 ```sh
-npm run build
+pnpm install    # first time only: the client is a workspace package
+pnpm run build
 cd examples/worker-react/client
-npm install
-npm run build
+pnpm run build
 cd ..
-npx wrangler dev --config wrangler.jsonc
+pnpm exec wrangler dev --config wrangler.jsonc
 ```
 
 Open `http://127.0.0.1:8787`.
@@ -43,14 +43,14 @@ For client debugging with Vite, run the Worker from the example directory:
 
 ```sh
 cd examples/worker-react
-npx wrangler dev --config wrangler.jsonc --ip 127.0.0.1 --port 8787 --inspector-port 9229
+pnpm exec wrangler dev --config wrangler.jsonc --ip 127.0.0.1 --port 8787 --inspector-port 9229
 ```
 
 In another terminal, run Vite from the repo root:
 
 ```sh
 cd examples/worker-react/client
-npm run dev
+pnpm run dev
 ```
 
 The Vite dev server proxies `/api` to `http://127.0.0.1:8787`.

@@ -1,7 +1,7 @@
 // Minimal Node HTTP server exposing an RPC endpoint over HTTP batching.
 //
 // Usage:
-//   1) From repo root: npm run build
+//   1) From repo root: pnpm run build
 //   2) Start: node examples/batch-pipelining/server-node.mjs
 //   3) Client: node examples/batch-pipelining/client.mjs
 //

@@ -92,8 +92,8 @@ importers:
         specifier: ^1.6.4
         version: 1.6.4(typescript@5.9.3)
       capnweb:
-        specifier: ^0.12.0
-        version: 0.12.0
+        specifier: workspace:^
+        version: link:../..
       tsdown:
         specifier: ^0.22.0
         version: 0.22.14(@volar/typescript@2.4.28)(tsx@4.23.13)(typescript@5.9.3)
@@ -2500,9 +2500,6 @@ packages:
 
   canvaskit-wasm@0.42.0:
     resolution: {integrity: sha512-N3ikotmzYwDVAcpQKDMptBT2P5pIEWS9ywdmrQA2awwaMF9cxKEFuxZZHv9ay1Em9kDjxDsPtwUzDm1uNj136g==}
-
-  capnweb@0.12.0:
-    resolution: {integrity: sha512-jgZ/LMtMVTi+RVlooIslH78Gg23XbDTdvcLghWx3oz17D6u5GuJARt+uhZk/wcTo+f81eeabfnow4d3zLBj+JQ==}
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
@@ -6695,8 +6692,6 @@ snapshots:
   canvaskit-wasm@0.42.0:
     dependencies:
       '@webgpu/types': 0.1.21
-
-  capnweb@0.12.0: {}
 
   ccount@2.0.1: {}
 

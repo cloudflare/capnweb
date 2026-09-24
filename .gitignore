@@ -1,4 +1,10 @@
 node_modules
+# pnpm-lock.yaml is the only lockfile; keep stray installs from other package managers out.
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+bun.lock
+bun.lockb
 .wrangler/
 examples/worker-react/client/dist/
 # Copied from dist/ by each example's wrangler build step.

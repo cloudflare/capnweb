@@ -27,8 +27,8 @@ Untick **Resume from cursor** in the page and disconnect again to watch the gap 
 From the repo root:
 
 ```sh
-npm run build   # the example resolves `capnweb` to dist/
-npx wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
+pnpm run build  # the example resolves `capnweb` to dist/
+pnpm exec wrangler dev --cwd examples/session-recovery --ip 127.0.0.1 --port 8789
 ```
 
 Then open <http://127.0.0.1:8789>. There is no build step for the page itself; it is plain ES

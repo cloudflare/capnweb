@@ -32,13 +32,13 @@ version does exactly the same work in three round trips.
 Build the library at the repo root first (every entry point resolves `capnweb` to `dist/`):
 
 ```sh
-npm run build
+pnpm run build
 ```
 
 ### In a browser
 
 ```sh
-npx wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788   # from the repo root
+pnpm exec wrangler dev --cwd examples/batch-pipelining --ip 127.0.0.1 --port 8788   # from the repo root
 ```
 
 Then open `http://127.0.0.1:8788`. The page has a latency slider; the gap between the two columns

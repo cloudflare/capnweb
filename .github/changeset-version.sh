@@ -3,10 +3,10 @@
 
 set -e
 
-npx changeset version
+pnpm exec changeset version
 
-# The standard step is only to run `changeset version` but this does not update the
-# package-lock.json file. So we also run `npm install`, which does this update.
-# This is a workaround until this is handled automatically by `changeset version`.
+# `changeset version` bumps package.json versions but does not update pnpm-lock.yaml,
+# so refresh the lockfile here or the next `pnpm install --frozen-lockfile` fails.
+# `--lockfile-only` rewrites the lockfile without touching node_modules.
 # See https://github.com/changesets/changesets/issues/421.
-npm install
+pnpm install --lockfile-only

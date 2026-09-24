@@ -20,7 +20,7 @@ Key source files: `src/core.ts` (RPC session core), `src/rpc.ts` (stubs, RpcTarg
 
 - **Triggering comment is the task:** The comment that invoked you (`/bonk` or `@ask-bonk`) is your primary instruction. Read it first, before reading the PR description or any other context. Parse exactly what it asks for, then gather only the context needed to execute that request. Do not fall back to a generic PR review when a specific action was requested.
 - **No em dashes.** Never write an em dash (`—`) in anything: code, comments, documentation, commit messages, PR descriptions, or review comments. Do not substitute an en dash (`–`) or a double hyphen either. Repunctuate instead. A semicolon or a full stop for two independent clauses, a comma for an appositive or trailing fragment, a colon where the second half defines the first, parentheses for a genuine aside, and often the best fix is rewording so no punctuation is needed. Vary the choice; the same device eight times in a row is worse than the dash was. This rule is about punctuation, so it says nothing about hyphens that are part of syntax: `git log --oneline`, a bare `--` pathspec separator, `npm run test -- --watch`, and a `--flag` quoted from a tool's output are all command text and stay exactly as the tool spells them.
-- **Never put a code block directly under a heading.** A heading followed immediately by a fenced or indented code block reads as a dump. Introduce the sample in one line of prose first, saying what it does or what to look at. Very often the paragraph that explains the block already exists directly below it, and moving it above the block is the entire fix. `npm run lint:md` enforces this for `##` headings in Markdown; apply the same judgment in `.mdx`, where the linter does not reach.
+- **Never put a code block directly under a heading.** A heading followed immediately by a fenced or indented code block reads as a dump. Introduce the sample in one line of prose first, saying what it does or what to look at. Very often the paragraph that explains the block already exists directly below it, and moving it above the block is the entire fix. `pnpm run lint:md` enforces this for `##` headings in Markdown; apply the same judgment in `.mdx`, where the linter does not reach.
 - **Scope constraint:** You are invoked on one specific GitHub issue or PR. Target only that issue or PR.
 - `$ISSUE_NUMBER` and `$PR_NUMBER` are the source of truth. Ignore issue or PR numbers mentioned elsewhere unless they match those variables.
 - Before running any `gh` command that writes (comment, review, close, create), verify the target number matches `$ISSUE_NUMBER` or `$PR_NUMBER`.
@@ -60,7 +60,7 @@ Follow this workflow when implementation mode applies:
 9. **Make the requested change directly.** Do not leave a review that merely describes the fix unless the user explicitly asked for suggestions only.
 10. If you are blocked by ambiguity, ask one targeted clarifying question. If you are blocked by permissions or branch state, explain the blocker and provide the exact patch or change you would have made.
 11. Add or update tests for behavior changes and regressions.
-12. Run the smallest validation that proves the change for the touched area, then run `npm run test:ci && npm run test:types` before final handoff when practical.
+12. Run the smallest validation that proves the change for the touched area, then run `pnpm run test:ci && pnpm run test:types` before final handoff when practical.
 13. Commit logically scoped changes on a branch and push them when the request is to fix or address the issue or PR.
 
 Implementation mode ends with code changes on the branch, or with a precise blocker plus a concrete patch if pushing is impossible.
@@ -97,13 +97,13 @@ Use triage mode when you are asked to investigate rather than change code.
   </triage>
 
 <implementation_conventions>
-**Package manager:** Always use `npm`. This repo uses `package-lock.json` and npm workspaces. Never use `pnpm` or `yarn`.
+**Package manager:** Always use `pnpm`. This repo is a pnpm workspace locked by `pnpm-lock.yaml`. Never run `npm install`, `yarn`, or `bun install`: they ignore the pnpm lockfile, and they write a stray lockfile that dirties the branch. Install with `pnpm install --frozen-lockfile`, and run package binaries with `pnpm exec` instead of `npx`.
 
 **Build & test:**
 
-- Build: `npm run build` (tsdown; also builds `capnweb-validate`)
-- Tests: `npm test` (vitest), `npm run test:bun` (Bun-specific tests), `npm run test:types` (compile-time type tests)
-- Full CI parity: `npm run test:ci && npm run test:types`
+- Build: `pnpm run build` (tsdown; also builds `capnweb-validate`)
+- Tests: `pnpm test` (vitest), `pnpm run test:bun` (Bun-specific tests), `pnpm run test:types` (compile-time type tests)
+- Full CI parity: `pnpm run test:ci && pnpm run test:types`
 
 **Security model:** Everything arriving off the wire is untrusted. Deserialization and message handling must never trust peer-supplied values: validate types, guard recursion depth, avoid prototype pollution, and never leak capabilities that were not explicitly granted.
 
