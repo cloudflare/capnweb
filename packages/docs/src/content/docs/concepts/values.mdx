@@ -15,6 +15,7 @@ The following types can be passed over RPC, in arguments or return values:
 - Primitive values: strings, numbers, booleans, `null`, `undefined`
 - Plain objects (e.g. from object literals)
 - Arrays
+- `Set`
 - `bigint`
 - `Date`
 - `ArrayBuffer`, `DataView`, and typed arrays
@@ -25,6 +26,10 @@ The following types can be passed over RPC, in arguments or return values:
 - `URL`
 - `RegExp`
 - `Headers`, `Request`, and `Response` from the Fetch API
+
+A `Set` cannot contain a promise or `Blob` directly when sent over a connection. Stubs are valid set
+elements, and promises and `Blob`s may still appear inside a plain object or array used as an
+element.
 
 ## Passed by reference
 
@@ -39,7 +44,7 @@ Anything passed by reference produces a **stub** on the far side, and stubs must
 
 These may be added in the future:
 
-- `Map` and `Set`
+- `Map`
 
 ## Intentionally not supported
 

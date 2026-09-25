@@ -37,7 +37,7 @@ export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 
 export type PropertyPath = (string | number)[];
 
-type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
+type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" | "set" |
     "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
     "error" | "undefined" | "writable" | "readable" | "regexp" | "url" | "headers" | "request" |
     "response";
@@ -96,6 +96,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case RegExp.prototype:
       return "regexp";
+
+    case Set.prototype:
+      return "set";
 
     case Uint8Array.prototype:
     case BUFFER_PROTOTYPE:
@@ -1071,6 +1074,29 @@ export class RpcPayload {
         return result;
       }
 
+      case "set": {
+        // We have to construct the new set first, then fill it in, so we can pass it as the
+        // parent.
+        let set = <Set<unknown>>value;
+        let elements = [...set];
+        for (let val of elements) {
+          let kind = typeForRpc(val);
+          if (kind === "rpc-promise" || kind === "rpc-thenable") {
+            throw new TypeError(
+                "Cannot pass a promise as an element of a Set. Await the value before " +
+                "adding it to the Set.");
+          }
+        }
+
+        let result = new Set();
+        let index = 0;
+        for (let val of elements) {
+          let copy = this.deepCopy(val, set, index++, result, dupStubs, owner);
+          result.add(copy);
+        }
+        return result;
+      }
+
       case "object": {
         // Plain object. Unfortunately there's no way to pre-allocate the right shape.
         let result: Record<string, unknown> = {};
@@ -1204,7 +1230,12 @@ export class RpcPayload {
       try {
         this.value = this.deepCopy(this.value, undefined, "value", this, dupStubs, this);
       } catch (err) {
-        // Roll back the change.
+        // Roll back duplicates accumulated while copying params. Return values transfer ownership,
+        // so their original structure remains responsible for disposal on this error path.
+        if (dupStubs) {
+          this.hooks.forEach(hook => hook.dispose());
+          this.promises.forEach(promise => promise.promise[Symbol.dispose]());
+        }
         this.hooks = undefined;
         this.promises = undefined;
         throw err;
@@ -1449,6 +1480,14 @@ export class RpcPayload {
         return;
       }
 
+      case "set": {
+        let set = <Set<unknown>>value;
+        for (let element of set) {
+          this.disposeImpl(element, set);
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1597,6 +1636,14 @@ export class RpcPayload {
         return;
       }
 
+      case "set": {
+        let set = <Set<unknown>>value;
+        for (let element of set) {
+          this.ignoreUnhandledRejectionsImpl(element);
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1735,6 +1782,7 @@ function followPath(value: unknown, parent: object | undefined,
       case "bytes":
       case "blob":
       case "date":
+      case "set":
       case "error":
       case "url":
       case "regexp":

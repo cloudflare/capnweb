@@ -357,6 +357,17 @@ bound parsing cost.
 
 A JavaScript `Date` value. The number is milliseconds since the Unix epoch.
 
+### set
+
+```json
+["set", elements]
+```
+
+A JavaScript `Set` value. `elements` is an array of expressions for the set elements.
+
+An element must not evaluate directly to a promise or `Blob`. Stubs are valid elements, and promises
+and `Blob`s may appear nested within another element.
+
 ### regexp
 
 ```json
