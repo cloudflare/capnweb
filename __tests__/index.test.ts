@@ -5,7 +5,7 @@
 import { expect, it, describe, inject } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
          type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, RpcPromise, newWebSocketRpcSession,
-         newMessagePortRpcSession,
+         newMessagePortRpcSession, newInMemoryRpcSessionPair,
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
@@ -2726,6 +2726,32 @@ describe("MessagePorts", () => {
     // Wait for the client to detect the broken connection
     await expect(() => brokenPromise).rejects.toThrow(
         new Error("Peer closed MessagePort connection."));
+  });
+});
+
+describe("in-memory session pair", () => {
+  it("disconnect() breaks pending calls and stubs held by either side", async () => {
+    let held!: RpcStub<Counter>;
+    let { stub, disconnect } = newInMemoryRpcSessionPair({
+      hold(counter: RpcStub<Counter>) { held = counter.dup(); },
+      hang: () => Promise.withResolvers<void>().promise,
+    });
+    await stub.hold(new Counter());
+    let heldBroken = Promise.withResolvers();
+    held.onRpcBroken(heldBroken.resolve);
+    let pending = stub.hang();
+
+    let reason = new Error("connection lost");
+    disconnect(reason);
+
+    await expect(pending).rejects.toBe(reason);
+    expect(await heldBroken.promise).toBe(reason);
+    expect(() => disconnect(reason)).not.toThrow();
+  });
+
+  it("lets the server call the client's main", async () => {
+    let { server } = newInMemoryRpcSessionPair<{}, Counter>({}, { clientMain: new Counter(5) });
+    expect(await server.getRemoteMain().increment()).toBe(6);
   });
 });
 
