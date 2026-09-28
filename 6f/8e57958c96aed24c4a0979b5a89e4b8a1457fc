@@ -1,0 +1,30 @@
+.github/workflows/bonk-pr-review.yml
+  s_d47f00959a824f::t_b271dec7fc5fb9 56-57
+  s_ebe0d9481d897f::t_d0b92c9fea3882 50
+.github/workflows/bonk.yml
+  s_ebe0d9481d897f::t_43d845367d4e79 62
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "6f8e57958c96aed24c4a0979b5a89e4b8a1457fc",
+  "prompts": {},
+  "sessions": {
+    "s_d47f00959a824f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7f0edf6e-9af5-4419-ae90-ea2787327637",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Dan Lapid <dlapid@cloudflare.com>"
+    },
+    "s_ebe0d9481d897f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "s_ebe0d9481d897f",
+        "model": "unknown"
+      },
+      "human_author": "Dan Lapid <dlapid@cloudflare.com>"
+    }
+  }
+}
