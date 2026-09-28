@@ -47,12 +47,14 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Run Bonk
-        uses: ask-bonk/ask-bonk/github@24832587005550860c8ad13fd96519e731ca632a # main
+        uses: Cloudflare-Studio/ask-bonk/github@main
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_AI_GATEWAY_ACCOUNT_ID }}
           CLOUDFLARE_GATEWAY_ID: ${{ secrets.CF_AI_GATEWAY_NAME }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CF_AI_GATEWAY_TOKEN }}
         with:
+          # Stop Bonk before the job's timeout-minutes so it can report the outcome itself.
+          timeout: "25m"
           oidc_base_url: https://ask-bonk.cloudflare-exponent.workers.dev/auth
           model: "cloudflare-ai-gateway/anthropic/claude-opus-5-5"
           variant: "high"
