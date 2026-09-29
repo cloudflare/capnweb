@@ -357,6 +357,30 @@ bound parsing cost.
 
 A JavaScript `Date` value. The number is milliseconds since the Unix epoch.
 
+### instant, plaindate, duration
+
+These encode the following values:
+
+```json
+["instant", string]
+["plaindate", string]
+["duration", string]
+```
+
+A `Temporal.Instant`, `Temporal.PlainDate`, or `Temporal.Duration` value, respectively. The string is
+the value's `toJSON()` output, an ISO 8601 string, and the receiver reconstructs the value with the
+matching `from()`, e.g. `Temporal.Instant.from(string)`. The encoding is lossless: instants keep
+nanosecond precision, and a `PlainDate` in a non-ISO calendar keeps its calendar annotation. These
+are tuple-encoded at every encoding level, since Temporal values are not structured-clonable.
+Receiving one in a runtime without `Temporal` is an error. For example:
+
+```json
+["instant", "2020-01-02T03:04:05.123456789Z"]
+["plaindate", "2024-02-29"]
+["plaindate", "2024-02-29[u-ca=japanese]"]
+["duration", "PT1H30M"]
+```
+
 ### regexp
 
 ```json

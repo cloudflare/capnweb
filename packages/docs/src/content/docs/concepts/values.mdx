@@ -17,6 +17,8 @@ The following types can be passed over RPC, in arguments or return values:
 - Arrays
 - `bigint`
 - `Date`
+- `Temporal.Instant`, `Temporal.PlainDate`, and `Temporal.Duration`, in runtimes that provide
+  `Temporal` (the receiver must support it too)
 - `ArrayBuffer`, `DataView`, and typed arrays
 - `Error` and its well-known subclasses
 - `Blob`

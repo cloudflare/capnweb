@@ -40,7 +40,7 @@ export type PropertyPath = (string | number)[];
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" |
     "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
     "error" | "undefined" | "writable" | "readable" | "regexp" | "url" | "headers" | "request" |
-    "response";
+    "response" | "instant" | "plaindate" | "duration";
 
 const AsyncFunction = (async function () {}).constructor;
 
@@ -156,6 +156,20 @@ export function typeForRpc(value: unknown): TypeForRpc {
           // Like rpc-target, but should be wrapped in RpcPromise, so that it can be pull()ed,
           // which will await the thenable.
           return "rpc-thenable";
+        }
+      }
+
+      // Temporal isn't available in every runtime we support, and may be installed onto
+      // `globalThis` by a polyfill after this module loads, so look it up lazily.
+      let temporal = (globalThis as any).Temporal;
+      if (temporal) {
+        switch (prototype) {
+          case temporal.Instant?.prototype:
+            return "instant";
+          case temporal.PlainDate?.prototype:
+            return "plaindate";
+          case temporal.Duration?.prototype:
+            return "duration";
         }
       }
 
@@ -1053,6 +1067,9 @@ export class RpcPayload {
       case "blob":
       case "url":
       case "regexp":
+      case "instant":
+      case "plaindate":
+      case "duration":
       case "error":
       case "undefined":
         // immutable, no need to copy
@@ -1436,6 +1453,9 @@ export class RpcPayload {
       case "date":
       case "url":
       case "regexp":
+      case "instant":
+      case "plaindate":
+      case "duration":
       case "error":
       case "undefined":
         return;
@@ -1583,6 +1603,9 @@ export class RpcPayload {
       case "readable":
       case "url":
       case "regexp":
+      case "instant":
+      case "plaindate":
+      case "duration":
       case "headers":
       case "request":
       case "response":
@@ -1738,6 +1761,9 @@ function followPath(value: unknown, parent: object | undefined,
       case "error":
       case "url":
       case "regexp":
+      case "instant":
+      case "plaindate":
+      case "duration":
       case "headers":
       case "request":
       case "response":

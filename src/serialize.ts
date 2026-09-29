@@ -390,6 +390,18 @@ export class Devaluator {
         // Always tuple-encode URLs; structured-clone support for URL isn't universal.
         return ["url", (value as URL).href];
 
+      // Temporal values are always tuple-encoded: they are not structured-clonable. `toJSON()`
+      // produces the ISO 8601 string form, which `from()` parses back losslessly (including
+      // nanosecond precision and any non-ISO calendar annotation on PlainDate).
+      case "instant":
+        return ["instant", (value as {toJSON(): string}).toJSON()];
+
+      case "plaindate":
+        return ["plaindate", (value as {toJSON(): string}).toJSON()];
+
+      case "duration":
+        return ["duration", (value as {toJSON(): string}).toJSON()];
+
       case "headers":
         // The `Headers` TS type apparently doesn't declare itself as being
         // Iterable<[string, string]>, but it is.
@@ -774,6 +786,17 @@ function streamToBlobPromise(stream: ReadableStream, type: string): RpcPromise {
   return new RpcPromise(new PromiseStubHook(promise), []);
 }
 
+// Looks up a Temporal class for deserialization. Temporal isn't available in every runtime, so
+// this is resolved lazily (which also picks up polyfills installed onto `globalThis`).
+function getTemporalClass(name: "Instant" | "PlainDate" | "Duration"): {from(s: string): unknown} {
+  let cls = (globalThis as any).Temporal?.[name];
+  if (!cls) {
+    throw new TypeError(
+        `Cannot deserialize Temporal.${name}: Temporal is not available in this runtime.`);
+  }
+  return cls;
+}
+
 // Takes object trees parse from JSON and converts them into fully-hydrated JavaScript objects for
 // delivery to the app. This is used to implement deserialization, except that it doesn't actually
 // start from a raw string.
@@ -973,6 +996,24 @@ export class Evaluator {
         case "url":
           if (value.length === 2 && typeof value[1] === "string") {
             return new URL(value[1]);
+          }
+          break;
+
+        case "instant":
+          if (value.length === 2 && typeof value[1] === "string") {
+            return getTemporalClass("Instant").from(value[1]);
+          }
+          break;
+
+        case "plaindate":
+          if (value.length === 2 && typeof value[1] === "string") {
+            return getTemporalClass("PlainDate").from(value[1]);
+          }
+          break;
+
+        case "duration":
+          if (value.length === 2 && typeof value[1] === "string") {
+            return getTemporalClass("Duration").from(value[1]);
           }
           break;
 
