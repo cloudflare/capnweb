@@ -10,6 +10,15 @@ export default defineConfig({
   },
   test: {
     globalSetup: ['__tests__/test-server.ts'],
+    // Node.js 24 implements Temporal but only exposes it behind a V8 flag. Enable it so the
+    // Temporal serialization tests run under Node. Skip the flag once Temporal is available
+    // natively. (Vitest only reads pool options from the root config, not per-project, but only
+    // the Node.js project uses the forks pool.)
+    poolOptions: {
+      forks: {
+        execArgv: 'Temporal' in globalThis ? [] : ['--harmony-temporal'],
+      },
+    },
     projects: [
       // Node.js
       {

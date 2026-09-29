@@ -73,6 +73,16 @@ type TypedArray =
   | Float32Array
   | Float64Array;
 
+// Temporal types, resolved from the global `Temporal` declaration if the consumer's TypeScript
+// lib provides one (e.g. `esnext.temporal`), and `never` otherwise. This avoids a hard dependency
+// on Temporal type declarations, which not every supported TypeScript version/lib ships.
+type TemporalInstance<C> = C extends { prototype: infer I } ? I : never;
+type TemporalGlobal = typeof globalThis extends { Temporal: infer T } ? T : never;
+type TemporalType =
+  | TemporalInstance<TemporalGlobal extends { Instant: infer C } ? C : never>
+  | TemporalInstance<TemporalGlobal extends { PlainDate: infer C } ? C : never>
+  | TemporalInstance<TemporalGlobal extends { Duration: infer C } ? C : never>;
+
 // This represents all the types that can be sent as-is over an RPC boundary
 type BaseType =
   | void
@@ -94,7 +104,8 @@ type BaseType =
   | URL
   | Request
   | Response
-  | Headers;
+  | Headers
+  | TemporalType;
 // Recursively rewrite all `Stubable` types with `Stub`s, and resolve promises.
 // Arm ordering matters here:
 // - `Promise` must come before `StubBase`: `RpcPromise<T>` matches both, and must resolve

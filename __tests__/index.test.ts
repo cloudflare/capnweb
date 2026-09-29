@@ -116,6 +116,26 @@ describe("simple serialization", () => {
     );
   })
 
+  it("reports a clear error when deserializing Temporal values without Temporal", () => {
+    // Simulate a runtime without Temporal, regardless of whether this one has it.
+    let g = globalThis as any;
+    let descriptor = Object.getOwnPropertyDescriptor(g, "Temporal");
+    delete g.Temporal;
+    try {
+      expect(() => deserialize('["instant","2020-01-01T00:00:00Z"]')).toThrowError(
+          new TypeError(
+              "Cannot deserialize Temporal.Instant: Temporal is not available in this runtime."));
+      expect(() => deserialize('["plaindate","2020-01-01"]')).toThrowError(
+          new TypeError(
+              "Cannot deserialize Temporal.PlainDate: Temporal is not available in this runtime."));
+      expect(() => deserialize('["duration","PT1H"]')).toThrowError(
+          new TypeError(
+              "Cannot deserialize Temporal.Duration: Temporal is not available in this runtime."));
+    } finally {
+      if (descriptor) Object.defineProperty(g, "Temporal", descriptor);
+    }
+  })
+
   it("can serialize complex nested structures", () => {
     let complex = {
       level1: {
@@ -3332,6 +3352,120 @@ describe("transport encoding levels", () => {
     transport.abort(new Error("boom"));
     await expect(pending).rejects.toThrow("boom");
   });
+});
+
+// Temporal isn't available in every runtime we test on (and the TypeScript lib we build against
+// doesn't declare it), so access it dynamically and skip where it's missing.
+const Temporal = (globalThis as any).Temporal;
+
+describe.skipIf(!Temporal)("Temporal serialization", () => {
+  it("serializes Temporal values using toJSON()", () => {
+    expect(serialize(Temporal.Instant.from("2020-01-02T03:04:05.123456789Z")))
+        .toBe('["instant","2020-01-02T03:04:05.123456789Z"]');
+    expect(serialize(Temporal.PlainDate.from("2024-02-29")))
+        .toBe('["plaindate","2024-02-29"]');
+    expect(serialize(Temporal.Duration.from({hours: 1, minutes: 30})))
+        .toBe('["duration","PT1H30M"]');
+    expect(serialize(Temporal.Duration.from("-P1Y2M3DT4H5M6.007S")))
+        .toBe('["duration","-P1Y2M3DT4H5M6.007S"]');
+  });
+
+  it("deserializes Temporal values using from()", () => {
+    let instant = deserialize('["instant","2020-01-02T03:04:05.123456789Z"]');
+    expect(Object.getPrototypeOf(instant)).toBe(Temporal.Instant.prototype);
+    expect(instant.epochNanoseconds).toBe(1577934245123456789n);
+
+    let date = deserialize('["plaindate","2024-02-29"]');
+    expect(Object.getPrototypeOf(date)).toBe(Temporal.PlainDate.prototype);
+    expect(date.equals(Temporal.PlainDate.from("2024-02-29"))).toBe(true);
+
+    let duration = deserialize('["duration","-P1Y2M3DT4H5M6.007S"]');
+    expect(Object.getPrototypeOf(duration)).toBe(Temporal.Duration.prototype);
+    expect(duration.toString()).toBe("-P1Y2M3DT4H5M6.007S");
+  });
+
+  it("round-trips a PlainDate with a non-ISO calendar", () => {
+    let date = Temporal.PlainDate.from("2024-02-29[u-ca=japanese]");
+    let serialized = serialize(date);
+    expect(serialized).toBe('["plaindate","2024-02-29[u-ca=japanese]"]');
+    let result = deserialize(serialized);
+    expect(result.toString()).toBe("2024-02-29[u-ca=japanese]");
+    expect(result.equals(date)).toBe(true);
+  });
+
+  it("round-trips Temporal values nested in objects and arrays", () => {
+    let value = {
+      when: Temporal.Instant.fromEpochMilliseconds(1234567890),
+      dates: [Temporal.PlainDate.from("2000-01-01"), Temporal.PlainDate.from("1999-12-31")],
+      ttl: Temporal.Duration.from({seconds: 90}),
+    };
+    let result = deserialize(serialize(value)) as typeof value;
+    expect(result.when.equals(value.when)).toBe(true);
+    expect(result.dates.map(d => d.toString())).toStrictEqual(["2000-01-01", "1999-12-31"]);
+    expect(result.ttl.toString()).toBe("PT90S");
+  });
+
+  it("does not serialize subclasses of Temporal types", () => {
+    class MyDuration extends Temporal.Duration {}
+    expect(() => serialize(new MyDuration(0, 0, 0, 0, 1))).toThrowError(TypeError);
+  });
+
+  it("rejects malformed Temporal values", () => {
+    for (let tag of ["instant", "plaindate", "duration"]) {
+      expect(() => deserialize(`["${tag}"]`)).toThrowError();
+      expect(() => deserialize(`["${tag}",123]`)).toThrowError();
+      expect(() => deserialize(`["${tag}","x","y"]`)).toThrowError();
+      // Property bags are accepted by from() but aren't a valid wire encoding.
+      expect(() => deserialize(`["${tag}",{"years":1}]`)).toThrowError();
+      expect(() => deserialize(`["${tag}","not a valid value"]`)).toThrowError(RangeError);
+    }
+  });
+
+  it("round-trips Temporal values over RPC", async () => {
+    class EchoService extends RpcTarget {
+      echo(value: unknown): unknown {
+        return value;
+      }
+    }
+
+    await using harness = new TestHarness(new EchoService());
+    let instant = Temporal.Instant.from("2020-01-02T03:04:05.123456789Z");
+    let result = await harness.stub.echo(instant) as any;
+    expect(Object.getPrototypeOf(result)).toBe(Temporal.Instant.prototype);
+    expect(result.equals(instant)).toBe(true);
+  });
+
+  // Temporal values aren't structured-clonable, so they must be tuple-encoded at every level.
+  for (let level of ["jsonCompatible", "jsonCompatibleWithBytes", "structuredClonable"] as const) {
+    it(`round-trips Temporal values over a ${level} transport`, async () => {
+      class EchoService extends RpcTarget {
+        echo(value: unknown): unknown {
+          return value;
+        }
+      }
+
+      let clientTransport = new ObjectTestTransport(undefined, level);
+      let serverTransport = new ObjectTestTransport(clientTransport, level);
+      let client = new RpcSession<EchoService>(clientTransport);
+      new RpcSession(serverTransport, new EchoService());
+      using stub = client.getRemoteMain();
+
+      let instant = Temporal.Instant.from("2020-01-02T03:04:05.123456789Z");
+      let instantResult = await stub.echo(instant) as any;
+      expect(Object.getPrototypeOf(instantResult)).toBe(Temporal.Instant.prototype);
+      expect(instantResult.equals(instant)).toBe(true);
+
+      let date = Temporal.PlainDate.from("2024-02-29");
+      let dateResult = await stub.echo(date) as any;
+      expect(Object.getPrototypeOf(dateResult)).toBe(Temporal.PlainDate.prototype);
+      expect(dateResult.equals(date)).toBe(true);
+
+      let duration = Temporal.Duration.from("P1DT12H");
+      let durationResult = await stub.echo(duration) as any;
+      expect(Object.getPrototypeOf(durationResult)).toBe(Temporal.Duration.prototype);
+      expect(durationResult.toString()).toBe("P1DT12H");
+    });
+  }
 });
 
 describe("ReadableStream over RPC", () => {
