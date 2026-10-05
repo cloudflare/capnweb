@@ -86,7 +86,6 @@ type BaseType =
   | ArrayBuffer
   | DataView
   | Date
-  | Set<any>
   | Error
   | RegExp
   | Blob
