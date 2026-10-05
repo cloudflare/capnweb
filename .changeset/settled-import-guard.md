@@ -2,7 +2,7 @@
 "capnweb": patch
 ---
 
-Don't cite a released import id after the reference has settled.
+Fix a whole-session abort when a settled `RpcPromise` (or a property of one) is passed back as an argument to a later call. Previously this re-sent an import id that had already been released.
 
 `ImportTableEntry.resolve()` stores the resolution and immediately calls `sendRelease()`, so the
 import is dead on both sides — but the entry keeps `importId`, since the release accounting names
