@@ -662,7 +662,11 @@ class RpcSessionImpl implements Importer, Exporter {
   }
 
   getImport(hook: StubHook): ImportId | undefined {
-    if (hook instanceof RpcImportHook && hook.entry && hook.entry.session === this) {
+    // A settled entry has already released its import (resolve() calls sendRelease()), so its
+    // importId no longer names anything on the peer. Fall through to exporting the resolution,
+    // the way dispose(), abort() and onBroken() all branch on `resolution`.
+    if (hook instanceof RpcImportHook && hook.entry && hook.entry.session === this &&
+        !hook.entry.resolution) {
       return hook.entry.importId;
     } else {
       return undefined;

@@ -4227,3 +4227,55 @@ describe("deserialization and transport correctness", () => {
     expect(sentReason).toBe("a".repeat(MAX_CLOSE_REASON_BYTES - 1));
   });
 });
+
+describe("settled import references", () => {
+  // Regression: ImportTableEntry.resolve() stores `resolution` and immediately calls
+  // sendRelease(), so the import id is dead on both sides -- but the entry keeps `importId`,
+  // because the release accounting names the id through it. getImport() then still handed out
+  // that dead id, so passing the settled promise object into a later message re-serialized a
+  // released id. The peer could not find it and threw inside readLoop, and because readLoop is
+  // wrapped in a single session-wide `.catch(err => this.abort(err))`, a call-level fault
+  // destroyed the entire session.
+  //
+  // dispose(), abort() and onBroken() all already branch on `resolution`; getImport() did not.
+  it("does not cite a released import id after the reference has settled", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    // Awaiting settles the entry: the resolution is stored and the import is released.
+    let promise = harness.stub.returnNumber(7);
+    await promise;
+
+    // Passing the same *promise object* (not its awaited value) as an argument is what
+    // re-serialized the now-dead id.
+    expect(await harness.stub.square(promise)).toBe(49);
+
+    // The load-bearing assertion: a failing call would be tolerable, a dead session is not.
+    expect(await harness.stub.returnNumber(3)).toBe(3);
+  });
+
+  // Same as above, but through a property path on the settled promise, which the serializer
+  // resolves via hook.get(path) on the settled entry rather than hook.dup().
+  it("does not cite a released import id via a property of a settled reference", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let promise = harness.stub.callSquare(harness.stub, 7);
+    await promise;
+
+    expect(await harness.stub.square(promise.result)).toBe(2401);
+    expect(await harness.stub.returnNumber(3)).toBe(3);
+  });
+
+  // A guard that cleared `importId` instead of gating its use would stop the release
+  // accounting naming the id, leaking the peer's exports.
+  it("still releases settled imports by id", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    await harness.stub.returnNumber(1);
+    await harness.stub.returnNumber(2);
+    await pumpMicrotasks();
+
+    // Both settled imports must have been released on the wire, not just dropped locally.
+    expect(harness.client.getStats()).toStrictEqual({imports: 1, exports: 1});
+    expect(harness.server.getStats()).toStrictEqual({imports: 1, exports: 1});
+  });
+});
