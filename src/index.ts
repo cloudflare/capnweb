@@ -13,6 +13,7 @@ import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
          newHttpBatchRpcResponse, nodeHttpBatchRpcResponse } from "./batch.js";
 import { newMessagePortRpcSession as newMessagePortRpcSessionImpl } from "./messageport.js";
+import { InMemoryTransport } from "./in-memory.js";
 import { forceInitMap } from "./map.js";
 import { forceInitStreams } from "./streams.js";
 
@@ -155,6 +156,43 @@ export let newHttpBatchRpcSession:<T extends RpcCompatible<T>>
 export let newMessagePortRpcSession:<T extends RpcCompatible<T> = Empty>
     (port: MessagePort, localMain?: any, options?: RpcSessionOptions) => RpcStub<T> =
     <any>newMessagePortRpcSessionImpl;
+
+// Partial implementations are fine for objects, but a function has to be implemented whole.
+type PartialMain<T> = T extends (...args: never[]) => unknown ? T : Partial<T>;
+
+/**
+ * The two ends of an in-memory session: `stub` calls the server's main, `server.getRemoteMain()`
+ * calls the client's.
+ */
+export interface InMemoryRpcSessionPair<
+    T extends RpcCompatible<T>, C extends RpcCompatible<C> = undefined> {
+  stub: RpcStub<T>;
+  client: RpcSession<T>;
+  server: RpcSession<C>;
+  /** Breaks both ends as a dropped connection would. */
+  disconnect(reason: unknown): void;
+}
+
+/**
+ * Start a client session and a server session connected in memory, typically for tests. `main`
+ * implements `T` for the server, and `options.clientMain` optionally implements `C` for the client;
+ * either may implement only part of an object type. `client.getStats()` and `server.getStats()`
+ * expose leaked references.
+ */
+export function newInMemoryRpcSessionPair<
+    T extends RpcCompatible<T>, C extends RpcCompatible<C> = undefined>(
+    main: PartialMain<T>, options?: RpcSessionOptions & { clientMain?: PartialMain<C> },
+): InMemoryRpcSessionPair<T, C> {
+  let { clientMain, ...sessionOptions } = options ?? {};
+  let [clientTransport, serverTransport] = InMemoryTransport.pair();
+  let client = new RpcSession<T>(clientTransport, clientMain, sessionOptions);
+  return {
+    stub: client.getRemoteMain(),
+    client,
+    server: new RpcSession<C>(serverTransport, main, sessionOptions),
+    disconnect: reason => clientTransport.abort(reason),
+  };
+}
 
 /**
  * Implements unified handling of HTTP-batch and WebSocket responses for the Cloudflare Workers

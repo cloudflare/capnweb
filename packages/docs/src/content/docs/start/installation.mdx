@@ -44,6 +44,13 @@ very welcome.
 If a runtime has no suitable network API at all, you can still use Cap'n Web by supplying a
 [custom transport](/transports/custom/) over any bidirectional message stream.
 
+:::caution
+Stubs and `RpcTarget`s only work with the copy of `capnweb` that created them. If your app or tests
+load two copies (two installed versions, or both the ESM and CommonJS builds), passing a stub from
+one into a session from the other fails with `Cannot serialize value`. Make sure every package
+resolves the same `capnweb`.
+:::
+
 ## TypeScript setup
 
 Cap'n Web is written in TypeScript and ships its own types; you do not need a `@types` package.

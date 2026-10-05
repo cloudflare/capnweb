@@ -5,6 +5,7 @@ import {
   RpcTarget,
   newHttpBatchRpcSession,
   newWebSocketRpcSession,
+  newInMemoryRpcSessionPair,
   type RpcCompatible,
   type RpcTransport,
 } from "../src/index.js"
@@ -230,6 +231,17 @@ void assertAwaitedShapes
 declare const formatterStub: RpcStub<Formatter>
 expectAssignable<Promise<string>>(formatterStub(1))
 
+// An in-memory pair's mains may implement part of an interface, but a function must be whole.
+const inMemoryPair = newInMemoryRpcSessionPair<PublicApi, Counter>(
+  { pingAsync: async () => 1 },
+  { clientMain: { increment: () => 1 } },
+)
+expectType<RpcStub<PublicApi>>(inMemoryPair.stub)
+expectType<RpcStub<Counter>>(inMemoryPair.server.getRemoteMain())
+newInMemoryRpcSessionPair<Formatter>(async (value: number) => String(value))
+const inferredPairStub = newInMemoryRpcSessionPair(new Counter()).stub
+type _InferredPairStub = Expect<Equal<typeof inferredPairStub, RpcStub<Counter>>>
+
 // Negative checks (must fail type-checking).
 
 // @ts-expect-error wrong method name
@@ -275,3 +287,9 @@ const shouldBeErrorStringPromise: Promise<string> = api.ping()
 
 // @ts-expect-error transport must implement RpcTransport
 new RpcSession<PublicApi>({})
+
+// @ts-expect-error in-memory main must match the interface it partly implements
+newInMemoryRpcSessionPair<PublicApi>({ pingAsync: async () => "1" })
+
+// @ts-expect-error a function main must match the function type
+newInMemoryRpcSessionPair<Formatter>((value: string) => value)
