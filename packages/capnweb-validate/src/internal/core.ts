@@ -5,7 +5,7 @@
 // Core runtime helpers called by transformed user code. No capnweb dependency, so this also works with native Workers RPC.
 
 import {
-  isValidationTypeError,
+  isValidationError,
   newValidationTypeError,
   type PropertyPath,
 } from "../error.js";
@@ -420,7 +420,7 @@ export const v = {
             branch(value, path);
             return;
           } catch (err) {
-            if (!isValidationTypeError(err)) throw err;
+            if (!isValidationError(err)) throw err;
           }
         }
         fail(path, label, value);
@@ -646,7 +646,7 @@ function missingMethod(serviceName: string, prop: string): never {
 
 function reportValidationFailure(err: unknown): void {
   // Warn mode logs the mismatch and lets the value through. Re-throw non-validation errors: those are real bugs.
-  if (isValidationTypeError(err)) {
+  if (isValidationError(err)) {
     console.warn(err.message);
     return;
   }
@@ -845,7 +845,7 @@ function wrapResolvedValue(
         branch(value, path);
         return wrapResolvedValue(value, branch, path, side, wrapStubs);
       } catch (err) {
-        if (!isValidationTypeError(err)) throw err;
+        if (!isValidationError(err)) throw err;
       }
     }
     return value;
