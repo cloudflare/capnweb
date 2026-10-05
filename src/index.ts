@@ -38,7 +38,8 @@ export type { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport,
  */
 export type RpcStub<T extends RpcCompatible<T>> = Stub<T>;
 export const RpcStub: {
-  new <T extends RpcCompatible<T>>(value: T): RpcStub<T>;
+  new <T extends RpcCompatible<T>>(
+      value: T extends (...args: never[]) => unknown ? T : Partial<T>): RpcStub<T>;
 } = <any>RpcStubImpl;
 
 /**

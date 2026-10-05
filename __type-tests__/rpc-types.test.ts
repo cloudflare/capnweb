@@ -100,6 +100,26 @@ declare const counterTablePromise: RpcPromise<Record<string, Counter>>
 const localStub = new RpcStub(new Counter())
 expectType<RpcStub<Counter>>(localStub)
 
+const partialApi = new RpcStub<PublicApi>({
+  echoName(name) {
+    expectType<string>(name)
+    return Promise.resolve(name)
+  },
+})
+expectType<RpcStub<PublicApi>>(partialApi)
+expectType<RpcPromise<number>>(partialApi.ping())
+expectType<RpcStub<Formatter>>(new RpcStub(async (value: number) => `${value}`))
+expectType<RpcStub<Formatter>>(new RpcStub<Formatter>(async value => {
+  expectType<number>(value)
+  return `${value}`
+}))
+
+// @ts-expect-error a callable stub still requires a callable implementation
+new RpcStub<Formatter>({})
+
+// @ts-expect-error a callable implementation must preserve its parameter type
+new RpcStub<Formatter>(async (value: string) => value)
+
 const session = new RpcSession<PublicApi>(transport)
 expectType<RpcStub<PublicApi>>(session.getRemoteMain())
 
