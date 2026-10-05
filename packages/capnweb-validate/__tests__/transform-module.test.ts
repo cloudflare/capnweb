@@ -7,6 +7,7 @@
 // record-index, mapped-types, getters, namespace-imports, rpc-compatible-types,
 // method-overloads, generic-class, fetcher-detection, ...).
 
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 import { isTypeScriptLibFileName } from "../src/transform/type-introspector.js";
@@ -321,6 +322,64 @@ describe("transformModule", () => {
     const greet = checkedMethod(loadValidator(code), "greet");
     expect(greet.args[0]).toBe(v.string);
     expect(greet.returns).toBe(v.string);
+  });
+
+  // A hashbang is valid only as the file's first line, and frameworks read
+  // directives such as "use client" from the prologue only; the runtime import
+  // goes after both.
+  it.each([
+    {
+      name: "a directive prologue after a comment",
+      head: `// A comment may precede the prologue.\n"use strict";\n"use client"\n`,
+      hashbang: false,
+      directives: ["use strict", "use client"],
+    },
+    {
+      name: "a hashbang",
+      head: `#!/usr/bin/env node\n`,
+      hashbang: true,
+      directives: [],
+    },
+    {
+      name: "a hashbang and a directive",
+      head: `#!/usr/bin/env node\n"use client";\n`,
+      hashbang: true,
+      directives: ["use client"],
+    },
+  ])("keeps $name ahead of what it inserts", ({ head, hashbang, directives }) => {
+    let { code } = transform(`${head}import { validateRpc } from "capnweb-validate";
+import { RpcTarget } from "capnweb";
+@validateRpc()
+export class Api extends RpcTarget {
+  greet(name: string): string {
+    return name;
+  }
+}
+`);
+    let { diagnostics } = ts.transpileModule(code, {
+      reportDiagnostics: true,
+      compilerOptions: { target: ts.ScriptTarget.ES2022 },
+    });
+    expect(
+      diagnostics?.map((d) => ts.flattenDiagnosticMessageText(d.messageText, "\n"))
+    ).toEqual([]);
+    expect(code.startsWith("#!/usr/bin/env node\n")).toBe(hashbang);
+    let statements = ts.createSourceFile("out.ts", code, ts.ScriptTarget.Latest)
+      .statements;
+    let prologue = statements
+      .slice(0, directives.length)
+      .map((s) =>
+        ts.isExpressionStatement(s) && ts.isStringLiteral(s.expression)
+          ? s.expression.text
+          : null
+      );
+    expect(prologue).toEqual(directives);
+    let runtimeImport = statements[directives.length];
+    expect(
+      runtimeImport &&
+        ts.isImportDeclaration(runtimeImport) &&
+        (runtimeImport.moduleSpecifier as ts.StringLiteral).text
+    ).toBe("capnweb-validate/internal/core");
   });
 
   it("decorator: filters inherited WorkerEntrypoint platform methods", () => {
