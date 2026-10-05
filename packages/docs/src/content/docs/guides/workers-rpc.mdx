@@ -60,7 +60,8 @@ RPC. The intent is that the two converge, with Cap'n Web arriving first.
 
 | Capability                                  | Cap'n Web | Workers RPC |
 | ------------------------------------------- | --------- | ----------- |
-| `Map`, `Set`, and some other built-ins      | Not yet   | Yes         |
+| `Map` and some other built-ins              | Not yet   | Yes         |
+| `Set`                                       | Yes       | Yes         |
 | Values containing aliases and cycles        | No        | Yes\*       |
 | `RpcPromise` in the parameters of a request | Yes       | Not yet     |
 | The magic `.map()` method                   | Yes       | Not yet     |

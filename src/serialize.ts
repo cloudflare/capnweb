@@ -319,6 +319,32 @@ export class Devaluator {
         return [result];
       }
 
+      case "set": {
+        let set = <Set<unknown>>value;
+        let setElements = [...set];
+        let elements: unknown[] = [];
+
+        // Validate all direct elements before encoding any of them. Encoding streams and Blobs
+        // creates pipes immediately, and those pipes cannot be rolled back if a later element is
+        // rejected.
+        for (let element of setElements) {
+          switch (typeForRpc(element)) {
+            case "blob":
+              throw new TypeError("Cannot serialize a Blob as an element of a Set.");
+            case "rpc-promise":
+            case "rpc-thenable":
+              throw new TypeError(
+                  "Cannot serialize a promise as an element of a Set. Await the value before " +
+                  "adding it to the Set.");
+          }
+        }
+
+        for (let element of setElements) {
+          elements.push(this.devaluateImpl(element, set, depth + 1));
+        }
+        return ["set", elements];
+      }
+
       case "bigint":
         // At structuredClonable level, keep BigInt as native value
         if (this.encodingLevel === "structuredClonable") {
@@ -526,6 +552,7 @@ export class Devaluator {
         // synchronously, and we MUST serialize the message synchronously. Hence, we have no choice
         // but to use streaming even for small blobs.
         let blob = value as Blob;
+
         let readable = blob.stream();
         let hook = streamImpl.createReadableStreamHook(readable);
         let importId = this.exporter.createPipe(readable, hook);
@@ -861,6 +888,20 @@ export class Evaluator {
             return new RegExp(value[1], value[2] as string | undefined);
           }
           break;
+        case "set":
+          if (value.length === 2 && value[1] instanceof Array) {
+            let elements = value[1];
+            let set = new Set();
+            for (let i = 0; i < elements.length; i++) {
+              let copy = this.evaluateImpl(elements[i], set, i, depth + 1);
+              if (copy instanceof RpcPromise) {
+                throw new TypeError("Cannot deserialize a promise as an element of a Set.");
+              }
+              set.add(copy);
+            }
+            return set;
+          }
+          break;
         case "bytes": {
           let bytes: Uint8Array;
           // At jsonCompatibleWithBytes/structuredClonable level, bytes may already be raw.
@@ -1108,7 +1149,7 @@ export class Evaluator {
               return promise;
             } else {
               this.hooks.push(hook);
-              return new RpcPromise(hook, []);
+              return new RpcStub(hook);
             }
           };
 

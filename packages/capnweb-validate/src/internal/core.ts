@@ -75,6 +75,7 @@ type BaseType =
   | bigint
   | string
   | Date
+  | Set<unknown>
   | Error
   | RegExp
   | Blob
