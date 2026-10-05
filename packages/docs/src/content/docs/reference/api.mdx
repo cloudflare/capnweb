@@ -101,9 +101,10 @@ Passed as the last argument to the session and response helpers. Commonly used f
 
 ## Value types on the wire
 
-**By value:** primitives, plain objects, arrays, `bigint`, `Date`, `ArrayBuffer`, `DataView`, typed
-arrays, `Error` and well-known subclasses, `Blob`, `ReadableStream`, `WritableStream`, `URL`,
-`RegExp`, `Headers`, `Request`, `Response`.
+**By value:** primitives, plain objects, arrays, `bigint`, `Date`, `Temporal.Instant`,
+`Temporal.PlainDate`, `Temporal.Duration`, `ArrayBuffer`, `DataView`, typed arrays, `Error` and
+well-known subclasses, `Blob`, `ReadableStream`, `WritableStream`, `URL`, `RegExp`, `Headers`,
+`Request`, `Response`.
 
 **By reference:** `RpcTarget` subclasses, functions, existing stubs and promises.
 
