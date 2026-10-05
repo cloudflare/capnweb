@@ -247,11 +247,6 @@ class ImportTableEntry {
   }
 
   async awaitResolution(): Promise<RpcPayload> {
-    // If the entry has already settled, the import has been released (resolve() calls
-    // sendRelease()), so there is nothing left on the wire to pull. Read the stored
-    // resolution instead of sending a "pull" naming a released id.
-    if (this.resolution) return this.resolution.pull();
-
     if (!this.activePull) {
       this.session.sendPull(this.importId);
       this.activePull = Promise.withResolvers<void>();

@@ -4239,7 +4239,7 @@ describe("settled import references", () => {
   //
   // dispose(), abort() and onBroken() all already branch on `resolution`; getImport() did not.
   it("does not cite a released import id after the reference has settled", async () => {
-    let harness = new TestHarness(new TestTarget());
+    await using harness = new TestHarness(new TestTarget());
 
     // Awaiting settles the entry: the resolution is stored and the import is released.
     let promise = harness.stub.returnNumber(7);
@@ -4251,20 +4251,31 @@ describe("settled import references", () => {
 
     // The load-bearing assertion: a failing call would be tolerable, a dead session is not.
     expect(await harness.stub.returnNumber(3)).toBe(3);
+  });
 
-    harness.stub.dispose();
+  // Same as above, but through a property path on the settled promise, which the serializer
+  // resolves via hook.get(path) on the settled entry rather than hook.dup().
+  it("does not cite a released import id via a property of a settled reference", async () => {
+    await using harness = new TestHarness(new TestTarget());
+
+    let promise = harness.stub.callSquare(harness.stub, 7);
+    await promise;
+
+    expect(await harness.stub.square(promise.result)).toBe(2401);
+    expect(await harness.stub.returnNumber(3)).toBe(3);
   });
 
   // A guard that cleared `importId` instead of gating its use would stop the release
   // accounting naming the id, leaking the peer's exports.
   it("still releases settled imports by id", async () => {
-    let harness = new TestHarness(new TestTarget());
+    await using harness = new TestHarness(new TestTarget());
 
     await harness.stub.returnNumber(1);
     await harness.stub.returnNumber(2);
+    await pumpMicrotasks();
 
-    expect(await harness.stub.returnNumber(3)).toBe(3);
-
-    harness.stub.dispose();
+    // Both settled imports must have been released on the wire, not just dropped locally.
+    expect(harness.client.getStats()).toStrictEqual({imports: 1, exports: 1});
+    expect(harness.server.getStats()).toStrictEqual({imports: 1, exports: 1});
   });
 });
