@@ -31,6 +31,10 @@ let SERIALIZE_TEST_CASES: Record<string, unknown> = {
 
   '["set",[1,2,"abc",[[123]]]]': new Set([1, 2, "abc", [123]]),
 
+  '["map",[]]': new Map(),
+  '["map",[[1,"one"],["two",[[2]]],[["date",1234],{"nested":true}]]]':
+      new Map<unknown, unknown>([[1, "one"], ["two", [2]], [new Date(1234), {nested: true}]]),
+
   '["bigint","123"]': 123n,
   '["date",1234]': new Date(1234),
   '["bytes","aGVsbG8h"]': new TextEncoder().encode("hello!"),
@@ -141,6 +145,8 @@ describe("simple serialization", () => {
     expect(() => deserialize('["unknown_type", "param"]')).toThrowError();
     expect(() => deserialize('["date"]')).toThrowError(); // missing timestamp
     expect(() => deserialize('["error"]')).toThrowError(); // missing type and message
+    expect(() => deserialize('["map",[[1]]]')).toThrowError(); // entry isn't a key/value pair
+    expect(() => deserialize('["map",[1]]')).toThrowError(); // entry isn't an array
   })
 
   it("can serialize large Uint8Array without stack overflow", () => {
@@ -1781,6 +1787,286 @@ describe("promises and Blobs inside a Set", () => {
             value[0] instanceof Array && value[0].length === 1 &&
             value[0][0] instanceof Array && value[0][0][0] === "pipeline") {
           return ["set", value[0]];
+        }
+        return value;
+      });
+      return origSend.call(this, rewritten);
+    };
+
+    using promise = stub.square(3);
+    await expect(() => stub.inspect([promise] as any)).rejects.toThrow(DESERIALIZE_ERROR);
+  });
+});
+
+describe("promises, Blobs, and stubs inside a Map", () => {
+  // Map keys follow the same rules as Set elements: a promise or Blob is delivered by substituting
+  // the value into its parent, i.e. `parent[property] = value`, and a Map has no property that
+  // names a key. Rather than rebuild the Map behind the application's back, we reject it. Stubs
+  // need no substitution and remain valid keys.
+  //
+  // Values are a different story: once the key is known, a temporary setter can replace the value
+  // under that key in place, so promises and Blobs remain valid Map values. These tests pin the
+  // behavior of those setters on both the wire path (Evaluator) and the local path
+  // (RpcPayload.deepCopy).
+  const PROMISE_ERROR = "Cannot serialize a promise as a key of a Map";
+  const LOCAL_PROMISE_ERROR = "Cannot pass a promise as a key of a Map";
+  const BLOB_ERROR = "Cannot serialize a Blob as a key of a Map";
+  const DESERIALIZE_ERROR = "Cannot deserialize a promise as a key of a Map";
+
+  class MapTarget extends RpcTarget {
+    square(i: number) {
+      return i * i;
+    }
+
+    // Reports what actually arrived. Deliberately does not await the entries: an unresolved
+    // promise is still thenable, so awaiting would hide a failure to substitute it.
+    inspect(container: Map<unknown, unknown>) {
+      let render = (value: unknown) => {
+        // RPC stubs and promises are callable, so typeof reports "function", not "object".
+        let objectLike = value !== null &&
+            (typeof value === "object" || typeof value === "function");
+        return objectLike && typeof (<any>value).then === "function" ? "<unresolved>" : value;
+      };
+      return {
+        isMap: container instanceof Map,
+        entries: [...container].map(([key, value]) => [render(key), render(value)]),
+        // Anything here is a resolved value that was written onto the Map as a property instead
+        // of replacing the value it belongs to.
+        strayProps: Object.getOwnPropertyNames(container),
+      };
+    }
+
+    // Blobs are always delivered through the promise machinery, so this exercises the value slot
+    // in the returning direction without any pipelining on the caller's part.
+    makeBlobValueMap() {
+      return new Map([["first", new Blob(["one"])], ["second", new Blob(["two"])]]);
+    }
+
+    // Sending a Blob over a connection means streaming it, so it arrives behind a promise and hits
+    // the key restriction, even though the application never created a promise.
+    makeBlobKeyMap() {
+      return new Map([[new Blob(["key"]), "value"]]);
+    }
+
+    // Hands the stub straight back as a Map key. Since the caller is the one that exported it, the
+    // caller's Evaluator sees the key as an ["import", id] expression.
+    bounce(stub: any) {
+      return new Map([[stub.dup(), "counter"]]);
+    }
+
+    makeCounter(i: number) {
+      return new Counter(i);
+    }
+
+    // Stubs are passed by reference rather than substituted, so they remain legal keys.
+    async incrementAll(container: Map<unknown, unknown>) {
+      let results: [number, unknown][] = [];
+      for (let [key, value] of container) {
+        results.push([await (<any>key).increment(1), value]);
+      }
+      return {isMap: container instanceof Map, results};
+    }
+  }
+
+  it("substitutes a promise sent as a Map value", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using promise = stub.square(3);
+
+    let result = await stub.inspect(new Map<unknown, unknown>([
+      ["alpha", 1], ["beta", promise], ["omega", 3],
+    ]));
+
+    expect(result.isMap).toBe(true);
+    expect(result.entries).toStrictEqual([["alpha", 1], ["beta", 9], ["omega", 3]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes multiple promise values at their own positions", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using first = stub.square(3);
+    using second = stub.square(4);
+
+    let result = await stub.inspect(new Map<unknown, unknown>([
+      ["a", first], ["b", 0], ["c", second], ["d", first],
+    ]));
+
+    expect(result.entries).toStrictEqual([["a", 9], ["b", 0], ["c", 16], ["d", 9]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("leaves no residue when a promise is nested inside a Map key or value", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using inKey = stub.square(3);
+    using inValue = stub.square(4);
+
+    // Only a promise that is *itself* a key is a problem. Here each promise's parent is an inner
+    // object, which has a property to write the resolution to, so the Map needs no setter.
+    let result = await stub.inspect(new Map<unknown, unknown>([[{key: inKey}, {value: inValue}]]));
+
+    expect(result.entries).toStrictEqual([[{key: 9}, {value: 16}]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("substitutes Blobs in Map values returned to the caller", async () => {
+    await using harness = new TestHarness(new MapTarget());
+
+    let received = await harness.stub.makeBlobValueMap();
+
+    expect(received).toBeInstanceOf(Map);
+    expect(Object.getOwnPropertyNames(received)).toStrictEqual([]);
+    expect([...received.keys()]).toStrictEqual(["first", "second"]);
+    expect(await received.get("first")!.text()).toBe("one");
+    expect(await received.get("second")!.text()).toBe("two");
+  });
+
+  it("substitutes promise values in a Map passed to a local stub", async () => {
+    using stub = new RpcStub(new MapTarget());
+    using first = stub.square(3);
+    using second = stub.square(4);
+    let source = new Map<unknown, unknown>([["alpha", first], ["beta", "middle"], ["omega", second]]);
+
+    let result = await stub.inspect(source);
+
+    expect(result.entries).toStrictEqual([["alpha", 9], ["beta", "middle"], ["omega", 16]]);
+    expect(result.strayProps).toStrictEqual([]);
+
+    // deepCopy() must fix up its copy, not the caller's Map.
+    expect([...source]).toStrictEqual([["alpha", first], ["beta", "middle"], ["omega", second]]);
+    expect(Object.getOwnPropertyNames(source)).toStrictEqual([]);
+  });
+
+  it("rejects a promise sent as a Map key", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+    using promise = stub.square(3);
+
+    // Thrown synchronously at the call site, like any other unserializable argument.
+    expect(() => stub.inspect(new Map<unknown, unknown>([["alpha", 1], [promise, 2]])))
+        .toThrow(PROMISE_ERROR);
+
+    // The failed call must not have poisoned the session.
+    expect(await stub.inspect(new Map<unknown, unknown>([["alpha", 1]])))
+        .toStrictEqual({isMap: true, entries: [["alpha", 1]], strayProps: []});
+  });
+
+  it("rejects a promise key in a Map passed to a local stub", async () => {
+    let targetDisposed = false;
+    class DisposableCounter extends Counter {
+      [Symbol.dispose]() { targetDisposed = true; }
+    }
+
+    {
+      using stub = new RpcStub(new MapTarget());
+      using counter = new RpcStub(new DisposableCounter(5));
+      using promise = stub.square(3);
+      let source = new Map<unknown, unknown>([["alpha", counter], [promise, "omega"]]);
+
+      // The local path copies at delivery time, so this surfaces as a rejection.
+      await expect(() => stub.inspect(source)).rejects.toThrow(LOCAL_PROMISE_ERROR);
+
+      // The caller's Map is left exactly as it was.
+      expect([...source]).toStrictEqual([["alpha", counter], [promise, "omega"]]);
+      expect(Object.getOwnPropertyNames(source)).toStrictEqual([]);
+    }
+
+    // The failed copy must not retain a duplicate of the stub in the preceding entry.
+    expect(targetDisposed).toBe(true);
+  });
+
+  it("rejects a Blob sent as a Map key", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    let stream = new ReadableStream();
+
+    // All keys are validated before encoding starts, so neither the preceding stream value nor
+    // the Blob creates a pipe. The harness checks at the end of the test that no import leaked.
+    expect(() => harness.stub.inspect(new Map<unknown, unknown>([
+      ["stream", stream], [new Blob(["hello"]), "blob"],
+    ]))).toThrow(BLOB_ERROR);
+  });
+
+  it("rejects a Blob key in a Map returned to the caller", async () => {
+    await using harness = new TestHarness(new MapTarget());
+
+    // Caught by the server as it serializes its result. Note the arrow function: an RpcPromise is
+    // callable, so passing one to `expect(...).rejects` directly would make vitest invoke it.
+    await expect(() => harness.stub.makeBlobKeyMap()).rejects.toThrow(BLOB_ERROR);
+  });
+
+  it("rejects a Map with a Blob key in plain serialize()", () => {
+    expect(() => serialize(new Map([[new Blob(["hello"]), 1]]))).toThrow(BLOB_ERROR);
+  });
+
+  it("accepts a Blob key in a Map passed to a local stub", async () => {
+    using stub = new RpcStub(new MapTarget());
+    let blob = new Blob(["hello"]);
+
+    // A same-process call streams nothing. The app receives this very Blob, so no promise is
+    // involved and there is nothing to substitute. Only a Blob crossing a connection is a problem.
+    let result = await stub.inspect(new Map<unknown, unknown>([[blob, "value"]]));
+
+    expect(result.entries).toStrictEqual([[blob, "value"]]);
+    expect(result.strayProps).toStrictEqual([]);
+  });
+
+  it("accepts a stub sent as a Map key", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    using counter = new RpcStub(new Counter(5));
+
+    expect(await harness.stub.incrementAll(new Map<unknown, unknown>([[counter, "c"]])))
+        .toStrictEqual({isMap: true, results: [[6, "c"]]});
+  });
+
+  it("accepts a stub pointing back at the peer as a Map key", async () => {
+    await using harness = new TestHarness(new MapTarget());
+
+    using counter = await harness.stub.makeCounter(5);
+
+    expect(await harness.stub.incrementAll(new Map<unknown, unknown>([[counter, "c"]])))
+        .toStrictEqual({isMap: true, results: [[6, "c"]]});
+  });
+
+  it("accepts a stub as a Map key returned to the caller", async () => {
+    await using harness = new TestHarness(new MapTarget());
+    using counter = new RpcStub(new Counter(5));
+
+    using result = await harness.stub.bounce(counter);
+
+    // The returned stub remains a stub when the Map is sent over the wire again.
+    expect(await harness.stub.incrementAll(result))
+        .toStrictEqual({isMap: true, results: [[6, "counter"]]});
+  });
+
+  it("accepts a stub as a Map key passed to a local stub", async () => {
+    using stub = new RpcStub(new MapTarget());
+    using counter = new RpcStub(new Counter(5));
+
+    expect(await stub.incrementAll(new Map<unknown, unknown>([[counter, "c"]])))
+        .toStrictEqual({isMap: true, results: [[6, "c"]]});
+  });
+
+  it("rejects a promise arriving as a Map key from a peer", async () => {
+    // The sender-side check above means a well-behaved peer never produces this message, so we
+    // have to forge it: rewrite the outgoing call so the argument that was an array containing a
+    // pipelined promise becomes a *Map* whose key is that same promise. This exercises the
+    // receiver's own guard, which is what stops a hostile or buggy peer from corrupting a Map.
+    //
+    // Not using `await using`: the forged message breaks the session, so the harness's
+    // end-of-test "everything was disposed" check does not apply.
+    let harness = new TestHarness(new MapTarget());
+    let stub = harness.stub;
+
+    let origSend = harness.clientTransport.send;
+    harness.clientTransport.send = function(message: string) {
+      let rewritten = JSON.stringify(JSON.parse(message), function(_key, value) {
+        // Match the escaped-array encoding `[[<element>]]` and re-encode it as
+        // `["map", [[<element>, 1]]]`.
+        if (value instanceof Array && value.length === 1 &&
+            value[0] instanceof Array && value[0].length === 1 &&
+            value[0][0] instanceof Array && value[0][0][0] === "pipeline") {
+          return ["map", [[value[0][0], 1]]];
         }
         return value;
       });
