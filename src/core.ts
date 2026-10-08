@@ -1116,8 +1116,6 @@ export class RpcPayload {
 
         let result = new Map();
         for (let [key, val] of entries) {
-          // A key is never a promise (checked above), so it is never delivered to and needs no
-          // slot. A value's slot is its key: `deliverTo()` delivers into a `Map` with `set()`.
           let keyCopy = this.deepCopy(key, map, undefined, result, dupStubs, owner);
           result.set(keyCopy, this.deepCopy(val, map, keyCopy, result, dupStubs, owner));
         }
@@ -1287,10 +1285,7 @@ export class RpcPayload {
     if (this.value instanceof RpcPromise) {
       RpcPayload.deliverRpcPromiseTo(this.value, parent, property, promises);
     } else {
-      if (parent instanceof Map) {
-        // A `Map` has no property naming one of its values, so a promise stored as a value is
-        // located by its key instead. The key is already in the map, so `set()` replaces the value
-        // in place, keeping the entry's position.
+      if (parent instanceof Map) {        
         parent.set(property, this.value);
       } else {
         (<any>parent)[<string | number>property] = this.value;
