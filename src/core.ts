@@ -1285,7 +1285,7 @@ export class RpcPayload {
     if (this.value instanceof RpcPromise) {
       RpcPayload.deliverRpcPromiseTo(this.value, parent, property, promises);
     } else {
-      if (parent instanceof Map) {        
+      if (parent instanceof Map) {
         parent.set(property, this.value);
       } else {
         (<any>parent)[<string | number>property] = this.value;
