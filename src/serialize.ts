@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
+import { StubHook, RpcPayload, typeForRpc, RpcStub, RpcPromise, LocatedPromise, PropertyName, mapKeyToPropertyName, RpcTarget, unwrapStubAndPath, streamImpl, PromiseStubHook, PayloadStubHook } from "./core.js";
 
 export type ImportId = number;
 export type ExportId = number;
@@ -866,7 +866,7 @@ export class Evaluator {
   }
 
   private evaluateImpl(
-      value: unknown, parent: object, property: unknown, depth: number): unknown {
+      value: unknown, parent: object, property: PropertyName, depth: number): unknown {
     let maxDepth = this.limits.maxDepth;
     if (depth >= maxDepth) {
       throw new TypeError(
@@ -942,11 +942,11 @@ export class Evaluator {
               if (!(entry instanceof Array) || entry.length !== 2) {
                 throw new TypeError("Map entries must be serialized as key/value pairs.");
               }
-              let key = this.evaluateImpl(entry[0], map, undefined, depth + 1);
+              let key = this.evaluateImpl(entry[0], map, i, depth + 1);
               if (key instanceof RpcPromise) {
                 throw new TypeError("Cannot deserialize a promise as a key of a Map.");
               }
-              map.set(key, this.evaluateImpl(entry[1], map, key, depth + 1));
+              map.set(key, this.evaluateImpl(entry[1], map, mapKeyToPropertyName(key), depth + 1));
             }
             return map;
           }
