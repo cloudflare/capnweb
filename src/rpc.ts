@@ -966,9 +966,9 @@ class RpcSessionImpl implements Importer, Exporter {
       }
     }
 
-    // WATCH OUT: these are sparse arrays. `for/let/of` will iterate only positive indexes
-    // including deleted indexes -- bad. We need to use `for/let/in` instead.
-    for (let i in this.onBrokenCallbacks) {
+    // WATCH OUT: these are sparse arrays. `Object.keys()` visits only their own entries, skipping
+    // deleted indexes and any enumerable properties added to `Array.prototype`.
+    for (let i of Object.keys(this.onBrokenCallbacks)) {
       try {
         this.onBrokenCallbacks[i](error);
       } catch (err) {
@@ -976,11 +976,11 @@ class RpcSessionImpl implements Importer, Exporter {
         Promise.resolve(err);
       }
     }
-    for (let i in this.imports) {
-      this.imports[i].abort(error);
+    for (let i of Object.keys(this.imports)) {
+      this.imports[Number(i)].abort(error);
     }
-    for (let i in this.exports) {
-      this.exports[i].hook.dispose();
+    for (let i of Object.keys(this.exports)) {
+      this.exports[Number(i)].hook.dispose();
     }
   }
 
@@ -1142,12 +1142,8 @@ class RpcSessionImpl implements Importer, Exporter {
   getStats(): {imports: number, exports: number} {
     let result = {imports: 0, exports: 0};
     // We can't just use `.length` because the arrays can be sparse and can have negative indexes.
-    for (let i in this.imports) {
-      ++result.imports;
-    }
-    for (let i in this.exports) {
-      ++result.exports;
-    }
+    result.imports = Object.keys(this.imports).length;
+    result.exports = Object.keys(this.exports).length;
     return result;
   }
 }

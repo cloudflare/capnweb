@@ -1866,6 +1866,28 @@ describe("map() over RPC", () => {
   });
 });
 
+describe("session tables", () => {
+  it("ignore enumerable properties added to Array.prototype", async () => {
+    Object.defineProperty(Array.prototype, "capnwebTestExtension", {
+      value: () => {},
+      enumerable: true,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      let harness = new TestHarness(new TestTarget());
+      expect(await harness.stub.square(3)).toBe(9);
+      await pumpMicrotasks();
+      harness.checkAllDisposed();
+
+      harness.stub[Symbol.dispose]();
+      await pumpMicrotasks();
+    } finally {
+      delete (Array.prototype as any).capnwebTestExtension;
+    }
+  });
+});
+
 describe("stub disposal over RPC", () => {
   it("disposes remote RpcTarget when stub is disposed", async () => {
     let targetDisposedCount = 0;
