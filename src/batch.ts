@@ -73,10 +73,23 @@ class BatchClientTransport implements RpcTransport {
   }
 }
 
+export type HttpBatchRpcSessionOptions = RpcSessionOptions & {
+  /**
+   * Function used to send the batch request. Must have the same signature as the global `fetch()`.
+   * Defaults to the global `fetch`. Useful for runtimes where requests must go through a special
+   * fetch function, such as a VPC or service binding (pass e.g.
+   * `(input, init) => env.VPC.fetch(input, init)`), or for instrumenting requests.
+   */
+  fetch?: typeof fetch;
+};
+
 export function newHttpBatchRpcSession(
-    urlOrRequest: string | Request, options?: RpcSessionOptions): RpcStub {
+    urlOrRequest: string | Request, options?: HttpBatchRpcSessionOptions): RpcStub {
   let sendBatch: SendBatchFunc = async (batch: string[]) => {
-    let response = await fetch(urlOrRequest, {
+    // Look up the global `fetch` at send time (not at session creation) so that it behaves as it
+    // did before this option existed.
+    let fetchFunc = options?.fetch ?? fetch;
+    let response = await fetchFunc(urlOrRequest, {
       method: "POST",
       body: batch.join("\n"),
     });
