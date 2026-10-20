@@ -11,7 +11,8 @@ import { RpcTargetBranded, RpcCompatible, Stub, ElideStub, PayloadOrStub,
 import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
-         newHttpBatchRpcResponse, nodeHttpBatchRpcResponse } from "./batch.js";
+         newHttpBatchRpcResponse, nodeHttpBatchRpcResponse,
+         type HttpBatchRpcSessionOptions } from "./batch.js";
 import { newMessagePortRpcSession as newMessagePortRpcSessionImpl } from "./messageport.js";
 import { forceInitMap } from "./map.js";
 import { forceInitStreams } from "./streams.js";
@@ -23,7 +24,7 @@ forceInitStreams();
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
          nodeHttpBatchRpcResponse, WebSocketTransport, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH };
 export type { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport,
-         RpcSessionOptions, RpcCompatible, EncodingLevel, RpcLimits };
+         RpcSessionOptions, HttpBatchRpcSessionOptions, RpcCompatible, EncodingLevel, RpcLimits };
 
 // Hack the type system to make RpcStub's types work nicely!
 /**
@@ -142,9 +143,12 @@ export let newWebSocketRpcSession:<T extends RpcCompatible<T> = Empty>
  * The parameters to this method have exactly the same signature as `fetch()`, but the return
  * value is an RpcStub. You can customize anything about the request except for the method
  * (it will always be set to POST) and the body (which the RPC system will fill in).
+ *
+ * To send the request with something other than the global `fetch()`, pass a `fetch` function in
+ * `options`.
  */
 export let newHttpBatchRpcSession:<T extends RpcCompatible<T>>
-    (urlOrRequest: string | Request, options?: RpcSessionOptions) => RpcStub<T> =
+    (urlOrRequest: string | Request, options?: HttpBatchRpcSessionOptions) => RpcStub<T> =
     <any>newHttpBatchRpcSessionImpl;
 
 /**
