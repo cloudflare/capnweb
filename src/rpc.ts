@@ -182,6 +182,10 @@ type ExportTableEntry = {
   pipeReadable?: ReadableStream
 };
 
+// A callback registered with onRpcBroken() on an unresolved import. `index` is its slot in
+// `session.onBrokenCallbacks`, kept so that the import owning the registration can delete it.
+type OnBrokenRegistration = {callback: (error: any) => void, index: number};
+
 // Entry on the imports table.
 class ImportTableEntry {
   constructor(public session: RpcSessionImpl, public importId: number, pulling: boolean) {
@@ -196,9 +200,9 @@ class ImportTableEntry {
   private activePull?: PromiseWithResolvers<void>;
   public resolution?: StubHook;
 
-  // List of integer indexes into session.onBrokenCallbacks which are callbacks registered on
-  // this import. Initialized on first use (so `undefined` is the same as an empty list).
-  private onBrokenRegistrations?: number[];
+  // List of registrations in session.onBrokenCallbacks which are callbacks registered on this
+  // import. Initialized on first use (so `undefined` is the same as an empty list).
+  private onBrokenRegistrations?: OnBrokenRegistration[];
 
   resolve(resolution: StubHook) {
     // TODO: Need embargo handling here? PayloadStubHook needs to be wrapped in a
@@ -221,20 +225,23 @@ class ImportTableEntry {
     if (this.onBrokenRegistrations) {
       // Delete all our callback registrations from this session and re-register them on the
       // target stub.
-      for (let i of this.onBrokenRegistrations) {
-        let callback = this.session.onBrokenCallbacks[i];
+      for (let {callback, index} of this.onBrokenRegistrations) {
         let endIndex = this.session.onBrokenCallbacks.length;
         resolution.onBroken(callback);
-        if (this.session.onBrokenCallbacks[endIndex] === callback) {
+        let moved = this.session.onBrokenCallbacks[endIndex];
+        if (moved?.callback === callback) {
           // Oh, calling onBroken() just registered the callback back on this connection again.
           // But when the connection dies, we want all the callbacks to be called in the order in
           // which they were registered. So we don't want this one pushed to the back of the line
-          // here. So, let's remove the newly-added registration and keep the original.
+          // here. So, let's move the newly-added registration into the original's slot, updating
+          // its index so that its new owner can still unregister it.
           // TODO: This is quite hacky, think about whether this is really the right answer.
+          moved.index = index;
+          this.session.onBrokenCallbacks[index] = moved;
           delete this.session.onBrokenCallbacks[endIndex];
         } else {
           // The callback is now registered elsewhere, so delete it from our session.
-          delete this.session.onBrokenCallbacks[i];
+          delete this.session.onBrokenCallbacks[index];
         }
       }
       this.onBrokenRegistrations = undefined;
@@ -259,6 +266,11 @@ class ImportTableEntry {
     if (this.resolution) {
       this.resolution.dispose();
     } else {
+      // No stub can observe this import anymore. Unregister its callbacks, or the session would
+      // retain them and call them when it ends.
+      for (let {index} of this.onBrokenRegistrations ?? []) {
+        delete this.session.onBrokenCallbacks[index];
+      }
       this.abort(new Error("RPC was canceled because the RpcPromise was disposed."));
       this.sendRelease();
     }
@@ -273,8 +285,8 @@ class ImportTableEntry {
         this.activePull = undefined;
       }
 
-      // The RpcSession itself will have called all our callbacks so we don't need to track the
-      // registrations anymore.
+      // Either the RpcSession itself has called all our callbacks or dispose() has unregistered
+      // them, so we don't need to track the registrations anymore.
       this.onBrokenRegistrations = undefined;
     }
   }
@@ -283,11 +295,11 @@ class ImportTableEntry {
     if (this.resolution) {
       this.resolution.onBroken(callback);
     } else {
-      let index = this.session.onBrokenCallbacks.length;
-      this.session.onBrokenCallbacks.push(callback);
+      let registration = {callback, index: this.session.onBrokenCallbacks.length};
+      this.session.onBrokenCallbacks.push(registration);
 
       if (!this.onBrokenRegistrations) this.onBrokenRegistrations = [];
-      this.onBrokenRegistrations.push(index);
+      this.onBrokenRegistrations.push(registration);
     }
   }
 
@@ -484,9 +496,9 @@ class RpcSessionImpl implements Importer, Exporter {
   // How many promises is our peer expecting us to resolve?
   private pullCount = 0;
 
-  // Sparse array of onBrokenCallback registrations. Items are strictly appended to the end but
-  // may be deleted from the middle (hence leaving the array sparse).
-  onBrokenCallbacks: ((error: any) => void)[] = [];
+  // Sparse array of onBrokenCallback registrations, in the order they were registered. Items may
+  // be deleted from the middle (hence leaving the array sparse).
+  onBrokenCallbacks: OnBrokenRegistration[] = [];
 
   // Encoding level from the transport (defaults to "string")
   private encodingLevel: EncodingLevel;
@@ -923,6 +935,11 @@ class RpcSessionImpl implements Importer, Exporter {
     // Don't double-abort.
     if (this.abortReason !== undefined) return;
 
+    // Detach the callbacks first: app code called below (onSendError, the transport, and the
+    // callbacks themselves) may dispose stubs, which must not unregister callbacks not yet called.
+    let onBrokenCallbacks = this.onBrokenCallbacks;
+    this.onBrokenCallbacks = [];
+
     this.cancelReadLoop?.(error);
     this.cancelReadLoop = undefined;
 
@@ -968,9 +985,9 @@ class RpcSessionImpl implements Importer, Exporter {
 
     // WATCH OUT: these are sparse arrays. `for/let/of` will iterate only positive indexes
     // including deleted indexes -- bad. We need to use `for/let/in` instead.
-    for (let i in this.onBrokenCallbacks) {
+    for (let i in onBrokenCallbacks) {
       try {
-        this.onBrokenCallbacks[i](error);
+        onBrokenCallbacks[i].callback(error);
       } catch (err) {
         // Treat as unhandled rejection.
         Promise.resolve(err);
