@@ -64,7 +64,6 @@
 
     // Agent prompts rather than documentation. They are structured with XML
     // tags on purpose, which is exactly what MD033 exists to catch.
-    "!.opencode/**/*.md",
     "!.github/**/*.md",
 
     "!**/node_modules/**",
