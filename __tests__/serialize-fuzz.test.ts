@@ -202,6 +202,24 @@ function canon(v: unknown, sent: boolean): unknown {
   return { $: "object", entries: keys.map(k => [k, c((v as any)[k])]) };
 }
 
+// Paths to byte views in a raw message whose underlying buffer holds more than the view itself.
+// Structured cloning a view copies its entire buffer, so those extra bytes reach the peer even if
+// the receiving Cap'n Web code never exposes them to the app.
+function oversizedByteViews(v: unknown, path = "message", found: string[] = []): string[] {
+  if (ArrayBuffer.isView(v)) {
+    if (v.buffer.byteLength !== v.byteLength) {
+      found.push(`${path}: ${v.byteLength} bytes in a ${v.buffer.byteLength}-byte buffer`);
+    }
+  } else if (Array.isArray(v)) {
+    v.forEach((x, i) => oversizedByteViews(x, `${path}[${i}]`, found));
+  } else if (v && Object.getPrototypeOf(v) === Object.prototype) {
+    for (let k of Object.keys(v)) {
+      oversizedByteViews((v as any)[k], `${path}[${JSON.stringify(k)}]`, found);
+    }
+  }
+  return found;
+}
+
 // ---------------------------------------------------------------------------------------
 // Session harness
 
@@ -221,6 +239,9 @@ function copyJsonWithBytes(v: unknown): unknown {
 class LoopbackTransport {
   partner!: LoopbackTransport;
   abortReason?: unknown;
+  // Oversized byte views found in messages as they arrived here, i.e. what actually crossed the
+  // transport, before Cap'n Web on this side processed them.
+  arrivedOversized: string[] = [];
   private queue: unknown[] = [];
   private waiter?: () => void;
 
@@ -232,6 +253,7 @@ class LoopbackTransport {
       case "jsonCompatibleWithBytes": message = copyJsonWithBytes(message); break;
       case "structuredClonable": message = structuredClone(message); break;
     }
+    this.partner.arrivedOversized.push(...oversizedByteViews(message));
     this.partner.queue.push(message);
     this.partner.waiter?.();
   }
@@ -273,6 +295,8 @@ async function echoOverSession(encoding: Encoding, value: unknown) {
     return {
       serverReceived: echo.received, result,
       clientAbort: clientTransport.abortReason, serverAbort: serverTransport.abortReason,
+      toServerOversized: serverTransport.arrivedOversized,
+      toClientOversized: clientTransport.arrivedOversized,
     };
   } finally {
     // Shuts down the session (which records an abort), so read abort reasons first.
@@ -305,6 +329,21 @@ describe.each<Encoding>(["string", "jsonCompatible", "jsonCompatibleWithBytes", 
       expect(canon(original, false), "sending modified the caller's value").toStrictEqual(before);
       expect(canon(serverReceived, false), "server received").toStrictEqual(canon(original, true));
       expect(canon(result, false), "client received").toStrictEqual(canon(original, true));
+    }), { numRuns: NUM_RUNS });
+  }, 120_000);
+
+  // Structured cloning copies a view's whole underlying buffer, so a message holding a view into a
+  // larger buffer hands the peer bytes that were never sent. This is checked on the raw messages
+  // because a peer reads those directly; trimming on the receiving side only hides the extra bytes
+  // from apps running unmodified Cap'n Web. The other levels copy exactly the bytes in each view:
+  // base64 for the JSON levels, and for jsonCompatibleWithBytes the transport's binary encoder
+  // (CBOR, MessagePack) writes only the view's range.
+  it.runIf(encoding === "structuredClonable")(
+      "messages don't carry bytes outside what was sent", async () => {
+    await fc.assert(fc.asyncProperty(value, async original => {
+      let { toServerOversized, toClientOversized } = await echoOverSession(encoding, original);
+      expect(toServerOversized, "client to server").toStrictEqual([]);
+      expect(toClientOversized, "server to client").toStrictEqual([]);
     }), { numRuns: NUM_RUNS });
   }, 120_000);
 });
