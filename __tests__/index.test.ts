@@ -2939,6 +2939,35 @@ describe("MessagePorts", () => {
     await expect(() => brokenPromise).rejects.toThrow(
         new Error("Peer closed MessagePort connection."));
   });
+
+  it("sends only the bytes a view covers, not the rest of its backing buffer", async () => {
+    if (typeof Buffer === "undefined") return; // skip in browsers
+
+    // Small Node Buffers are views into a shared pool of unrelated data, and structured clone
+    // copies a view's whole backing buffer. Buffer and Int16Array cover the unmarked and
+    // type-marked encode paths.
+    let backing = new Uint8Array(64).map((_, i) => i).buffer;
+    let buffer = Buffer.from(backing, 8, 4);
+    let int16 = new Int16Array(backing, 16, 2);
+    class BytesServer extends RpcTarget {
+      getBytes() { return [buffer, int16]; }
+    }
+
+    let channel = new MessageChannel();
+    // Inspect messages as they arrive: decoding rewrites them in place.
+    let crossedBufferSizes: number[] = [];
+    function collect(value: unknown) {
+      if (ArrayBuffer.isView(value)) crossedBufferSizes.push(value.buffer.byteLength);
+      else if (value instanceof Array) value.forEach(collect);
+    }
+    channel.port2.addEventListener("message", event => collect(event.data));
+
+    newMessagePortRpcSession(channel.port1, new BytesServer());
+    using stub = newMessagePortRpcSession<BytesServer>(channel.port2);
+
+    expect(await stub.getBytes()).toStrictEqual([new Uint8Array(buffer), int16]);
+    expect(crossedBufferSizes).toStrictEqual([4, 4]);
+  });
 });
 
 // =======================================================================================
