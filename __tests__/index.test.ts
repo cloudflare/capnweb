@@ -369,6 +369,28 @@ describe("error serialization", () => {
     expect(result.foo).toBe("bar");
   });
 
+  it("preserves the name of error types it cannot reconstruct", () => {
+    class ArtifactsError extends Error {
+      name = "ArtifactsError";
+      code = "NOT_FOUND";
+      numericCode = 10200;
+    }
+
+    let result = roundTrip(new ArtifactsError("Repository not found: x."));
+    expect(result).toBeInstanceOf(Error);
+    expect(Object.getPrototypeOf(result)).toBe(Error.prototype);
+    expect(result.name).toBe("ArtifactsError");
+    expect(result.message).toBe("Repository not found: x.");
+    expect(result.code).toBe("NOT_FOUND");
+    expect(result.numericCode).toBe(10200);
+    expect(Object.keys(result)).not.toContain("name");
+    expect(String(result)).toBe("ArtifactsError: Repository not found: x.");
+
+    let plain = deserialize('["error","CustomError","boom"]') as Error;
+    expect(plain).toBeInstanceOf(Error);
+    expect(plain.name).toBe("CustomError");
+  });
+
   it("preserves built-in subclass identity when extras are present", () => {
     let err = new TypeError("t") as TypeError & Record<string, unknown>;
     err.code = 1;
