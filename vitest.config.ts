@@ -20,6 +20,7 @@ export default defineConfig({
           // plain JavaScript receive-side guards, so Node coverage is sufficient.
           include: ['__tests__/index.test.ts', '__tests__/flow-control.test.ts',
                     '__tests__/limits.test.ts', '__tests__/fuzz.test.ts',
+                    '__tests__/serialize-fuzz.test.ts',
                     'packages/capnweb-validate/__tests__/**/*.test.ts'],
           environment: 'node',
         },
