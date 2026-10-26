@@ -390,6 +390,10 @@ export class Devaluator {
         // At structuredClonable or jsonCompatibleWithBytes level, keep the bytes raw.
         if (this.encodingLevel === "structuredClonable" ||
             this.encodingLevel === "jsonCompatibleWithBytes") {
+          // Copy partial views so the transport can't send the whole backing buffer.
+          if (bytes.byteLength !== bytes.buffer.byteLength) {
+            bytes = new Uint8Array(bytes);
+          }
           return alternateTypeName === undefined
               ? ["bytes", bytes] : ["bytes", bytes, alternateTypeName];
         }
