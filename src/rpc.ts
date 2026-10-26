@@ -182,6 +182,8 @@ type ExportTableEntry = {
   pipeReadable?: ReadableStream
 };
 
+type OnBrokenRegistration = {callback: (error: any) => void, index: number};
+
 // Entry on the imports table.
 class ImportTableEntry {
   constructor(public session: RpcSessionImpl, public importId: number, pulling: boolean) {
@@ -196,9 +198,9 @@ class ImportTableEntry {
   private activePull?: PromiseWithResolvers<void>;
   public resolution?: StubHook;
 
-  // List of integer indexes into session.onBrokenCallbacks which are callbacks registered on
+  // List of registrations in session.onBrokenCallbacks which are callbacks registered on
   // this import. Initialized on first use (so `undefined` is the same as an empty list).
-  private onBrokenRegistrations?: number[];
+  private onBrokenRegistrations?: OnBrokenRegistration[];
 
   resolve(resolution: StubHook) {
     // TODO: Need embargo handling here? PayloadStubHook needs to be wrapped in a
@@ -218,26 +220,25 @@ class ImportTableEntry {
     this.resolution = resolution;
     this.sendRelease();
 
-    if (this.onBrokenRegistrations) {
-      // Delete all our callback registrations from this session and re-register them on the
-      // target stub.
-      for (let i of this.onBrokenRegistrations) {
-        let callback = this.session.onBrokenCallbacks[i];
+    let registrations = this.onBrokenRegistrations;
+    this.onBrokenRegistrations = undefined;
+    if (registrations) {
+      for (let registration of registrations) {
+        let {index, callback} = registration;
+        // A previous callback may have aborted the session and already notified the rest.
+        if (this.session.onBrokenCallbacks[index] !== registration) continue;
         let endIndex = this.session.onBrokenCallbacks.length;
+        // Unregister before calling application code, which may throw or abort the session.
+        delete this.session.onBrokenCallbacks[index];
         resolution.onBroken(callback);
-        if (this.session.onBrokenCallbacks[endIndex] === callback) {
-          // Oh, calling onBroken() just registered the callback back on this connection again.
-          // But when the connection dies, we want all the callbacks to be called in the order in
-          // which they were registered. So we don't want this one pushed to the back of the line
-          // here. So, let's remove the newly-added registration and keep the original.
-          // TODO: This is quite hacky, think about whether this is really the right answer.
+        let moved = this.session.onBrokenCallbacks[endIndex];
+        if (moved?.callback === callback) {
+          // Keep global registration order and update the new owner's cleanup index.
+          moved.index = index;
+          this.session.onBrokenCallbacks[index] = moved;
           delete this.session.onBrokenCallbacks[endIndex];
-        } else {
-          // The callback is now registered elsewhere, so delete it from our session.
-          delete this.session.onBrokenCallbacks[i];
         }
       }
-      this.onBrokenRegistrations = undefined;
     }
 
     if (this.activePull) {
@@ -273,8 +274,9 @@ class ImportTableEntry {
         this.activePull = undefined;
       }
 
-      // The RpcSession itself will have called all our callbacks so we don't need to track the
-      // registrations anymore.
+      for (let registration of this.onBrokenRegistrations ?? []) {
+        delete this.session.onBrokenCallbacks[registration.index];
+      }
       this.onBrokenRegistrations = undefined;
     }
   }
@@ -283,11 +285,11 @@ class ImportTableEntry {
     if (this.resolution) {
       this.resolution.onBroken(callback);
     } else {
-      let index = this.session.onBrokenCallbacks.length;
-      this.session.onBrokenCallbacks.push(callback);
-
-      if (!this.onBrokenRegistrations) this.onBrokenRegistrations = [];
-      this.onBrokenRegistrations.push(index);
+      let registration = this.session.registerOnBroken(callback);
+      if (registration) {
+        if (!this.onBrokenRegistrations) this.onBrokenRegistrations = [];
+        this.onBrokenRegistrations.push(registration);
+      }
     }
   }
 
@@ -486,7 +488,7 @@ class RpcSessionImpl implements Importer, Exporter {
 
   // Sparse array of onBrokenCallback registrations. Items are strictly appended to the end but
   // may be deleted from the middle (hence leaving the array sparse).
-  onBrokenCallbacks: ((error: any) => void)[] = [];
+  onBrokenCallbacks: OnBrokenRegistration[] = [];
 
   // Encoding level from the transport (defaults to "string")
   private encodingLevel: EncodingLevel;
@@ -524,6 +526,16 @@ class RpcSessionImpl implements Importer, Exporter {
     this.imports.push(new ImportTableEntry(this, 0, false));
 
     this.readLoop().catch(err => this.abort(err));
+  }
+
+  registerOnBroken(callback: (error: any) => void): OnBrokenRegistration | undefined {
+    if (this.abortReason !== undefined) {
+      new ErrorStubHook(this.abortReason).onBroken(callback);
+      return;
+    }
+    let registration = {callback, index: this.onBrokenCallbacks.length};
+    this.onBrokenCallbacks.push(registration);
+    return registration;
   }
 
   // Should only be called once immediately after construction.
@@ -956,6 +968,9 @@ class RpcSessionImpl implements Importer, Exporter {
     }
 
     this.abortReason = error;
+    // Detach before application code can re-enter disposal and delete pending callbacks.
+    let onBrokenCallbacks = this.onBrokenCallbacks;
+    this.onBrokenCallbacks = [];
     if (this.onBatchDone) {
       this.onBatchDone.reject(error);
     }
@@ -972,9 +987,9 @@ class RpcSessionImpl implements Importer, Exporter {
 
     // WATCH OUT: these are sparse arrays. `for/let/of` will iterate only positive indexes
     // including deleted indexes -- bad. We need to use `for/let/in` instead.
-    for (let i in this.onBrokenCallbacks) {
+    for (let i in onBrokenCallbacks) {
       try {
-        this.onBrokenCallbacks[i](error);
+        onBrokenCallbacks[i].callback(error);
       } catch (err) {
         // Treat as unhandled rejection.
         Promise.resolve(err);
