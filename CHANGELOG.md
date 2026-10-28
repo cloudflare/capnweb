@@ -1,5 +1,22 @@
 # capnweb
 
+## 0.13.0
+
+### Minor Changes
+
+- [#225](https://github.com/cloudflare/capnweb/pull/225) [`296d9c0`](https://github.com/cloudflare/capnweb/commit/296d9c0380c87eaad07440f8caf426cd93051548) Thanks [@dimitropoulos](https://github.com/dimitropoulos)! - Support serializing `RegExp` objects over RPC.
+
+- [#229](https://github.com/cloudflare/capnweb/pull/229) [`7666553`](https://github.com/cloudflare/capnweb/commit/766655329fe4fe2dada67c8b4e82e3a81e38b194) Thanks [@srikrsna](https://github.com/srikrsna)! - Support serializing `Set` objects over RPC.
+
+  A `Set` can contain stubs, but promises and `Blob`s are not allowed as direct elements. Sending a
+  `Set` containing either over a connection throws a `TypeError`.
+
+### Patch Changes
+
+- [#287](https://github.com/cloudflare/capnweb/pull/287) [`143d13d`](https://github.com/cloudflare/capnweb/commit/143d13d8eb3268b11303b590fbcd60bec6af2a2f) Thanks [@ndisidore](https://github.com/ndisidore)! - Fix `MessagePort` sessions leaking a byte view's entire backing buffer instead of only the view's bytes.
+
+- [#267](https://github.com/cloudflare/capnweb/pull/267) [`60551aa`](https://github.com/cloudflare/capnweb/commit/60551aac6e68344e7605d4a54d81ae409d21d2c8) Thanks [@Kanishkrawatt](https://github.com/Kanishkrawatt)! - Fix a whole-session abort when a settled `RpcPromise` (or a property of one) is passed back as an argument to a later call. Previously this re-sent an import id that had already been released.
+
 ## 0.12.0
 
 ### Minor Changes
