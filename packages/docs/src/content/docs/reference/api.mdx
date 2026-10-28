@@ -15,6 +15,7 @@ Everything below is exported from the `capnweb` package.
 | `newWebSocketRpcSession<T>(urlOrSocket, localMain?, options?)` | Client *and* server. Long-lived bidirectional session. [Docs](/transports/websocket/) |
 | `newMessagePortRpcSession<T>(port, localMain?, options?)`      | Both ends. Web Workers, iframes. [Docs](/transports/message-port/)                    |
 | `new RpcSession<T>(transport, localMain?, options?)`           | Both ends, over any [custom transport](/transports/custom/).                          |
+| `newInMemoryRpcSessionPair<T, C>(main, options?)`              | Both ends in one process, for tests. [Docs](/guides/testing/)                         |
 
 `RpcSession` exposes `getRemoteMain(): T` to obtain a stub for the peer's main interface.
 

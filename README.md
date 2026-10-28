@@ -150,6 +150,7 @@ Guides and reference:
 [Sessions & reconnection](packages/docs/src/content/docs/guides/sessions.mdx) ·
 [Runtime validation](packages/docs/src/content/docs/guides/validation.mdx) ·
 [Workers RPC interop](packages/docs/src/content/docs/guides/workers-rpc.mdx) ·
+[Testing](packages/docs/src/content/docs/guides/testing.mdx) ·
 [Wire protocol](packages/docs/src/content/docs/reference/protocol.mdx) ·
 [API cheat sheet](packages/docs/src/content/docs/reference/api.mdx)
 
