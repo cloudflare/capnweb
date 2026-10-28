@@ -62,6 +62,18 @@ console.log(greeting2);
 console.log(greeting3);
 ```
 
+### Custom `fetch`
+
+By default the batch is sent with the global `fetch()`. To use a different function, such as a
+VPC or service binding on Cloudflare Workers, pass it as the `fetch` option. It must have the same
+signature as `fetch()`:
+
+```ts
+using stub = newHttpBatchRpcSession<MyApi>('https://example.com/api', {
+  fetch: (input, init) => env.VPC.fetch(input, init),
+});
+```
+
 ## When the batch is sent
 
 The batch is dispatched on the next I/O tick. Everything you queue synchronously ends up in the same

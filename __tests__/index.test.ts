@@ -2852,6 +2852,48 @@ describe("HTTP requests", () => {
         .toStrictEqual([36, 5, 9]);
   });
 
+  it("sends the batch using a custom fetch function from options", async () => {
+    let url = `http://${inject("testServerHost")}`;
+    let calls: { input: string | Request, init?: RequestInit }[] = [];
+    let originalFetch = globalThis.fetch;
+    let customFetch: typeof fetch = (input: any, init?: RequestInit) => {
+      calls.push({ input, init });
+      return originalFetch(input, init);
+    };
+
+    // Make sure the global fetch is NOT used when a custom one is provided.
+    globalThis.fetch = <any>(() => { throw new Error("global fetch should not be called"); });
+    try {
+      let cap = newHttpBatchRpcSession<TestTarget>(url, { fetch: customFetch });
+      let promise1 = cap.square(6);
+      let promise2 = cap.square(7);
+      expect(await Promise.all([promise1, promise2])).toStrictEqual([36, 49]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    expect(calls.length).toBe(1);
+    expect(calls[0].input).toBe(url);
+    expect(calls[0].init?.method).toBe("POST");
+  });
+
+  it("uses the global fetch when no custom fetch is given", async () => {
+    let url = `http://${inject("testServerHost")}`;
+    let originalFetch = globalThis.fetch;
+    let calls = 0;
+    globalThis.fetch = <any>((input: any, init?: RequestInit) => {
+      ++calls;
+      return originalFetch(input, init);
+    });
+    try {
+      let cap = newHttpBatchRpcSession<TestTarget>(url);
+      expect(await cap.square(5)).toBe(25);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    expect(calls).toBe(1);
+  });
+
   it("rejects non-POST requests with 405", async () => {
     let response = await fetch(`http://${inject("testServerHost")}`, { method: "GET" });
     expect(response.status).toBe(405);
