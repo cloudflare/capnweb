@@ -976,6 +976,14 @@ export class Evaluator {
             // AggregateError's constructor takes (errors, message); we pass an empty array
             // and patch `errors` from the props bag below.
             let result = cls === AggregateError ? new cls([], value[2]) : new cls(value[2]);
+            // Error types we can't reconstruct (e.g. a custom `ArtifactsError`) are delivered as
+            // plain `Error`, but keep the sender's name so receivers can still tell them apart.
+            // Never adopt a name that resolves to an Object.prototype member.
+            if (cls === Error && value[1] !== "Error" && !(value[1] in Object.prototype)) {
+              Object.defineProperty(result, "name", {
+                value: value[1], writable: true, enumerable: false, configurable: true
+              });
+            }
             if (typeof value[3] === "string") {
               result.stack = value[3];
             }
