@@ -38,7 +38,7 @@ export let RpcTarget = workersModule ? workersModule.RpcTarget : class {};
 export type PropertyPath = (string | number)[];
 
 type TypeForRpc = "unsupported" | "primitive" | "object" | "function" | "array" | "date" | "set" |
-    "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
+    "map" | "bigint" | "bytes" | "blob" | "stub" | "rpc-promise" | "rpc-target" | "rpc-thenable" |
     "error" | "undefined" | "writable" | "readable" | "regexp" | "url" | "headers" | "request" |
     "response";
 
@@ -99,6 +99,9 @@ export function typeForRpc(value: unknown): TypeForRpc {
 
     case Set.prototype:
       return "set";
+
+    case Map.prototype:
+      return "map";
 
     case Uint8Array.prototype:
     case BUFFER_PROTOTYPE:
@@ -735,7 +738,13 @@ async function pullPromise(promise: RpcPromise): Promise<unknown> {
 // =======================================================================================
 // RpcPayload
 
-export type LocatedPromise = {parent: object, property: string | number, promise: RpcPromise};
+export type PropertyName = string | number | {mapKey: unknown};
+
+export function mapKeyToPropertyName(key: unknown): PropertyName {
+  return typeof key === "string" || typeof key === "number" ? key : {mapKey: key};
+}
+
+export type LocatedPromise = {parent: object, property: PropertyName, promise: RpcPromise};
 
 // Represents the params to an RPC call, or the resolution of an RPC promise, as it passes
 // through the system.
@@ -1041,7 +1050,7 @@ export class RpcPayload {
   }
 
   private deepCopy(
-      value: unknown, oldParent: object | undefined, property: string | number, parent: object,
+      value: unknown, oldParent: object | undefined, property: PropertyName, parent: object,
       dupStubs: boolean, owner: RpcPayload | null): unknown {
     let kind = typeForRpc(value);
     switch (kind) {
@@ -1093,6 +1102,30 @@ export class RpcPayload {
         for (let val of elements) {
           let copy = this.deepCopy(val, set, index++, result, dupStubs, owner);
           result.add(copy);
+        }
+        return result;
+      }
+
+      case "map": {
+        // We have to construct the new map first, then fill it in, so we can pass it as the
+        // parent.
+        let map = <Map<unknown, unknown>>value;
+        let entries = [...map];
+        for (let [key] of entries) {
+          let kind = typeForRpc(key);
+          if (kind === "rpc-promise" || kind === "rpc-thenable") {
+            throw new TypeError(
+                "Cannot pass a promise as a key of a Map. Await the value before using it as a " +
+                "key.");
+          }
+        }
+
+        let result = new Map();
+        for (let [key, val] of entries) {
+          // As with Set elements, the key's location is never used since keys can't be promises.
+          let keyCopy = this.deepCopy(key, map, -1, result, dupStubs, owner);
+          result.set(keyCopy, this.deepCopy(
+              val, map, mapKeyToPropertyName(keyCopy), result, dupStubs, owner));
         }
         return result;
       }
@@ -1252,14 +1285,19 @@ export class RpcPayload {
     }
   }
 
-  // Resolve all promises in this payload and then assign the final value into `parent[property]`.
-  private deliverTo(parent: object, property: string | number, promises: Promise<any>[]): void {
+  // Resolve all promises in this payload and then assign the final value into `parent[property]`,
+  // or `parent.set(key, value)` if `parent` is a `Map`.
+  private deliverTo(parent: object, property: PropertyName, promises: Promise<any>[]): void {
     this.ensureDeepCopied();
 
     if (this.value instanceof RpcPromise) {
       RpcPayload.deliverRpcPromiseTo(this.value, parent, property, promises);
     } else {
-      (<any>parent)[property] = this.value;
+      if (parent instanceof Map) {
+        parent.set(typeof property === "object" ? property.mapKey : property, this.value);
+      } else {
+        (<any>parent)[<string | number>property] = this.value;
+      }
 
       for (let record of this.promises!) {
         // Note that because we already did ensureDeepCopied(), replacing each promise with its
@@ -1272,7 +1310,7 @@ export class RpcPayload {
   }
 
   private static deliverRpcPromiseTo(
-      promise: RpcPromise, parent: object, property: string | number,
+      promise: RpcPromise, parent: object, property: PropertyName,
       promises: Promise<unknown>[]) {
     // deepCopy() should have replaced any property stubs with normal promise stubs.
     let hook = unwrapStubNoProperties(promise);
@@ -1488,6 +1526,15 @@ export class RpcPayload {
         return;
       }
 
+      case "map": {
+        let map = <Map<unknown, unknown>>value;
+        for (let [key, val] of map) {
+          this.disposeImpl(key, map);
+          this.disposeImpl(val, map);
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1644,6 +1691,15 @@ export class RpcPayload {
         return;
       }
 
+      case "map": {
+        let map = <Map<unknown, unknown>>value;
+        for (let [key, val] of map) {
+          this.ignoreUnhandledRejectionsImpl(key);
+          this.ignoreUnhandledRejectionsImpl(val);
+        }
+        return;
+      }
+
       case "object": {
         let object = <Record<string, unknown>>value;
         for (let i in object) {
@@ -1783,6 +1839,7 @@ function followPath(value: unknown, parent: object | undefined,
       case "blob":
       case "date":
       case "set":
+      case "map":
       case "error":
       case "url":
       case "regexp":
