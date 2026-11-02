@@ -2430,6 +2430,21 @@ describe("onRpcBroken", () => {
     await pumpMicrotasks();
     expect(fired).toStrictEqual(["counter"]);
   });
+
+  it("callbacks are retained by dups", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let harness = new TestHarness(new TestTarget());
+    let counter = await harness.stub.makeCounter(0);
+    let calls = 0;
+    counter.onRpcBroken(() => { ++calls; });
+    let dup = counter.dup();
+    counter[Symbol.dispose]();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(calls).toBe(1);
+  });
 });
 
 // =======================================================================================
