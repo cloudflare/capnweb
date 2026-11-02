@@ -166,3 +166,7 @@ throw exceptions, the callback is called. In particular, this happens if:
 
 - The stub's underlying connection is lost.
 - The stub is a promise, and the promise rejects.
+
+Disposing a remote stub and all its duplicates unregisters its callbacks. (Disposing the main stub
+instead ends the session, which calls them.) A stub received as a call parameter is disposed when
+the call returns, so `.dup()` it to keep listening.
