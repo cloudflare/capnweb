@@ -187,6 +187,11 @@ message includes the failing path, expected type, and actual type.
 | Client stub   | Bad resolved return   | The returned promise rejects.                               |
 | Server target | Bad incoming argument | The server throws and the caller observes an RPC rejection. |
 
+`isValidationError(error)`, from `capnweb-validate`, tells such a refusal from any other error by a
+tag on the error object, not by its message. The tag stays with the process that refused, so on a
+server read it where Cap'n Web hands you the error it is about to send, in the session's
+`onSendError`; the caller receives a plain `TypeError`.
+
 ## Type coverage
 
 The supported set matches Cap'n Web's published wire format: every type Cap'n Web guarantees can

@@ -4,6 +4,7 @@
 
 import type { ValidatedStub } from "./internal/core.js";
 export type { ValidatedStub } from "./internal/core.js";
+export { isValidationError } from "./error.js";
 
 type AnyClass = abstract new (...args: any[]) => object;
 type AnyMethod = (this: unknown, ...args: any[]) => unknown;
