@@ -6,8 +6,18 @@ import { expect, it, describe, inject } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
          type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, RpcPromise, newWebSocketRpcSession,
          newMessagePortRpcSession,
-         newHttpBatchRpcSession} from "../src/index.js"
-import { swapByteOrder } from "../src/serialize.js"
+         newHttpBatchRpcSession,
+         newHttpBatchRpcResponse } from "../src/index.js"
+import {
+  BINARY_CONTENT_TYPE,
+  decodeBinaryFrame,
+  encodeBinaryFrame,
+  Evaluator,
+  Devaluator,
+  hasBinaryFrameMagic,
+  stringifyWithBase64Bytes,
+  swapByteOrder,
+} from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
 import { ErrorStubHook, PayloadStubHook, PromiseStubHook, RpcPayload, RpcStub as RawRpcStub,
          StubHook, streamImpl, unwrapStubTakingOwnership, type PropertyPath } from "../src/core.js"
@@ -4518,5 +4528,419 @@ describe("settled import references", () => {
     // Both settled imports must have been released on the wire, not just dropped locally.
     expect(harness.client.getStats()).toStrictEqual({imports: 1, exports: 1});
     expect(harness.server.getStats()).toStrictEqual({imports: 1, exports: 1});
+  });
+});
+
+class BinaryTestService extends RpcTarget {
+  echo(value: unknown): unknown {
+    return value;
+  }
+
+  combineAttachments(
+    bytes: Uint8Array,
+    floats: Float32Array,
+    ints: Int16Array
+  ): {
+    bytes: Uint8Array;
+    floats: Float32Array;
+    ints: Int16Array;
+    sum: number;
+  } {
+    let sum = 0;
+    for (let b of bytes) sum += b;
+    for (let f of floats) sum += f;
+    for (let i of ints) sum += i;
+    return {
+      bytes: new Uint8Array(bytes.map(x => x ^ 0xff)),
+      floats: new Float32Array(floats.map(x => x * 2)),
+      ints: new Int16Array(ints.map(x => x + 10)),
+      sum,
+    };
+  }
+
+  makeCounter(i: number): Counter {
+    return new Counter(i);
+  }
+
+  incrementWithBytes(c: RpcStub<Counter>, payload: Uint8Array): Promise<{ count: number; size: number }> {
+    return c.increment(payload.byteLength).then(count => ({ count, size: payload.byteLength }));
+  }
+}
+
+describe("binary framing codec (jsonCompatibleWithBytes)", () => {
+  it("packs multiple attachments at 8-byte-aligned offsets and provides zero-copy views on decode", () => {
+    let u8Odd = new Uint8Array([1, 2, 3]); // 3 bytes -> padded to 8
+    let u8Empty = new Uint8Array(0); // 0 bytes -> padded to 0
+    let f64 = new Float64Array([1.5, -2.25, 3.75]); // 24 bytes (requires 8-byte alignment)
+    let f32 = new Float32Array([0.5, -1.5, 2.5]); // 12 bytes -> padded to 16
+    let i32 = new Int32Array([-100, 200, -300, 400]); // 16 bytes
+    let i16 = new Int16Array([-10, 20, -30]); // 6 bytes -> padded to 8
+    let bi64 = new BigInt64Array([1234567890123456789n, -987654321098765432n]); // 16 bytes
+
+    let original = {
+      u8Odd,
+      u8Empty,
+      f64,
+      f32,
+      i32,
+      i16,
+      bi64,
+      literalBytesTuple: ["bytes", 10, 20, 30],
+    };
+
+    let devalued = Devaluator.devaluate(original, undefined, undefined, undefined, "jsonCompatibleWithBytes");
+    let frame = encodeBinaryFrame(devalued);
+    expect(hasBinaryFrameMagic(frame)).toBe(true);
+    expect(frame.byteLength % 8).toBe(0);
+
+    let decodedTree = decodeBinaryFrame(frame.buffer) as Record<string, unknown[]>;
+
+    // Every attachment Uint8Array in the decoded tree must be 8-byte aligned in the frame buffer.
+    for (let key of ["u8Odd", "u8Empty", "f64", "f32", "i32", "i16", "bi64"]) {
+      let rawBytes = decodedTree[key][1] as Uint8Array;
+      expect(rawBytes).toBeInstanceOf(Uint8Array);
+      expect(rawBytes.buffer).toBe(frame.buffer);
+      expect(rawBytes.byteOffset % 8).toBe(0);
+    }
+
+    let payload = new Evaluator(
+      {
+        importStub() { throw new Error("unexpected"); },
+        importPromise() { throw new Error("unexpected"); },
+        getExport() { return undefined; },
+        getPipeReadable() { throw new Error("unexpected"); },
+        getLimits() { return { maxBigIntDigits: 16384, maxDepth: 256, maxMessageSize: 32 * 1024 * 1024 }; },
+      },
+      "jsonCompatibleWithBytes"
+    ).evaluate(decodedTree);
+
+    let evaluated = payload.value as typeof original;
+    expect(evaluated.u8Odd).toStrictEqual(u8Odd);
+    expect(evaluated.u8Empty).toStrictEqual(u8Empty);
+    expect(evaluated.f64).toStrictEqual(f64);
+    expect(evaluated.f32).toStrictEqual(f32);
+    expect(evaluated.i32).toStrictEqual(i32);
+    expect(evaluated.i16).toStrictEqual(i16);
+    expect(evaluated.bi64).toStrictEqual(bi64);
+    expect(evaluated.literalBytesTuple).toStrictEqual(["bytes", 10, 20, 30]);
+
+    if (new Uint8Array(new Uint16Array([1]).buffer)[0] === 1) {
+      // TypedArrays and Uint8Array views are zero-copy views directly into the frame's ArrayBuffer!
+      expect(evaluated.u8Odd.buffer).toBe(frame.buffer);
+      expect(evaluated.f64.buffer).toBe(frame.buffer);
+      expect(evaluated.f32.buffer).toBe(frame.buffer);
+      expect(evaluated.i32.buffer).toBe(frame.buffer);
+      expect(evaluated.i16.buffer).toBe(frame.buffer);
+      expect(evaluated.bi64.buffer).toBe(frame.buffer);
+    }
+
+    payload.dispose();
+  });
+
+  it("stringifies devalued jsonCompatibleWithBytes trees to base64 for text fallback", () => {
+    let devalued = Devaluator.devaluate(
+      { a: new Uint8Array([1, 2, 3]), b: new Int32Array([0x01020304]) },
+      undefined,
+      undefined,
+      undefined,
+      "jsonCompatibleWithBytes"
+    );
+    let json = stringifyWithBase64Bytes(devalued);
+    let parsed = JSON.parse(json) as unknown;
+    expect(parsed).toStrictEqual({
+      a: ["bytes", "AQID"],
+      b: ["bytes", "BAMCAQ", "Int32Array"],
+    });
+  });
+
+  it("rejects malformed binary frames", () => {
+    expect(() => decodeBinaryFrame(new Uint8Array([1, 2, 3]))).toThrow(TypeError);
+    expect(() => decodeBinaryFrame(new Uint8Array([0, 0, 0, 0, 0, 0, 0, 0]))).toThrow(/Invalid binary RPC frame magic/);
+
+    let validFrame = encodeBinaryFrame(["push", ["bytes", new Uint8Array([1, 2, 3, 4])]]);
+    let truncatedHeader = validFrame.slice(0, 10);
+    expect(() => decodeBinaryFrame(truncatedHeader)).toThrow(/header length exceeds frame size/);
+
+    let truncatedAttachment = validFrame.slice(0, validFrame.byteLength - 1);
+    expect(() => decodeBinaryFrame(truncatedAttachment)).toThrow(/exceeds frame bounds/);
+
+    // Craft a frame with an unaligned attachment offset (offset = 4).
+    let badJson = new TextEncoder().encode(JSON.stringify(["bytes", 0, 4, 4]));
+    let badFrame = new Uint8Array(8 + 16 + 8);
+    badFrame.set([0x89, 0x43, 0x57, 0x42], 0);
+    new DataView(badFrame.buffer).setUint32(4, badJson.byteLength, true);
+    badFrame.set(badJson, 8);
+    expect(() => decodeBinaryFrame(badFrame)).toThrow(/Invalid binary attachment offset/);
+
+    // Reject trailing unreferenced bytes at the end of a frame.
+    let paddedWithExtra = new Uint8Array(validFrame.byteLength + 8);
+    paddedWithExtra.set(validFrame, 0);
+    expect(() => decodeBinaryFrame(paddedWithExtra)).toThrow(/does not match header and attachments/);
+
+    // Enforce maxDepth during binary attachment rehydration.
+    let deepFrame = encodeBinaryFrame([[[[[["bytes", new Uint8Array([1])]]]]]]);
+    expect(() => decodeBinaryFrame(deepFrame, 2)).toThrow(/exceeded maximum allowed depth/);
+
+    // Preserve own "__proto__" properties without polluting Object.prototype.
+    let protoJson = new TextEncoder().encode('{"__proto__":{"polluted":123}}');
+    let protoFrame = new Uint8Array(8 + protoJson.byteLength);
+    protoFrame.set([0x89, 0x43, 0x57, 0x42], 0);
+    new DataView(protoFrame.buffer).setUint32(4, protoJson.byteLength, true);
+    protoFrame.set(protoJson, 8);
+    let protoDecoded = decodeBinaryFrame(protoFrame) as Record<string, unknown>;
+    expect(({} as any).polluted).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(protoDecoded, "__proto__")).toBe(true);
+  });
+});
+
+describe("HTTP batch binary framing", () => {
+  it("round-trips typed arrays, multiple attachments, and pipelined calls in binary mode", async () => {
+    let serverTarget = new BinaryTestService();
+    let seenContentTypes: (string | null)[] = [];
+    let seenResponseTypes: (string | null)[] = [];
+    let seenRequestMagic: boolean[] = [];
+
+    let originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      let req = new Request(input, init);
+      seenContentTypes.push(req.headers.get("Content-Type"));
+      let cloneBuf = await req.clone().arrayBuffer();
+      seenRequestMagic.push(hasBinaryFrameMagic(cloneBuf));
+      let resp = await newHttpBatchRpcResponse(req, serverTarget);
+      seenResponseTypes.push(resp.headers.get("Content-Type"));
+      return resp;
+    };
+
+    try {
+      let stub = newHttpBatchRpcSession<BinaryTestService>("https://example.com/rpc", { binary: true });
+
+      let u8 = new Uint8Array([10, 20, 30, 40, 50]);
+      let f32 = new Float32Array([1.25, 2.5, 3.75]);
+      let i16 = new Int16Array([-5, 15, -25]);
+
+      let combinedPromise = stub.combineAttachments(u8, f32, i16);
+      let counter = stub.makeCounter(100);
+      let pipelinedPromise = stub.incrementWithBytes(counter, new Uint8Array(7));
+
+      let [combined, pipelined] = await Promise.all([combinedPromise, pipelinedPromise]);
+
+      expect(seenContentTypes).toStrictEqual([BINARY_CONTENT_TYPE]);
+      expect(seenRequestMagic).toStrictEqual([true]);
+      expect(seenResponseTypes).toStrictEqual([BINARY_CONTENT_TYPE]);
+
+      expect(combined.bytes).toStrictEqual(new Uint8Array(u8.map(x => x ^ 0xff)));
+      expect(combined.floats).toStrictEqual(new Float32Array([2.5, 5.0, 7.5]));
+      expect(combined.ints).toStrictEqual(new Int16Array([5, 25, -15]));
+      expect(combined.sum).toBe(10 + 20 + 30 + 40 + 50 + 1.25 + 2.5 + 3.75 - 5 + 15 - 25);
+      expect(pipelined).toStrictEqual({ count: 107, size: 7 });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("supports mixed text/binary negotiation and preserves text default for HTTP batch", async () => {
+    let serverTarget = new BinaryTestService();
+    let lastReqContentType: string | null = null;
+    let lastRespContentType: string | null = null;
+    let serverOptions: RpcSessionOptions | undefined;
+
+    let originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+      let req = new Request(input, init);
+      lastReqContentType = req.headers.get("Content-Type");
+      let resp = await newHttpBatchRpcResponse(req, serverTarget, serverOptions);
+      lastRespContentType = resp.headers.get("Content-Type");
+      return resp;
+    };
+
+    try {
+      // 1. Default client -> default server uses text framing.
+      {
+        serverOptions = undefined;
+        let stub = newHttpBatchRpcSession<BinaryTestService>("https://example.com/rpc");
+        let echoed = (await stub.echo(new Uint8Array([1, 2, 3]))) as Uint8Array;
+        expect(new Uint8Array(echoed)).toStrictEqual(new Uint8Array([1, 2, 3]));
+        expect(lastReqContentType).not.toBe(BINARY_CONTENT_TYPE);
+        expect(lastRespContentType).not.toBe(BINARY_CONTENT_TYPE);
+      }
+
+      // 2. Text client -> binary-configured server: request is text, response is binary, client decodes it.
+      {
+        serverOptions = { binary: true };
+        let stub = newHttpBatchRpcSession<BinaryTestService>("https://example.com/rpc");
+        let echoed = await stub.echo(new Float32Array([42.5, -10.25]));
+        expect(echoed).toStrictEqual(new Float32Array([42.5, -10.25]));
+        expect(lastReqContentType).not.toBe(BINARY_CONTENT_TYPE);
+        expect(lastRespContentType).toBe(BINARY_CONTENT_TYPE);
+      }
+
+      // 3. Request with Accept: application/x-capnweb-bin -> default server replies in binary.
+      {
+        serverOptions = undefined;
+        let req = new Request("https://example.com/rpc", {
+          headers: { Accept: BINARY_CONTENT_TYPE },
+        });
+        let stub = newHttpBatchRpcSession<BinaryTestService>(req);
+        let echoed = await stub.echo(new Int16Array([11, 22, 33]));
+        expect(echoed).toStrictEqual(new Int16Array([11, 22, 33]));
+        expect(lastReqContentType).not.toBe(BINARY_CONTENT_TYPE);
+        expect(lastRespContentType).toBe(BINARY_CONTENT_TYPE);
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("performs a binary HTTP batch request against the Node HTTP test server", async () => {
+    let cap = newHttpBatchRpcSession<TestTarget>(`http://${inject("testServerHost")}`, {
+      binary: true,
+    });
+    let promise1 = cap.square(6);
+    let counter = cap.makeCounter(2);
+    let promise2 = counter.increment(3);
+    let promise3 = cap.incrementCounter(counter, 4);
+
+    await expect(Promise.all([promise1, promise2, promise3])).resolves.toStrictEqual([36, 5, 9]);
+  });
+
+  it("aborts the RPC session and disposes the main target when HTTP batch receives a malformed frame", async () => {
+    let disposed = false;
+    class DisposableService extends BinaryTestService {
+      [Symbol.dispose]() {
+        disposed = true;
+      }
+    }
+    let badReq = new Request("https://example.com/rpc", {
+      method: "POST",
+      headers: { "Content-Type": BINARY_CONTENT_TYPE },
+      body: new Uint8Array([0x89, 0x43, 0x57, 0x42, 0xff, 0xff, 0xff, 0x7f]),
+    });
+    await expect(
+      newHttpBatchRpcResponse(badReq, new DisposableService()),
+    ).rejects.toThrow(/header length exceeds frame size/);
+    expect(disposed).toBe(true);
+  });
+});
+
+describe("WebSocket binary framing", () => {
+  it("round-trips binary frames over the live WebSocket server with auto-detection", async () => {
+    let url = `ws://${inject("testServerHost")}`;
+    using cap = newWebSocketRpcSession<TestTarget>(url, undefined, { binary: true });
+
+    expect(await cap.square(5)).toBe(25);
+    let counter = cap.makeCounter(2);
+    expect(await counter.increment(3)).toBe(5);
+    expect(await cap.incrementCounter(counter, 4)).toBe(9);
+
+    let blob = new Blob([new Uint8Array([1, 3, 5, 7, 9])], { type: "application/octet-stream" });
+    let echoed = await cap.echoBlob(blob);
+    expect(new Uint8Array(await echoed.arrayBuffer())).toStrictEqual(new Uint8Array([1, 3, 5, 7, 9]));
+  });
+
+  it("supports binary mode, auto-upgrading, and mixed text/binary peers over fake WebSockets", async () => {
+    type WsEventCallback = (ev: { data?: unknown; code?: number; reason?: string }) => void;
+
+    function createLinkedWebSockets() {
+      let clientListeners: Record<string, WsEventCallback[]> = {};
+      let serverListeners: Record<string, WsEventCallback[]> = {};
+      let clientSentFrames: (string | ArrayBuffer)[] = [];
+      let serverSentFrames: (string | ArrayBuffer)[] = [];
+
+      let clientWs = {
+        readyState: 1,
+        binaryType: "blob",
+        addEventListener(type: string, cb: WsEventCallback) {
+          (clientListeners[type] ||= []).push(cb);
+        },
+        send(data: string | ArrayBuffer | Uint8Array) {
+          let payload = data instanceof Uint8Array
+            ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+            : data;
+          clientSentFrames.push(payload);
+          queueMicrotask(() => {
+            for (let cb of serverListeners["message"] || []) {
+              cb({ data: payload });
+            }
+          });
+        },
+        close(code?: number, reason?: string) {
+          queueMicrotask(() => {
+            for (let cb of serverListeners["close"] || []) {
+              cb({ code: code ?? 1000, reason: reason ?? "" });
+            }
+          });
+        },
+      } as unknown as WebSocket;
+
+      let serverWs = {
+        readyState: 1,
+        binaryType: "blob",
+        addEventListener(type: string, cb: WsEventCallback) {
+          (serverListeners[type] ||= []).push(cb);
+        },
+        send(data: string | ArrayBuffer | Uint8Array) {
+          let payload = data instanceof Uint8Array
+            ? data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer
+            : data;
+          serverSentFrames.push(payload);
+          queueMicrotask(() => {
+            for (let cb of clientListeners["message"] || []) {
+              cb({ data: payload });
+            }
+          });
+        },
+        close(code?: number, reason?: string) {
+          queueMicrotask(() => {
+            for (let cb of clientListeners["close"] || []) {
+              cb({ code: code ?? 1000, reason: reason ?? "" });
+            }
+          });
+        },
+      } as unknown as WebSocket;
+
+      return { clientWs, serverWs, clientSentFrames, serverSentFrames };
+    }
+
+    // Case 1: Binary client -> default (auto-detect) server.
+    // Both client frames and server replies must be ArrayBuffers!
+    {
+      let { clientWs, serverWs, clientSentFrames, serverSentFrames } = createLinkedWebSockets();
+      using _serverStub = newWebSocketRpcSession(serverWs, new BinaryTestService());
+      using clientStub = newWebSocketRpcSession<BinaryTestService>(clientWs, undefined, { binary: true });
+
+      let res = await clientStub.combineAttachments(
+        new Uint8Array([1, 2, 3]),
+        new Float32Array([10.5, 20.5]),
+        new Int16Array([100, 200])
+      );
+      expect(res.bytes).toStrictEqual(new Uint8Array([254, 253, 252]));
+      expect(res.floats).toStrictEqual(new Float32Array([21, 41]));
+      expect(res.ints).toStrictEqual(new Int16Array([110, 210]));
+      expect(res.sum).toBe(1 + 2 + 3 + 10.5 + 20.5 + 100 + 200);
+      expect(clientSentFrames.length).toBeGreaterThan(0);
+      expect(serverSentFrames.length).toBeGreaterThan(0);
+      expect(clientSentFrames.every(f => f instanceof ArrayBuffer)).toBe(true);
+      expect(serverSentFrames.every(f => f instanceof ArrayBuffer)).toBe(true);
+    }
+
+    // Case 2: Explicit text client ({ binary: false }) -> explicit binary server ({ binary: true }).
+    // Client always sends strings, server always sends ArrayBuffers, both sides interoperate.
+    {
+      let { clientWs, serverWs, clientSentFrames, serverSentFrames } = createLinkedWebSockets();
+      using _serverStub = newWebSocketRpcSession(serverWs, new BinaryTestService(), { binary: true });
+      using clientStub = newWebSocketRpcSession<BinaryTestService>(clientWs, undefined, { binary: false });
+
+      let echoed = await clientStub.echo({
+        f32: new Float32Array([1.5, -2.5]),
+        u8: new Uint8Array([9, 8, 7]),
+      });
+      expect(echoed).toStrictEqual({
+        f32: new Float32Array([1.5, -2.5]),
+        u8: new Uint8Array([9, 8, 7]),
+      });
+
+      expect(clientSentFrames.every(f => typeof f === "string")).toBe(true);
+      expect(serverSentFrames.every(f => f instanceof ArrayBuffer)).toBe(true);
+    }
   });
 });
