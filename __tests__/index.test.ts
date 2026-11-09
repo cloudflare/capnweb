@@ -5,7 +5,7 @@
 import { expect, it, describe, inject } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
          type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, RpcPromise, newWebSocketRpcSession,
-         newMessagePortRpcSession,
+         newMessagePortRpcSession, MessagePortTransport, transferArrayBuffer,
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
@@ -2968,6 +2968,80 @@ describe("MessagePorts", () => {
     expect(await stub.getBytes()).toStrictEqual([new Uint8Array(buffer), int16]);
     expect(crossedBufferSizes).toStrictEqual([4, 4]);
   });
+
+  it("transfers marked ArrayBuffers across MessagePort without copying", async () => {
+    // workerd's MessagePort does not yet support postMessage transfer lists.
+    if (navigator.userAgent === "Cloudflare-Workers") return;
+
+    let sentUint8 = transferArrayBuffer(new Uint8Array([10, 20, 30, 40]));
+    let sentFloat32 = transferArrayBuffer(new Float32Array([1.5, -2.5, 3.25]));
+    let sentBuffer = transferArrayBuffer(new Uint8Array([7, 8, 9]).buffer);
+    let untransferred = new Uint8Array([1, 2, 3]);
+
+    let receivedOnServer: {
+      uint8: Uint8Array;
+      float32: Float32Array;
+      rawBuffer: ArrayBuffer;
+      untransferred: Uint8Array;
+    } | undefined;
+    let serverReplyBuffer: ArrayBuffer | undefined;
+
+    class TransferServer extends RpcTarget {
+      exchange(
+        uint8: Uint8Array,
+        float32: Float32Array,
+        rawBuffer: ArrayBuffer,
+        copyBytes: Uint8Array
+      ) {
+        receivedOnServer = { uint8, float32, rawBuffer, untransferred: copyBytes };
+        let reply = transferArrayBuffer(new Float32Array([42.5, 99.5]));
+        serverReplyBuffer = reply.buffer;
+        return reply;
+      }
+    }
+
+    let channel = new MessageChannel();
+    let crossedWireBuffers: ArrayBuffer[] = [];
+    function collectBuffers(value: unknown) {
+      if (ArrayBuffer.isView(value)) crossedWireBuffers.push(value.buffer);
+      else if (value instanceof ArrayBuffer) crossedWireBuffers.push(value);
+      else if (Array.isArray(value)) value.forEach(collectBuffers);
+    }
+    channel.port1.addEventListener("message", event => collectBuffers(event.data));
+
+    newMessagePortRpcSession(channel.port1, new TransferServer());
+    using stub = newMessagePortRpcSession<TransferServer>(channel.port2);
+
+    let resultPromise = stub.exchange(sentUint8, sentFloat32, sentBuffer, untransferred);
+
+    // Marked buffers are detached on the sender immediately after postMessage.
+    expect(sentUint8.byteLength).toBe(0);
+    expect(sentUint8.buffer.byteLength).toBe(0);
+    expect(sentFloat32.byteLength).toBe(0);
+    expect(sentFloat32.buffer.byteLength).toBe(0);
+    expect(sentBuffer.byteLength).toBe(0);
+
+    // Unmarked buffer is NOT detached on the sender.
+    expect(untransferred.byteLength).toBe(3);
+    expect(untransferred.buffer.byteLength).toBe(3);
+
+    let reply = await resultPromise;
+    expect(receivedOnServer).toBeDefined();
+    expect(receivedOnServer!.uint8).toStrictEqual(new Uint8Array([10, 20, 30, 40]));
+    expect(receivedOnServer!.float32).toStrictEqual(new Float32Array([1.5, -2.5, 3.25]));
+    expect(new Uint8Array(receivedOnServer!.rawBuffer)).toStrictEqual(new Uint8Array([7, 8, 9]));
+    expect(receivedOnServer!.untransferred).toStrictEqual(new Uint8Array([1, 2, 3]));
+
+    // On the receiver, the evaluated views point directly at the transferred ArrayBuffers
+    // that arrived in the MessageEvent without an extra slice() copy.
+    expect(receivedOnServer!.uint8.buffer).toBe(crossedWireBuffers[0]);
+    expect(receivedOnServer!.float32.buffer).toBe(crossedWireBuffers[1]);
+    expect(receivedOnServer!.rawBuffer).toBe(crossedWireBuffers[2]);
+
+    // And the server's transferred reply buffer was detached on the server and received intact.
+    expect(serverReplyBuffer!.byteLength).toBe(0);
+    expect(reply).toStrictEqual(new Float32Array([42.5, 99.5]));
+  });
 });
 
 // =======================================================================================
@@ -3566,6 +3640,115 @@ describe("transport encoding levels", () => {
       expect(await stub.echo(123n)).toBe(123n);
     });
   }
+
+  it("preserves exact Uint8Array and Float32Array subviews without extra buffer copies at jsonCompatibleWithBytes", async () => {
+    // Pass messages directly without structuredClone in the transport so we can verify
+    // that Devaluator and Evaluator themselves do not copy or slice backing ArrayBuffers.
+    class ZeroCopyBytesTransport implements RpcTransportWithCustomEncoding {
+      readonly encodingLevel = "jsonCompatibleWithBytes" as const;
+      partner?: ZeroCopyBytesTransport;
+      #queue: unknown[] = [];
+      #waiter?: (msg: unknown) => void;
+
+      send(message: unknown): void {
+        if (this.partner!.#waiter) {
+          let resolve = this.partner!.#waiter;
+          this.partner!.#waiter = undefined;
+          resolve(message);
+        } else {
+          this.partner!.#queue.push(message);
+        }
+      }
+
+      async receive(): Promise<unknown> {
+        if (this.#queue.length > 0) {
+          return this.#queue.shift()!;
+        }
+        let { promise, resolve } = Promise.withResolvers<unknown>();
+        this.#waiter = resolve;
+        return promise;
+      }
+    }
+
+    let clientTransport = new ZeroCopyBytesTransport();
+    let serverTransport = new ZeroCopyBytesTransport();
+    clientTransport.partner = serverTransport;
+    serverTransport.partner = clientTransport;
+
+    let receivedViews: {
+      uint8Sub: Uint8Array;
+      float32Sub: Float32Array;
+    } | undefined;
+
+    class SubviewServer extends RpcTarget {
+      sendSubviews(uint8Sub: Uint8Array, float32Sub: Float32Array) {
+        receivedViews = { uint8Sub, float32Sub };
+        return [uint8Sub, float32Sub];
+      }
+    }
+
+    let client = new RpcSession<SubviewServer>(clientTransport);
+    new RpcSession(serverTransport, new SubviewServer());
+    using stub = client.getRemoteMain();
+
+    let sharedArena = new ArrayBuffer(128);
+    let arenaBytes = new Uint8Array(sharedArena);
+    for (let i = 0; i < arenaBytes.length; i++) arenaBytes[i] = i;
+
+    let uint8Sub = new Uint8Array(sharedArena, 12, 10);
+    let float32Sub = new Float32Array(sharedArena, 32, 4);
+    float32Sub.set([1.25, -2.5, 3.75, 4.0]);
+
+    let [echoedUint8, echoedFloat32] = await stub.sendSubviews(uint8Sub, float32Sub);
+
+    expect(receivedViews).toBeDefined();
+
+    // Neither Devaluator nor Evaluator copied the aligned subviews:
+    // they still reference `sharedArena` with the exact byteOffset and byteLength.
+    expect(receivedViews!.uint8Sub.buffer).toBe(sharedArena);
+    expect(receivedViews!.uint8Sub.byteOffset).toBe(12);
+    expect(receivedViews!.uint8Sub.byteLength).toBe(10);
+    expect(receivedViews!.uint8Sub).toStrictEqual(uint8Sub);
+
+    expect(receivedViews!.float32Sub.buffer).toBe(sharedArena);
+    expect(receivedViews!.float32Sub.byteOffset).toBe(32);
+    expect(receivedViews!.float32Sub.byteLength).toBe(16);
+    expect(receivedViews!.float32Sub).toStrictEqual(float32Sub);
+
+    expect(echoedUint8.buffer).toBe(sharedArena);
+    expect(echoedUint8.byteOffset).toBe(12);
+    expect(echoedUint8.byteLength).toBe(10);
+
+    expect(echoedFloat32.buffer).toBe(sharedArena);
+    expect(echoedFloat32.byteOffset).toBe(32);
+    expect(echoedFloat32.byteLength).toBe(16);
+
+    // Also test an unaligned Uint8Array backing an Int16Array wire payload to verify
+    // Evaluator safely copies when byteOffset is not a multiple of elementSize.
+    let unalignedBacking = new Uint8Array(16);
+    new DataView(unalignedBacking.buffer, 1, 4).setInt16(0, 0x1234, true);
+    new DataView(unalignedBacking.buffer, 1, 4).setInt16(2, 0x5678, true);
+    let unalignedWireView = new Uint8Array(unalignedBacking.buffer, 1, 4);
+
+    let unalignedClient = new ZeroCopyBytesTransport();
+    let unalignedServer = new ZeroCopyBytesTransport();
+    unalignedClient.partner = unalignedServer;
+    unalignedServer.partner = unalignedClient;
+
+    let { promise: decodedPromise, resolve: resolveDecoded } = Promise.withResolvers<Int16Array>();
+    class UnalignedReceiver extends RpcTarget {
+      take(arr: Int16Array) {
+        resolveDecoded(arr);
+      }
+    }
+    new RpcSession(unalignedServer, new UnalignedReceiver());
+    // Inject a raw ["bytes", unalignedUint8Array, "Int16Array"] frame at jsonCompatibleWithBytes.
+    unalignedServer.partner.send(["push", ["pipeline", 0, ["take"], [["bytes", unalignedWireView, "Int16Array"]]]]);
+    let decodedUnaligned = await decodedPromise;
+    expect(decodedUnaligned).toStrictEqual(new Int16Array([0x1234, 0x5678]));
+    expect(decodedUnaligned.buffer).not.toBe(unalignedBacking.buffer);
+    expect(decodedUnaligned.byteOffset).toBe(0);
+  });
 
   it("aborts the receive loop when the transport is aborted", async () => {
     let transport = new ObjectTestTransport();

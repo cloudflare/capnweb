@@ -3,7 +3,7 @@
 //     https://opensource.org/license/mit
 
 import { RpcTarget as RpcTargetImpl, RpcStub as RpcStubImpl, RpcPromise as RpcPromiseImpl } from "./core.js";
-import { serialize, deserialize, EncodingLevel } from "./serialize.js";
+import { serialize, deserialize, EncodingLevel, transferArrayBuffer } from "./serialize.js";
 import { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport, RpcSession as RpcSessionImpl, RpcSessionOptions } from "./rpc.js";
 import { RpcLimits, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH } from "./serialize.js";
 import { RpcTargetBranded, RpcCompatible, Stub, ElideStub, PayloadOrStub,
@@ -12,7 +12,8 @@ import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
          newHttpBatchRpcResponse, nodeHttpBatchRpcResponse } from "./batch.js";
-import { newMessagePortRpcSession as newMessagePortRpcSessionImpl } from "./messageport.js";
+import { newMessagePortRpcSession as newMessagePortRpcSessionImpl,
+         MessagePortTransport } from "./messageport.js";
 import { forceInitMap } from "./map.js";
 import { forceInitStreams } from "./streams.js";
 
@@ -21,7 +22,8 @@ forceInitStreams();
 
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse, WebSocketTransport, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH };
+         nodeHttpBatchRpcResponse, WebSocketTransport, MessagePortTransport,
+         transferArrayBuffer, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH };
 export type { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport,
          RpcSessionOptions, RpcCompatible, EncodingLevel, RpcLimits };
 

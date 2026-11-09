@@ -4,6 +4,7 @@
 
 import { RpcStub } from "./core.js";
 import { RpcTransportWithCustomEncoding, RpcSession, RpcSessionOptions } from "./rpc.js";
+import { consumeTransferableArrayBuffer, hasMarkedTransferableBuffers } from "./serialize.js";
 
 // Start a MessagePort session given a MessagePort or a pair of MessagePorts.
 //
@@ -16,7 +17,7 @@ export function newMessagePortRpcSession(
   return rpc.getRemoteMain();
 }
 
-class MessagePortTransport implements RpcTransportWithCustomEncoding {
+export class MessagePortTransport implements RpcTransportWithCustomEncoding {
   readonly encodingLevel = "structuredClonable" as const;
 
   constructor (port: MessagePort) {
@@ -58,7 +59,18 @@ class MessagePortTransport implements RpcTransportWithCustomEncoding {
     if (this.#error) {
       throw this.#error;
     }
-    this.#port.postMessage(message);
+    let transfer: ArrayBuffer[] | undefined;
+    if (hasMarkedTransferableBuffers()) {
+      collectTransferableBuffers(message, (buffer) => {
+        transfer ??= [];
+        transfer.push(buffer);
+      });
+    }
+    if (transfer !== undefined) {
+      this.#port.postMessage(message, transfer);
+    } else {
+      this.#port.postMessage(message);
+    }
   }
 
   async receive(): Promise<unknown> {
@@ -97,6 +109,30 @@ class MessagePortTransport implements RpcTransportWithCustomEncoding {
         this.#receiveRejecter(reason);
         this.#receiveResolver = undefined;
         this.#receiveRejecter = undefined;
+      }
+    }
+  }
+}
+
+function collectTransferableBuffers(
+    value: unknown, onTransferable: (buffer: ArrayBuffer) => void): void {
+  if (Array.isArray(value)) {
+    for (let i = 0; i < value.length; i++) {
+      collectTransferableBuffers(value[i], onTransferable);
+    }
+  } else if (ArrayBuffer.isView(value)) {
+    if (consumeTransferableArrayBuffer(value.buffer)) {
+      onTransferable(value.buffer);
+    }
+  } else if (consumeTransferableArrayBuffer(value)) {
+    onTransferable(value);
+  } else if (value !== null && typeof value === "object") {
+    let proto = Object.getPrototypeOf(value);
+    if (proto === Object.prototype || proto === null) {
+      for (let key in value) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+          collectTransferableBuffers((value as Record<string, unknown>)[key], onTransferable);
+        }
       }
     }
   }

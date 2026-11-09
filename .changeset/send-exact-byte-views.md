@@ -1,5 +1,5 @@
 ---
-"capnweb": patch
+"capnweb": minor
 ---
 
-Fix `MessagePort` sessions leaking a byte view's entire backing buffer instead of only the view's bytes.
+Fix `MessagePort` sessions leaking a byte view's entire backing buffer, avoid copying aligned byte views at `jsonCompatibleWithBytes`, and add `transferArrayBuffer()` for zero-copy `MessagePort` transfers.
