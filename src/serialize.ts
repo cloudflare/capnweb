@@ -136,6 +136,33 @@ const BYTE_CONTAINER_TYPE_BY_PROTOTYPE = new Map<object, MarkedByteContainerType
 for (let type of Object.keys(BYTE_CONTAINER_PROTOTYPES) as MarkedByteContainerTypeName[]) {
   BYTE_CONTAINER_TYPE_BY_PROTOTYPE.set(BYTE_CONTAINER_PROTOTYPES[type], type);
 }
+const TRANSFERABLE_BUFFERS = new WeakSet<ArrayBuffer>();
+let hasAnyTransferableBuffers = false;
+
+/**
+ * Mark an `ArrayBuffer` (or the backing `ArrayBuffer` of an `ArrayBufferView`) to be transferred
+ * rather than copied when sent over a `MessagePort` transport.
+ */
+export function transferArrayBuffer<T extends ArrayBuffer | ArrayBufferView>(value: T): T {
+  let buffer = ArrayBuffer.isView(value) ? value.buffer : value;
+  if (buffer instanceof ArrayBuffer) {
+    TRANSFERABLE_BUFFERS.add(buffer);
+    hasAnyTransferableBuffers = true;
+  }
+  return value;
+}
+
+/** Returns true if any `ArrayBuffer` has been marked via `transferArrayBuffer()`. */
+export function hasMarkedTransferableBuffers(): boolean {
+  return hasAnyTransferableBuffers;
+}
+
+/**
+ * If `buffer` was marked via `transferArrayBuffer()`, removes the mark and returns true.
+ */
+export function consumeTransferableArrayBuffer(buffer: unknown): buffer is ArrayBuffer {
+  return buffer instanceof ArrayBuffer && TRANSFERABLE_BUFFERS.delete(buffer);
+}
 
 // Reverse each element's bytes in place. Production callers only need this on
 // big-endian hosts; it is exported solely so the behavior can be tested on
@@ -388,14 +415,18 @@ export class Devaluator {
         }
 
         // At structuredClonable or jsonCompatibleWithBytes level, keep the bytes raw.
-        if (this.encodingLevel === "structuredClonable" ||
-            this.encodingLevel === "jsonCompatibleWithBytes") {
-          // Copy partial views so the transport can't send the whole backing buffer.
-          if (bytes.byteLength !== bytes.buffer.byteLength) {
+        if (this.encodingLevel === "structuredClonable") {
+          // Copy partial views of un-transferred buffers so the transport doesn't
+          // structured-clone the whole backing buffer.
+          if ((bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength) &&
+              !(bytes.buffer instanceof ArrayBuffer && TRANSFERABLE_BUFFERS.has(bytes.buffer))) {
             bytes = new Uint8Array(bytes);
           }
           return alternateTypeName === undefined
-              ? ["bytes", bytes] : ["bytes", bytes, alternateTypeName];
+            ? ["bytes", bytes] : ["bytes", bytes, alternateTypeName];
+        } else if (this.encodingLevel === "jsonCompatibleWithBytes") {
+          return alternateTypeName === undefined
+            ? ["bytes", bytes] : ["bytes", bytes, alternateTypeName];
         }
 
         let b64: string;
@@ -906,70 +937,90 @@ export class Evaluator {
             return set;
           }
           break;
-        case "bytes": {
-          let bytes: Uint8Array;
-          // At jsonCompatibleWithBytes/structuredClonable level, bytes may already be raw.
-          if (value[1] instanceof Uint8Array) {
-            bytes = value[1];
-          } else if (typeof value[1] == "string") {
-            if (typeof Buffer !== "undefined") {
-              bytes = Buffer.from(value[1], "base64");
-            } else if (Uint8Array.fromBase64) {
-              bytes = Uint8Array.fromBase64(value[1]);
-            } else {
-              let bs = atob(value[1]);
-              let len = bs.length;
-              bytes = new Uint8Array(len);
-              for (let i = 0; i < len; i++) {
-                bytes[i] = bs.charCodeAt(i);
-              }
-            }
+
+      case "bytes": {
+        let bytes: Uint8Array;
+        let isRawBytes = false;
+        // At jsonCompatibleWithBytes/structuredClonable level, bytes may already be raw.
+        if (value[1] instanceof Uint8Array) {
+          bytes = value[1];
+          isRawBytes = true;
+        } else if (typeof value[1] === "string") {
+          if (typeof Buffer !== "undefined") {
+            bytes = Buffer.from(value[1], "base64");
+          } else if (Uint8Array.fromBase64) {
+            bytes = Uint8Array.fromBase64(value[1]);
           } else {
-            break;
+            let bs = atob(value[1]);
+            let len = bs.length;
+            bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+              bytes[i] = bs.charCodeAt(i);
+            }
           }
-
-          if (value.length === 2) {
-            return bytes;
-          }
-          if (typeof value[2] !== "string") {
-            throw new TypeError(`Unknown bytes type marker type: ${typeof value[2]}`);
-          }
-
-          if (!isValidByteContainerName(value[2])) {
-            let marker = value[2].slice(0, 64);
-            throw new TypeError(`Unknown bytes type marker: ${marker}`);
-          }
-
-          let marker = value[2];
-          let elementSize = TYPED_ARRAY_ELEMENT_SIZE[marker];
-          if (elementSize !== undefined && bytes.byteLength % elementSize !== 0) {
-            throw new TypeError(
-                `Invalid byte length ${bytes.byteLength} for ${marker}; ` +
-                `expected a multiple of ${elementSize}`);
-          }
-
-          // Copy exactly the decoded range rather than exposing or aliasing a pooled Buffer.
-          let buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-          if (!NATIVE_LITTLE_ENDIAN && elementSize !== undefined) {
-            swapByteOrder(new Uint8Array(buffer), elementSize);
-          }
-          switch (marker) {
-            case "ArrayBuffer": return buffer;
-            case "DataView": return new DataView(buffer);
-            case "Int8Array": return new Int8Array(buffer);
-            case "Uint8Array": return new Uint8Array(buffer);
-            case "Uint8ClampedArray": return new Uint8ClampedArray(buffer);
-            case "Int16Array": return new Int16Array(buffer);
-            case "Uint16Array": return new Uint16Array(buffer);
-            case "Int32Array": return new Int32Array(buffer);
-            case "Uint32Array": return new Uint32Array(buffer);
-            case "BigInt64Array": return new BigInt64Array(buffer);
-            case "BigUint64Array": return new BigUint64Array(buffer);
-            case "Float32Array": return new Float32Array(buffer);
-            case "Float64Array": return new Float64Array(buffer);
-            default: marker satisfies never;
-          }
+        } else {
+          break;
         }
+        if (value.length === 2) {
+          // If decoded via Buffer.from(..., "base64"), copy out of Node's shared slab pool.
+          if (!isRawBytes && (bytes.byteOffset !== 0 || bytes.byteLength !== bytes.buffer.byteLength)) {
+            return new Uint8Array(bytes);
+          }
+          return bytes;
+        }
+
+        if (typeof value[2] !== "string") {
+          throw new TypeError(`Unknown bytes type marker type: ${typeof value[2]}`);
+        }
+        if (!isValidByteContainerName(value[2])) {
+          let marker = value[2].slice(0, 64);
+          throw new TypeError(`Unknown bytes type marker: ${marker}`);
+        }
+        let marker = value[2];
+        let elementSize = TYPED_ARRAY_ELEMENT_SIZE[marker];
+        if (elementSize !== undefined && bytes.byteLength % elementSize !== 0) {
+          throw new TypeError(
+            `Invalid byte length ${bytes.byteLength} for ${marker}; ` +
+            `expected a multiple of ${elementSize}`);
+        }
+
+        let buffer: ArrayBufferLike;
+        let byteOffset: number;
+        let byteLength = bytes.byteLength;
+        if (isRawBytes &&
+            (NATIVE_LITTLE_ENDIAN || elementSize === undefined) &&
+            (elementSize === undefined || bytes.byteOffset % elementSize === 0)) {
+          buffer = bytes.buffer;
+          byteOffset = bytes.byteOffset;
+        } else {
+          // Copy when base64-decoded, unaligned, or endianness-swapped.
+          let copy = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+          if (!NATIVE_LITTLE_ENDIAN && elementSize !== undefined) {
+            swapByteOrder(new Uint8Array(copy), elementSize);
+          }
+          buffer = copy;
+          byteOffset = 0;
+        }
+        switch (marker) {
+          case "ArrayBuffer":
+            return byteOffset === 0 && byteLength === buffer.byteLength && buffer instanceof ArrayBuffer
+              ? buffer
+              : buffer.slice(byteOffset, byteOffset + byteLength);
+          case "DataView": return new DataView(buffer, byteOffset, byteLength);
+          case "Int8Array": return new Int8Array(buffer, byteOffset, byteLength);
+          case "Uint8Array": return new Uint8Array(buffer, byteOffset, byteLength);
+          case "Uint8ClampedArray": return new Uint8ClampedArray(buffer, byteOffset, byteLength);
+          case "Int16Array": return new Int16Array(buffer, byteOffset, byteLength / 2);
+          case "Uint16Array": return new Uint16Array(buffer, byteOffset, byteLength / 2);
+          case "Int32Array": return new Int32Array(buffer, byteOffset, byteLength / 4);
+          case "Uint32Array": return new Uint32Array(buffer, byteOffset, byteLength / 4);
+          case "BigInt64Array": return new BigInt64Array(buffer, byteOffset, byteLength / 8);
+          case "BigUint64Array": return new BigUint64Array(buffer, byteOffset, byteLength / 8);
+          case "Float32Array": return new Float32Array(buffer, byteOffset, byteLength / 4);
+          case "Float64Array": return new Float64Array(buffer, byteOffset, byteLength / 8);
+          default: marker satisfies never;
+        }
+      }
         case "error":
           if (value.length >= 3 && typeof value[1] === "string" && typeof value[2] === "string") {
             let cls = ERROR_TYPES[value[1]] || Error;
