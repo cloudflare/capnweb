@@ -7,16 +7,17 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, RpcPromise, newWebSocketRpcSession,
          newMessagePortRpcSession,
          newHttpBatchRpcSession,
-         newHttpBatchRpcResponse} from "../src/index.js"
-import { BINARY_CONTENT_TYPE,
-          decodeBinaryFrame,
-          encodeBinaryFrame,
-          Evaluator,
-          Devaluator,
-          hasBinaryFrameMagic,
-          NATIVE_LITTLE_ENDIAN,
-          stringifyWithBase64Bytes,
-          swapByteOrder } from "../src/serialize.js"
+         newHttpBatchRpcResponse } from "../src/index.js"
+import {
+  BINARY_CONTENT_TYPE,
+  decodeBinaryFrame,
+  encodeBinaryFrame,
+  Evaluator,
+  Devaluator,
+  hasBinaryFrameMagic,
+  stringifyWithBase64Bytes,
+  swapByteOrder,
+} from "../src/serialize.js"
 import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
 import { ErrorStubHook, PayloadStubHook, PromiseStubHook, RpcPayload, RpcStub as RawRpcStub,
          StubHook, streamImpl, unwrapStubTakingOwnership, type PropertyPath } from "../src/core.js"
@@ -4623,7 +4624,7 @@ describe("binary framing codec (jsonCompatibleWithBytes)", () => {
     expect(evaluated.bi64).toStrictEqual(bi64);
     expect(evaluated.literalBytesTuple).toStrictEqual(["bytes", 10, 20, 30]);
 
-    if (NATIVE_LITTLE_ENDIAN) {
+    if (new Uint8Array(new Uint16Array([1]).buffer)[0] === 1) {
       // TypedArrays and Uint8Array views are zero-copy views directly into the frame's ArrayBuffer!
       expect(evaluated.u8Odd.buffer).toBe(frame.buffer);
       expect(evaluated.f64.buffer).toBe(frame.buffer);

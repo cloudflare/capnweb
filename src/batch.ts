@@ -319,6 +319,18 @@ export async function nodeHttpBatchRpcResponse(
     options?: RpcSessionOptions & {
       headers?: OutgoingHttpHeaders | OutgoingHttpHeader[],
     }): Promise<void> {
+  if (request.method === "OPTIONS" && request.headers["access-control-request-method"]) {
+    if (!response.hasHeader("access-control-allow-methods")) {
+      response.setHeader("Access-Control-Allow-Methods", "POST");
+    }
+    let reqHeaders = request.headers["access-control-request-headers"];
+    if (reqHeaders && !response.hasHeader("access-control-allow-headers")) {
+      response.setHeader("Access-Control-Allow-Headers", reqHeaders);
+    }
+    response.writeHead(204, options?.headers);
+    response.end();
+    return;
+  }
   if (request.method !== "POST") {
     response.writeHead(405, "This endpoint only accepts POST requests.", options?.headers);
     response.end();
