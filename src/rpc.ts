@@ -464,6 +464,13 @@ export type RpcSessionOptions = {
    * session.
    */
   limits?: Partial<RpcLimits>;
+
+  /**
+   * Enable native binary framing on transports that support it (such as WebSocket and HTTP batch).
+   * When omitted, transports default to text/JSON framing for backward compatibility while
+   * automatically accepting (and replying to) binary frames when received.
+   */
+  binary?: boolean;
 };
 
 class RpcSessionImpl implements Importer, Exporter {

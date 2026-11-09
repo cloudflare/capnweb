@@ -5,7 +5,13 @@
 /// <reference types="@cloudflare/workers-types" />
 
 import { RpcStub } from "./core.js";
-import { RpcSession, RpcSessionOptions } from "./rpc.js";
+import { RpcSession, RpcSessionOptions, RpcTransportWithCustomEncoding } from "./rpc.js";
+import {
+  DEFAULT_LIMITS,
+  decodeBinaryFrame,
+  encodeBinaryFrame,
+  stringifyWithBase64Bytes,
+} from "./serialize.js";
 
 /** Close-frame reason max UTF-8 bytes: 125 payload - 2-byte status (RFC 6455 section 5.5). */
 export const MAX_CLOSE_REASON_BYTES = 125 - 2;
@@ -16,7 +22,7 @@ export function newWebSocketRpcSession(
     webSocket = new WebSocket(webSocket);
   }
 
-  let transport = new WebSocketTransport(webSocket);
+  let transport = new WebSocketFrameTransport(webSocket, options);
   let rpc = new RpcSession(transport, localMain, options);
   return rpc.getRemoteMain();
 }
@@ -69,13 +75,27 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
     webSocket.addEventListener("message", (event: MessageEvent<any>) => {
       if (this.#error) {
         // Ignore further messages.
-      } else if (typeof event.data === "string" || event.data instanceof ArrayBuffer) {
+      } else if (
+        typeof event.data === "string" ||
+        event.data instanceof ArrayBuffer ||
+        ArrayBuffer.isView(event.data)
+      ) {
+        let data: string | ArrayBuffer;
+        if (ArrayBuffer.isView(event.data)) {
+          let view = event.data;
+          data = view.byteOffset === 0 && view.byteLength === view.buffer.byteLength &&
+              view.buffer instanceof ArrayBuffer
+            ? view.buffer
+            : view.buffer.slice(view.byteOffset, view.byteOffset + view.byteLength) as ArrayBuffer;
+        } else {
+          data = event.data;
+        }
         if (this.#receiveResolver) {
-          this.#receiveResolver(event.data as T);
+          this.#receiveResolver(data as T);
           this.#receiveResolver = undefined;
           this.#receiveRejecter = undefined;
         } else {
-          this.#receiveQueue.push(event.data as T);
+          this.#receiveQueue.push(data as T);
         }
       } else {
         this.#receivedError(new TypeError("Received unexpected message type from WebSocket."));
@@ -98,25 +118,30 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
   #receiveQueue: T[] = [];
   #error?: any;
 
-  send(message: T): void {
+  async send(message: T): Promise<void> {
     if (this.#sendQueue === undefined) {
-      this.#webSocket.send(message);
+      try {
+        this.#webSocket.send(message);
+      } catch (err) {
+        this.#receivedError(err);
+        throw err;
+      }
     } else {
       // Not open yet, queue for later.
       this.#sendQueue.push(message);
     }
   }
 
-  receive(): Promise<T> {
+  async receive(): Promise<T> {
     if (this.#receiveQueue.length > 0) {
-      return Promise.resolve(this.#receiveQueue.shift()!);
+      return this.#receiveQueue.shift()!;
     } else if (this.#error) {
-      return Promise.reject(this.#error);
+      throw this.#error;
     } else {
-      return new Promise<T>((resolve, reject) => {
-        this.#receiveResolver = resolve;
-        this.#receiveRejecter = reject;
-      });
+      let { promise, resolve, reject } = Promise.withResolvers<T>();
+      this.#receiveResolver = resolve;
+      this.#receiveRejecter = reject;
+      return promise;
     }
   }
 
@@ -151,7 +176,62 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
     }
   }
 }
-
 // This class is generic, so it can't `implements RpcTransport` (that would require every `T` to
 // conform, but the ArrayBuffer instantiation intentionally doesn't). The default string
 // instantiation's conformance is asserted in __type-tests__/rpc-types.test.ts.
+
+class WebSocketFrameTransport implements RpcTransportWithCustomEncoding {
+  readonly encodingLevel = "jsonCompatibleWithBytes" as const;
+  #raw: WebSocketTransport<string | ArrayBuffer>;
+  #binary: boolean;
+  #autoDetect: boolean;
+  #maxMessageSize: number;
+  #maxDepth: number;
+
+  constructor(webSocket: WebSocket, options?: RpcSessionOptions) {
+    this.#raw = new WebSocketTransport<string | ArrayBuffer>(webSocket);
+    this.#binary = options?.binary ?? false;
+    this.#autoDetect = options?.binary === undefined;
+    this.#maxMessageSize = options?.limits?.maxMessageSize ?? DEFAULT_LIMITS.maxMessageSize;
+    this.#maxDepth = options?.limits?.maxDepth ?? DEFAULT_LIMITS.maxDepth;
+  }
+
+  send(message: unknown): number {
+    if (this.#binary) {
+      let frame = encodeBinaryFrame(message);
+      this.#raw.send(frame.buffer as ArrayBuffer).catch(() => {});
+      return frame.byteLength;
+    } else {
+      let text = stringifyWithBase64Bytes(message);
+      this.#raw.send(text).catch(() => {});
+      return text.length;
+    }
+  }
+
+  async receive(): Promise<unknown> {
+    let raw = await this.#raw.receive();
+    if (typeof raw === "string") {
+      if (raw.length > this.#maxMessageSize) {
+        throw new TypeError(
+          `Incoming message exceeds maximum size of ${this.#maxMessageSize} UTF-16 code units.`
+        );
+      }
+      return JSON.parse(raw);
+    } else {
+      if (raw.byteLength > this.#maxMessageSize) {
+        throw new TypeError(
+          `Incoming message exceeds maximum size of ${this.#maxMessageSize} bytes.`
+        );
+      }
+      let decoded = decodeBinaryFrame(raw, this.#maxDepth * 2 + 2);
+      if (this.#autoDetect) {
+        this.#binary = true;
+      }
+      return decoded;
+    }
+  }
+
+  abort(reason: unknown): void {
+    this.#raw.abort(reason);
+  }
+}

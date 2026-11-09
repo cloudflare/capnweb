@@ -398,21 +398,7 @@ export class Devaluator {
               ? ["bytes", bytes] : ["bytes", bytes, alternateTypeName];
         }
 
-        let b64: string;
-        if (bytes.toBase64) {
-          b64 = bytes.toBase64({omitPadding: true});
-        } else if (typeof Buffer !== "undefined") {
-          let buf = bytes instanceof Buffer ? bytes
-              : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-          b64 = buf.toString("base64");
-        } else {
-          let binary = "";
-          for (let i = 0; i < bytes.length; i++) {
-            binary += String.fromCharCode(bytes[i]);
-          }
-          b64 = btoa(binary);
-        }
-        b64 = b64.replace(/=+$/, "");
+        let b64 = encodeBase64(bytes);
         return alternateTypeName === undefined ? ["bytes", b64] : ["bytes", b64, alternateTypeName];
       }
 
@@ -947,6 +933,26 @@ export class Evaluator {
                 `Invalid byte length ${bytes.byteLength} for ${marker}; ` +
                 `expected a multiple of ${elementSize}`);
           }
+          if (value[1] instanceof Uint8Array && NATIVE_LITTLE_ENDIAN &&
+              marker !== "ArrayBuffer" &&
+              (elementSize === undefined || bytes.byteOffset % elementSize === 0)) {
+            let buf = bytes.buffer;
+            let off = bytes.byteOffset;
+            let len = bytes.byteLength;
+            switch (marker) {
+              case "DataView": return new DataView(buf, off, len);
+              case "Int8Array": return new Int8Array(buf, off, len);
+              case "Uint8ClampedArray": return new Uint8ClampedArray(buf, off, len);
+              case "Int16Array": return new Int16Array(buf, off, len / 2);
+              case "Uint16Array": return new Uint16Array(buf, off, len / 2);
+              case "Int32Array": return new Int32Array(buf, off, len / 4);
+              case "Uint32Array": return new Uint32Array(buf, off, len / 4);
+              case "BigInt64Array": return new BigInt64Array(buf, off, len / 8);
+              case "BigUint64Array": return new BigUint64Array(buf, off, len / 8);
+              case "Float32Array": return new Float32Array(buf, off, len / 4);
+              case "Float64Array": return new Float64Array(buf, off, len / 8);
+            }
+          }
 
           // Copy exactly the decoded range rather than exposing or aliasing a pooled Buffer.
           let buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
@@ -1336,4 +1342,305 @@ export function deserialize(value: string): unknown {
   let payload = new Evaluator(NULL_IMPORTER).evaluate(JSON.parse(value));
   payload.dispose();  // should be no-op but just in case
   return payload.value;
+}
+
+// =======================================================================================
+// Binary frame codec for `jsonCompatibleWithBytes` transports (WebSocket & HTTP batch)
+
+export const BINARY_CONTENT_TYPE = "application/x-capnweb-bin";
+
+const BINARY_MAGIC_0 = 0x89;
+const BINARY_MAGIC_1 = 0x43; // 'C'
+const BINARY_MAGIC_2 = 0x57; // 'W'
+const BINARY_MAGIC_3 = 0x42; // 'B'
+const BINARY_HEADER_SIZE = 8;
+
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
+
+function align8(n: number): number {
+  let rem = n % 8;
+  return rem === 0 ? n : n + (8 - rem);
+}
+
+function encodeBase64(bytes: Uint8Array): string {
+  let b64: string;
+  if (bytes.toBase64) {
+    b64 = bytes.toBase64({omitPadding: true});
+  } else if (typeof Buffer !== "undefined") {
+    let buf = bytes instanceof Buffer ? bytes
+        : Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    b64 = buf.toString("base64");
+  } else {
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    b64 = btoa(binary);
+  }
+  return b64.replace(/=+$/, "");
+}
+
+/**
+ * Stringifies a devaluated `jsonCompatibleWithBytes` tree as standard JSON text, converting any
+ * raw `["bytes", Uint8Array, typeName?]` leaves into Base64 for compatibility with text/JSON peers.
+ */
+export function stringifyWithBase64Bytes(value: unknown): string {
+  return JSON.stringify(value, (_key, val) => {
+    if (Array.isArray(val) && val[0] === "bytes" && val[1] instanceof Uint8Array) {
+      let b64 = encodeBase64(val[1]);
+      return val.length === 3 ? ["bytes", b64, val[2]] : ["bytes", b64];
+    }
+    return val;
+  });
+}
+
+/**
+ * Checks whether a buffer begins with the 4-byte `\x89CWB` binary frame magic sequence.
+ */
+export function hasBinaryFrameMagic(input: ArrayBuffer | Uint8Array): boolean {
+  let bytes = input instanceof Uint8Array ? input : new Uint8Array(input);
+  return bytes.byteLength >= BINARY_HEADER_SIZE &&
+    bytes[0] === BINARY_MAGIC_0 &&
+    bytes[1] === BINARY_MAGIC_1 &&
+    bytes[2] === BINARY_MAGIC_2 &&
+    bytes[3] === BINARY_MAGIC_3;
+}
+
+/**
+ * Packs a devaluated `jsonCompatibleWithBytes` tree into a compact, 8-byte-aligned binary frame:
+ * - Bytes 0..3: `\x89CWB` magic
+ * - Bytes 4..7: little-endian uint32 UTF-8 JSON header byte length
+ * - Bytes 8..8+headerByteLength: UTF-8 JSON header where `["bytes", Uint8Array, typeName?]`
+ *   leaves are replaced with `["bytes", attachmentIndex, byteOffset, byteLength, typeName?]`
+ * - 0..7 zero padding bytes (when attachments are present) to align attachments to 8 bytes
+ * - 8-byte-aligned raw binary attachments
+ */
+export function encodeBinaryFrame(value: unknown): Uint8Array {
+  let attachments: Uint8Array[] = [];
+  let offsets: number[] = [];
+  let currentOffset = 0;
+
+  let jsonHeader = JSON.stringify(value, (_key, val) => {
+    if (Array.isArray(val) && val[0] === "bytes") {
+      if (val[1] instanceof Uint8Array) {
+        let bytes = val[1];
+        let index = attachments.length;
+        let byteOffset = align8(currentOffset);
+        let byteLength = bytes.byteLength;
+        attachments.push(bytes);
+        offsets.push(byteOffset);
+        currentOffset = byteOffset + byteLength;
+        return val.length === 3
+          ? ["bytes", index, byteOffset, byteLength, val[2]]
+          : ["bytes", index, byteOffset, byteLength];
+      }
+      if (typeof val[1] === "number" || val[1] === null) {
+        return ["bytes", null, ...val.slice(1)];
+      }
+    }
+    return val;
+  });
+  if (jsonHeader === undefined) {
+    throw new TypeError("Cannot encode undefined as a binary RPC frame.");
+  }
+  let headerBytes = textEncoder.encode(jsonHeader);
+  let headerByteLength = headerBytes.byteLength;
+  let attachmentsStart = attachments.length > 0
+    ? align8(BINARY_HEADER_SIZE + headerByteLength)
+    : BINARY_HEADER_SIZE + headerByteLength;
+  let totalByteLength = attachmentsStart + currentOffset;
+
+  let buffer = new ArrayBuffer(totalByteLength);
+  let frame = new Uint8Array(buffer);
+  let view = new DataView(buffer);
+
+  frame[0] = BINARY_MAGIC_0;
+  frame[1] = BINARY_MAGIC_1;
+  frame[2] = BINARY_MAGIC_2;
+  frame[3] = BINARY_MAGIC_3;
+  view.setUint32(4, headerByteLength, true);
+
+  frame.set(headerBytes, BINARY_HEADER_SIZE);
+
+  for (let i = 0; i < attachments.length; i++) {
+    frame.set(attachments[i], attachmentsStart + offsets[i]);
+  }
+
+  return frame;
+}
+
+/**
+ * Decodes a binary frame created by `encodeBinaryFrame`, replacing attachment markers with
+ * 8-byte-aligned `Uint8Array` views directly into the incoming `ArrayBuffer`.
+ */
+export function decodeBinaryFrame(
+  input: ArrayBuffer | Uint8Array,
+  maxDepth: number = DEFAULT_MAX_DEPTH
+): unknown {
+  let buffer: ArrayBuffer;
+  if (input instanceof Uint8Array) {
+    if (input.byteOffset === 0 && input.byteLength === input.buffer.byteLength &&
+        input.buffer instanceof ArrayBuffer) {
+      buffer = input.buffer;
+    } else {
+      buffer = input.buffer.slice(input.byteOffset, input.byteOffset + input.byteLength) as ArrayBuffer;
+    }
+  } else {
+    buffer = input;
+  }
+
+  if (buffer.byteLength < BINARY_HEADER_SIZE) {
+    throw new TypeError("Truncated binary RPC frame.");
+  }
+
+  let frame = new Uint8Array(buffer);
+  if (frame[0] !== BINARY_MAGIC_0 ||
+      frame[1] !== BINARY_MAGIC_1 ||
+      frame[2] !== BINARY_MAGIC_2 ||
+      frame[3] !== BINARY_MAGIC_3) {
+    throw new TypeError("Invalid binary RPC frame magic.");
+  }
+
+  let view = new DataView(buffer);
+  let headerByteLength = view.getUint32(4, true);
+  if (headerByteLength > buffer.byteLength - BINARY_HEADER_SIZE) {
+    throw new TypeError("Binary RPC frame header length exceeds frame size.");
+  }
+
+  let attachmentsStart = align8(BINARY_HEADER_SIZE + headerByteLength);
+
+  let jsonHeader = textDecoder.decode(new Uint8Array(buffer, BINARY_HEADER_SIZE, headerByteLength));
+  let parsed = JSON.parse(jsonHeader);
+  let state = { nextIndex: 0, nextOffset: 0 };
+  let result = rehydrateBinaryAttachments(
+    parsed,
+    buffer,
+    attachmentsStart,
+    state,
+    0,
+    maxDepth
+  );
+  let expectedByteLength = state.nextIndex > 0
+    ? attachmentsStart + state.nextOffset
+    : BINARY_HEADER_SIZE + headerByteLength;
+  if (expectedByteLength !== buffer.byteLength) {
+    throw new TypeError("Binary RPC frame size does not match header and attachments.");
+  }
+  return result;
+}
+
+function rehydrateBinaryAttachments(
+  node: unknown,
+  buffer: ArrayBuffer,
+  attachmentsStart: number,
+  state: { nextIndex: number; nextOffset: number },
+  depth: number,
+  maxDepth: number
+): unknown {
+  if (depth >= maxDepth) {
+    throw new TypeError(
+      "Deserialization exceeded maximum allowed depth. (Does the message contain cycles?)"
+    );
+  }
+  if (Array.isArray(node)) {
+    if (node[0] === "bytes") {
+      if (node[1] === null) {
+        if (
+          node.length < 3 ||
+          (typeof node[2] !== "number" && node[2] !== null)
+        ) {
+          throw new TypeError("Invalid binary attachment descriptor.");
+        }
+        node.splice(1, 1);
+        for (let i = 1; i < node.length; i++) {
+          node[i] = rehydrateBinaryAttachments(
+            node[i],
+            buffer,
+            attachmentsStart,
+            state,
+            depth + 1,
+            maxDepth
+          );
+        }
+        return node;
+      }
+      if (typeof node[1] === "number") {
+        if (
+          (node.length !== 4 && node.length !== 5) ||
+          typeof node[2] !== "number" ||
+          typeof node[3] !== "number" ||
+          (node.length === 5 && typeof node[4] !== "string")
+        ) {
+          throw new TypeError("Invalid binary attachment descriptor.");
+        }
+        let attachmentIndex = node[1];
+        let byteOffset = node[2];
+        let byteLength = node[3];
+        if (attachmentIndex !== state.nextIndex) {
+          throw new TypeError(
+            `Invalid binary attachment index: ${attachmentIndex}`
+          );
+        }
+        if (byteOffset !== align8(state.nextOffset)) {
+          throw new TypeError(
+            `Invalid binary attachment offset: ${byteOffset}`
+          );
+        }
+        if (!Number.isInteger(byteLength) || byteLength < 0) {
+          throw new TypeError(
+            `Invalid binary attachment length: ${byteLength}`
+          );
+        }
+        let absOffset = attachmentsStart + byteOffset;
+        if (absOffset + byteLength > buffer.byteLength) {
+          throw new TypeError("Binary attachment exceeds frame bounds.");
+        }
+        state.nextIndex++;
+        state.nextOffset = byteOffset + byteLength;
+        let bytes = new Uint8Array(buffer, absOffset, byteLength);
+        return node.length === 5 ? ["bytes", bytes, node[4]] : ["bytes", bytes];
+      }
+    }
+    for (let i = 0; i < node.length; i++) {
+      node[i] = rehydrateBinaryAttachments(
+        node[i],
+        buffer,
+        attachmentsStart,
+        state,
+        depth + 1,
+        maxDepth
+      );
+    }
+    return node;
+  }
+
+  if (
+    node !== null &&
+    typeof node === "object" &&
+    !(node instanceof Uint8Array)
+  ) {
+    let record = node as Record<string, unknown>;
+    for (let key of Object.keys(record)) {
+      let next = rehydrateBinaryAttachments(
+        record[key],
+        buffer,
+        attachmentsStart,
+        state,
+        depth + 1,
+        maxDepth
+      );
+      if (key === "__proto__") {
+        Object.defineProperty(record, key, {
+          value: next,
+          enumerable: true,
+          configurable: true,
+          writable: true,
+        });
+      } else {
+        record[key] = next;
+      }
+    }
+  }
+  return node;
 }
