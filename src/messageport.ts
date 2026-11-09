@@ -17,7 +17,7 @@ export function newMessagePortRpcSession(
   return rpc.getRemoteMain();
 }
 
-export class MessagePortTransport implements RpcTransportWithCustomEncoding {
+class MessagePortTransport implements RpcTransportWithCustomEncoding {
   readonly encodingLevel = "structuredClonable" as const;
 
   constructor (port: MessagePort) {

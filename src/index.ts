@@ -12,8 +12,7 @@ import { newWebSocketRpcSession as newWebSocketRpcSessionImpl,
          newWorkersWebSocketRpcResponse, WebSocketTransport } from "./websocket.js";
 import { newHttpBatchRpcSession as newHttpBatchRpcSessionImpl,
          newHttpBatchRpcResponse, nodeHttpBatchRpcResponse } from "./batch.js";
-import { newMessagePortRpcSession as newMessagePortRpcSessionImpl,
-         MessagePortTransport } from "./messageport.js";
+import { newMessagePortRpcSession as newMessagePortRpcSessionImpl } from "./messageport.js";
 import { forceInitMap } from "./map.js";
 import { forceInitStreams } from "./streams.js";
 
@@ -22,8 +21,8 @@ forceInitStreams();
 
 // Re-export public API types.
 export { serialize, deserialize, newWorkersWebSocketRpcResponse, newHttpBatchRpcResponse,
-         nodeHttpBatchRpcResponse, WebSocketTransport, MessagePortTransport,
-         transferArrayBuffer, DEFAULT_LIMITS, DEFAULT_MAX_DEPTH };
+         nodeHttpBatchRpcResponse, WebSocketTransport, transferArrayBuffer,
+         DEFAULT_LIMITS, DEFAULT_MAX_DEPTH };
 export type { RpcTransport, RpcTransportWithCustomEncoding, AnyRpcTransport,
          RpcSessionOptions, RpcCompatible, EncodingLevel, RpcLimits };
 
