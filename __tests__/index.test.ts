@@ -1580,6 +1580,19 @@ describe("promise pipelining", () => {
     await expect(() => promise).rejects.toThrow("test error");
     await expect(() => promise2).rejects.toThrow("test error");
   });
+
+  it("doesn't create an unhandled rejection when a call taking a promise fails", async () => {
+    await using harness = new TestHarness(new TestTarget());
+    let stub: any = harness.stub;
+
+    // The call fails before the server ever pulls the promise it received, so the server disposes
+    // an import that is still pending.
+    using counter = new RpcPromise<Counter>(Promise.resolve(new Counter(4)));
+    await expect(() => stub.noSuchMethod(counter)).rejects.toThrow("is not a function");
+
+    // Give an unhandled rejection the chance to be reported while this test is still running.
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
 });
 
 describe("promises and Blobs inside a Set", () => {
@@ -2595,6 +2608,65 @@ describe("RpcImportHook argument disposal", () => {
 
 // =======================================================================================
 
+describe("forwarding calls to a stub from another session", () => {
+  // The near session's main object is a stub pointing into the far session. A call on it is not
+  // delivered to a local function: its arguments, as parsed off the wire, are serialized again
+  // onto the far session.
+
+  it("releases a forwarded stub once the callee releases it", async () => {
+    let disposed = false;
+    class Listener extends RpcTarget {
+      notify() { return "notified"; }
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    class Publisher extends RpcTarget {
+      private listener?: RpcStub<Listener>;
+      subscribe(listener: RpcStub<Listener>) { this.listener = listener.dup(); }
+      publish() { return this.listener!.notify(); }
+      unsubscribe() { this.listener![Symbol.dispose](); }
+    }
+
+    await using far = new TestHarness(new Publisher());
+    await using near = new TestHarness(far.stub.dup());
+    let stub = near.stub;
+
+    await stub.subscribe(new Listener());
+    expect(await stub.publish()).toBe("notified");
+    expect(disposed).toBe(false);
+
+    await stub.unsubscribe();
+    expect(disposed).toBe(true);
+  });
+
+  it("forwards a pipelined argument", async () => {
+    await using far = new TestHarness(new TestTarget());
+    await using near = new TestHarness(far.stub.dup());
+    let stub = near.stub;
+
+    // On the far session, only the forwarded arguments refer to the counter promise. It must not
+    // be released before the call that cites it has been sent.
+    using counter = stub.makeCounter(4);
+    expect(await stub.incrementCounter(counter, 2)).toBe(6);
+  });
+
+  it("forwards a promise exported by the caller", async () => {
+    await using far = new TestHarness(new TestTarget());
+    await using near = new TestHarness(far.stub.dup());
+    let stub = near.stub;
+
+    // The near session imports this promise, forwards it, and then releases its own import of
+    // it while still unresolved.
+    using counter = new RpcPromise<Counter>(Promise.resolve(new Counter(4)));
+    expect(await stub.incrementCounter(counter, 2)).toBe(6);
+
+    // Give an unhandled rejection the chance to be reported while this test is still running.
+    await new Promise(resolve => setTimeout(resolve, 0));
+  });
+});
+
+// =======================================================================================
+
 describe("constructing RpcPromise from a promise", () => {
   it("pipelines through a pending promise without pulling the resolution", async () => {
     await using harness = new TestHarness(new TestTarget());
@@ -2681,6 +2753,19 @@ describe("constructing RpcPromise from a promise", () => {
     using stub = new RpcPromise<number>(Promise.reject(new Error("ignored")));
     using result = stub.map(i => i);  // never awaited; disposal alone must observe the error
     await pumpMicrotasks();
+  });
+
+  it("releases a stub passed in a call made through the promise", async () => {
+    let disposed = false;
+    class DisposableCounter extends Counter {
+      [Symbol.dispose]() { disposed = true; }
+    }
+
+    await using harness = new TestHarness(new TestTarget());
+    using stub = new RpcPromise<TestTarget>(Promise.resolve(harness.stub.dup()));
+
+    expect(await stub.incrementCounter(new DisposableCounter(4), 2)).toBe(6);
+    expect(disposed).toBe(true);
   });
 
   it("disposes the eventual target when disposed before resolution", async () => {

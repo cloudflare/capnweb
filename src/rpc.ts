@@ -187,6 +187,10 @@ class ImportTableEntry {
   constructor(public session: RpcSessionImpl, public importId: number, pulling: boolean) {
     if (pulling) {
       this.activePull = Promise.withResolvers<void>();
+
+      // Nothing awaits this promise until pull() is called, and disposing the import first
+      // rejects it. That must not be reported as an unhandled rejection.
+      this.activePull.promise.catch(() => {});
     }
   }
 
@@ -810,6 +814,9 @@ class RpcSessionImpl implements Importer, Exporter {
       try {
         devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
       } catch (err) {
+        // Disposing the partially-serialized payload is safe: any hooks already exported were
+        // dups of the payload's hooks, and the Devaluator rolls back its own export-table entries
+        // before rethrowing.
         args.dispose();
         throw err;
       }
@@ -817,13 +824,14 @@ class RpcSessionImpl implements Importer, Exporter {
       // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
       // TODO: Clean this up somehow.
       value.push((<Array<unknown>>devalue)[0]);
-
-      // Serializing the payload takes ownership of all stubs within, so the payload itself does
-      // not need to be disposed on success. If serialization threw partway through, disposing
-      // the payload above is safe: any hooks already exported were dups of the payload's hooks,
-      // and the Devaluator rolls back its own export-table entries before rethrowing.
     }
     this.send(["push", value]);
+
+    // A payload parsed off the wire, or deep-copied to wait on a promise, still owns its hooks:
+    // the message only carries dups of them or cites their import IDs. Dispose them once the
+    // message is sent, since that can release an import the message cites. For params straight
+    // from the app, which don't own their stubs, this does nothing.
+    args?.dispose();
 
     let entry = new ImportTableEntry(this, this.imports.length, false);
     this.imports.push(entry);
@@ -853,6 +861,7 @@ class RpcSessionImpl implements Importer, Exporter {
 
     let msg = ["stream", value];
     let size = this.send(msg);
+    args.dispose();  // only after sending, as in sendCall()
     if (size === undefined) {
       size = estimateEncodedSize(msg);
     }
