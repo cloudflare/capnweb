@@ -2445,6 +2445,26 @@ describe("onRpcBroken", () => {
     await pumpMicrotasks();
     expect(calls).toBe(1);
   });
+
+  it("calls back for a parameter stub only if a dup outlives the call", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let fired: string[] = [];
+    let kept: RpcStub<Counter>[] = [];
+    class Watcher extends RpcTarget {
+      watch(counter: RpcStub<Counter>, name: string, keep: boolean) {
+        counter.onRpcBroken(() => { fired.push(name); });
+        if (keep) kept.push(counter.dup());
+      }
+    }
+    let harness = new TestHarness(new Watcher());
+    await harness.stub.watch(new Counter(0), "kept", true);
+    await harness.stub.watch(new Counter(0), "dropped", false);
+
+    harness.serverTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(fired).toStrictEqual(["kept"]);
+  });
 });
 
 // =======================================================================================
