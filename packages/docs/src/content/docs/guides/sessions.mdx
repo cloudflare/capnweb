@@ -129,9 +129,10 @@ would tear down a session the remounted component then keeps using, and every la
 Tie disposal to real unmount or page unload, not to an effect. (StrictMode also double-invokes
 `useState` initializers, so expect one extra socket in development.)
 
-**`onRpcBroken` cannot be unregistered.** It returns nothing, and registering twice on the same stub
-fires twice. Register it where the session is created (as `connect()` does above) rather than in
-an effect that might re-run.
+**`onRpcBroken` has no handle to unregister one callback.** It returns nothing, and registering
+twice on the same stub fires twice. Disposing a remote stub and all its duplicates drops its
+callbacks, but disposing the root stub ends the session, which calls them. So register it where the
+session is created (as `connect()` does above) rather than in an effect that might re-run.
 ([#234](https://github.com/cloudflare/capnweb/issues/234) proposes returning a disposable handle.)
 :::
 

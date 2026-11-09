@@ -2393,6 +2393,78 @@ describe("onRpcBroken", () => {
       {which: "hangingCall", error: new Error("test disconnect")},
     ]);
   });
+
+  it("does not call back for capabilities disposed before the connection is lost", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let harness = new TestHarness(new TestTarget());
+    let stub = harness.stub;
+    let fired: string[] = [];
+    stub.onRpcBroken(() => { fired.push("main"); });
+
+    let counter = await stub.makeCounter(0);
+    counter.onRpcBroken(() => { fired.push("counter"); });
+    counter[Symbol.dispose]();
+
+    // A callback registered on a promise moves to the stub the promise resolves to.
+    let promise = stub.makeCounter(0);
+    promise.onRpcBroken(() => { fired.push("promise"); });
+    (await promise)[Symbol.dispose]();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(fired).toStrictEqual(["main"]);
+  });
+
+  it("calls back for a capability disposed by an earlier callback", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let harness = new TestHarness(new TestTarget());
+    let stub = harness.stub;
+    let counter = await stub.makeCounter(0);
+    let fired: string[] = [];
+    stub.onRpcBroken(() => { counter[Symbol.dispose](); });
+    counter.onRpcBroken(() => { fired.push("counter"); });
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(fired).toStrictEqual(["counter"]);
+  });
+
+  it("callbacks are retained by dups", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let harness = new TestHarness(new TestTarget());
+    let counter = await harness.stub.makeCounter(0);
+    let calls = 0;
+    counter.onRpcBroken(() => { ++calls; });
+    let dup = counter.dup();
+    counter[Symbol.dispose]();
+
+    harness.clientTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(calls).toBe(1);
+  });
+
+  it("calls back for a parameter stub only if a dup outlives the call", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let fired: string[] = [];
+    let kept: RpcStub<Counter>[] = [];
+    class Watcher extends RpcTarget {
+      watch(counter: RpcStub<Counter>, name: string, keep: boolean) {
+        counter.onRpcBroken(() => { fired.push(name); });
+        if (keep) kept.push(counter.dup());
+      }
+    }
+    let harness = new TestHarness(new Watcher());
+    await harness.stub.watch(new Counter(0), "kept", true);
+    await harness.stub.watch(new Counter(0), "dropped", false);
+
+    harness.serverTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(fired).toStrictEqual(["kept"]);
+  });
 });
 
 // =======================================================================================

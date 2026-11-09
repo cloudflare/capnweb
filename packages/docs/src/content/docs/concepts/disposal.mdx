@@ -166,3 +166,8 @@ throw exceptions, the callback is called. In particular, this happens if:
 
 - The stub's underlying connection is lost.
 - The stub is a promise, and the promise rejects.
+
+Once a remote stub and all its duplicates are disposed, its callbacks are unregistered without
+being called, so call `onRpcBroken()` on the stub you keep. A stub received as a call parameter is
+disposed when the call returns: to keep listening, `.dup()` it and register on the duplicate.
+(Disposing the main stub instead ends the session, which calls every callback.)
