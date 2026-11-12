@@ -4043,6 +4043,34 @@ describe("ReadableStream over RPC", () => {
 
     expect(result).toEqual(["to", "afar"]);
   });
+
+  it("refuses to copy a ReadableStream out of a result that was already delivered", async () => {
+    class StreamProvider extends RpcTarget {
+      getObject() {
+        return {
+          stream: new ReadableStream<string>({
+            start(controller) {
+              controller.enqueue("chunk");
+              controller.close();
+            }
+          })
+        };
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProvider());
+    using promise = harness.stub.getObject();
+    let result = await promise;
+
+    // The result already holds the stream. A second holder isn't supported, and must fail rather
+    // than receive a stream which disposing the result would cancel.
+    await expect(() => promise.stream).rejects.toThrow("Can't copy a ReadableStream");
+
+    // The result's own stream is unaffected.
+    let reader = result.stream.getReader();
+    expect(await reader.read()).toEqual({ done: false, value: "chunk" });
+    expect((await reader.read()).done).toBe(true);
+  });
 });
 
 // =======================================================================================
