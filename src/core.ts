@@ -1036,7 +1036,9 @@ export class RpcPayload {
         }
       }
     } else {
-      throw new Error("owned payload shouldn't contain raw ReadableStreams");
+      // "owned" and being serialized, e.g. a forwarded call or result. The pipe locks the stream
+      // at once, so the payload's own hook can no longer cancel it: create one, as for params.
+      return streamImpl.createReadableStreamHook(stream);
     }
   }
 
@@ -1170,6 +1172,11 @@ export class RpcPayload {
         let stream = <ReadableStream>value;
         let hook: StubHook;
         if (owner) {
+          if (owner.source === "owned") {
+            // The copy and `owner` would each cancel the stream when disposed, with no shared
+            // refcount. Fail rather than hand out a stream the other may already have cancelled.
+            throw new Error("Can't copy a ReadableStream out of an owned payload.");
+          }
           hook = owner.getHookForReadableStream(stream, oldParent, dupStubs);
         } else {
           hook = streamImpl.createReadableStreamHook(stream);
