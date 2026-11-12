@@ -1036,7 +1036,9 @@ export class RpcPayload {
         }
       }
     } else {
-      throw new Error("owned payload shouldn't contain raw ReadableStreams");
+      // "owned", e.g. a forwarded call or result. The payload's own hook only cancels the stream
+      // if it is disposed still unlocked, so there is nothing to share: create one, as for params.
+      return streamImpl.createReadableStreamHook(stream);
     }
   }
 
