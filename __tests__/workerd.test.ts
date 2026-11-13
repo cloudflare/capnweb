@@ -6,7 +6,7 @@
 import { expect, it, describe } from "vitest";
 import { RpcStub as NativeRpcStub, RpcTarget as NativeRpcTarget, env, DurableObject } from "cloudflare:workers";
 import { newHttpBatchRpcSession, newWebSocketRpcSession, RpcStub, RpcPromise, RpcTarget } from "../src/index-workers.js";
-import { v, wrapServerTarget, type ServiceValidator } from "../packages/capnweb-validate/src/internal/core.js";
+import { v, wrapServerTarget, __validateRpcClass, type ServiceValidator } from "../packages/capnweb-validate/src/internal/core.js";
 import { Counter, TestTarget } from "./test-util.js";
 
 class JsCounter extends RpcTarget {
@@ -393,6 +393,69 @@ describe("workerd RPC server", () => {
     let callback = new NativeRpcStub(new NativeCounter());
     expect(await vendor.connect(callback)).toBe(1);
     expect(await vendor.connectNested({ callback })).toBe(2);
+  })
+
+  it("returns existing stubs from a capnweb-validate target without wrapping them", async () => {
+    let counterValidator: ServiceValidator = {
+      serviceName: "Counter",
+      methods: { increment: { args: [v.number], returns: v.number } },
+    };
+    let sessionValidator: ServiceValidator = {
+      serviceName: "Session",
+      methods: {
+        getStub: { args: [], returns: v.stubOf(counterValidator) },
+        getNestedStub: {
+          args: [],
+          returns: v.object({ counter: v.stubOf(counterValidator) }),
+        },
+        getLocalTarget: { args: [], returns: v.stubOf(counterValidator) },
+      },
+    };
+
+    // Validate the class the way `@validateRpc()` does: wrap its methods in place.
+    class Session extends NativeRpcTarget {
+      constructor(private stub: NativeRpcStub<NativeCounter>) {
+        super();
+      }
+      getStub() {
+        return this.stub.dup();
+      }
+      getNestedStub() {
+        return { counter: this.stub.dup() };
+      }
+      getLocalTarget() {
+        return new NativeCounter(10);
+      }
+    }
+    __validateRpcClass(sessionValidator)(Session);
+
+    let backingStub = new NativeRpcStub(new NativeCounter());
+    let session = new NativeRpcStub(new Session(backingStub));
+
+    // A returned stub must reach the caller as the original stub. If it were wrapped in a Proxy,
+    // workerd would export the Proxy as a new capability, and calls on it would fail with "The
+    // RPC receiver does not implement the method".
+    {
+      // Pipelined.
+      expect(await session.getStub().increment(2)).toBe(2);
+
+      // Awaited first.
+      let stub = await session.getStub();
+      expect(await stub.increment(2)).toBe(4);
+
+      // Embedded in a returned object.
+      let obj = await session.getNestedStub();
+      expect(await obj.counter.increment(3)).toBe(7);
+    }
+
+    // A returned local RpcTarget is still wrapped, since calls on it are delivered here and
+    // nothing else would validate them.
+    {
+      let local = await session.getLocalTarget();
+      expect(await local.increment(5)).toBe(15);
+      await expect(local.increment("bad" as unknown as number))
+          .rejects.toThrow(/expected number, got string/);
+    }
   })
 
   it("can accept HTTP batch RPC connections", async () => {

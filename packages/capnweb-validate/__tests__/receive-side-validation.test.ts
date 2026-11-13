@@ -74,4 +74,39 @@ describe("server wrapper: checks arguments, not outgoing returns", () => {
     expect(() => api.map()).toThrow(/not declared on .* RPC interface/);
   });
 
+  it("returns an existing stub unwrapped, but wraps a local target", () => {
+    const childValidator: ServiceValidator = {
+      serviceName: "Child",
+      methods: { ping: { args: [v.string], returns: v.string } },
+    };
+    const sessionValidator: ServiceValidator = {
+      serviceName: "Session",
+      methods: {
+        getStub: { args: [], returns: v.stubOf(childValidator) },
+        getLocal: { args: [], returns: v.stubOf(childValidator) },
+      },
+    };
+    const existingStub = rawStub((x) => x);
+    const localTarget = { ping: (x: unknown) => x };
+    const session = wrapServerTarget(
+      {
+        getStub: () => existingStub,
+        getLocal: () => localTarget,
+      },
+      sessionValidator
+    ) as {
+      getStub(): Record<string, (...args: unknown[]) => unknown>;
+      getLocal(): { ping(x: unknown): unknown };
+    };
+
+    // `rawStub()` has a `dup()` method, so it is already a stub: same identity
+    // out as in.
+    expect(session.getStub()).toBe(existingStub);
+
+    // A local target has no `dup()`, so it gets the validating Proxy.
+    const wrappedLocal = session.getLocal();
+    expect(wrappedLocal).not.toBe(localTarget);
+    expect(wrappedLocal.ping("ok")).toBe("ok");
+    expect(() => wrappedLocal.ping(123)).toThrow(TypeError);
+  });
 });

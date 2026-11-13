@@ -856,6 +856,15 @@ function wrapResolvedValue(
     let valueType = typeof value;
     if (value === null || (valueType !== "object" && valueType !== "function"))
       return value;
+    if (
+      side === "server" &&
+      typeof Reflect.get(value as object, "dup") === "function"
+    ) {
+      // A value with `dup()` is already a stub, not a local `RpcTarget`. Its target
+      // validates its own calls, and wrapping a workerd stub in a `Proxy` breaks
+      // native RPC serialization and `ctx.restore()` persistence.
+      return value;
+    }
     return side === "server"
       ? wrapServerTarget(value as object, shape.service)
       : wrapClientStub(value as object, shape.service);
