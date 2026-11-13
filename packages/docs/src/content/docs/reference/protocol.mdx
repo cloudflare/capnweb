@@ -368,6 +368,18 @@ A JavaScript `Set` value. `elements` is an array of expressions for the set elem
 An element must not evaluate directly to a promise or `Blob`. Stubs are valid elements, and promises
 and `Blob`s may appear nested within another element.
 
+### map
+
+```json
+["map", entries]
+```
+
+A JavaScript `Map` value. `entries` is an array of `[key, value]` pairs in insertion order, where
+`key` and `value` are expressions.
+
+A key follows the same rules as a `set` element: it must not evaluate directly to a promise or
+`Blob`, though stubs are valid keys. A value may evaluate to anything, including a promise or `Blob`.
+
 ### regexp
 
 ```json

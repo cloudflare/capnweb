@@ -16,6 +16,7 @@ The following types can be passed over RPC, in arguments or return values:
 - Plain objects (e.g. from object literals)
 - Arrays
 - `Set`
+- `Map`
 - `bigint`
 - `Date`
 - `ArrayBuffer`, `DataView`, and typed arrays
@@ -31,6 +32,9 @@ A `Set` cannot contain a promise or `Blob` directly when sent over a connection.
 elements, and promises and `Blob`s may still appear inside a plain object or array used as an
 element.
 
+`Map` keys follow the same rules as `Set` elements. `Map` values have no such restriction: a value
+may be a promise, `Blob`, or stub.
+
 ## Passed by reference
 
 - Classes that extend [`RpcTarget`](/concepts/rpc-target/)
@@ -39,12 +43,6 @@ element.
 
 Anything passed by reference produces a **stub** on the far side, and stubs must be
 [disposed](/concepts/disposal/).
-
-## Not supported yet
-
-These may be added in the future:
-
-- `Map`
 
 ## Intentionally not supported
 
