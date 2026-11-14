@@ -730,10 +730,11 @@ class RpcSessionImpl implements Importer, Exporter {
     // Create a proxy WritableStream from the import hook and pump the ReadableStream into it.
     let hook = new RpcImportHook(/*isPromise=*/false, entry);
     let writable = streamImpl.createWritableStreamFromHook(hook);
-    readable.pipeTo(writable).catch(() => {
-      // Errors are handled by the writable stream's error handling -- either the write fails
-      // and the writable side reports it, or the readable side errors and pipeTo aborts the
-      // writable side. Either way, the hook's disposal will handle cleanup.
+    readable.pipeTo(writable).catch(err => {
+      // pipeTo normally aborts the writable on failure, but can reject before starting
+      // (e.g. if the readable is already locked). Notify the peer in that case too,
+      // otherwise it keeps waiting for a pipe that will never receive any data.
+      return writable.abort(err).catch(() => {});
     }).finally(() => readableHook.dispose());
 
     return importId;

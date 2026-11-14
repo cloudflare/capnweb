@@ -3862,6 +3862,47 @@ describe("transport encoding levels", () => {
 });
 
 describe("ReadableStream over RPC", () => {
+  it.each(["param", "result"])("rejects reading a locked stream sent as a %s", async (direction) => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("hello");
+        controller.close();
+      }
+    });
+    let localReader = stream.getReader();
+
+    class StreamReceiver extends RpcTarget {
+      getStream() { return stream; }
+      ping() { return "pong"; }
+      async read(stream: ReadableStream<string>) {
+        let reader = stream.getReader();
+        try {
+          return await reader.read();
+        } finally {
+          reader.releaseLock();
+        }
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    try {
+      if (direction === "param") {
+        await expect(() => harness.stub.read(stream)).rejects.toThrow(/locked/i);
+      } else {
+        using result = await harness.stub.getStream();
+        let reader = result.getReader();
+        try {
+          await expect(reader.read()).rejects.toThrow(/locked/i);
+        } finally {
+          reader.releaseLock();
+        }
+      }
+      expect(await harness.stub.ping()).toBe("pong");
+    } finally {
+      localReader.releaseLock();
+    }
+  });
+
   it("can send a ReadableStream and read all chunks", async () => {
     let stream = new ReadableStream<string>({
       start(controller) {
