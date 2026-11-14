@@ -8,7 +8,7 @@ import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTranspor
          newMessagePortRpcSession,
          newHttpBatchRpcSession} from "../src/index.js"
 import { swapByteOrder } from "../src/serialize.js"
-import { MAX_CLOSE_REASON_BYTES } from "../src/websocket.js"
+import { MAX_CLOSE_REASON_BYTES, WebSocketTransport } from "../src/websocket.js"
 import { ErrorStubHook, PayloadStubHook, PromiseStubHook, RpcPayload, RpcStub as RawRpcStub,
          StubHook, streamImpl, unwrapStubTakingOwnership, type PropertyPath } from "../src/core.js"
 import { Counter, TestTarget } from "./test-util.js";
@@ -3142,6 +3142,72 @@ describe("HTTP requests", () => {
     let response = await fetch(`http://${inject("testServerHost")}`, { method: "GET" });
     expect(response.status).toBe(405);
     await response.text();
+  });
+});
+
+describe("buffered WebSocket receives", () => {
+  class Socket extends EventTarget {
+    readyState = 1;
+    binaryType = "";
+    send() {}
+    close() {}
+    message(data: string | ArrayBuffer) {
+      this.dispatchEvent(new MessageEvent("message", { data }));
+    }
+  }
+
+  it("preserves FIFO when arrivals interleave with draining and a waiting receive", async () => {
+    let socket = new Socket();
+    let transport = new WebSocketTransport(socket as unknown as WebSocket);
+    for (let value of ["a", "b", "c"]) socket.message(value);
+    expect(await transport.receive()).toBe("a");
+    for (let value of ["d", "e"]) socket.message(value);
+    for (let value of ["b", "c", "d", "e"]) expect(await transport.receive()).toBe(value);
+    let pending = transport.receive();
+    socket.message("f");
+    expect(await pending).toBe("f");
+    socket.message("g");
+    expect(await transport.receive()).toBe("g");
+  });
+
+  it("handles a sustained backlog across many incoming batches", async () => {
+    let socket = new Socket();
+    let transport = new WebSocketTransport(socket as unknown as WebSocket);
+    let sent = 0;
+    let received = 0;
+    for (let i = 0; i < 20; i++) socket.message(String(sent++));
+    for (let round = 0; round < 1000; round++) {
+      for (let i = 0; i < 7; i++) expect(await transport.receive()).toBe(String(received++));
+      for (let i = 0; i < 7; i++) socket.message(String(sent++));
+    }
+    while (received < sent) expect(await transport.receive()).toBe(String(received++));
+  });
+
+  it("drains buffered text and binary messages before reporting a connection error", async () => {
+    let socket = new Socket();
+    let transport = new WebSocketTransport<string | ArrayBuffer>(socket as unknown as WebSocket);
+    let bytes = new Uint8Array([1, 2, 3]).buffer;
+    socket.message("");
+    socket.message(bytes);
+    expect(await transport.receive()).toBe("");
+    socket.message("last");
+    socket.dispatchEvent(new Event("error"));
+    socket.message("ignored");
+    expect(await transport.receive()).toBe(bytes);
+    expect(await transport.receive()).toBe("last");
+    await expect(transport.receive()).rejects.toThrow("WebSocket connection failed");
+  });
+
+  it("preserves buffered order and the abort reason", async () => {
+    let socket = new Socket();
+    let transport = new WebSocketTransport(socket as unknown as WebSocket);
+    socket.message("first");
+    socket.message("second");
+    expect(await transport.receive()).toBe("first");
+    let reason = new Error("stopped");
+    transport.abort(reason);
+    expect(await transport.receive()).toBe("second");
+    await expect(transport.receive()).rejects.toBe(reason);
   });
 });
 
