@@ -27,6 +27,16 @@ Each codec gets a warmup batch. Subsequent pairs alternate order and check the r
 every returned byte. Timing ends when the client receives all results. Try a single call and a
 batch to see how much HTTP overhead your application amortizes.
 
+Bytes must be a nonnegative integer; pairs and calls must be positive integers. The seed must
+be an integer from 1 through 4294967295. Zero is excluded because the random generator would
+otherwise produce only zero bytes.
+
+Run the example's regression checks from the repository root after installing its dependencies:
+
+```sh
+node --test examples/msgpack-http/transport.test.mjs
+```
+
 ## Wire format
 
 Both endpoints use a dedicated route and the example media type

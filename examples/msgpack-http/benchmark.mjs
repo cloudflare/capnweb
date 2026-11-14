@@ -21,6 +21,18 @@ const size = Number(sizeArg),
   count = Number(countArg),
   pairs = Number(pairsArg);
 let seed = Number(seedArg);
+if (
+  !Number.isSafeInteger(size) || size < 0 ||
+  !Number.isSafeInteger(count) || count < 1 ||
+  !Number.isSafeInteger(pairs) || pairs < 1 ||
+  !Number.isInteger(seed) || seed < 1 || seed > 0xffffffff ||
+  !["random", "pattern"].includes(pattern)
+) {
+  throw new RangeError(
+    "Expected nonnegative integer bytes, random|pattern, seed 1..4294967295, " +
+    "positive integer pairs and positive integer calls per POST",
+  );
+}
 const values = Array.from({ length: count }, (_, i) =>
   Uint8Array.from({ length: size }, (_, j) => {
     if (pattern === "pattern") return (i + j) % 251;

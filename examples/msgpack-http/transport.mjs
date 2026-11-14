@@ -59,6 +59,7 @@ async function* readFrames(message) {
   }
   const view = new DataView(body.buffer);
   for (pos = 0; pos < total;) {
+    if (total - pos < 4) throw new Error("Truncated MessagePack frame header");
     const size = view.getUint32(pos);
     pos += 4;
     if (size > total - pos) throw new Error("Truncated MessagePack frame");
