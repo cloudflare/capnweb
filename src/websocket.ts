@@ -96,6 +96,7 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
   #receiveResolver?: (message: T) => void;
   #receiveRejecter?: (err: any) => void;
   #receiveQueue: T[] = [];
+  #receiveBacklog: T[] = [];
   #error?: any;
 
   send(message: T): void {
@@ -108,8 +109,16 @@ export class WebSocketTransport<T extends string | ArrayBuffer = string> {
   }
 
   receive(): Promise<T> {
-    if (this.#receiveQueue.length > 0) {
-      return Promise.resolve(this.#receiveQueue.shift()!);
+    if (this.#receiveQueue.length > 0 || this.#receiveBacklog.length > 0) {
+      if (this.#receiveBacklog.length === 0) {
+        if (this.#receiveQueue.length === 1) {
+          return Promise.resolve(this.#receiveQueue.pop()!);
+        }
+        // Reverse each incoming batch once, then pop in FIFO order without shifting the tail.
+        this.#receiveBacklog = this.#receiveQueue.reverse();
+        this.#receiveQueue = [];
+      }
+      return Promise.resolve(this.#receiveBacklog.pop()!);
     } else if (this.#error) {
       return Promise.reject(this.#error);
     } else {
