@@ -12,7 +12,12 @@ export {
   serialize,
 } from "capnweb";
 export type { RpcCompatible, RpcSessionOptions, RpcTransport } from "capnweb";
-export { skipRpcValidation, validateRpc, validateStub } from "./index.js";
+export {
+  isValidationError,
+  skipRpcValidation,
+  validateRpc,
+  validateStub,
+} from "./index.js";
 export type { ValidatedStub } from "./index.js";
 
 export const newWorkersRpcResponse: typeof capnweb.newWorkersRpcResponse =

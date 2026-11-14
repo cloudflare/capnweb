@@ -4,7 +4,11 @@
 
 export type PropertyPath = (string | number)[];
 
-const RPC_VALIDATION_ERROR = Symbol("capnweb-validate.validationError");
+// `Symbol.for`, so that a copy of this package bundled twice (its runtime
+// beside its public entry, or two versions) still recognizes the other's
+// errors. Not a security boundary: the tag never crosses the wire, since
+// Cap'n Web sends an error's message and enumerable properties only.
+const RPC_VALIDATION_ERROR = Symbol.for("capnweb-validate.validationError");
 
 type TaggedValidationError = TypeError & { [RPC_VALIDATION_ERROR]?: true };
 
@@ -22,7 +26,13 @@ export function newValidationTypeError(message: string): TypeError {
   return err;
 }
 
-export function isValidationTypeError(err: unknown): err is TypeError {
+/**
+ * Whether `err` is a refusal by capnweb-validate: a value a validator did not
+ * accept, or a method missing from a validated surface. Read from a tag on the
+ * error object, so it holds in the process that refused, such as in Cap'n
+ * Web's `onSendError`, and not for the error a peer receives.
+ */
+export function isValidationError(err: unknown): err is TypeError {
   return (
     err instanceof TypeError &&
     (err as TaggedValidationError)[RPC_VALIDATION_ERROR] === true
