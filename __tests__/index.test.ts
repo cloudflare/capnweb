@@ -4044,6 +4044,29 @@ describe("ReadableStream over RPC", () => {
     expect(result).toEqual(["to", "afar"]);
   });
 
+  it("can send a ReadableStream in a call made through a pending RpcPromise", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("queued");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<string>) {
+        let reader = stream.getReader();
+        let { value } = await reader.read();
+        return value;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+
+    // The call is queued until the promise resolves to the stub, then replayed with its args.
+    using pending = new RpcPromise<StreamReceiver>(Promise.resolve(harness.stub.dup()));
+    expect(await pending.receiveStream(stream)).toBe("queued");
+  });
+
   it("refuses to copy a ReadableStream out of a result that was already delivered", async () => {
     class StreamProvider extends RpcTarget {
       getObject() {
