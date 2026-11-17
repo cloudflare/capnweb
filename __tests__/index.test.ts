@@ -4067,6 +4067,20 @@ describe("ReadableStream over RPC", () => {
     expect(await pending.receiveStream(stream)).toBe("queued");
   });
 
+  it("can send a Request with a body in a call made through a pending RpcPromise", async () => {
+    class RequestReceiver extends RpcTarget {
+      async readBody(request: Request) {
+        return await request.text();
+      }
+    }
+
+    await using harness = new TestHarness(new RequestReceiver());
+
+    using pending = new RpcPromise<RequestReceiver>(Promise.resolve(harness.stub.dup()));
+    let request = new Request("http://example.com/", { method: "POST", body: "queued body" });
+    expect(await pending.readBody(request)).toBe("queued body");
+  });
+
   it("refuses to copy a ReadableStream out of a result that was already delivered", async () => {
     class StreamProvider extends RpcTarget {
       getObject() {

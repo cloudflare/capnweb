@@ -1175,7 +1175,7 @@ export class RpcPayload {
           if (owner.source === "owned") {
             // The copy and `owner` would each cancel the stream when disposed, with no shared
             // refcount. Fail rather than hand out a stream the other may already have cancelled.
-            throw new Error("Can't copy a ReadableStream: a stream can only be delivered once.");
+            throw new Error("Can't copy a ReadableStream.");
           }
           hook = owner.getHookForReadableStream(stream, oldParent, dupStubs);
         } else {
