@@ -4394,6 +4394,75 @@ describe("ReadableStream over RPC", () => {
     expect(await reader.read()).toEqual({ done: false, value: "chunk" });
     expect((await reader.read()).done).toBe(true);
   });
+
+  it("refuses to send a ReadableStream that is locked", async () => {
+    class StreamReceiver extends RpcTarget {
+      receiveStream(stream: ReadableStream<string>) {}
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    let stream = new ReadableStream<string>();
+    stream.getReader();
+
+    expect(() => harness.stub.receiveStream(stream)).toThrow("Can't send a ReadableStream");
+  });
+
+  it("refuses to send the same ReadableStream a second time", async () => {
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<string>) {
+        let reader = stream.getReader();
+        let { value } = await reader.read();
+        await reader.read();
+        return value;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+    await using other = new TestHarness(new StreamReceiver());
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("chunk");
+        controller.close();
+      }
+    });
+    expect(await harness.stub.receiveStream(stream)).toBe("chunk");
+
+    // The first send has drained the stream and released it, so it no longer reads as locked.
+    // A second receiver would get an empty stream, whichever session it is on.
+    await pumpMicrotasks();
+    expect(stream.locked).toBe(false);
+    expect(() => other.stub.receiveStream(stream)).toThrow("Can't send a ReadableStream");
+  });
+
+  it("refuses to deliver a result's ReadableStream a second time", async () => {
+    class StreamProvider extends RpcTarget {
+      getObject() {
+        return {
+          stream: new ReadableStream<string>({
+            start(controller) {
+              controller.enqueue("chunk");
+              controller.close();
+            }
+          })
+        };
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProvider());
+    using promise = harness.stub.getObject();
+
+    // Both ask the server for the one stream: as part of the result, then on its own.
+    let [result, second] = await Promise.allSettled([promise, promise.stream]);
+
+    expect(second.status).toBe("rejected");
+    expect((second as PromiseRejectedResult).reason.message).toContain("Can't send a ReadableStream");
+
+    // The result's own stream is unaffected.
+    let reader = (result as PromiseFulfilledResult<{stream: ReadableStream<string>}>).value
+        .stream.getReader();
+    expect(await reader.read()).toEqual({ done: false, value: "chunk" });
+    expect((await reader.read()).done).toBe(true);
+  });
 });
 
 // =======================================================================================
