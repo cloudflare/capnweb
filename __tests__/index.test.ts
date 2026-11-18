@@ -2465,6 +2465,55 @@ describe("onRpcBroken", () => {
     await pumpMicrotasks();
     expect(fired).toStrictEqual(["kept"]);
   });
+
+  it("calls back for callbacks registered while the session is aborting", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let fired: string[] = [];
+    let kept: RpcStub<Counter> | undefined;
+    class Watcher extends RpcTarget {
+      watch(counter: RpcStub<Counter>) {
+        kept = counter.dup();
+        kept.onRpcBroken(() => { fired.push("early"); });
+      }
+    }
+
+    // An abort calls onSendError (to serialize the abort message) and then the transport's
+    // abort(), both before it calls any onRpcBroken() callback.
+    let harness = new TestHarness(new Watcher(), {
+      onSendError() { kept!.onRpcBroken(() => { fired.push("onSendError"); }); },
+    });
+    (harness.serverTransport as RpcTransport).abort = () => {
+      kept!.onRpcBroken(() => { fired.push("transport.abort"); });
+    };
+    await harness.stub.watch(new Counter(0));
+
+    harness.serverTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(fired).toStrictEqual(["early", "onSendError", "transport.abort"]);
+  });
+
+  it("calls back for a capability disposed while the session is aborting", async () => {
+    // Intentionally don't use `using` here because we expect the stats to be wrong after a
+    // disconnect.
+    let fired: string[] = [];
+    let kept: RpcStub<Counter> | undefined;
+    class Watcher extends RpcTarget {
+      watch(counter: RpcStub<Counter>) {
+        kept = counter.dup();
+        kept.onRpcBroken(() => { fired.push("kept"); });
+      }
+    }
+
+    // The transport's abort() runs before any onRpcBroken() callback.
+    let harness = new TestHarness(new Watcher());
+    (harness.serverTransport as RpcTransport).abort = () => { kept![Symbol.dispose](); };
+    await harness.stub.watch(new Counter(0));
+
+    harness.serverTransport.forceReceiveError(new Error("test disconnect"));
+    await pumpMicrotasks();
+    expect(fired).toStrictEqual(["kept"]);
+  });
 });
 
 // =======================================================================================

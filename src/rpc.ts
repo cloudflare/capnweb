@@ -267,9 +267,12 @@ class ImportTableEntry {
       this.resolution.dispose();
     } else {
       // No stub can observe this import anymore. Unregister its callbacks, or the session would
-      // retain them and call them when it ends.
-      for (let {index} of this.onBrokenRegistrations ?? []) {
-        delete this.session.onBrokenCallbacks[index];
+      // retain them and call them when it ends. (Unless it is ending right now: then they are
+      // still owed a call.)
+      if (this.onBrokenRegistrations && !this.session.aborting) {
+        for (let {index} of this.onBrokenRegistrations) {
+          delete this.session.onBrokenCallbacks[index];
+        }
       }
       this.abort(new Error("RPC was canceled because the RpcPromise was disposed."));
       this.sendRelease();
@@ -499,6 +502,10 @@ class RpcSessionImpl implements Importer, Exporter {
   // Sparse array of onBrokenCallback registrations, in the order they were registered. Items may
   // be deleted from the middle (hence leaving the array sparse).
   onBrokenCallbacks: OnBrokenRegistration[] = [];
+
+  // Set once abort() begins. From then on the callbacks above are all going to be called, so
+  // disposing an import no longer unregisters its callbacks.
+  aborting = false;
 
   // Encoding level from the transport (defaults to "string")
   private encodingLevel: EncodingLevel;
@@ -935,10 +942,9 @@ class RpcSessionImpl implements Importer, Exporter {
     // Don't double-abort.
     if (this.abortReason !== undefined) return;
 
-    // Detach the callbacks first: app code called below (onSendError, the transport, and the
-    // callbacks themselves) may dispose stubs, which must not unregister callbacks not yet called.
-    let onBrokenCallbacks = this.onBrokenCallbacks;
-    this.onBrokenCallbacks = [];
+    // App code called below (onSendError, the transport, and the callbacks themselves) may dispose
+    // stubs, which must not unregister callbacks not yet called.
+    this.aborting = true;
 
     this.cancelReadLoop?.(error);
     this.cancelReadLoop = undefined;
@@ -985,14 +991,17 @@ class RpcSessionImpl implements Importer, Exporter {
 
     // WATCH OUT: these are sparse arrays. `for/let/of` will iterate only positive indexes
     // including deleted indexes -- bad. We need to use `for/let/in` instead.
-    for (let i in onBrokenCallbacks) {
+    for (let i in this.onBrokenCallbacks) {
       try {
-        onBrokenCallbacks[i].callback(error);
+        this.onBrokenCallbacks[i].callback(error);
       } catch (err) {
         // Treat as unhandled rejection.
         Promise.resolve(err);
       }
     }
+    // Every callback has been called, so stop retaining them.
+    this.onBrokenCallbacks = [];
+
     for (let i in this.imports) {
       this.imports[i].abort(error);
     }
