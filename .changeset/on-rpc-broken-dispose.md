@@ -2,5 +2,5 @@
 "capnweb": patch
 ---
 
-Fix `onRpcBroken()` callbacks being kept and called at disconnect for remote stubs already
-disposed. That includes call parameters, so `.dup()` one to keep listening.
+Disposing a remote stub and all its dups now unregisters its `onRpcBroken()` callbacks. To keep
+listening on a stub received as a call parameter, `.dup()` it.

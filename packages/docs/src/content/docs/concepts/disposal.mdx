@@ -169,5 +169,5 @@ throw exceptions, the callback is called. In particular, this happens if:
 
 Once a remote stub and all its duplicates are disposed, its callbacks are unregistered without
 being called, so call `onRpcBroken()` on the stub you keep. A stub received as a call parameter is
-disposed when the call returns: to keep listening, `.dup()` it and register on the duplicate.
+disposed when the call completes: to keep listening, `.dup()` it and register on the duplicate.
 (Disposing the main stub instead ends the session, which calls every callback.)
