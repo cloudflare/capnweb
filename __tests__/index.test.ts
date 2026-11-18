@@ -4268,6 +4268,132 @@ describe("ReadableStream over RPC", () => {
 
     expect(result).toEqual([1, 2, 3]);
   });
+
+  // In the next two tests, the near session's main object is a stub pointing into the far session.
+  // A stream crossing both sessions is parsed off the wire by one and serialized again onto the
+  // other, without ever being delivered to the application in between.
+
+  it("can return a ReadableStream through a stub forwarded from another session", async () => {
+    class StreamProvider extends RpcTarget {
+      getStream(): ReadableStream<string> {
+        return new ReadableStream({
+          start(controller) {
+            controller.enqueue("from");
+            controller.enqueue("afar");
+            controller.close();
+          }
+        });
+      }
+    }
+
+    await using far = new TestHarness(new StreamProvider());
+    await using near = new TestHarness(far.stub.dup());
+    let stream: any = await near.stub.getStream();
+
+    let chunks: string[] = [];
+    let reader = stream.getReader();
+    while (true) {
+      let { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+
+    expect(chunks).toEqual(["from", "afar"]);
+  });
+
+  it("can send a ReadableStream through a stub forwarded from another session", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("to");
+        controller.enqueue("afar");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<string>) {
+        let chunks: string[] = [];
+        let reader = stream.getReader();
+        while (true) {
+          let { done, value } = await reader.read();
+          if (done) break;
+          chunks.push(value!);
+        }
+        return chunks;
+      }
+    }
+
+    await using far = new TestHarness(new StreamReceiver());
+    await using near = new TestHarness(far.stub.dup());
+    let result = await near.stub.receiveStream(stream);
+
+    expect(result).toEqual(["to", "afar"]);
+  });
+
+  it("can send a ReadableStream in a call made through a pending RpcPromise", async () => {
+    let stream = new ReadableStream<string>({
+      start(controller) {
+        controller.enqueue("queued");
+        controller.close();
+      }
+    });
+
+    class StreamReceiver extends RpcTarget {
+      async receiveStream(stream: ReadableStream<string>) {
+        let reader = stream.getReader();
+        let { value } = await reader.read();
+        return value;
+      }
+    }
+
+    await using harness = new TestHarness(new StreamReceiver());
+
+    // The call is queued until the promise resolves to the stub, then replayed with its args.
+    using pending = new RpcPromise<StreamReceiver>(Promise.resolve(harness.stub.dup()));
+    expect(await pending.receiveStream(stream)).toBe("queued");
+  });
+
+  it("can send a Request with a body in a call made through a pending RpcPromise", async () => {
+    class RequestReceiver extends RpcTarget {
+      async readBody(request: Request) {
+        return await request.text();
+      }
+    }
+
+    await using harness = new TestHarness(new RequestReceiver());
+
+    using pending = new RpcPromise<RequestReceiver>(Promise.resolve(harness.stub.dup()));
+    let request = new Request("http://example.com/", { method: "POST", body: "queued body" });
+    expect(await pending.readBody(request)).toBe("queued body");
+  });
+
+  it("refuses to copy a ReadableStream out of a result that was already delivered", async () => {
+    class StreamProvider extends RpcTarget {
+      getObject() {
+        return {
+          stream: new ReadableStream<string>({
+            start(controller) {
+              controller.enqueue("chunk");
+              controller.close();
+            }
+          })
+        };
+      }
+    }
+
+    await using harness = new TestHarness(new StreamProvider());
+    using promise = harness.stub.getObject();
+    let result = await promise;
+
+    // The result already holds the stream. A second holder isn't supported, and must fail rather
+    // than receive a stream which disposing the result would cancel.
+    await expect(() => promise.stream).rejects.toThrow("Can't copy a ReadableStream");
+
+    // The result's own stream is unaffected.
+    let reader = result.stream.getReader();
+    expect(await reader.read()).toEqual({ done: false, value: "chunk" });
+    expect((await reader.read()).done).toBe(true);
+  });
 });
 
 // =======================================================================================
