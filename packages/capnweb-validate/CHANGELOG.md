@@ -1,5 +1,11 @@
 # capnweb-validate
 
+## 0.3.2
+
+### Patch Changes
+
+- [#305](https://github.com/cloudflare/capnweb/pull/305) [`23d8e79`](https://github.com/cloudflare/capnweb/commit/23d8e79568be29e866e2f42aa2a42262e69121fd) Thanks [@ndisidore](https://github.com/ndisidore)! - Fix optional members of `T` (`build?: number`) being typed as possibly `undefined` on `RpcStub<T>`, `RpcPromise<T>` and `ValidatedStub<T>`. Reading a stub member always yields a promise, so the member is required again, as it was before 0.13.0; the awaited value is still `number | undefined`.
+
 ## 0.3.1
 
 ### Patch Changes
