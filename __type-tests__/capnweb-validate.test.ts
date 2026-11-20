@@ -12,6 +12,7 @@ interface Api {
   getCounter(): Promise<Counter>
   sum(values: readonly number[]): Promise<number>
   getPair(): readonly [number, string]
+  build?: number
 }
 
 type _ValidatedStubCompatible = [
@@ -25,6 +26,12 @@ let api = validateStub<Api>(rawStub)
 let counter = api.getCounter()
 expectAssignable<Promise<number>>(counter.increment(1))
 api.sum([1, 2, 3] as const)
+
+// An optional member is still a promise on the stub; only its awaited value may be undefined.
+type _OptionalMemberIsRequiredOnStub = Expect<
+  Equal<{} extends Pick<typeof api, "build"> ? true : false, false>
+>
+api.build.then((build) => expectType<number | undefined>(build))
 
 api.getPair().then((pair) => {
   expectType<readonly [number, string]>(pair)
