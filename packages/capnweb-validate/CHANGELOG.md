@@ -1,5 +1,11 @@
 # capnweb-validate
 
+## 0.3.1
+
+### Patch Changes
+
+- [#298](https://github.com/cloudflare/capnweb/pull/298) [`098dca7`](https://github.com/cloudflare/capnweb/commit/098dca7c9f3c9fba9dfb29da92dbde2f6adac199) Thanks [@teamchong](https://github.com/teamchong)! - Fixed `@validateRpc()` methods wrapping an already-existing stub in a `Proxy` when returning it. Over Workers RPC, this caused the returned stub to lose its persistence and made its methods uncallable.
+
 ## 0.3.0
 
 ### Minor Changes
