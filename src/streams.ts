@@ -256,36 +256,44 @@ export class FlowController {
       }
 
       let interval = ackTime - baseTime;
-      let bytes = this.delivered - baseDelivered;
-      let bandwidth = bytes / interval;
 
-      // Choose our target growth factor depending on whether we're at startup or steady
-      // state.
-      let growthFactor = this.inStartupPhase ? STARTUP_GROWTH_FACTOR : STEADY_GROWTH_FACTOR;
+      // On a coarse clock (e.g. workerd's, which has millisecond resolution) acks can share a
+      // timestamp. A zero interval gives no bandwidth sample, and computing one anyway yields
+      // Infinity -- or NaN once multiplied by a zero RTT. A NaN window never blocks a sender
+      // and never unblocks one already waiting. Leave the window alone until an ack actually
+      // measures something.
+      if (interval > 0) {
+        let bytes = this.delivered - baseDelivered;
+        let bandwidth = bytes / interval;
 
-      // Calculate new window to be our calculated bandwidth-delay product, plus a growth
-      // factor to account for the possibility that bandwidth is constrained only due to
-      // the window having been too small.
-      let newWindow = bandwidth * this.minRtt * growthFactor;
+        // Choose our target growth factor depending on whether we're at startup or steady
+        // state.
+        let growthFactor = this.inStartupPhase ? STARTUP_GROWTH_FACTOR : STEADY_GROWTH_FACTOR;
 
-      // Don't allow the window to grow too quickly -- it can only grow by at most
-      // `growthFactor` for each RTT.
-      newWindow = Math.min(newWindow, token.windowAtSend * growthFactor);
+        // Calculate new window to be our calculated bandwidth-delay product, plus a growth
+        // factor to account for the possibility that bandwidth is constrained only due to
+        // the window having been too small.
+        let newWindow = bandwidth * this.minRtt * growthFactor;
 
-      if (token.windowFullAtSend) {
-        // Don't allow the window to shrink too quickly.
-        newWindow = Math.max(newWindow, token.windowAtSend * DECAY_FACTOR);
-      } else {
-        // Don't allow the window to shrink at all if we weren't saturating it -- in this
-        // case the sending app is not fully utilizing the connection, so no backpressure is
-        // needed. We clamp to this.window here, not this.windowAtSend, since we don't want to
-        // undo previous shrinkage, when alternating between sends that saturated and ones that
-        // didn't.
-        newWindow = Math.max(newWindow, this.window);
+        // Don't allow the window to grow too quickly -- it can only grow by at most
+        // `growthFactor` for each RTT.
+        newWindow = Math.min(newWindow, token.windowAtSend * growthFactor);
+
+        if (token.windowFullAtSend) {
+          // Don't allow the window to shrink too quickly.
+          newWindow = Math.max(newWindow, token.windowAtSend * DECAY_FACTOR);
+        } else {
+          // Don't allow the window to shrink at all if we weren't saturating it -- in this
+          // case the sending app is not fully utilizing the connection, so no backpressure is
+          // needed. We clamp to this.window here, not this.windowAtSend, since we don't want to
+          // undo previous shrinkage, when alternating between sends that saturated and ones
+          // that didn't.
+          newWindow = Math.max(newWindow, this.window);
+        }
+
+        // Clamp to min/max values.
+        this.window = Math.max(Math.min(newWindow, MAX_WINDOW), MIN_WINDOW);
       }
-
-      // Clamp to min/max values.
-      this.window = Math.max(Math.min(newWindow, MAX_WINDOW), MIN_WINDOW);
 
       // Check if the startup phase is done.
       if (this.inStartupPhase && token.sentTime >= this.roundStartTime) {

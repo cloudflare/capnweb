@@ -3678,8 +3678,8 @@ describe("WritableStream over RPC", () => {
       if (writesSent == oldWritesSent) break;
     }
 
-    // With a 64KB window and ~10KB per write, the sender should have been blocked after about
-    // 7 writes. Without flow control, all 20 writes would be sent.
+    // With a 256KB initial window and ~40KB per write, the sender should have been blocked after
+    // about 7 writes. Without flow control, all 20 writes would be sent.
     expect(writesSent).toBeGreaterThanOrEqual(5);
     expect(writesSent).toBeLessThanOrEqual(10);
     expect(writesReceived).toBe(0);  // Client hasn't received any writes yet.
