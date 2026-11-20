@@ -176,7 +176,7 @@ export function transformModule(
     prelude +=
       emitValidator(entry.bindingName, entry.shape, mode, entry.side) + "\n";
   }
-  edits.push({ start: 0, end: 0, text: prelude });
+  edits.push(preludeEdit(sourceFile, prelude));
 
   for (let cs of callSites) {
     let callee = cs.call.expression;
@@ -219,6 +219,21 @@ export function transformModule(
   }
 
   return { code: applyTextEdits(code, edits) };
+}
+
+// A hashbang is valid only as the file's first line, and directives such as
+// "use client" count only in the module's prologue, so the runtime import and
+// validators go after both, never above.
+function preludeEdit(sf: ts.SourceFile, prelude: string): TextEdit {
+  let end = ts.getShebang(sf.text)?.length ?? 0;
+  for (let stmt of sf.statements) {
+    if (!ts.isExpressionStatement(stmt) || !ts.isStringLiteral(stmt.expression))
+      break;
+    end = stmt.getEnd();
+  }
+  return end === 0
+    ? { start: 0, end: 0, text: prelude }
+    : { start: end, end, text: `\n${prelude}` };
 }
 
 type MarkerBinding = {
