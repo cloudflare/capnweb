@@ -285,8 +285,8 @@ type TupleProvider<T extends ReadonlyArray<unknown>> = {
 // `__RPC_TARGET_BRAND` deliberately flows through the key mapping (as a `never` property) so
 // stubs of branded targets stay assignable to workers-types' `Stubable`. Such stubs match our
 // `Stubable` too — harmless, since all machinery checks `StubBase` before `Stubable`.
-// Mapping over `keyof T` keeps "Go to Definition" working; `-?` because a stub member is
-// always an `RpcPromise`, never `undefined`.
+// Mapping over `keyof T` keeps "Go to Definition" working; `-?` because reading a stub
+// member never yields `undefined`.
 export type Provider<T> = MaybeCallableProvider<T> &
   (T extends ReadonlyArray<unknown>
     ? number extends T["length"] ? ArrayProvider<T[number]> : TupleProvider<T>
