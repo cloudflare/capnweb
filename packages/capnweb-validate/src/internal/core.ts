@@ -218,10 +218,11 @@ type MapCallbackValue<T> =
     : never;
 type MapCallbackReturn<V> =
   InvalidNativePromiseInMapResult<V> extends never ? V : never;
+// `-?`: reading a stub member never yields `undefined` (mirrors `Provider`).
 export type ValidatedStub<T> = MaybeCallableStub<T> &
   (T extends object
     ? Pick<
-        { [K in keyof T]: StubMethodOrProperty<T[K]> },
+        { [K in keyof T]-?: StubMethodOrProperty<T[K]> },
         Exclude<
           keyof T,
           | symbol

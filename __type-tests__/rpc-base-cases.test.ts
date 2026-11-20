@@ -27,6 +27,7 @@ interface BaseCasesApi {
     value: Record<string, RpcStub<PointTarget>>
   ): Promise<Record<string, PointTarget>>
   invoke(callback: RpcStub<(name: string, attempt: number) => Promise<boolean>>): Promise<boolean>
+  build?: number
 }
 
 type _BaseRpcCompatibleChecks = [
@@ -121,6 +122,14 @@ async function assertAwaitedBaseShapes() {
 }
 
 void assertAwaitedBaseShapes
+
+// An optional member is still a promise on the stub; only its awaited value may be undefined.
+type _OptionalMemberIsRequiredOnStub = Expect<
+  Equal<{} extends Pick<typeof api, "build"> ? true : false, false>
+>
+type _OptionalMemberAwaitsToUndefined = Expect<Equal<Awaited<typeof api.build>, number | undefined>>
+expectAssignable<RpcPromise<number | undefined>>(api.build)
+api.build.then((build) => expectType<number | undefined>(build))
 
 // Negative checks.
 // @ts-expect-error nullable method only accepts string | null | undefined
