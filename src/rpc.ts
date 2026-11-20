@@ -184,11 +184,9 @@ type ExportTableEntry = {
 
 // Entry on the imports table.
 class ImportTableEntry {
-  constructor(public session: RpcSessionImpl, public importId: number, pulling: boolean) {
-    if (pulling) {
-      this.activePull = Promise.withResolvers<void>();
-    }
-  }
+  // `pulling` is true if the peer will resolve this import without being sent a "pull" message.
+  constructor(public session: RpcSessionImpl, public importId: number,
+              private pulling: boolean) {}
 
   public localRefcount: number = 0;
   public remoteRefcount: number = 1;
@@ -248,7 +246,7 @@ class ImportTableEntry {
 
   async awaitResolution(): Promise<RpcPayload> {
     if (!this.activePull) {
-      this.session.sendPull(this.importId);
+      if (!this.pulling) this.session.sendPull(this.importId);
       this.activePull = Promise.withResolvers<void>();
     }
     await this.activePull.promise;
@@ -629,6 +627,9 @@ class RpcSessionImpl implements Importer, Exporter {
       ++this.pullCount;
       exp.pull = resolve().then(
         payload => {
+          // If the peer already released this export, it isn't waiting for a resolution.
+          if (this.exports[exportId] !== exp) return;
+
           // We don't transfer ownership of stubs in the payload since the payload
           // belongs to the hook which sticks around to handle pipelined requests.
           let value = Devaluator.devaluate(payload.value, undefined, this, payload, this.encodingLevel);
@@ -636,6 +637,7 @@ class RpcSessionImpl implements Importer, Exporter {
           if (autoRelease) this.releaseExport(exportId, 1);
         },
         error => {
+          if (this.exports[exportId] !== exp) return;
           this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this, undefined, this.encodingLevel)]);
           if (autoRelease) this.releaseExport(exportId, 1);
         }
@@ -810,6 +812,9 @@ class RpcSessionImpl implements Importer, Exporter {
       try {
         devalue = Devaluator.devaluate(args.value, undefined, this, args, this.encodingLevel);
       } catch (err) {
+        // Disposing the partially-serialized payload is safe: any hooks already exported were
+        // dups of the payload's hooks, and the Devaluator rolls back its own export-table entries
+        // before rethrowing.
         args.dispose();
         throw err;
       }
@@ -817,13 +822,14 @@ class RpcSessionImpl implements Importer, Exporter {
       // HACK: Since the args is an array, devaluator will wrap in a second array. Need to unwrap.
       // TODO: Clean this up somehow.
       value.push((<Array<unknown>>devalue)[0]);
-
-      // Serializing the payload takes ownership of all stubs within, so the payload itself does
-      // not need to be disposed on success. If serialization threw partway through, disposing
-      // the payload above is safe: any hooks already exported were dups of the payload's hooks,
-      // and the Devaluator rolls back its own export-table entries before rethrowing.
     }
     this.send(["push", value]);
+
+    // A payload parsed off the wire, or deep-copied to wait on a promise, still owns its hooks:
+    // the message only carries dups of them or cites their import IDs. Dispose them once the
+    // message is sent, since that can release an import the message cites. For params straight
+    // from the app, which don't own their stubs, this does nothing.
+    args?.dispose();
 
     let entry = new ImportTableEntry(this, this.imports.length, false);
     this.imports.push(entry);
@@ -853,6 +859,7 @@ class RpcSessionImpl implements Importer, Exporter {
 
     let msg = ["stream", value];
     let size = this.send(msg);
+    args.dispose();  // only after sending, as in sendCall()
     if (size === undefined) {
       size = estimateEncodedSize(msg);
     }
