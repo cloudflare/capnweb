@@ -184,15 +184,9 @@ type ExportTableEntry = {
 
 // Entry on the imports table.
 class ImportTableEntry {
-  constructor(public session: RpcSessionImpl, public importId: number, pulling: boolean) {
-    if (pulling) {
-      this.activePull = Promise.withResolvers<void>();
-
-      // Nothing awaits this promise until pull() is called, and disposing the import first
-      // rejects it. That must not be reported as an unhandled rejection.
-      this.activePull.promise.catch(() => {});
-    }
-  }
+  // `pulling` is true if the peer will resolve this import without being sent a "pull" message.
+  constructor(public session: RpcSessionImpl, public importId: number,
+              private pulling: boolean) {}
 
   public localRefcount: number = 0;
   public remoteRefcount: number = 1;
@@ -252,7 +246,7 @@ class ImportTableEntry {
 
   async awaitResolution(): Promise<RpcPayload> {
     if (!this.activePull) {
-      this.session.sendPull(this.importId);
+      if (!this.pulling) this.session.sendPull(this.importId);
       this.activePull = Promise.withResolvers<void>();
     }
     await this.activePull.promise;
@@ -633,6 +627,9 @@ class RpcSessionImpl implements Importer, Exporter {
       ++this.pullCount;
       exp.pull = resolve().then(
         payload => {
+          // If the peer already released this export, it isn't waiting for a resolution.
+          if (this.exports[exportId] !== exp) return;
+
           // We don't transfer ownership of stubs in the payload since the payload
           // belongs to the hook which sticks around to handle pipelined requests.
           let value = Devaluator.devaluate(payload.value, undefined, this, payload, this.encodingLevel);
@@ -640,6 +637,7 @@ class RpcSessionImpl implements Importer, Exporter {
           if (autoRelease) this.releaseExport(exportId, 1);
         },
         error => {
+          if (this.exports[exportId] !== exp) return;
           this.send(["reject", exportId, Devaluator.devaluate(error, undefined, this, undefined, this.encodingLevel)]);
           if (autoRelease) this.releaseExport(exportId, 1);
         }
