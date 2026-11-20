@@ -218,6 +218,10 @@ const ERROR_TYPES: Record<string, any> = {
   // TODO: DOMError? Others?
 };
 
+// ReadableStreams that have already been sent. A stream can feed only one pipe, and it stops
+// reading as `locked` once that pipe has drained it.
+let sentStreams = new WeakSet<ReadableStream>();
+
 // Converts fully-hydrated messages into object trees that are JSON-serializable for sending over
 // the wire. This is used to implement serialization -- but it doesn't take the last step of
 // actually converting to a string. (The name is meant to be the opposite of "Evaluator", which
@@ -736,10 +740,16 @@ export class Devaluator {
         }
 
         let ws = <ReadableStream>value;
+        if (ws.locked || sentStreams.has(ws)) {
+          // A pipe would get nothing from it. The receiver's stream would hang, or end at once if
+          // an earlier pipe has finished, with no error on either side.
+          throw new TypeError("Can't send a ReadableStream that is locked or was already sent.");
+        }
         let hook = this.source.getHookForReadableStream(ws, parent);
 
         // Create a pipe and start pumping the ReadableStream into it.
         let importId = this.exporter.createPipe(ws, hook);
+        sentStreams.add(ws);
 
         return ["readable", importId];
       }
