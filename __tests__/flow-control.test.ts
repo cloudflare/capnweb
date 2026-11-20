@@ -251,4 +251,34 @@ describe("FlowController", () => {
     // Window should have been clamped at MIN_WINDOW.
     expect(sim.fc.window).toStrictEqual(64 * 1024);
   });
+
+  it("keeps a usable window when the clock does not advance between send and ack", () => {
+    // A coarse clock (e.g. workerd's) can give a send and its ack the same timestamp.
+    let fc = new FlowController(() => 1000);
+
+    let tokens: SendToken[] = [];
+    for (;;) {
+      let { token, shouldBlock } = fc.onSend(40000);
+      tokens.push(token);
+      if (shouldBlock) break;
+    }
+
+    let unblocked = false;
+    for (let token of tokens) {
+      unblocked = fc.onAck(token);
+      expect(fc.window).toBeGreaterThanOrEqual(64 * 1024);
+      expect(fc.window).toBeLessThanOrEqual(1024 * 1024 * 1024);
+    }
+
+    // Everything was acked, so a blocked sender must be released.
+    expect(fc.bytesInFlight).toBe(0);
+    expect(unblocked).toBe(true);
+
+    // And the window must still be able to block a sender again.
+    let blocked = false;
+    for (let i = 0; i < 100000 && !blocked; i++) {
+      blocked = fc.onSend(40000).shouldBlock;
+    }
+    expect(blocked).toBe(true);
+  });
 });
