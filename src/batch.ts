@@ -39,7 +39,7 @@ class BatchClientTransport implements RpcTransport {
       await this.#promise;
     }
 
-    let msg = this.#batchToReceive!.shift();
+    let msg = this.#batchToReceive!.pop();
     if (msg !== undefined) {
       return msg;
     } else {
@@ -69,7 +69,8 @@ class BatchClientTransport implements RpcTransport {
 
     let batch = this.#batchToSend!;
     this.#batchToSend = null;
-    this.#batchToReceive = await sendBatch(batch);
+    // Consume in wire order with pop(), without shifting the remaining frames.
+    this.#batchToReceive = (await sendBatch(batch)).reverse();
   }
 }
 
@@ -97,7 +98,8 @@ export function newHttpBatchRpcSession(
 
 class BatchServerTransport implements RpcTransport {
   constructor(batch: string[]) {
-    this.#batchToReceive = batch;
+    // The transport owns this array. Reverse once so receive() can pop in wire order.
+    this.#batchToReceive = batch.reverse();
   }
 
   #batchToSend: string[] = [];
@@ -109,7 +111,7 @@ class BatchServerTransport implements RpcTransport {
   }
 
   async receive(): Promise<string> {
-    let msg = this.#batchToReceive!.shift();
+    let msg = this.#batchToReceive!.pop();
     if (msg !== undefined) {
       return msg;
     } else {
