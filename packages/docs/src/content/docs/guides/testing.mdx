@@ -1,0 +1,73 @@
+---
+title: Testing
+description: Run both ends of a session in memory to test RPC code against real stubs.
+sidebar:
+  order: 6
+---
+
+`newInMemoryRpcSessionPair()` connects a client session and a server session through an in-memory
+socket. Everything except the network is real: calls are serialized and pipelined, stubs are
+disposed, and errors and dropped connections behave as they would over a WebSocket.
+
+```ts
+import { newInMemoryRpcSessionPair, type RpcStub } from 'capnweb';
+
+interface Api {
+  getUser(id: string): Promise<{ id: string; name: string }>;
+  deleteUser(id: string): Promise<void>;
+  subscribe(listener: (event: string) => void): Promise<void>;
+}
+
+// The code under test: application code that talks to the API through a stub.
+async function greet(api: RpcStub<Api>, id: string) {
+  let user = await api.getUser(id);
+  return `Hello, ${user.name}`;
+}
+
+test('greets the user', async () => {
+  // Implement only what this test needs. TypeScript still checks it against `Api`.
+  let { stub } = newInMemoryRpcSessionPair<Api>({
+    getUser: async (id) => ({ id, name: 'Alice' }),
+  });
+
+  expect(await greet(stub, 'u1')).toBe('Hello, Alice');
+});
+```
+
+The first argument can also be an `RpcTarget` or a function. The optional second argument takes the
+same [session options](/reference/api/#rpcsessionoptions) as any other session and applies them to
+both ends. It also takes `clientMain`, a main object for the client that the server calls through
+`server.getRemoteMain()`. The two ends are identical peers; `client` is just the end the returned
+`stub` belongs to. The client's type is the second type parameter:
+
+```ts
+let { stub, server } = newInMemoryRpcSessionPair<Api, ClientApi>(serverImpl, {
+  clientMain: clientImpl,
+});
+```
+
+:::note
+The pair behaves like a WebSocket session, where stubs stay valid until they are disposed or the
+connection drops. An [HTTP batch](/transports/http-batch/) disposes everything when the batch ends,
+so code that keeps a stub across batches can pass here and fail over HTTP batch.
+:::
+
+## Dropped connections
+
+`disconnect(reason)` breaks both ends, as a lost network would. Pending calls reject with `reason`,
+and `onRpcBroken()` callbacks fire on stubs held by either side.
+
+```ts
+let { stub, disconnect } = newInMemoryRpcSessionPair<Api>({
+  subscribe: async (listener) => { ... },
+});
+stub.onRpcBroken((error) => console.log(error.message)); // Prints "network down".
+disconnect(new Error('network down'));
+```
+
+## Leaked stubs
+
+`client.getStats()` and `server.getStats()` return the size of each side's import and export tables.
+If a count is higher at the end of a test than at the start, something kept a stub it should have
+disposed. Releases travel as messages, so let them arrive (for example,
+`await new Promise(resolve => setTimeout(resolve))`) before comparing.

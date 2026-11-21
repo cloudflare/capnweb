@@ -8,7 +8,7 @@
 
 import { expect, it, describe } from "vitest"
 import { deserialize, serialize, RpcSession, RpcTransport, RpcTarget, DEFAULT_LIMITS,
-         DEFAULT_MAX_DEPTH, type RpcLimits } from "../src/index.js"
+         DEFAULT_MAX_DEPTH, newInMemoryRpcSessionPair, type RpcLimits } from "../src/index.js"
 
 // Builds the wire string for a value nested inside `depth` escaped-array layers. Each escaped
 // array `[[ inner ]]` adds one level of recursion to the deserializer (evaluateImpl recurses into
@@ -204,62 +204,15 @@ describe("limits backwards compatibility", () => {
   it("a session constructed with no options behaves exactly as before", async () => {
     // A legitimate bigint, normal nesting, and a normal call all flow through a default session
     // without aborting.
-    using harness = new SessionPair(new EchoTarget());
+    using stub = newInMemoryRpcSessionPair(new EchoTarget()).stub;
 
-    let stub = harness.stub as any;
     expect(await stub.echo(123n)).toBe(123n);
     expect(await stub.echo([[1, 2, 3]])).toStrictEqual([[1, 2, 3]]);
     expect(await stub.echo({a: {b: {c: 1}}})).toStrictEqual({a: {b: {c: 1}}});
-
-    await harness.dispose();
   });
 
   it("a session constructed with an empty options object behaves identically", async () => {
-    using harness = new SessionPair(new EchoTarget(), {});
-    let stub = harness.stub as any;
+    using stub = newInMemoryRpcSessionPair(new EchoTarget(), {}).stub;
     expect(await stub.echo(999n)).toBe(999n);
-    await harness.dispose();
   });
 });
-
-// A minimal in-memory bidirectional session pair, sufficient for the round-trip checks above.
-class PairTransport implements RpcTransport {
-  partner!: PairTransport;
-  private queue: string[] = [];
-  private waiter?: () => void;
-
-  async send(message: string): Promise<void> {
-    this.partner.queue.push(message);
-    this.partner.waiter?.();
-    this.partner.waiter = undefined;
-  }
-
-  async receive(): Promise<string> {
-    while (this.queue.length === 0) {
-      await new Promise<void>(resolve => { this.waiter = resolve; });
-    }
-    return this.queue.shift()!;
-  }
-}
-
-class SessionPair {
-  private clientTransport = new PairTransport();
-  private serverTransport = new PairTransport();
-  private client: RpcSession;
-  private server: RpcSession;
-  stub: ReturnType<RpcSession["getRemoteMain"]>;
-
-  constructor(target: RpcTarget, options?: { limits?: Partial<RpcLimits> }) {
-    this.clientTransport.partner = this.serverTransport;
-    this.serverTransport.partner = this.clientTransport;
-    this.client = new RpcSession(this.clientTransport);
-    this.server = new RpcSession(this.serverTransport, target, options);
-    this.stub = this.client.getRemoteMain();
-  }
-
-  async dispose() {
-    for (let i = 0; i < 16; i++) await Promise.resolve();
-  }
-
-  [Symbol.dispose]() {}
-}
