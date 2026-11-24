@@ -831,6 +831,7 @@ export class RpcPayload {
   public static fromArray(array: RpcPayload[]): RpcPayload {
     let hooks: StubHook[] = [];
     let promises: LocatedPromise[] = [];
+    let writableHooks = new Map<WritableStream, StubHook>();
 
     let resultArray: unknown[] = [];
 
@@ -838,6 +839,9 @@ export class RpcPayload {
       payload.ensureDeepCopied();
       for (let hook of payload.hooks!) {
         hooks.push(hook);
+      }
+      for (let [stream, hook] of payload.writableHooks ?? []) {
+        writableHooks.set(stream, hook);
       }
       for (let promise of payload.promises!) {
         if (promise.parent === payload) {
@@ -854,7 +858,9 @@ export class RpcPayload {
       resultArray.push(payload.value);
     }
 
-    return new RpcPayload(resultArray, "owned", hooks, promises);
+    let result = new RpcPayload(resultArray, "owned", hooks, promises);
+    result.writableHooks = writableHooks;
+    return result;
   }
 
   // Create a payload from a value parsed off the wire using Evaluator.evaluate().
@@ -868,8 +874,11 @@ export class RpcPayload {
   // When done, the payload takes ownership of the final value and all the stubs within. It may
   // modify the value in preparation for delivery, and may deliver the value directly to the app
   // without copying.
-  public static forEvaluate(hooks: StubHook[], promises: LocatedPromise[]) {
-    return new RpcPayload(null, "owned", hooks, promises);
+  public static forEvaluate(hooks: StubHook[], promises: LocatedPromise[],
+                             writableHooks: Map<WritableStream, StubHook>) {
+    let payload = new RpcPayload(null, "owned", hooks, promises);
+    payload.writableHooks = writableHooks;
+    return payload;
   }
 
   // Deep-copy the given value, including dup()ing all stubs.
@@ -918,6 +927,10 @@ export class RpcPayload {
   //
   // This is initialized on first use.
   private rpcTargets?: Map<RpcTarget | Function | WritableStream | ReadableStream, StubHook>;
+
+  // For "owned" payloads: the hook in `hooks` for each WritableStream in `value`, so that serializing
+  // the payload again (e.g. a forwarded call) can dup it. Doesn't hold its own reference.
+  private writableHooks?: Map<WritableStream, StubHook>;
 
   // Get the StubHook representing the given RpcTarget found inside this payload.
   public getHookForRpcTarget(target: RpcTarget | Function, parent: object | undefined,
@@ -1014,7 +1027,13 @@ export class RpcPayload {
         }
       }
     } else {
-      throw new Error("owned payload shouldn't contain raw WritableStreams");
+      // The payload keeps its own hook for the stream. A dup shares the import (wire-parsed) or the
+      // writer refcount (deep-copied), so the stream stays usable after the payload is disposed.
+      let hook = this.writableHooks?.get(stream);
+      if (!hook) {
+        throw new Error("owned payload has no hook for this WritableStream");
+      }
+      return hook.dup();
     }
   }
 
@@ -1195,6 +1214,7 @@ export class RpcPayload {
           hook = streamImpl.createWritableStreamHook(stream);
         }
         this.hooks!.push(hook);
+        (this.writableHooks ??= new Map).set(stream, hook);
         return stream;
       }
 
@@ -1278,6 +1298,7 @@ export class RpcPayload {
         }
         this.hooks = undefined;
         this.promises = undefined;
+        this.writableHooks = undefined;
         throw err;
       }
 
@@ -1498,6 +1519,7 @@ export class RpcPayload {
     this.source = "owned";
     this.hooks = [];
     this.promises = [];
+    this.writableHooks = undefined;
   }
 
   // Recursive dispose, called only when `source` is "return".
