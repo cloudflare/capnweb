@@ -3949,6 +3949,113 @@ describe("WritableStream over RPC", () => {
     expect(rpcError).not.toBeNull();
     expect(rpcError.message).toContain("Simulated write failure");
   });
+
+  it("can send a WritableStream through a stub forwarded from another session", async () => {
+    class StreamWriter extends RpcTarget {
+      async writeTo(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        await writer.write("hello");
+        await writer.write("afar");
+        await writer.close();
+      }
+
+      ping() {
+        return "pong";
+      }
+    }
+
+    await using far = new TestHarness(new StreamWriter());
+    await using near = new TestHarness(far.stub.dup());
+
+    let chunks: string[] = [];
+    let closed = false;
+    let local = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); },
+      close() { closed = true; }
+    });
+
+    await near.stub.writeTo(local);
+    expect(chunks).toEqual(["hello", "afar"]);
+    expect(closed).toBe(true);
+
+    // The session must still work after the stream was passed along.
+    expect(await near.stub.ping()).toBe("pong");
+  });
+
+  it("can return a WritableStream through a stub forwarded from another session", async () => {
+    let written: string[] = [];
+    let resolveClosed!: () => void;
+    let closed = new Promise<void>(resolve => resolveClosed = resolve);
+
+    class StreamSink extends RpcTarget {
+      sink(): WritableStream<string> {
+        return new WritableStream<string>({
+          write(chunk) { written.push(chunk); },
+          close() { resolveClosed(); }
+        });
+      }
+    }
+
+    await using far = new TestHarness(new StreamSink());
+    await using near = new TestHarness(far.stub.dup());
+    let stream: any = await near.stub.sink();
+
+    let writer = stream.getWriter();
+    await writer.write("x");
+    await writer.write("y");
+    await writer.close();
+    await closed;
+
+    expect(written).toEqual(["x", "y"]);
+  });
+
+  it("can send a WritableStream in a call made through a pending RpcPromise", async () => {
+    class StreamWriter extends RpcTarget {
+      async writeTo(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        await writer.write("queued");
+        await writer.close();
+      }
+    }
+
+    await using harness = new TestHarness(new StreamWriter());
+
+    let chunks: string[] = [];
+    let closed = false;
+    let local = new WritableStream<string>({
+      write(chunk) { chunks.push(chunk); },
+      close() { closed = true; }
+    });
+
+    // The call is queued until the promise resolves to the stub, then replayed with its args.
+    using pending = new RpcPromise<StreamWriter>(Promise.resolve(harness.stub.dup()));
+    await pending.writeTo(local);
+    expect(chunks).toEqual(["queued"]);
+    expect(closed).toBe(true);
+  });
+
+  it("abort reaches the original through a forwarded stub", async () => {
+    class StreamAborter extends RpcTarget {
+      async writeTo(stream: WritableStream<string>) {
+        let writer = stream.getWriter();
+        await writer.abort("stop");
+      }
+    }
+
+    await using far = new TestHarness(new StreamAborter());
+    await using near = new TestHarness(far.stub.dup());
+
+    let reason: unknown;
+    let resolveAborted!: () => void;
+    let aborted = new Promise<void>(resolve => resolveAborted = resolve);
+    let local = new WritableStream<string>({
+      abort(r) { reason = r; resolveAborted(); }
+    });
+
+    await near.stub.writeTo(local);
+    await aborted;
+    expect(reason).toBe("stop");
+  });
 });
 
 describe("WritableStream stub argument disposal", () => {

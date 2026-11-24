@@ -848,13 +848,14 @@ export class Evaluator {
 
   private hooks: StubHook[] = [];
   private promises: LocatedPromise[] = [];
+  private writableHooks = new Map<WritableStream, StubHook>();
 
   public evaluate(value: unknown): RpcPayload {
     return this.evaluateWithDepth(value, 0);
   }
 
   private evaluateWithDepth(value: unknown, depth: number): RpcPayload {
-    let payload = RpcPayload.forEvaluate(this.hooks, this.promises);
+    let payload = RpcPayload.forEvaluate(this.hooks, this.promises, this.writableHooks);
     try {
       payload.value = this.evaluateImpl(value, payload, "value", depth);
       return payload;
@@ -1332,6 +1333,7 @@ export class Evaluator {
             let stream = streamImpl.createWritableStreamFromHook(hook);
             // Track the stream for disposal.
             this.hooks.push(hook);
+            this.writableHooks.set(stream, hook);
             return stream;
           }
           break;
