@@ -471,4 +471,19 @@ describe("workerd RPC server", () => {
     expect(await Promise.all([promise1, promise2, promise3]))
         .toStrictEqual([36, 5, 9]);
   })
+
+  it("can send an HTTP batch through a custom fetch function", async () => {
+    let calls = 0;
+    let cap = newHttpBatchRpcSession<TestTarget>("http://foo", {
+      fetch: (input, init) => {
+        ++calls;
+        return (<Env>env).testServer.fetch(input, init);
+      },
+    });
+
+    let promise1 = cap.square(6);
+    let promise2 = cap.square(7);
+    expect(await Promise.all([promise1, promise2])).toStrictEqual([36, 49]);
+    expect(calls).toBe(1);
+  })
 });

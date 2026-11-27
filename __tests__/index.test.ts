@@ -2,7 +2,7 @@
 // Licensed under the MIT license found in the LICENSE.txt file or at:
 //     https://opensource.org/license/mit
 
-import { expect, it, describe, inject } from "vitest"
+import { expect, it, describe, inject, vi } from "vitest"
 import { deserialize, serialize, RpcSession, type RpcSessionOptions, RpcTransport,
          type RpcTransportWithCustomEncoding, RpcTarget, RpcStub, RpcPromise, newWebSocketRpcSession,
          newMessagePortRpcSession,
@@ -3314,6 +3314,36 @@ describe("HTTP requests", () => {
 
     expect(await Promise.all([promise1, promise2, promise3]))
         .toStrictEqual([36, 5, 9]);
+  });
+
+  it("sends the batch using a custom fetch function from options", async () => {
+    let url = `http://${inject("testServerHost")}`;
+    let calls: { input: string | Request, init?: RequestInit }[] = [];
+    let customFetch = (input: string | Request, init?: RequestInit) => {
+      calls.push({ input, init });
+      return fetch(input, init);
+    };
+
+    let cap = newHttpBatchRpcSession<TestTarget>(url, { fetch: customFetch });
+    let promise1 = cap.square(6);
+    let promise2 = cap.square(7);
+    expect(await Promise.all([promise1, promise2])).toStrictEqual([36, 49]);
+
+    expect(calls.length).toBe(1);
+    expect(calls[0].input).toBe(url);
+    expect(calls[0].init?.method).toBe("POST");
+  });
+
+  it("uses the global fetch when no custom fetch is given", async () => {
+    let url = `http://${inject("testServerHost")}`;
+    let spy = vi.spyOn(globalThis, "fetch");
+    try {
+      let cap = newHttpBatchRpcSession<TestTarget>(url);
+      expect(await cap.square(5)).toBe(25);
+      expect(spy.mock.calls.filter(c => c[0] === url).length).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("rejects non-POST requests with 405", async () => {
