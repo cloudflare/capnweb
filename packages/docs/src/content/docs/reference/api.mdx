@@ -86,6 +86,9 @@ interface RpcTransport {
 Passed as the last argument to the session and response helpers. Commonly used for response
 `headers` (e.g. CORS) on the HTTP batch helpers.
 
+`newHttpBatchRpcSession()` also accepts a `fetch` option (`HttpBatchRpcSessionOptions`), used
+instead of the global `fetch()` to send the batch. [Docs](/transports/http-batch/#custom-fetch)
+
 ## Disposal at a glance
 
 | You have                                             | You must                                               |

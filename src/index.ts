@@ -140,9 +140,10 @@ export let newWebSocketRpcSession:<T extends RpcCompatible<T> = Empty>
 /**
  * Initiate an HTTP batch session from the client side.
  *
- * The parameters to this method have exactly the same signature as `fetch()`, but the return
- * value is an RpcStub. You can customize anything about the request except for the method
- * (it will always be set to POST) and the body (which the RPC system will fill in).
+ * The first parameter is the same as the first parameter of `fetch()` (a URL or a Request), but the
+ * return value is an RpcStub. You can customize anything about the request except for the method
+ * (it will always be set to POST) and the body (which the RPC system will fill in). The second
+ * parameter is session options, not `RequestInit`.
  *
  * To send the request with something other than the global `fetch()`, pass a `fetch` function in
  * `options`.

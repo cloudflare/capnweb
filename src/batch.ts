@@ -75,12 +75,14 @@ class BatchClientTransport implements RpcTransport {
 
 export type HttpBatchRpcSessionOptions = RpcSessionOptions & {
   /**
-   * Function used to send the batch request. Must have the same signature as the global `fetch()`.
+   * Function used to send the batch request, taking the same arguments as the global `fetch()`.
    * Defaults to the global `fetch`. Useful for runtimes where requests must go through a special
-   * fetch function, such as a VPC or service binding (pass e.g.
-   * `(input, init) => env.VPC.fetch(input, init)`), or for instrumenting requests.
+   * fetch function, such as a VPC or service binding, or for instrumenting requests.
+   *
+   * The function is called unbound, so wrap a method that needs its receiver, e.g.
+   * `(input, init) => env.VPC.fetch(input, init)` rather than `env.VPC.fetch`.
    */
-  fetch?: typeof fetch;
+  fetch?: (input: string | Request, init?: RequestInit) => Promise<Response>;
 };
 
 export function newHttpBatchRpcSession(

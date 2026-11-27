@@ -65,8 +65,8 @@ console.log(greeting3);
 ### Custom `fetch`
 
 By default the batch is sent with the global `fetch()`. To use a different function, such as a
-VPC or service binding on Cloudflare Workers, pass it as the `fetch` option. It must have the same
-signature as `fetch()`:
+VPC or service binding on Cloudflare Workers, pass it as the `fetch` option. It is called unbound,
+so wrap a method that needs its receiver:
 
 ```ts
 using stub = newHttpBatchRpcSession<MyApi>('https://example.com/api', {
